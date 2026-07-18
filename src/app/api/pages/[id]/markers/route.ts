@@ -4,6 +4,7 @@ import { scheduleFollowUps } from "@/lib/followups";
 import { shortDate } from "@/lib/ui";
 import type { TaskStatus } from "@/lib/types";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 interface Body {
