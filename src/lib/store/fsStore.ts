@@ -37,30 +37,32 @@ interface Envelope {
 
 /**
  * Per-process in-memory tier, keyed by tenant. This is what keeps the app
- * working on hosts where the app directory is read-only (serverless/edge
- * deployments only allow writes to an ephemeral temp dir, if at all). Disk is
- * still the source of truth wherever it is writable; memory is the fallback so
- * a Server Component render never crashes the whole app when a write is denied.
+ * working on hosts where the local disk isn't a usable persistence layer
+ * (serverless/edge deployments — this app's target, Webflow Cloud, included —
+ * may not allow writes at all, or only to an ephemeral temp dir). Disk is
+ * still the source of truth wherever it is usable; memory is the fallback so
+ * a Server Component render never crashes the whole app when disk I/O fails.
  */
 const memoryState = new Map<string, AppState>();
 
-/** Errno codes that mean "this filesystem is not writable/usable here". */
-const READ_ONLY_CODES = new Set(["ENOENT", "ENOTDIR", "EROFS", "EACCES", "EPERM"]);
-
-function isReadOnlyFsError(err: unknown): boolean {
-  const code = (err as NodeJS.ErrnoException)?.code;
-  return code !== undefined && READ_ONLY_CODES.has(code);
-}
+// Hosts vary in how they signal "the filesystem isn't usable here": a plain
+// Node server throws standard errno codes (ENOENT/EROFS/EACCES/...), but
+// serverless/edge runtimes (this app's target, Webflow Cloud, included) may
+// run `node:fs` through a compatibility shim that throws something else
+// entirely — a different code, no code at all, or a generic Error. Rather
+// than maintain an allow-list that a new host can slip past and crash render
+// again, every disk operation below is treated as best-effort: any failure
+// falls back to the in-memory tier instead of propagating.
 
 let warnedReadOnly = false;
 function warnReadOnly(err: unknown): void {
   if (warnedReadOnly) return;
   warnedReadOnly = true;
   console.warn(
-    "[DataStore] filesystem is not writable; falling back to in-memory state " +
+    "[DataStore] filesystem read/write failed; falling back to in-memory state " +
       "for this process. State will not persist across restarts or instances. " +
       "Configure a durable DataStore adapter for production.",
-    (err as Error)?.message,
+    (err as Error)?.message ?? err,
   );
 }
 
@@ -99,41 +101,35 @@ class FsDataStore implements DataStore {
       if (env.tenant !== this.tenant) {
         throw new Error(`DataStore: tenant mismatch (${env.tenant} != ${this.tenant})`);
       }
-      // Mirror the durable snapshot into memory so later writes on a read-only
-      // host build on the latest persisted state.
+      // Mirror the durable snapshot into memory so later writes on a host
+      // where disk isn't usable build on the latest persisted state.
       memoryState.set(this.tenant, env.state);
       return env.state;
-    } catch (err: unknown) {
-      // ENOENT: nothing persisted yet. Other read-only codes: the data dir
-      // can't be created or read (read-only serverless/edge filesystem). In
-      // both cases fall back to the in-memory tier instead of throwing, so the
-      // Server Component that renders the app shell never crashes.
-      if (isReadOnlyFsError(err)) {
-        const cached = memoryState.get(this.tenant);
-        if (cached) return cached;
-        const seeded = buildSeedState();
-        memoryState.set(this.tenant, seeded);
-        // Best-effort persist; saveState swallows write failures on read-only hosts.
-        await this.saveState(seeded);
-        return seeded;
-      }
-      throw err;
+    } catch {
+      // No file yet (the expected case on a fresh deploy), a corrupt/mismatched
+      // one, or a host where disk reads don't work at all — in every case fall
+      // back to the in-memory tier instead of throwing, so the Server
+      // Component that renders the app shell never crashes. This alone isn't
+      // evidence disk is broken, so it doesn't warn; saveState's own write
+      // attempt below is what surfaces a genuine persistence failure.
+      const cached = memoryState.get(this.tenant);
+      if (cached) return cached;
+      const seeded = buildSeedState();
+      memoryState.set(this.tenant, seeded);
+      await this.saveState(seeded);
+      return seeded;
     }
   }
 
   async saveState(state: AppState): Promise<void> {
     // The in-memory tier is always authoritative for the current process; this
-    // is what lets reads and subsequent writes succeed on read-only hosts.
+    // is what lets reads and subsequent writes succeed even when disk doesn't.
     memoryState.set(this.tenant, state);
     const env: Envelope = { tenant: this.tenant, updatedAt: new Date().toISOString(), state };
     try {
       await this.atomicWrite(this.stateFile, JSON.stringify(env, null, 2));
     } catch (err: unknown) {
-      if (isReadOnlyFsError(err)) {
-        warnReadOnly(err);
-        return;
-      }
-      throw err;
+      warnReadOnly(err);
     }
   }
 
@@ -177,11 +173,7 @@ class FsDataStore implements DataStore {
     try {
       await this.atomicWrite(file, JSON.stringify({ tenant: this.tenant, payload }, null, 2));
     } catch (err: unknown) {
-      if (isReadOnlyFsError(err)) {
-        warnReadOnly(err);
-        return;
-      }
-      throw err;
+      warnReadOnly(err);
     }
   }
 
@@ -189,24 +181,19 @@ class FsDataStore implements DataStore {
     try {
       const raw = await fs.readFile(path.join(this.root, "reports", pageId, `${key}.json`), "utf8");
       return (JSON.parse(raw) as { payload: unknown }).payload;
-    } catch (err: unknown) {
-      // Missing file, or a read-only host where reports were never written.
-      if (isReadOnlyFsError(err)) return null;
-      throw err;
+    } catch {
+      // Missing file, or a host where report reads don't work at all.
+      return null;
     }
   }
 
-  /** Append one JSONL record, tolerating a read-only filesystem. */
+  /** Append one JSONL record; best-effort, never throws. */
   private async appendLine(file: string, record: object): Promise<void> {
     try {
       await this.ensureDir(path.dirname(file));
       await fs.appendFile(file, `${JSON.stringify({ tenant: this.tenant, ...record })}\n`, "utf8");
     } catch (err: unknown) {
-      if (isReadOnlyFsError(err)) {
-        warnReadOnly(err);
-        return;
-      }
-      throw err;
+      warnReadOnly(err);
     }
   }
 }
