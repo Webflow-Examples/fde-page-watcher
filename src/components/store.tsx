@@ -110,7 +110,7 @@ export function StoreProvider({ initial, children }: { initial: AppState; childr
 
   const [strategy, setStrategy] = useState<Strategy>("mobile");
   const [dashSort, setDashSort] = useState<SortState>({ col: null, dir: "desc" });
-  const [inboxGroup, setInboxGroup] = useState<"none" | "page" | "rec">("none");
+  const [inboxGroup, setInboxGroup] = useState<"none" | "page" | "rec">("page");
   const [inboxSort, setInboxSort] = useState<SortState>({ col: null, dir: "desc" });
   const [taskGroup, setTaskGroup] = useState<"none" | "page" | "rec">("none");
   const [taskView, setTaskView] = useState<"list" | "kanban">("list");
