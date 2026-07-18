@@ -1,10 +1,18 @@
 "use client";
 
+import { useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useStore } from "./store";
 import { C } from "@/lib/ui";
+import { formatNextRunLocal } from "@/lib/schedule";
 import { ClockIcon, DashboardIcon, EyeIcon, InboxIcon, LogoMark, TasksIcon } from "./icons";
+
+// The next-run label depends on the viewer's local timezone, so it's read via
+// useSyncExternalStore: the server snapshot is a UTC fallback and the client
+// snapshot is the localized time — matching on hydration, no setState-in-effect.
+const noopSubscribe = () => () => {};
+const serverRunLabel = () => "Tonight · 3:00 AM UTC";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", Icon: DashboardIcon, badge: null as "inbox" | "tasks" | null },
@@ -18,6 +26,9 @@ export function Sidebar() {
   const { recs } = useStore();
   const inboxCount = recs.filter((r) => r.status === "inbox").length;
   const taskCount = recs.filter((r) => r.status === "task").length;
+
+  // Next run in the viewer's local timezone (UTC fallback during SSR/hydration).
+  const runLabel = useSyncExternalStore(noopSubscribe, formatNextRunLocal, serverRunLabel);
 
   return (
     <aside
@@ -93,7 +104,7 @@ export function Sidebar() {
         <div style={{ border: `1px solid ${C.border}`, background: C.panel, borderRadius: 9, padding: "13px 14px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: C.text, fontWeight: 500 }}>
             <ClockIcon size={15} style={{ color: C.accentBright }} />
-            Tonight · 03:00
+            {runLabel}
           </div>
           <div style={{ fontSize: 11.5, color: C.muted, marginTop: 6, lineHeight: 1.5 }}>
             5 runs per page per strategy via PSI, plus one agent-readiness scan.
