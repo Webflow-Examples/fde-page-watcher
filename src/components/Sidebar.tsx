@@ -1,9 +1,11 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useStore } from "./store";
 import { C } from "@/lib/ui";
+import { formatNextRunLocal } from "@/lib/schedule";
 import { ClockIcon, DashboardIcon, EyeIcon, InboxIcon, LogoMark, TasksIcon } from "./icons";
 
 const navItems = [
@@ -18,6 +20,11 @@ export function Sidebar() {
   const { recs } = useStore();
   const inboxCount = recs.filter((r) => r.status === "inbox").length;
   const taskCount = recs.filter((r) => r.status === "task").length;
+
+  // Show the next run in the viewer's local timezone. Computed after mount so
+  // the server-rendered UTC fallback and the first client render match.
+  const [runLabel, setRunLabel] = useState("Tonight · 3:00 AM UTC");
+  useEffect(() => setRunLabel(formatNextRunLocal()), []);
 
   return (
     <aside
@@ -93,7 +100,7 @@ export function Sidebar() {
         <div style={{ border: `1px solid ${C.border}`, background: C.panel, borderRadius: 9, padding: "13px 14px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: C.text, fontWeight: 500 }}>
             <ClockIcon size={15} style={{ color: C.accentBright }} />
-            Tonight · 03:00
+            {runLabel}
           </div>
           <div style={{ fontSize: 11.5, color: C.muted, marginTop: 6, lineHeight: 1.5 }}>
             5 runs per page per strategy via PSI, plus one agent-readiness scan.
