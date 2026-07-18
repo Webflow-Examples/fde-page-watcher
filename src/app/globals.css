@@ -1,26 +1,87 @@
 @import "tailwindcss";
 
+/* ── Webflow brand typeface: WF Visual Sans (variable) ── */
+@font-face {
+  font-family: "WF Visual Sans";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/WFVisualSanswghtopsz.woff2") format("woff2");
+}
+@font-face {
+  font-family: "WF Visual Sans Variable";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/WFVisualSanswghtopsz.woff2") format("woff2");
+}
+
+/* ── Dark theme palette (from the Performance Dashboard design) ── */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg: #0b0b0c;
+  --bg-elev: #0e0e10;
+  --panel: #131315;
+  --panel-2: #161619;
+  --border: #1e1e22;
+  --border-2: #26262a;
+  --text: #f4f4f5;
+  --text-dim: #c4c4c8;
+  --text-muted: #8a8a90;
+  --text-faint: #6c6c72;
+  --accent: #146ef5;
+  --accent-bright: #3b89ff;
+  --accent-soft: #5ea0ff;
+  --violet: #8a5cf6;
+  --green: #35d07f;
+  --amber: #ff9a3d;
+  --red: #ff5c6c;
+  --font-brand: "WF Visual Sans Variable", "WF Visual Sans", system-ui, -apple-system, sans-serif;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-green: var(--green);
+  --color-amber: var(--amber);
+  --color-red: var(--red);
+  --font-sans: var(--font-brand);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-brand);
+  font-variation-settings: "opsz" 20;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Custom scrollbar to match the design */
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  border: 3px solid var(--bg);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+button {
+  font-family: inherit;
 }
