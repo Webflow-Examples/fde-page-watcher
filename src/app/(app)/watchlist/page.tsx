@@ -44,6 +44,7 @@ export default function WatchlistPage() {
               </div>
               <div>
                 <SegToggle
+                  label={`Flag for ${p.title}`}
                   value={p.flag}
                   onChange={(f) => setFlag(p.id, f)}
                   options={[

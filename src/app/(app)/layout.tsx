@@ -13,9 +13,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const state = await getStore().getState();
   return (
     <StoreProvider initial={state}>
-      <div style={{ display: "flex", minHeight: "100vh" }}>
+      <div className="app-shell" style={{ display: "flex", minHeight: "100vh" }}>
         <Sidebar />
-        <main style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>{children}</main>
+        <main className="app-main" style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>{children}</main>
       </div>
       <ChromeOverlays />
     </StoreProvider>

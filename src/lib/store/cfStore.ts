@@ -2,7 +2,8 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 import type { AppState, ChangeMarker, Night } from "../types";
 import { buildSeedState } from "../seed";
 import { classifyStatus, mediansOf } from "../scoring";
-import type { DataStore } from "./fsStore";
+import { resolveMarkerIndex } from "../followups";
+import { normalizeState, type DataStore } from "./fsStore";
 
 interface CfEnv {
   DB: D1Database;
@@ -19,10 +20,10 @@ interface StateRow {
 }
 
 /**
- * Cloudflare-backed DataStore: the AppState blob lives in D1 behind a
- * version-guarded compare-and-swap (see withState), history/markers are
- * append-only D1 rows, and raw report payloads live in R2. Mirrors
- * fsStore.ts's behavior exactly so call sites never change.
+ * Cloudflare-backed DataStore: AppState lives in D1 behind a version-guarded
+ * compare-and-swap, history/markers are mirrored to append-only D1 rows, and
+ * raw report payloads live in R2. All state mutations use the same atomic
+ * update contract as the filesystem adapter.
  */
 class CfDataStore implements DataStore {
   readonly tenant: string;
@@ -47,91 +48,134 @@ class CfDataStore implements DataStore {
         .run();
       return this.getState();
     }
-    return JSON.parse(row.json) as AppState;
-  }
-
-  async saveState(state: AppState): Promise<void> {
-    const { DB } = cfEnv();
-    const now = new Date().toISOString();
-    await DB.prepare(
-      `INSERT INTO state (tenant, json, version, updated_at) VALUES (?, ?, 0, ?)
-       ON CONFLICT(tenant) DO UPDATE SET json = excluded.json, version = version + 1, updated_at = excluded.updated_at`,
-    )
-      .bind(this.tenant, JSON.stringify(state), now)
-      .run();
+    return normalizeState(JSON.parse(row.json) as AppState);
   }
 
   /**
-   * Read-modify-write the AppState blob under a version-guarded retry loop, so
-   * concurrent server-side callers (a nightly run appending several pages back
-   * to back, "Run now" racing a marker POST) never silently clobber each other.
-   * The client's whole-state PUT (saveState above) has no version token to
-   * guard with, so it stays last-writer-wins by design.
+   * Re-read, mutate, and conditionally commit the tenant blob. A lost race
+   * reloads the latest version and reapplies the state-only mutation.
    */
-  private async withState(mutate: (state: AppState) => void): Promise<AppState> {
+  async updateState(mutate: (state: AppState) => void | Promise<void>): Promise<AppState> {
     const { DB } = cfEnv();
-    for (let attempt = 0; attempt < 8; attempt++) {
+    for (let attempt = 0; attempt < 8; attempt += 1) {
       const row = await DB.prepare("SELECT json, version FROM state WHERE tenant = ?").bind(this.tenant).first<StateRow>();
       const now = new Date().toISOString();
 
       if (!row) {
         const state = buildSeedState();
-        mutate(state);
-        const res = await DB.prepare(
+        await mutate(state);
+        const result = await DB.prepare(
           "INSERT INTO state (tenant, json, version, updated_at) VALUES (?, ?, 0, ?) ON CONFLICT(tenant) DO NOTHING",
         )
           .bind(this.tenant, JSON.stringify(state), now)
           .run();
-        if ((res.meta.rows_written ?? 0) > 0) return state;
+        if ((result.meta.rows_written ?? 0) > 0) return structuredClone(state);
         continue;
       }
 
-      const state = JSON.parse(row.json) as AppState;
-      mutate(state);
-      const res = await DB.prepare("UPDATE state SET json = ?, version = version + 1, updated_at = ? WHERE tenant = ? AND version = ?")
+      const state = normalizeState(JSON.parse(row.json) as AppState);
+      await mutate(state);
+      const result = await DB.prepare(
+        "UPDATE state SET json = ?, version = version + 1, updated_at = ? WHERE tenant = ? AND version = ?",
+      )
         .bind(JSON.stringify(state), now, this.tenant, row.version)
         .run();
-      if ((res.meta.rows_written ?? 0) > 0) return state;
-      // Lost the race to another writer — reload and retry.
+      if ((result.meta.rows_written ?? 0) > 0) return structuredClone(state);
     }
     throw new Error("DataStore: state update retry exhausted");
   }
 
-  async appendNight(pageId: string, night: Night, rawReport?: unknown): Promise<AppState> {
-    const { DB } = cfEnv();
-    await DB.prepare("INSERT OR REPLACE INTO history (tenant, page_id, i, night_json) VALUES (?, ?, ?, ?)")
-      .bind(this.tenant, pageId, night.i, JSON.stringify(night))
-      .run();
-
-    if (rawReport !== undefined && night.rawReportKey) {
-      await this.putReport(pageId, night.rawReportKey, rawReport);
-    }
-
-    return this.withState((state) => {
-      const page = state.pages.find((p) => p.id === pageId);
+  async appendNight(
+    pageId: string,
+    runId: string,
+    input: Omit<Night, "i" | "runId" | "rawReportKey">,
+    rawReport?: unknown,
+  ): Promise<{ state: AppState; night: Night | null; inserted: boolean }> {
+    const commit: { night: Night | null; inserted: boolean } = { night: null, inserted: false };
+    const state = await this.updateState((draft) => {
+      const page = draft.pages.find((item) => item.id === pageId);
       if (!page) return;
+
+      const existing = page.history.find((item) => item.runId === runId);
+      if (existing) {
+        commit.night = existing;
+        commit.inserted = false;
+        return;
+      }
+      if (page.runState !== "running" || page.runId !== runId) return;
+
+      const i = page.history.reduce((max, item) => Math.max(max, item.i), -1) + 1;
+      const rawReportKey = `run-${runId}`;
+      const agent = input.agent?.map((check) => {
+        const before = page.agent.find((prior) => prior.name === check.name);
+        return { ...check, regressed: !!before && before.pass && !check.pass };
+      });
+      const night: Night = { ...input, i, runId, rawReportKey, agent };
+
       page.history.push(night);
       page.current = {
         mobile: mediansOf(night.scores.mobile),
         desktop: mediansOf(night.scores.desktop),
       };
-      page.status = classifyStatus(mediansOf(page.baseline.mobile), page.history, "mobile");
+      page.agent = agent ?? [];
+      page.status = page.baseline && page.baselineCapturedAt
+        ? classifyStatus(mediansOf(page.baseline.mobile), page.history, "mobile")
+        : "pending";
+      page.runState = undefined;
+      page.lastRunAt = night.iso ?? new Date().toISOString();
+      delete page.lastError;
+      commit.night = night;
+      commit.inserted = true;
     });
+
+    if (commit.night) {
+      const { DB } = cfEnv();
+      await DB.prepare("INSERT OR IGNORE INTO history (tenant, page_id, i, night_json) VALUES (?, ?, ?, ?)")
+        .bind(this.tenant, pageId, commit.night.i, JSON.stringify(commit.night))
+        .run();
+      if (rawReport !== undefined) {
+        await this.putReport(pageId, commit.night.rawReportKey!, {
+          ...((rawReport && typeof rawReport === "object") ? rawReport : { payload: rawReport }),
+          pageId,
+          runId,
+          i: commit.night.i,
+          date: commit.night.date,
+          iso: commit.night.iso,
+          agent: commit.night.agent,
+        });
+      }
+    }
+
+    return { state, night: commit.night, inserted: commit.inserted };
   }
 
-  async addMarker(pageId: string, marker: ChangeMarker): Promise<AppState> {
-    const { DB } = cfEnv();
-    // Keyed by the marker's stable id, not `i` — multiple markers can resolve
-    // to the same history index (`i` is derived from the marker's date).
-    await DB.prepare("INSERT OR REPLACE INTO markers (tenant, page_id, id, marker_json) VALUES (?, ?, ?, ?)")
-      .bind(this.tenant, pageId, marker.id, JSON.stringify(marker))
-      .run();
-
-    return this.withState((state) => {
-      const page = state.pages.find((p) => p.id === pageId);
-      if (!page) return;
-      page.markers = [...(page.markers || []), marker];
+  async addMarker(
+    pageId: string,
+    input: Omit<ChangeMarker, "i">,
+    mutate?: (state: AppState, marker: ChangeMarker) => void,
+  ): Promise<AppState> {
+    const commit: { marker: ChangeMarker | null } = { marker: null };
+    const state = await this.updateState((draft) => {
+      const page = draft.pages.find((item) => item.id === pageId);
+      if (!page) throw new Error(`addMarker: page ${pageId} not found`);
+      const existing = page.markers.find((item) => item.id === input.id);
+      if (existing) {
+        commit.marker = existing;
+        return;
+      }
+      const marker: ChangeMarker = { ...input, i: resolveMarkerIndex(page.history, input.date) };
+      page.markers = [...(page.markers ?? []), marker];
+      mutate?.(draft, marker);
+      commit.marker = marker;
     });
+
+    if (commit.marker) {
+      const { DB } = cfEnv();
+      await DB.prepare("INSERT OR REPLACE INTO markers (tenant, page_id, id, marker_json) VALUES (?, ?, ?, ?)")
+        .bind(this.tenant, pageId, commit.marker.id, JSON.stringify(commit.marker))
+        .run();
+    }
+    return state;
   }
 
   async putReport(pageId: string, key: string, payload: unknown): Promise<void> {
@@ -141,9 +185,9 @@ class CfDataStore implements DataStore {
 
   async getReport(pageId: string, key: string): Promise<unknown | null> {
     const { REPORTS } = cfEnv();
-    const obj = await REPORTS.get(`${this.tenant}/${pageId}/${key}.json`);
-    if (!obj) return null;
-    const parsed = (await obj.json()) as { payload: unknown };
+    const object = await REPORTS.get(`${this.tenant}/${pageId}/${key}.json`);
+    if (!object) return null;
+    const parsed = (await object.json()) as { payload: unknown };
     return parsed.payload;
   }
 }

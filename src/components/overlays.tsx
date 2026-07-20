@@ -132,14 +132,14 @@ function AddModal() {
         <p style={{ margin: "7px 0 0", fontSize: 13, color: C.muted }}>It joins the next nightly run. Capture a baseline once it has data.</p>
       </div>
       <div style={{ padding: "20px 24px" }}>
-        <label style={labelStyle}>Page title</label>
-        <input value={form.title} onChange={(e) => setForm({ title: e.target.value })} placeholder="e.g. Localization" style={{ ...inputStyle, marginBottom: 16 }} />
-        <label style={labelStyle}>URL</label>
-        <input value={form.url} onChange={(e) => setForm({ url: e.target.value })} placeholder="webflow.com/localization" style={{ ...inputStyle, marginBottom: 16 }} />
-        <label style={{ ...labelStyle, marginBottom: 8 }}>Flag</label>
-        <div style={{ display: "inline-flex", padding: 3, background: "rgba(255,255,255,0.05)", border: `1px solid ${C.border2}`, borderRadius: 8 }}>
-          <button onClick={() => setForm({ flag: "priority" })} style={segBtn(form.flag === "priority")}>Priority</button>
-          <button onClick={() => setForm({ flag: "watching" })} style={segBtn(form.flag === "watching")}>Watching</button>
+        <label htmlFor="add-page-title" style={labelStyle}>Page title</label>
+        <input id="add-page-title" value={form.title} onChange={(e) => setForm({ title: e.target.value })} placeholder="e.g. Localization" style={{ ...inputStyle, marginBottom: 16 }} />
+        <label htmlFor="add-page-url" style={labelStyle}>URL</label>
+        <input id="add-page-url" type="url" value={form.url} onChange={(e) => setForm({ url: e.target.value })} placeholder="https://webflow.com/localization" style={{ ...inputStyle, marginBottom: 16 }} />
+        <div style={{ ...labelStyle, marginBottom: 8 }}>Flag</div>
+        <div role="group" aria-label="Flag" style={{ display: "inline-flex", padding: 3, background: "rgba(255,255,255,0.05)", border: `1px solid ${C.border2}`, borderRadius: 8 }}>
+          <button type="button" aria-pressed={form.flag === "priority"} onClick={() => setForm({ flag: "priority" })} style={segBtn(form.flag === "priority")}>Priority</button>
+          <button type="button" aria-pressed={form.flag === "watching"} onClick={() => setForm({ flag: "watching" })} style={segBtn(form.flag === "watching")}>Watching</button>
         </div>
       </div>
       <div style={{ padding: "0 24px 22px", display: "flex", justifyContent: "flex-end", gap: 10 }}>
@@ -159,10 +159,10 @@ function MarkerModal() {
         <p style={{ margin: "7px 0 0", fontSize: 13, color: C.muted }}>Marks the timeline and schedules 2, 7 &amp; 30-day follow-up reports to Slack.</p>
       </div>
       <div style={{ padding: "20px 24px" }}>
-        <label style={labelStyle}>Description</label>
-        <input value={markerText} onChange={(e) => setMarkerText(e.target.value)} placeholder="e.g. Deployed new hero video" style={{ ...inputStyle, marginBottom: 16 }} />
-        <label style={labelStyle}>Date</label>
-        <input value={markerDate} onChange={(e) => setMarkerDate(e.target.value)} placeholder="Jul 16" style={inputStyle} />
+        <label htmlFor="marker-description" style={labelStyle}>Description</label>
+        <input id="marker-description" value={markerText} onChange={(e) => setMarkerText(e.target.value)} placeholder="e.g. Deployed new hero video" style={{ ...inputStyle, marginBottom: 16 }} />
+        <label htmlFor="marker-date" style={labelStyle}>Date</label>
+        <input id="marker-date" type="date" value={markerDate} onChange={(e) => setMarkerDate(e.target.value)} style={inputStyle} />
       </div>
       <div style={{ padding: "0 24px 22px", display: "flex", justifyContent: "flex-end", gap: 10 }}>
         <button onClick={closeModal} style={cancelBtn}>Cancel</button>

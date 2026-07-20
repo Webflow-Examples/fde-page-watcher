@@ -91,23 +91,23 @@ export default function TasksPage() {
 
   return (
     <div>
-      <header style={{ padding: "30px 40px 24px", display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 24 }}>
+      <header className="page-header" style={{ padding: "30px 40px 24px", display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 24 }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 27, fontWeight: 600, letterSpacing: "-0.01em" }}>Tasks</h1>
           <p style={{ margin: "8px 0 0", fontSize: 13.5, color: C.muted }}>Recommendations you&apos;ve committed to. Completing a task logs a change marker on its page and schedules the follow-up reports.</p>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <SegToggle value={taskView} onChange={setTaskView} options={[{ value: "kanban", label: "Columns" }, { value: "list", label: "List" }]} />
+        <div className="page-controls" style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <SegToggle label="Task view" value={taskView} onChange={setTaskView} options={[{ value: "kanban", label: "Columns" }, { value: "list", label: "List" }]} />
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: 12, color: C.faint, whiteSpace: "nowrap" }}>Group by</span>
-            <SegToggle value={taskGroup} onChange={setTaskGroup} options={[{ value: "none", label: "None" }, { value: "page", label: "Page" }, { value: "rec", label: "Recommendation" }]} />
+            <SegToggle label="Group tasks by" value={taskGroup} onChange={setTaskGroup} options={[{ value: "none", label: "None" }, { value: "page", label: "Page" }, { value: "rec", label: "Recommendation" }]} />
           </div>
         </div>
       </header>
 
-      <div style={{ padding: "0 40px 48px" }}>
+      <div className="page-content table-scroll" style={{ padding: "0 40px 48px" }}>
         {taskView === "list" ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div className="narrow-table" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <div style={{ display: "grid", gridTemplateColumns: LIST_GRID, gap: 16, alignItems: "center", padding: "4px 22px 0", fontSize: 11, fontWeight: 550, letterSpacing: "0.04em", textTransform: "uppercase" }}>
               <div />
               <SortHeader label="Recommendation" align="left" active={taskSort.col === "rec"} dir={taskSort.dir} onSort={() => sortTask("rec")} />
@@ -154,7 +154,7 @@ export default function TasksPage() {
                     <span style={{ fontSize: 11, fontWeight: 600, color: C.accentSoft, background: "rgba(59,137,255,0.14)", padding: "1px 8px", borderRadius: 20 }}>{grp.items.length}</span>
                   </div>
                 )}
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16, alignItems: "start" }}>
+                <div className="kanban-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16, alignItems: "start" }}>
                   {columns.map((col) => {
                     const items = grp.items.filter((t) => t.taskStatus === col.status);
                     return (

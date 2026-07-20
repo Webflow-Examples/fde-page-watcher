@@ -1,8 +1,8 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import type { AppState, CategoryKey, Flag, NightScores, ScoreByCategory, Strategy } from "@/lib/types";
-import { shortDate } from "@/lib/ui";
+import type { AppState, CategoryKey, Flag, ScoreByCategory, Strategy } from "@/lib/types";
+import { isoDate } from "@/lib/ui";
 
 type SortDir = "asc" | "desc";
 interface SortState {
@@ -89,8 +89,6 @@ const CAT_KEYS: CategoryKey[] = ["perf", "a11y", "bp", "seo"];
 
 /** A brand-new page starts pending (no baseline / history) — no fabricated provenance. */
 function pendingOptimisticPage(id: string, title: string, url: string, flag: Flag): AppState["pages"][number] {
-  const zeroCat = { m: 0, lo: 0, hi: 0 };
-  const zeroNight: NightScores = { perf: zeroCat, a11y: zeroCat, bp: zeroCat, seo: zeroCat };
   const zeroScores: ScoreByCategory = { perf: 0, a11y: 0, bp: 0, seo: 0 };
   return {
     id,
@@ -98,7 +96,6 @@ function pendingOptimisticPage(id: string, title: string, url: string, flag: Fla
     url,
     flag,
     status: "pending",
-    baseline: { mobile: zeroNight, desktop: zeroNight },
     current: { mobile: zeroScores, desktop: zeroScores },
     history: [],
     markers: [],
@@ -241,7 +238,7 @@ export function StoreProvider({ initial, children }: { initial: AppState; childr
       // Idempotent: re-dropping an already-done card onto Done must not log a
       // second change marker or a duplicate set of follow-ups (audit).
       if (to === rec.taskStatus) return;
-      const date = shortDate();
+      const date = isoDate();
       if (to === "done") {
         // Completing a task logs a change marker + schedules follow-ups, so it
         // goes through the marker route (sequential storage, REQ-043/044).
@@ -297,7 +294,7 @@ export function StoreProvider({ initial, children }: { initial: AppState; childr
     }
     const id = markerPageId;
     if (!id) return;
-    const date = markerDate.trim() || shortDate();
+    const date = markerDate.trim() || isoDate();
     const cur = dataRef.current;
     setModal(null);
     mutate(
@@ -317,21 +314,20 @@ export function StoreProvider({ initial, children }: { initial: AppState; childr
       flash(`Run started for ${p ? p.title : "this page"} — collecting in the background…`);
       // The run route returns 202 immediately and collects in the background;
       // poll the read model until this page's runState settles (audit High #1).
-      const poll = (tries: number) => {
-        if (tries > 40) return; // ~2-minute ceiling
+      const poll = () => {
         window.setTimeout(() => {
           fetch("/api/state")
             .then((r) => (r.ok ? r.json() : null))
             .then((res) => {
               const st = (res?.state ?? null) as AppState | null;
-              if (!st) return poll(tries + 1);
+              if (!st) return poll();
               apply(st);
               const pg = st.pages.find((x) => x.id === id);
               if (!pg) return;
-              if (pg.runState === "running") return poll(tries + 1);
+              if (pg.runState === "running") return poll();
               flash(pg.runState === "failed" ? `Run failed for ${pg.title}` : `Run complete for ${pg.title}`);
             })
-            .catch(() => poll(tries + 1));
+            .catch(() => poll());
         }, 3000);
       };
       fetch(`/api/pages/${id}/run`, { method: "POST" })
@@ -339,7 +335,7 @@ export function StoreProvider({ initial, children }: { initial: AppState; childr
           if (!r.ok) throw new Error(`HTTP ${r.status}`);
           const res = (await r.json().catch(() => null)) as { state?: AppState } | null;
           if (res?.state) apply(res.state);
-          poll(0);
+          poll();
         })
         .catch(() => flash("Couldn't start the run — try again"));
     },
@@ -390,7 +386,7 @@ export function StoreProvider({ initial, children }: { initial: AppState; childr
     openMarker: (pageId) => {
       setMarkerPageId(pageId);
       setMarkerText("");
-      setMarkerDate("");
+      setMarkerDate(isoDate());
       setModal("marker");
     },
     closeModal: () => setModal(null),

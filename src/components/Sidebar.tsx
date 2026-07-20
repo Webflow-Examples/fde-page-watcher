@@ -32,6 +32,7 @@ export function Sidebar() {
 
   return (
     <aside
+      className="app-sidebar"
       style={{
         width: 244,
         flex: "none",
@@ -44,17 +45,17 @@ export function Sidebar() {
         height: "100vh",
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "22px 22px 20px" }}>
+      <div className="sidebar-brand" style={{ display: "flex", alignItems: "center", gap: 10, padding: "22px 22px 20px" }}>
         <div style={{ width: 30, height: 30, borderRadius: 7, background: C.accent, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <LogoMark size={17} style={{ color: "#fff" }} />
         </div>
-        <div style={{ lineHeight: 1.15 }}>
+        <div className="sidebar-brand-text" style={{ lineHeight: 1.15 }}>
           <div style={{ fontSize: 14.5, fontWeight: 600 }}>Page Watch</div>
           <div style={{ fontSize: 11, color: C.muted }}>Brand Studio</div>
         </div>
       </div>
 
-      <nav style={{ display: "flex", flexDirection: "column", gap: 3, padding: "6px 12px" }}>
+      <nav className="sidebar-nav" style={{ display: "flex", flexDirection: "column", gap: 3, padding: "6px 12px" }}>
         {navItems.map(({ href, label, Icon, badge }) => {
           const active = pathname === href || (href === "/dashboard" && pathname === "/");
           const count = badge === "inbox" ? inboxCount : badge === "tasks" ? taskCount : 0;
@@ -62,6 +63,7 @@ export function Sidebar() {
             <Link
               key={href}
               href={href}
+              className="sidebar-link"
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -76,7 +78,7 @@ export function Sidebar() {
               }}
             >
               <Icon size={17} />
-              {label}
+              <span className="sidebar-link-label">{label}</span>
               {badge && count > 0 && (
                 <span
                   style={{
@@ -97,7 +99,7 @@ export function Sidebar() {
         })}
       </nav>
 
-      <div style={{ marginTop: 26, padding: "0 20px" }}>
+      <div className="sidebar-schedule" style={{ marginTop: 26, padding: "0 20px" }}>
         <div style={{ fontSize: 10.5, fontWeight: 550, letterSpacing: "0.06em", color: C.faint, textTransform: "uppercase", marginBottom: 10 }}>
           Next nightly run
         </div>

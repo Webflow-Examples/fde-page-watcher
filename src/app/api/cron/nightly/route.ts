@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { runNightly } from "@/lib/collector";
+import { evaluateCronAccess } from "@/lib/access";
 import { getEnv } from "@/lib/env";
 
 export const runtime = "nodejs";
@@ -8,13 +9,16 @@ export const maxDuration = 800;
 
 /**
  * Nightly collection: priority pages first, both strategies, agent scan,
- * alerting, and due follow-ups (REQ-013). Protected by CRON_SECRET when set.
+ * alerting, and due follow-ups (REQ-013). CRON_SECRET is mandatory outside
+ * development and fails closed when deployment configuration is missing.
  * Wire a Webflow Cloud scheduled job (or GitHub Action) to POST here nightly.
  */
 export async function POST(req: Request) {
-  const secret = getEnv("CRON_SECRET");
-  if (secret && req.headers.get("authorization") !== `Bearer ${secret}`) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const access = evaluateCronAccess(req.headers.get("authorization"), {
+    secret: getEnv("CRON_SECRET"),
+  });
+  if (!access.allowed) {
+    return NextResponse.json({ error: access.message }, { status: access.status });
   }
   try {
     const result = await runNightly();

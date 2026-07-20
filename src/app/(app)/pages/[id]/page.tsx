@@ -43,7 +43,7 @@ export default function PageDetail() {
   const apct = total ? Math.round((pass / total) * 100) : 0;
   const apm = scoreMeta(apct);
   const failList = available.filter((c) => !c.pass);
-  const isPending = page.status === "pending" || page.history.length === 0;
+  const isPending = !page.baseline || !page.baselineCapturedAt;
 
   const tabs: { key: "overview" | "history" | "audits" | "agent"; label: string }[] = [
     { key: "overview", label: "Overview" },
@@ -54,12 +54,12 @@ export default function PageDetail() {
 
   return (
     <div>
-      <header style={{ padding: "22px 40px 0", borderBottom: `1px solid ${C.border}` }}>
+      <header className="page-header" style={{ padding: "22px 40px 0", borderBottom: `1px solid ${C.border}` }}>
         <button onClick={() => router.push("/dashboard")} style={{ display: "inline-flex", alignItems: "center", gap: 6, border: "none", background: "none", fontSize: 12.5, color: C.muted, cursor: "pointer", padding: "0 0 14px" }}>
           <ChevronLeftIcon size={14} />
           Page performance
         </button>
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 24, paddingBottom: 20 }}>
+        <div className="detail-heading" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 24, paddingBottom: 20 }}>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
               <h1 style={{ margin: 0, fontSize: 25, fontWeight: 600, letterSpacing: "-0.01em" }}>{page.title}</h1>
@@ -67,11 +67,11 @@ export default function PageDetail() {
             </div>
             <div style={{ fontSize: 13, color: C.muted, marginTop: 7 }}>{page.url}</div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <SegToggle value={strategy} onChange={setStrategy} options={[{ value: "mobile", label: "Mobile", icon: <MobileIcon size={13} /> }, { value: "desktop", label: "Desktop", icon: <DesktopIcon size={13} /> }]} />
-            <button onClick={() => store.runPage(page.id)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 15px", border: "none", borderRadius: 8, background: C.accent, color: "#fff", fontSize: 12.5, fontWeight: 550, cursor: "pointer", whiteSpace: "nowrap" }}>
+          <div className="page-controls" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <SegToggle label="Page strategy" value={strategy} onChange={setStrategy} options={[{ value: "mobile", label: "Mobile", icon: <MobileIcon size={13} /> }, { value: "desktop", label: "Desktop", icon: <DesktopIcon size={13} /> }]} />
+            <button disabled={page.runState === "running"} onClick={() => store.runPage(page.id)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 15px", border: "none", borderRadius: 8, background: C.accent, color: "#fff", fontSize: 12.5, fontWeight: 550, cursor: page.runState === "running" ? "wait" : "pointer", opacity: page.runState === "running" ? 0.65 : 1, whiteSpace: "nowrap" }}>
               <RefreshIcon size={15} style={{ color: "#fff" }} />
-              Run now
+              {page.runState === "running" ? "Running…" : "Run now"}
             </button>
             <button onClick={() => store.openMarker(page.id)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 15px", border: `1px solid ${C.border2}`, borderRadius: 8, background: "rgba(255,255,255,0.04)", color: C.text, fontSize: 12.5, fontWeight: 500, cursor: "pointer", whiteSpace: "nowrap" }}>
               <PlusIcon size={15} style={{ color: C.text }} />
@@ -79,29 +79,43 @@ export default function PageDetail() {
             </button>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 2 }}>
+        {!isPending && <div className="detail-tabs" role="tablist" aria-label="Page detail" style={{ display: "flex", gap: 2 }}>
           {tabs.map((t) => (
             <button
               key={t.key}
+              id={`page-tab-${t.key}`}
+              role="tab"
+              aria-selected={tab === t.key}
+              aria-controls={`page-panel-${t.key}`}
+              tabIndex={tab === t.key ? 0 : -1}
               onClick={() => setTab(t.key)}
+              onKeyDown={(event) => {
+                if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+                event.preventDefault();
+                const index = tabs.findIndex((item) => item.key === t.key);
+                const offset = event.key === "ArrowRight" ? 1 : -1;
+                const next = tabs[(index + offset + tabs.length) % tabs.length];
+                setTab(next.key);
+                document.getElementById(`page-tab-${next.key}`)?.focus();
+              }}
               style={{ border: "none", background: "none", fontSize: 13.5, fontWeight: 500, padding: "11px 4px", marginRight: 24, cursor: "pointer", color: tab === t.key ? "#FFFFFF" : C.muted, borderBottom: `2px solid ${tab === t.key ? C.accentBright : "transparent"}` }}
             >
               {t.label}
             </button>
           ))}
-        </div>
+        </div>}
       </header>
 
-      <div style={{ padding: "28px 40px 56px" }}>
+      <div className="detail-content" style={{ padding: "28px 40px 56px" }}>
         {isPending ? (
           <PendingPanel page={page} store={store} />
         ) : (
-          <>
+          <div role="tabpanel" id={`page-panel-${tab}`} aria-labelledby={`page-tab-${tab}`} tabIndex={0}>
             {tab === "overview" && <OverviewTab page={page} recs={recs} strategy={strategy} apct={apct} apm={apm} pass={pass} total={total} failList={failList} store={store} />}
             {tab === "history" && <HistoryTab page={page} strategy={strategy} chartCat={chartCat} setChartCat={setChartCat} store={store} />}
             {tab === "audits" && <OpportunitiesTab />}
             {tab === "agent" && <AgentTab page={page} pass={pass} fail={total - pass} unavailable={unavailableCount} />}
-          </>
+          </div>
         )}
       </div>
     </div>
@@ -136,10 +150,10 @@ function OverviewTab({
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 16, marginBottom: 20 }}>
         {CATEGORIES.map((c) => {
           const v = page.current[strategy][c.key];
-          const bv = page.baseline[strategy][c.key].m;
+          const bv = page.baseline![strategy][c.key].m;
           const sm = scoreMeta(v);
           const dm = deltaMeta(v, bv);
-          const night = last.scores[strategy][c.key];
+          const night = last?.scores[strategy][c.key] ?? page.baseline![strategy][c.key];
           return (
             <div key={c.key} style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, padding: "18px 19px 8px" }}>
               <div style={{ fontSize: 12.5, color: C.muted, marginBottom: 10 }}>{c.label}</div>
@@ -293,14 +307,14 @@ function HistoryTab({
       <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, padding: 22, marginBottom: 20 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
           <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>Score over time · {page.history.length} nights</h3>
-          <SegToggle value={chartCat} onChange={setChartCat} options={CATEGORIES.map((c) => ({ value: c.key, label: c.short }))} />
+          <SegToggle label="History category" value={chartCat} onChange={setChartCat} options={CATEGORIES.map((c) => ({ value: c.key, label: c.short }))} />
         </div>
         <div style={{ fontSize: 12, color: C.faint, marginBottom: 16 }}>Median line with the run-to-run range shaded; dashed line is the baseline; vertical markers are logged changes.</div>
-        <HistoryChart history={page.history} strategy={strategy} catKey={chartCat} baseline={page.baseline[strategy][chartCat].m} markers={page.markers} />
+        <HistoryChart history={page.history} strategy={strategy} catKey={chartCat} baseline={page.baseline![strategy][chartCat].m} markers={page.markers} />
       </div>
 
-      <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, overflow: "hidden" }}>
-        <div style={{ display: "grid", gridTemplateColumns: GRID, padding: "14px 22px", borderBottom: `1px solid ${C.border}`, fontSize: 11, fontWeight: 550, letterSpacing: "0.05em", textTransform: "uppercase", color: C.faint }}>
+      <div className="table-scroll" style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13 }}>
+        <div className="narrow-table" style={{ display: "grid", gridTemplateColumns: GRID, padding: "14px 22px", borderBottom: `1px solid ${C.border}`, fontSize: 11, fontWeight: 550, letterSpacing: "0.05em", textTransform: "uppercase", color: C.faint }}>
           <div>Night</div>
           <div>Marker</div>
           <div style={{ textAlign: "center" }}>Perf</div>
@@ -316,7 +330,7 @@ function HistoryTab({
             return <div style={{ textAlign: "center", fontWeight: 600, color: scoreMeta(v).fg }}>{v}</div>;
           };
           return (
-            <div key={d.i} style={{ display: "grid", gridTemplateColumns: GRID, alignItems: "center", padding: "12px 22px", borderBottom: `1px solid ${C.rowBorder}`, fontSize: 13 }}>
+            <div key={d.i} className="narrow-table" style={{ display: "grid", gridTemplateColumns: GRID, alignItems: "center", padding: "12px 22px", borderBottom: `1px solid ${C.rowBorder}`, fontSize: 13 }}>
               <div style={{ fontWeight: 500 }}>{d.date}</div>
               <div style={{ fontSize: 12, color: mk ? C.violetSoft : "#4A4A50", display: "flex", alignItems: "center", gap: 6 }}>{mk ? `◆ ${mk.text}` : "—"}</div>
               {cell("perf")}
@@ -335,15 +349,18 @@ function HistoryTab({
 }
 
 function PendingPanel({ page, store }: { page: WatchPage; store: ReturnType<typeof useStore> }) {
+  const hasSnapshot = page.history.length > 0;
   return (
     <div style={{ padding: "56px 24px", textAlign: "center", background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13 }}>
-      <div style={{ fontSize: 16, fontWeight: 600 }}>No data yet</div>
+      <div style={{ fontSize: 16, fontWeight: 600 }}>{hasSnapshot ? "Snapshot collected — baseline required" : "No collection yet"}</div>
       <div style={{ fontSize: 13, color: C.muted, marginTop: 8, maxWidth: 460, marginInline: "auto", lineHeight: 1.55 }}>
-        This page is pending its first collection. Capture a baseline to anchor future comparisons, or run now to collect a first snapshot. It also joins the next nightly run automatically.
+        {hasSnapshot
+          ? `The latest mobile snapshot is Performance ${page.current.mobile.perf}, Accessibility ${page.current.mobile.a11y}, Best Practices ${page.current.mobile.bp}, and SEO ${page.current.mobile.seo}. Capture an explicit baseline before deltas or health classification begin.`
+          : "Run now to collect a first snapshot, or capture an explicit baseline to anchor future comparisons. This page also joins the next nightly run automatically."}
       </div>
       <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 22 }}>
         <button onClick={() => store.captureBaseline(page.id)} style={{ border: "none", background: C.accent, color: "#fff", fontSize: 12.5, fontWeight: 550, padding: "9px 16px", borderRadius: 8, cursor: "pointer" }}>Capture baseline</button>
-        <button onClick={() => store.runPage(page.id)} style={{ border: `1px solid ${C.border2}`, background: "rgba(255,255,255,0.04)", color: C.text, fontSize: 12.5, fontWeight: 500, padding: "9px 16px", borderRadius: 8, cursor: "pointer" }}>Run now</button>
+        <button disabled={page.runState === "running"} onClick={() => store.runPage(page.id)} style={{ border: `1px solid ${C.border2}`, background: "rgba(255,255,255,0.04)", color: C.text, fontSize: 12.5, fontWeight: 500, padding: "9px 16px", borderRadius: 8, cursor: page.runState === "running" ? "wait" : "pointer", opacity: page.runState === "running" ? 0.65 : 1 }}>{page.runState === "running" ? "Running…" : "Run now"}</button>
       </div>
     </div>
   );
