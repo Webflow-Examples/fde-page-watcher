@@ -33,11 +33,16 @@ export default function PageDetail() {
     );
   }
 
-  const pass = page.agent.filter((c) => c.pass).length;
-  const total = page.agent.length;
+  // Unavailable checks (scan couldn't reach the page, REQ-033) are neither
+  // passing nor failing — exclude them from the pass rate and the fail list
+  // instead of counting them as red failures (audit).
+  const available = page.agent.filter((c) => !c.unavailable);
+  const unavailableCount = page.agent.length - available.length;
+  const pass = available.filter((c) => c.pass).length;
+  const total = available.length;
   const apct = total ? Math.round((pass / total) * 100) : 0;
   const apm = scoreMeta(apct);
-  const failList = page.agent.filter((c) => !c.pass && !c.unavailable);
+  const failList = available.filter((c) => !c.pass);
   const isPending = page.status === "pending" || page.history.length === 0;
 
   const tabs: { key: "overview" | "history" | "audits" | "agent"; label: string }[] = [
@@ -95,7 +100,7 @@ export default function PageDetail() {
             {tab === "overview" && <OverviewTab page={page} recs={recs} strategy={strategy} apct={apct} apm={apm} pass={pass} total={total} failList={failList} store={store} />}
             {tab === "history" && <HistoryTab page={page} strategy={strategy} chartCat={chartCat} setChartCat={setChartCat} store={store} />}
             {tab === "audits" && <OpportunitiesTab />}
-            {tab === "agent" && <AgentTab page={page} pass={pass} fail={total - pass} />}
+            {tab === "agent" && <AgentTab page={page} pass={pass} fail={total - pass} unavailable={unavailableCount} />}
           </>
         )}
       </div>
@@ -369,10 +374,11 @@ function OpportunitiesTab() {
   );
 }
 
-function AgentTab({ page, pass, fail }: { page: WatchPage; pass: number; fail: number }) {
+function AgentTab({ page, pass, fail, unavailable }: { page: WatchPage; pass: number; fail: number; unavailable: number }) {
   const groups = new Map<string, WatchPage["agent"]>();
   page.agent.forEach((c) => groups.set(c.group, [...(groups.get(c.group) ?? []), c]));
   const date = page.history[page.history.length - 1]?.date ?? "—";
+  const allUnavailable = page.agent.length > 0 && unavailable === page.agent.length;
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20, padding: "15px 18px", background: C.panel, border: `1px solid ${C.border}`, borderRadius: 11 }}>
@@ -380,11 +386,16 @@ function AgentTab({ page, pass, fail }: { page: WatchPage; pass: number; fail: n
         <div style={{ marginLeft: "auto", display: "flex", gap: 16, fontSize: 12.5, fontWeight: 500 }}>
           <span style={{ color: C.green }}>{pass} passing</span>
           <span style={{ color: C.red }}>{fail} failing</span>
+          {unavailable > 0 && <span style={{ color: C.muted }}>{unavailable} unavailable</span>}
         </div>
       </div>
       {page.agent.length === 0 ? (
         <div style={{ padding: "40px 22px", textAlign: "center", background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, color: C.muted, fontSize: 13 }}>
           No agent-readiness scan yet. Run one from the header.
+        </div>
+      ) : allUnavailable ? (
+        <div style={{ padding: "40px 22px", textAlign: "center", background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, color: C.muted, fontSize: 13 }}>
+          The last scan couldn&apos;t reach this page, so every check is unavailable — not failing. Try running again once the page is reachable.
         </div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16, alignItems: "start" }}>
@@ -392,13 +403,24 @@ function AgentTab({ page, pass, fail }: { page: WatchPage; pass: number; fail: n
             <div key={name} style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, padding: "18px 20px" }}>
               <div style={{ fontSize: 11, fontWeight: 550, letterSpacing: "0.05em", textTransform: "uppercase", color: C.faint, marginBottom: 15 }}>{name}</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                {checks.map((chk) => (
-                  <div key={chk.name} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <span style={{ flex: "none", width: 18, height: 18, borderRadius: 5, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: C.bg, background: chk.pass ? C.green : C.red }}>{chk.pass ? "✓" : "✕"}</span>
-                    <span style={{ fontSize: 13, color: chk.pass ? C.dim : C.redSoft }}>{chk.name}</span>
-                    {chk.regressed && <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 600, color: C.redSoft, background: "rgba(255,92,108,0.14)", padding: "1px 7px", borderRadius: 4 }}>regressed</span>}
-                  </div>
-                ))}
+                {checks.map((chk) => {
+                  // Three states: pass (green ✓), fail (red ✕), unavailable (neutral –).
+                  const mark = chk.unavailable ? "–" : chk.pass ? "✓" : "✕";
+                  const markBg = chk.unavailable ? C.border2 : chk.pass ? C.green : C.red;
+                  const markColor = chk.unavailable ? C.muted : C.bg;
+                  const textColor = chk.unavailable ? C.faint : chk.pass ? C.dim : C.redSoft;
+                  return (
+                    <div key={chk.name} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <span style={{ flex: "none", width: 18, height: 18, borderRadius: 5, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: markColor, background: markBg }}>{mark}</span>
+                      <span style={{ fontSize: 13, color: textColor }}>{chk.name}</span>
+                      {chk.unavailable ? (
+                        <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 600, color: C.muted, background: "rgba(255,255,255,0.06)", padding: "1px 7px", borderRadius: 4 }}>unavailable</span>
+                      ) : (
+                        chk.regressed && <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 600, color: C.redSoft, background: "rgba(255,92,108,0.14)", padding: "1px 7px", borderRadius: 4 }}>regressed</span>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           ))}
