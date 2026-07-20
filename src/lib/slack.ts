@@ -1,8 +1,10 @@
 // Slack notifier. Posts to SLACK_WEBHOOK_URL if configured; otherwise logs and
 // no-ops so the pipeline runs without a webhook.
 
+import { getEnv } from "./env";
+
 async function post(text: string): Promise<{ sent: boolean }> {
-  const webhook = process.env.SLACK_WEBHOOK_URL;
+  const webhook = getEnv("SLACK_WEBHOOK_URL");
   if (!webhook) {
     console.log(`[slack:noop] ${text}`);
     return { sent: false };

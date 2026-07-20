@@ -1,6 +1,7 @@
 import { CATEGORIES } from "./types";
 import type { CategoryKey, NightScores, ScoreByCategory, Strategy } from "./types";
 import { median, range } from "./scoring";
+import { getEnv } from "./env";
 
 // PageSpeed Insights (Lighthouse) client. Works keyless at low volume; set
 // PAGESPEED_API_KEY in .env.local for higher quota. Retries on failure and
@@ -33,7 +34,7 @@ export function normalizeUrl(url: string): string {
 
 /** Runs per strategy — 5 per the spec, overridable via PSI_RUNS for quick checks. */
 export function defaultRuns(): number {
-  return Math.max(1, Math.min(5, Number(process.env.PSI_RUNS) || 5));
+  return Math.max(1, Math.min(5, Number(getEnv("PSI_RUNS")) || 5));
 }
 
 interface PsiResponse {
@@ -51,7 +52,7 @@ function toScore(v: number | null | undefined): number {
 export async function runOnce(url: string, strategy: Strategy, signal?: AbortSignal): Promise<RunResult> {
   const params = new URLSearchParams({ url: normalizeUrl(url), strategy });
   for (const c of CATEGORIES) params.append("category", c.psi);
-  const key = process.env.PAGESPEED_API_KEY;
+  const key = getEnv("PAGESPEED_API_KEY");
   if (key) params.set("key", key);
 
   const res = await fetch(`${PSI_ENDPOINT}?${params.toString()}`, { signal });
@@ -102,7 +103,7 @@ export async function collect(url: string, strategy: Strategy, n = defaultRuns()
   // Offline test seam: with PSI_MOCK set, return deterministic scores without
   // calling the API, so the collection pipeline can be verified where keyless
   // PSI is rate-limited. Real runs (with PAGESPEED_API_KEY) never take this path.
-  if (process.env.PSI_MOCK) return mockCollect(url, strategy, n);
+  if (getEnv("PSI_MOCK")) return mockCollect(url, strategy, n);
 
   const runs: RunResult[] = [];
   for (let i = 0; i < n; i++) {
