@@ -45,7 +45,7 @@ export function buildWatcher(pages: WatchPage[], recs: Rec[], strategy: Strategy
       text: `dropped ${Math.max(0, drop)} points on Performance${marker ? ` after ${marker}` : ""}.`,
     });
   }
-  const below = pages.filter((p) => p.status !== "degraded" && (p.current[strategy]?.perf ?? 100) < 60);
+  const below = pages.filter((p) => p.status !== "degraded" && p.status !== "pending" && (p.current[strategy]?.perf ?? 100) < 60);
   if (below.length) {
     const names = below.map((p) => p.title);
     changed.push({
@@ -56,7 +56,8 @@ export function buildWatcher(pages: WatchPage[], recs: Rec[], strategy: Strategy
   }
   changed.push({ lead: "", leadColor: "", text: "Accessibility and SEO are stable across the board." });
 
-  const focus = pages.find((p) => p.status === "degraded") ?? [...pages].sort((a, b) => (a.current[strategy]?.perf ?? 100) - (b.current[strategy]?.perf ?? 100))[0];
+  const ranked = pages.filter((p) => p.status !== "pending");
+  const focus = ranked.find((p) => p.status === "degraded") ?? [...ranked].sort((a, b) => (a.current[strategy]?.perf ?? 100) - (b.current[strategy]?.perf ?? 100))[0];
   let topRec: WatcherSummary["topRec"] = null;
   if (focus) {
     const cand = recs

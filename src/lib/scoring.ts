@@ -27,6 +27,7 @@ export interface StatusMeta {
 export function statusMeta(st: PageStatus): StatusMeta {
   if (st === "healthy") return { label: "Healthy", fg: "#35D07F", bg: "rgba(53,208,127,0.13)", shape: "circle" };
   if (st === "improvable") return { label: "Improvable", fg: "#FF9A3D", bg: "rgba(255,154,61,0.13)", shape: "triangle" };
+  if (st === "pending") return { label: "Pending", fg: "#8A8A90", bg: "rgba(255,255,255,0.06)", shape: "circle" };
   return { label: "Degraded", fg: "#FF5C6C", bg: "rgba(255,92,108,0.13)", shape: "square" };
 }
 
