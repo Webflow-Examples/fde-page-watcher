@@ -44,7 +44,8 @@ export interface Night {
 
 /** A user-logged (or acted-upon) change marker on a page's timeline. */
 export interface ChangeMarker {
-  i: number; // history index the marker sits at
+  id: string; // stable unique id (follow-ups reference this, not the text)
+  i: number; // history index the marker sits at — resolved from `date`, not the latest night
   date: string;
   text: string;
 }
@@ -62,11 +63,14 @@ export interface AgentCheck {
 /** A scheduled follow-up comparison after a change marker (REQ-044). */
 export interface FollowUp {
   pageId: string;
-  markerText: string;
+  markerId: string; // unique marker reference (lookup no longer relies on text)
+  markerText: string; // retained for the Slack message
   markerDate: string;
   interval: "2d" | "7d" | "30d";
   dueISO: string;
   sent: boolean;
+  attempts?: number; // delivery attempts; a failed send is retried, not consumed (REQ-045)
+  lastAttemptISO?: string;
 }
 
 /** A watchlisted page and everything tracked about it. */
@@ -83,6 +87,11 @@ export interface WatchPage {
   agent: AgentCheck[]; // latest agent-readiness scan (per-check)
   baselineCapturedAt?: string;
   acted?: Record<string, boolean>;
+  // Async collection state (REQ-054): a run is queued/executed in the
+  // background; the client polls until it settles. Undefined == idle.
+  runState?: "running" | "failed";
+  lastRunAt?: string;
+  lastError?: string;
 }
 
 export type RecStatus = "inbox" | "task" | "ignored";
