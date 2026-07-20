@@ -85,3 +85,119 @@ body {
 button {
   font-family: inherit;
 }
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent-bright);
+  outline-offset: 3px;
+}
+
+.table-scroll {
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-gutter: stable;
+}
+
+@media (max-width: 760px) {
+  .app-shell {
+    display: block !important;
+  }
+
+  .app-sidebar {
+    width: 100% !important;
+    height: auto !important;
+    position: sticky !important;
+    z-index: 50;
+    flex-direction: row !important;
+    align-items: center;
+    border-right: 0 !important;
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+  }
+
+  .app-main {
+    width: 100%;
+  }
+
+  .sidebar-brand {
+    padding: 9px 8px 9px 12px !important;
+  }
+
+  .sidebar-brand-text,
+  .sidebar-schedule {
+    display: none;
+  }
+
+  .sidebar-nav {
+    flex: 1;
+    flex-direction: row !important;
+    padding: 7px 10px 7px 4px !important;
+  }
+
+  .sidebar-link {
+    flex: 1;
+    justify-content: center;
+    gap: 6px !important;
+    padding: 8px !important;
+    white-space: nowrap;
+  }
+
+  .sidebar-link > span:last-child:not(.sidebar-link-label) {
+    margin-left: 0 !important;
+  }
+
+  .page-header {
+    padding: 22px 18px 18px !important;
+    align-items: flex-start !important;
+    flex-direction: column !important;
+    flex-wrap: wrap !important;
+  }
+
+  .page-controls {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .page-content {
+    padding: 0 18px 36px !important;
+  }
+
+  .detail-content {
+    padding: 22px 18px 40px !important;
+  }
+
+  .detail-heading {
+    flex-direction: column;
+  }
+
+  .detail-tabs {
+    overflow-x: auto;
+  }
+
+  .narrow-table {
+    min-width: 760px;
+  }
+
+  .kanban-grid {
+    grid-template-columns: repeat(3, minmax(260px, 1fr)) !important;
+    min-width: 820px;
+  }
+}
+
+@media (max-width: 480px) {
+  .sidebar-link-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+}

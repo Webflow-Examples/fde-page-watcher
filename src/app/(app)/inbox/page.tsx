@@ -53,14 +53,15 @@ export default function InboxPage() {
 
   return (
     <div>
-      <header style={{ padding: "30px 40px 24px", display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 24 }}>
+      <header className="page-header" style={{ padding: "30px 40px 24px", display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 24 }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 27, fontWeight: 600, letterSpacing: "-0.01em" }}>Inbox</h1>
           <p style={{ margin: "8px 0 0", fontSize: 13.5, color: C.muted }}>New recommendations from the latest nightly runs. Save the ones you&apos;ll act on as tasks, or ignore the rest.</p>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div className="page-controls" style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 12, color: C.faint }}>Group by</span>
           <SegToggle
+            label="Group inbox by"
             value={inboxGroup}
             onChange={setInboxGroup}
             options={[
@@ -72,7 +73,7 @@ export default function InboxPage() {
         </div>
       </header>
 
-      <div style={{ padding: "0 40px 48px" }}>
+      <div className="page-content table-scroll" style={{ padding: "0 40px 48px" }}>
         {items.length === 0 ? (
           <div style={{ padding: "70px 24px", textAlign: "center", background: C.panel, border: `1px solid ${C.border}`, borderRadius: 14 }}>
             <div style={{ width: 52, height: 52, margin: "0 auto 16px", borderRadius: "50%", background: "rgba(53,208,127,0.14)", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -82,7 +83,7 @@ export default function InboxPage() {
             <div style={{ fontSize: 13, color: C.muted, marginTop: 6 }}>Every recommendation has been triaged. New ones arrive after tonight&apos;s run.</div>
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div className="narrow-table" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <div style={{ display: "grid", gridTemplateColumns: GRID, gap: 16, alignItems: "center", padding: "4px 22px 0", fontSize: 11, fontWeight: 550, letterSpacing: "0.04em", textTransform: "uppercase" }}>
               <div />
               <SortHeader label="Recommendation" align="left" active={inboxSort.col === "rec"} dir={inboxSort.dir} onSort={() => sortInbox("rec")} />
