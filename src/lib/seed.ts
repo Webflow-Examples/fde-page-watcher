@@ -131,7 +131,7 @@ export function buildSeedState(): AppState {
       seo: { m: p.base.seo, lo: clamp(p.base.seo - 1), hi: clamp(p.base.seo + 1) },
     };
     const baseline: StrategyScores = { mobile: baseMobile, desktop: toDesktop(baseMobile) };
-    const markers = p.marker ? [{ i: p.marker.i, date: dateFor(p.marker.i), text: p.marker.text }] : [];
+    const markers = p.marker ? [{ id: `${p.id}-m0`, i: p.marker.i, date: dateFor(p.marker.i), text: p.marker.text }] : [];
     return {
       id: p.id,
       title: p.title,

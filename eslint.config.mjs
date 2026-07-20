@@ -16,6 +16,12 @@ const eslintConfig = defineConfig([
     "cloudflare-env.d.ts",
     ".open-next/**",
     ".wrangler/**",
+    // Generated / vendored output anywhere in the tree — including nested git
+    // worktrees under .claude/worktrees, whose built .next files otherwise
+    // flood `npm run lint` with thousands of findings from outside src.
+    "**/.next/**",
+    "**/node_modules/**",
+    ".claude/**",
   ]),
 ]);
 

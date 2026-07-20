@@ -1,36 +1,64 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Page Watch · Brand Studio
 
-## Getting Started
+Nightly Lighthouse (PageSpeed Insights) and agent-readiness monitoring for a
+watchlist of priority Webflow.com pages. For each page it tracks per-strategy
+(mobile + desktop) scores over time, classifies status, surfaces
+recommendations, lets you triage them into tasks, log change markers, and posts
+drop alerts and 2/7/30-day follow-up comparisons to Slack.
 
-First, run the development server:
+Built with Next.js (App Router) + React. TypeScript throughout.
+
+## Getting started
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev      # http://localhost:3000  (the bundled launch config uses 3100)
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Other scripts:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm run build    # production build
+npm start        # serve the production build
+npm run lint     # eslint
+npm test         # vitest (unit tests for scoring / follow-ups / watcher)
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Environment
 
-## Learn More
+All are optional for local development — the app runs without them.
 
-To learn more about Next.js, take a look at the following resources:
+| Variable            | Purpose                                                                                     |
+| ------------------- | ------------------------------------------------------------------------------------------- |
+| `PAGESPEED_API_KEY` | PageSpeed Insights API key. Works keyless at low volume; a key raises the quota.            |
+| `SLACK_WEBHOOK_URL` | Incoming webhook for drop alerts and follow-up reports. Unset → messages are logged only.   |
+| `CRON_SECRET`       | If set, `POST /api/cron/nightly` requires `Authorization: Bearer <CRON_SECRET>`.            |
+| `PSI_MOCK`          | When set, collection returns deterministic synthetic scores instead of calling PSI (tests). |
+| `PSI_RUNS`          | Override the number of PSI runs per strategy (1–5, default 5) for quick checks.             |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Put these in `.env.local`.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## How it works
 
-## Deploy on Vercel
+- **Collection** — `runPage` measures each page 5× per strategy via PSI (runs
+  execute concurrently), takes the per-category median with the run-to-run
+  range, runs a dependency-free agent-readiness scan, and appends a night to the
+  page's history. On-demand runs are asynchronous: `POST /api/pages/[id]/run`
+  returns `202` immediately and the client polls `GET /api/state` until the
+  page's `runState` settles.
+- **Nightly job** — wire a scheduled job to `POST /api/cron/nightly` (priority
+  pages first, then due follow-ups). Protect it with `CRON_SECRET`.
+- **Storage** — a tenant-scoped `DataStore` (see `src/lib/store`) mirrors the
+  three Webflow Cloud tiers (key-value read model, append-only history/markers,
+  object storage for raw reports) on the local filesystem under `.data/`, with
+  an in-memory fallback for read-only hosts. Swap in a Webflow Cloud adapter by
+  implementing the same interface — no call-site changes.
+- **State mutations** go through targeted server-side domain endpoints
+  (`/api/pages`, `/api/recs`, `/api/pages/[id]/*`) that read-modify-write one
+  slice of state, so a client action can't overwrite data from a concurrent
+  nightly run.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Product decisions
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Four scoring/scheduling choices are documented in [DECISIONS.md](DECISIONS.md)
+and are pending explicit product sign-off.

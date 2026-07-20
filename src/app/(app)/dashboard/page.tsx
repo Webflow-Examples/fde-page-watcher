@@ -34,16 +34,24 @@ export default function DashboardPage() {
     : "today 03:12";
 
   const rows = pages.map((p) => {
-    const pass = p.agent.filter((c) => c.pass).length;
-    const total = p.agent.length;
+    // Unavailable checks aren't failures — exclude them from the pass rate.
+    const available = p.agent.filter((c) => !c.unavailable);
+    const pass = available.filter((c) => c.pass).length;
+    const total = available.length;
     const pct = total ? Math.round((pass / total) * 100) : 0;
     const am = scoreMeta(pct);
+    // A pending page (no baseline / history yet) has nothing to chart — show
+    // em dashes rather than fabricated zeros (audit: no fabricated provenance).
+    const isPending = p.status === "pending" || p.history.length === 0;
     const cats = CATEGORIES.map((c) => {
+      if (isPending) {
+        return { key: c.key, score: null as number | null, fg: C.faint, delta: "", deltaFg: C.faint, series: [] as number[], line: C.faint };
+      }
       const v = p.current[strategy][c.key];
       const bv = p.baseline[strategy][c.key].m;
       const sm = scoreMeta(v);
       const dm = deltaMeta(v, bv);
-      return { key: c.key, score: v, fg: sm.fg, delta: dm.text, deltaFg: dm.fg, series: categorySeries(p.history, strategy, c.key, 7), line: sm.line };
+      return { key: c.key, score: v as number | null, fg: sm.fg, delta: dm.text, deltaFg: dm.fg, series: categorySeries(p.history, strategy, c.key, 7), line: sm.line };
     });
     const sortVals: Record<string, string | number> = { title: p.title.toLowerCase(), status: p.status, agent: pct };
     CATEGORIES.forEach((c) => (sortVals[c.key] = p.current[strategy][c.key]));
@@ -57,7 +65,7 @@ export default function DashboardPage() {
       agentPct: total ? `${pct}%` : "—",
       agentFg: am.fg,
       agentSub: total ? `${pass}/${total}` : "no scan",
-      agentSeries: agentSeries(p.id, pct),
+      agentSeries: total ? agentSeries(p.id, pct) : ([] as number[]),
       agentLine: am.line,
       sortVals,
     };
@@ -173,9 +181,9 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* table */}
-        <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden" }}>
-          <div style={{ display: "grid", gridTemplateColumns: GRID, alignItems: "center", padding: "14px 24px", borderBottom: `1px solid ${C.border}`, fontSize: 11, fontWeight: 550, letterSpacing: "0.05em", textTransform: "uppercase", color: C.faint }}>
+        {/* table (horizontally scrollable on narrow screens instead of breaking) */}
+        <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 14, overflowX: "auto" }}>
+          <div style={{ display: "grid", gridTemplateColumns: GRID, alignItems: "center", padding: "14px 24px", borderBottom: `1px solid ${C.border}`, fontSize: 11, fontWeight: 550, letterSpacing: "0.05em", textTransform: "uppercase", color: C.faint, minWidth: 880 }}>
             {headers.map((h) => (
               <SortHeader key={h.col} label={h.label} align={h.align} active={dashSort.col === h.col} dir={dashSort.dir} onSort={() => sortDash(h.col)} />
             ))}
@@ -183,8 +191,17 @@ export default function DashboardPage() {
           {rows.map((row) => (
             <div
               key={row.id}
+              role="button"
+              tabIndex={0}
+              aria-label={`Open ${row.title} details`}
               onClick={() => router.push(`/pages/${row.id}`)}
-              style={{ display: "grid", gridTemplateColumns: GRID, alignItems: "center", padding: "16px 24px", borderBottom: `1px solid ${C.rowBorder}`, cursor: "pointer" }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  router.push(`/pages/${row.id}`);
+                }
+              }}
+              style={{ display: "grid", gridTemplateColumns: GRID, alignItems: "center", padding: "16px 24px", borderBottom: `1px solid ${C.rowBorder}`, cursor: "pointer", minWidth: 880 }}
             >
               <div style={{ minWidth: 0, paddingRight: 16 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
@@ -196,13 +213,13 @@ export default function DashboardPage() {
               <div>
                 <StatusBadge status={row.status} />
               </div>
-              {row.cats.map((c: { key: CategoryKey; score: number; fg: string; delta: string; deltaFg: string; series: number[]; line: string }) => (
+              {row.cats.map((c: { key: CategoryKey; score: number | null; fg: string; delta: string; deltaFg: string; series: number[]; line: string }) => (
                 <div key={c.key} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
                   <div style={{ width: 84, height: 30 }}>
                     <Sparkline series={c.series} color={c.line} w={84} h={30} />
                   </div>
                   <div style={{ display: "flex", alignItems: "baseline", gap: 5 }}>
-                    <span style={{ fontSize: 14, fontWeight: 600, color: c.fg }}>{c.score}</span>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: c.fg }}>{c.score === null ? "—" : c.score}</span>
                     <span style={{ fontSize: 10, fontWeight: 600, color: c.deltaFg }}>{c.delta}</span>
                   </div>
                 </div>

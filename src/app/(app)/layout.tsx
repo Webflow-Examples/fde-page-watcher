@@ -3,6 +3,10 @@ import { StoreProvider } from "@/components/store";
 import { Sidebar } from "@/components/Sidebar";
 import { ChromeOverlays } from "@/components/overlays";
 
+// The store reads/writes the local filesystem; force Node.js so that's
+// actually available (some hosts default unannotated segments to an
+// edge/Workers runtime without it).
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {

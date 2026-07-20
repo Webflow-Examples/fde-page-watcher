@@ -35,6 +35,37 @@ interface Envelope {
   state: AppState;
 }
 
+/**
+ * Per-process in-memory tier, keyed by tenant. This is what keeps the app
+ * working on hosts where the local disk isn't a usable persistence layer
+ * (serverless/edge deployments — this app's target, Webflow Cloud, included —
+ * may not allow writes at all, or only to an ephemeral temp dir). Disk is
+ * still the source of truth wherever it is usable; memory is the fallback so
+ * a Server Component render never crashes the whole app when disk I/O fails.
+ */
+const memoryState = new Map<string, AppState>();
+
+// Hosts vary in how they signal "the filesystem isn't usable here": a plain
+// Node server throws standard errno codes (ENOENT/EROFS/EACCES/...), but
+// serverless/edge runtimes (this app's target, Webflow Cloud, included) may
+// run `node:fs` through a compatibility shim that throws something else
+// entirely — a different code, no code at all, or a generic Error. Rather
+// than maintain an allow-list that a new host can slip past and crash render
+// again, every disk operation below is treated as best-effort: any failure
+// falls back to the in-memory tier instead of propagating.
+
+let warnedReadOnly = false;
+function warnReadOnly(err: unknown): void {
+  if (warnedReadOnly) return;
+  warnedReadOnly = true;
+  console.warn(
+    "[DataStore] filesystem read/write failed; falling back to in-memory state " +
+      "for this process. State will not persist across restarts or instances. " +
+      "Configure a durable DataStore adapter for production.",
+    (err as Error)?.message ?? err,
+  );
+}
+
 class FsDataStore implements DataStore {
   readonly tenant: string;
   private root: string;
@@ -70,28 +101,41 @@ class FsDataStore implements DataStore {
       if (env.tenant !== this.tenant) {
         throw new Error(`DataStore: tenant mismatch (${env.tenant} != ${this.tenant})`);
       }
+      // Mirror the durable snapshot into memory so later writes on a host
+      // where disk isn't usable build on the latest persisted state.
+      memoryState.set(this.tenant, env.state);
       return env.state;
-    } catch (err: unknown) {
-      if ((err as NodeJS.ErrnoException)?.code === "ENOENT") {
-        // First read: seed and persist.
-        const seeded = buildSeedState();
-        await this.saveState(seeded);
-        return seeded;
-      }
-      throw err;
+    } catch {
+      // No file yet (the expected case on a fresh deploy), a corrupt/mismatched
+      // one, or a host where disk reads don't work at all — in every case fall
+      // back to the in-memory tier instead of throwing, so the Server
+      // Component that renders the app shell never crashes. This alone isn't
+      // evidence disk is broken, so it doesn't warn; saveState's own write
+      // attempt below is what surfaces a genuine persistence failure.
+      const cached = memoryState.get(this.tenant);
+      if (cached) return cached;
+      const seeded = buildSeedState();
+      memoryState.set(this.tenant, seeded);
+      await this.saveState(seeded);
+      return seeded;
     }
   }
 
   async saveState(state: AppState): Promise<void> {
+    // The in-memory tier is always authoritative for the current process; this
+    // is what lets reads and subsequent writes succeed even when disk doesn't.
+    memoryState.set(this.tenant, state);
     const env: Envelope = { tenant: this.tenant, updatedAt: new Date().toISOString(), state };
-    await this.atomicWrite(this.stateFile, JSON.stringify(env, null, 2));
+    try {
+      await this.atomicWrite(this.stateFile, JSON.stringify(env, null, 2));
+    } catch (err: unknown) {
+      warnReadOnly(err);
+    }
   }
 
   async appendNight(pageId: string, night: Night, rawReport?: unknown): Promise<AppState> {
-    // Sequential append (REQ-004).
-    const seqFile = path.join(this.root, "history", `${pageId}.jsonl`);
-    await this.ensureDir(path.dirname(seqFile));
-    await fs.appendFile(seqFile, `${JSON.stringify({ tenant: this.tenant, ...night })}\n`, "utf8");
+    // Sequential append (REQ-004). Best-effort on read-only hosts.
+    await this.appendLine(path.join(this.root, "history", `${pageId}.jsonl`), night);
 
     // Object storage for the raw payload (REQ-006).
     if (rawReport !== undefined && night.rawReportKey) {
@@ -114,9 +158,7 @@ class FsDataStore implements DataStore {
   }
 
   async addMarker(pageId: string, marker: ChangeMarker): Promise<AppState> {
-    const seqFile = path.join(this.root, "markers", `${pageId}.jsonl`);
-    await this.ensureDir(path.dirname(seqFile));
-    await fs.appendFile(seqFile, `${JSON.stringify({ tenant: this.tenant, ...marker })}\n`, "utf8");
+    await this.appendLine(path.join(this.root, "markers", `${pageId}.jsonl`), marker);
     const state = await this.getState();
     const page = state.pages.find((p) => p.id === pageId);
     if (page) {
@@ -128,16 +170,30 @@ class FsDataStore implements DataStore {
 
   async putReport(pageId: string, key: string, payload: unknown): Promise<void> {
     const file = path.join(this.root, "reports", pageId, `${key}.json`);
-    await this.atomicWrite(file, JSON.stringify({ tenant: this.tenant, payload }, null, 2));
+    try {
+      await this.atomicWrite(file, JSON.stringify({ tenant: this.tenant, payload }, null, 2));
+    } catch (err: unknown) {
+      warnReadOnly(err);
+    }
   }
 
   async getReport(pageId: string, key: string): Promise<unknown | null> {
     try {
       const raw = await fs.readFile(path.join(this.root, "reports", pageId, `${key}.json`), "utf8");
       return (JSON.parse(raw) as { payload: unknown }).payload;
+    } catch {
+      // Missing file, or a host where report reads don't work at all.
+      return null;
+    }
+  }
+
+  /** Append one JSONL record; best-effort, never throws. */
+  private async appendLine(file: string, record: object): Promise<void> {
+    try {
+      await this.ensureDir(path.dirname(file));
+      await fs.appendFile(file, `${JSON.stringify({ tenant: this.tenant, ...record })}\n`, "utf8");
     } catch (err: unknown) {
-      if ((err as NodeJS.ErrnoException)?.code === "ENOENT") return null;
-      throw err;
+      warnReadOnly(err);
     }
   }
 }

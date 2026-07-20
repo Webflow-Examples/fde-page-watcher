@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import type { AppState, CategoryKey, Flag, Night, NightScores, ScoreByCategory, Strategy, StrategyScores } from "@/lib/types";
+import type { AppState, CategoryKey, Flag, NightScores, ScoreByCategory, Strategy } from "@/lib/types";
 import { shortDate } from "@/lib/ui";
 
 type SortDir = "asc" | "desc";
@@ -87,17 +87,24 @@ export function useStore(): StoreValue {
 
 const CAT_KEYS: CategoryKey[] = ["perf", "a11y", "bp", "seo"];
 
-/** Flat NightScores at a fixed set of medians (used when a new page has no runs yet). */
-function flatScores(base: ScoreByCategory): StrategyScores {
-  const cs = (v: number, spread: number) => ({ m: v, lo: Math.max(0, v - spread), hi: Math.min(100, v + spread) });
-  const mobile: NightScores = { perf: cs(base.perf, 3), a11y: cs(base.a11y, 1), bp: cs(base.bp, 1), seo: cs(base.seo, 1) };
-  const desktop: NightScores = {
-    perf: cs(Math.min(100, base.perf + 18), 3),
-    a11y: cs(base.a11y, 1),
-    bp: cs(base.bp, 1),
-    seo: cs(base.seo, 1),
+/** A brand-new page starts pending (no baseline / history) — no fabricated provenance. */
+function pendingOptimisticPage(id: string, title: string, url: string, flag: Flag): AppState["pages"][number] {
+  const zeroCat = { m: 0, lo: 0, hi: 0 };
+  const zeroNight: NightScores = { perf: zeroCat, a11y: zeroCat, bp: zeroCat, seo: zeroCat };
+  const zeroScores: ScoreByCategory = { perf: 0, a11y: 0, bp: 0, seo: 0 };
+  return {
+    id,
+    title,
+    url,
+    flag,
+    status: "pending",
+    baseline: { mobile: zeroNight, desktop: zeroNight },
+    current: { mobile: zeroScores, desktop: zeroScores },
+    history: [],
+    markers: [],
+    agent: [],
+    acted: {},
   };
-  return { mobile, desktop };
 }
 
 export function StoreProvider({ initial, children }: { initial: AppState; children: React.ReactNode }) {
@@ -134,14 +141,34 @@ export function StoreProvider({ initial, children }: { initial: AppState; childr
   useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
 
   // ── persistence ──────────────────────────────────────────────────────
-  const persist = useCallback(
-    (next: AppState) => {
-      apply(next);
-      fetch("/api/state", {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(next),
-      }).catch(() => flash("Couldn't save — changes may not persist"));
+  // Optimistic mutate: apply the local prediction immediately, call the
+  // server-side domain endpoint, then reconcile with the authoritative state
+  // it returns. On any non-2xx / network failure, revert to the pre-action
+  // snapshot and surface the error — no action ever reports success on failure
+  // (audit: optimistic-success + whole-state overwrite).
+  const mutate = useCallback(
+    (
+      optimistic: AppState,
+      req: { url: string; method?: string; body?: unknown },
+      msg: { success?: string; failure: string },
+    ) => {
+      const prev = dataRef.current;
+      apply(optimistic);
+      fetch(req.url, {
+        method: req.method ?? "POST",
+        headers: req.body !== undefined ? { "content-type": "application/json" } : undefined,
+        body: req.body !== undefined ? JSON.stringify(req.body) : undefined,
+      })
+        .then(async (r) => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          const res = (await r.json().catch(() => null)) as { state?: AppState } | null;
+          if (res?.state) apply(res.state);
+          if (msg.success) flash(msg.success);
+        })
+        .catch(() => {
+          apply(prev);
+          flash(msg.failure);
+        });
     },
     [apply, flash],
   );
@@ -155,41 +182,55 @@ export function StoreProvider({ initial, children }: { initial: AppState; childr
   const setFlag = useCallback(
     (id: string, flag: Flag) => {
       const cur = dataRef.current;
-      persist({ ...cur, pages: cur.pages.map((p) => (p.id === id ? { ...p, flag } : p)) });
+      mutate(
+        { ...cur, pages: cur.pages.map((p) => (p.id === id ? { ...p, flag } : p)) },
+        { url: `/api/pages/${id}/flag`, body: { flag } },
+        { failure: "Couldn't update the flag — try again" },
+      );
     },
-    [persist],
+    [mutate],
   );
 
   const removePage = useCallback(
     (id: string) => {
       const cur = dataRef.current;
       const p = cur.pages.find((x) => x.id === id);
-      persist({
-        ...cur,
-        pages: cur.pages.filter((x) => x.id !== id),
-        recs: cur.recs.filter((r) => r.pageId !== id),
-      });
-      flash(`Removed ${p ? p.title : "page"} — excluded from future runs`);
+      mutate(
+        {
+          ...cur,
+          pages: cur.pages.filter((x) => x.id !== id),
+          recs: cur.recs.filter((r) => r.pageId !== id),
+          followUps: (cur.followUps ?? []).filter((f) => f.pageId !== id),
+        },
+        { url: `/api/pages/${id}`, method: "DELETE" },
+        { success: `Removed ${p ? p.title : "page"} — excluded from future runs`, failure: "Couldn't remove the page — try again" },
+      );
     },
-    [persist, flash],
+    [mutate],
   );
 
   const saveTask = useCallback(
     (key: string) => {
       const cur = dataRef.current;
-      persist({ ...cur, recs: cur.recs.map((r) => (r.key === key ? { ...r, status: "task", taskStatus: "todo" } : r)) });
-      flash("Saved to Tasks — track it on the Tasks board");
+      mutate(
+        { ...cur, recs: cur.recs.map((r) => (r.key === key ? { ...r, status: "task", taskStatus: "todo" } : r)) },
+        { url: `/api/recs`, body: { key, action: "save" } },
+        { success: "Saved to Tasks — track it on the Tasks board", failure: "Couldn't save to Tasks — try again" },
+      );
     },
-    [persist, flash],
+    [mutate],
   );
 
   const ignoreRec = useCallback(
     (key: string) => {
       const cur = dataRef.current;
-      persist({ ...cur, recs: cur.recs.map((r) => (r.key === key ? { ...r, status: "ignored" } : r)) });
-      flash("Ignored — cleared from Inbox, still listed on the page");
+      mutate(
+        { ...cur, recs: cur.recs.map((r) => (r.key === key ? { ...r, status: "ignored" } : r)) },
+        { url: `/api/recs`, body: { key, action: "ignore" } },
+        { success: "Ignored — cleared from Inbox, still listed on the page", failure: "Couldn't ignore — try again" },
+      );
     },
-    [persist, flash],
+    [mutate],
   );
 
   const advanceTask = useCallback(
@@ -197,33 +238,33 @@ export function StoreProvider({ initial, children }: { initial: AppState; childr
       const cur = dataRef.current;
       const rec = cur.recs.find((r) => r.key === key);
       if (!rec) return;
+      // Idempotent: re-dropping an already-done card onto Done must not log a
+      // second change marker or a duplicate set of follow-ups (audit).
+      if (to === rec.taskStatus) return;
       const date = shortDate();
       if (to === "done") {
-        // Optimistic: mark done + add marker locally, then persist via the
-        // marker route (sequential storage + follow-up scheduling, REQ-043/044).
-        const optimistic: AppState = {
-          ...cur,
-          recs: cur.recs.map((r) => (r.key === key ? { ...r, taskStatus: "done", doneDate: date } : r)),
-          pages: cur.pages.map((p) =>
-            p.id === rec.pageId ? { ...p, markers: [...(p.markers || []), { i: p.history.length - 1, date, text: `Acted: ${rec.title}` }] } : p,
-          ),
-        };
-        apply(optimistic);
-        flash(`Task completed — change marker logged on ${rec.pageTitle}`);
-        fetch(`/api/pages/${rec.pageId}/markers`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ text: `Acted: ${rec.title}`, date, recKey: key, taskStatus: "done" }),
-        })
-          .then((r) => (r.ok ? r.json() : null))
-          .then((res) => { if (res?.state) apply(res.state as AppState); })
-          .catch(() => {});
+        // Completing a task logs a change marker + schedules follow-ups, so it
+        // goes through the marker route (sequential storage, REQ-043/044).
+        mutate(
+          {
+            ...cur,
+            recs: cur.recs.map((r) => (r.key === key ? { ...r, taskStatus: "done", doneDate: date } : r)),
+            pages: cur.pages.map((p) =>
+              p.id === rec.pageId ? { ...p, markers: [...(p.markers || []), { id: crypto.randomUUID(), i: p.history.length - 1, date, text: `Acted: ${rec.title}` }] } : p,
+            ),
+          },
+          { url: `/api/pages/${rec.pageId}/markers`, body: { text: `Acted: ${rec.title}`, date, recKey: key, taskStatus: "done" } },
+          { success: `Task completed — change marker logged on ${rec.pageTitle}`, failure: "Couldn't complete the task — try again" },
+        );
       } else {
-        persist({ ...cur, recs: cur.recs.map((r) => (r.key === key ? { ...r, taskStatus: to } : r)) });
-        flash(to === "in-progress" ? "Task moved to In progress" : "Task moved back to To do");
+        mutate(
+          { ...cur, recs: cur.recs.map((r) => (r.key === key ? { ...r, taskStatus: to } : r)) },
+          { url: `/api/recs`, body: { key, action: "advance", to } },
+          { success: to === "in-progress" ? "Task moved to In progress" : "Task moved back to To do", failure: "Couldn't move the task — try again" },
+        );
       }
     },
-    [persist, apply, flash],
+    [mutate],
   );
 
   const setForm = useCallback((f: Partial<AddForm>) => setFormState((prev) => ({ ...prev, ...f })), []);
@@ -235,36 +276,19 @@ export function StoreProvider({ initial, children }: { initial: AppState; childr
       return;
     }
     const cur = dataRef.current;
-    const id = `p${Date.now()}`;
-    const base: ScoreByCategory = { perf: 70, a11y: 92, bp: 96, seo: 96 };
-    const template = cur.pages[0]?.history ?? [];
-    const scores = flatScores(base);
-    const history: Night[] =
-      template.length > 0
-        ? template.map((d) => ({ i: d.i, date: d.date, scores }))
-        : Array.from({ length: 30 }, (_, i) => ({ i, date: "", scores }));
-    persist({
+    // Optimistic pending page (temp id) — the server generates the real id and
+    // returns the authoritative state, which replaces this on success.
+    const optimistic: AppState = {
       ...cur,
-      pages: [
-        ...cur.pages,
-        {
-          id,
-          title: f.title.trim(),
-          url: f.url.trim(),
-          flag: f.flag,
-          status: "healthy",
-          baseline: scores,
-          current: { mobile: base, desktop: { ...base, perf: Math.min(100, base.perf + 18) } },
-          history,
-          markers: [],
-          agent: [],
-          acted: {},
-        },
-      ],
-    });
+      pages: [...cur.pages, pendingOptimisticPage(`tmp${Date.now()}`, f.title.trim(), f.url.trim(), f.flag)],
+    };
     setModal(null);
-    flash(`Added ${f.title.trim()} — included in the next nightly run`);
-  }, [form, persist, flash]);
+    mutate(
+      optimistic,
+      { url: `/api/pages`, body: { title: f.title.trim(), url: f.url.trim(), flag: f.flag } },
+      { success: `Added ${f.title.trim()} — pending its first run`, failure: "Couldn't add the page — try again" },
+    );
+  }, [form, mutate, flash]);
 
   const submitMarker = useCallback(() => {
     if (!markerText.trim()) {
@@ -275,32 +299,49 @@ export function StoreProvider({ initial, children }: { initial: AppState; childr
     if (!id) return;
     const date = markerDate.trim() || shortDate();
     const cur = dataRef.current;
-    const optimistic: AppState = {
-      ...cur,
-      pages: cur.pages.map((p) => (p.id === id ? { ...p, markers: [...(p.markers || []), { i: p.history.length - 1, date, text: markerText.trim() }] } : p)),
-    };
-    apply(optimistic);
     setModal(null);
-    flash("Marker logged — 2, 7 & 30-day Slack reports scheduled");
-    fetch(`/api/pages/${id}/markers`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text: markerText.trim(), date }),
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((res) => { if (res?.state) apply(res.state as AppState); })
-      .catch(() => {});
-  }, [markerText, markerDate, markerPageId, apply, flash]);
+    mutate(
+      {
+        ...cur,
+        pages: cur.pages.map((p) => (p.id === id ? { ...p, markers: [...(p.markers || []), { id: crypto.randomUUID(), i: p.history.length - 1, date, text: markerText.trim() }] } : p)),
+      },
+      { url: `/api/pages/${id}/markers`, body: { text: markerText.trim(), date } },
+      { success: "Marker logged — 2, 7 & 30-day Slack reports scheduled", failure: "Couldn't log the marker — try again" },
+    );
+  }, [markerText, markerDate, markerPageId, mutate, flash]);
 
   const runPage = useCallback(
     (id: string) => {
       const cur = dataRef.current;
       const p = cur.pages.find((x) => x.id === id);
-      flash(`Async run queued for ${p ? p.title : "this page"}`);
+      flash(`Run started for ${p ? p.title : "this page"} — collecting in the background…`);
+      // The run route returns 202 immediately and collects in the background;
+      // poll the read model until this page's runState settles (audit High #1).
+      const poll = (tries: number) => {
+        if (tries > 40) return; // ~2-minute ceiling
+        window.setTimeout(() => {
+          fetch("/api/state")
+            .then((r) => (r.ok ? r.json() : null))
+            .then((res) => {
+              const st = (res?.state ?? null) as AppState | null;
+              if (!st) return poll(tries + 1);
+              apply(st);
+              const pg = st.pages.find((x) => x.id === id);
+              if (!pg) return;
+              if (pg.runState === "running") return poll(tries + 1);
+              flash(pg.runState === "failed" ? `Run failed for ${pg.title}` : `Run complete for ${pg.title}`);
+            })
+            .catch(() => poll(tries + 1));
+        }, 3000);
+      };
       fetch(`/api/pages/${id}/run`, { method: "POST" })
-        .then((r) => (r.ok ? r.json() : null))
-        .then((res) => { if (res?.state) apply(res.state as AppState); })
-        .catch(() => {});
+        .then(async (r) => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          const res = (await r.json().catch(() => null)) as { state?: AppState } | null;
+          if (res?.state) apply(res.state);
+          poll(0);
+        })
+        .catch(() => flash("Couldn't start the run — try again"));
     },
     [flash, apply],
   );
@@ -309,9 +350,10 @@ export function StoreProvider({ initial, children }: { initial: AppState; childr
     (id: string) => {
       flash("Capturing baseline — 5 PSI runs per strategy…");
       fetch(`/api/pages/${id}/baseline`, { method: "POST" })
-        .then((r) => (r.ok ? r.json() : null))
-        .then((res) => {
-          if (res?.state) apply(res.state as AppState);
+        .then(async (r) => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          const res = (await r.json().catch(() => null)) as { state?: AppState } | null;
+          if (res?.state) apply(res.state);
           flash("Baseline captured");
         })
         .catch(() => flash("Baseline capture failed"));

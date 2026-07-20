@@ -33,11 +33,17 @@ export default function PageDetail() {
     );
   }
 
-  const pass = page.agent.filter((c) => c.pass).length;
-  const total = page.agent.length;
+  // Unavailable checks (scan couldn't reach the page, REQ-033) are neither
+  // passing nor failing — exclude them from the pass rate and the fail list
+  // instead of counting them as red failures (audit).
+  const available = page.agent.filter((c) => !c.unavailable);
+  const unavailableCount = page.agent.length - available.length;
+  const pass = available.filter((c) => c.pass).length;
+  const total = available.length;
   const apct = total ? Math.round((pass / total) * 100) : 0;
   const apm = scoreMeta(apct);
-  const failList = page.agent.filter((c) => !c.pass);
+  const failList = available.filter((c) => !c.pass);
+  const isPending = page.status === "pending" || page.history.length === 0;
 
   const tabs: { key: "overview" | "history" | "audits" | "agent"; label: string }[] = [
     { key: "overview", label: "Overview" },
@@ -87,10 +93,16 @@ export default function PageDetail() {
       </header>
 
       <div style={{ padding: "28px 40px 56px" }}>
-        {tab === "overview" && <OverviewTab page={page} recs={recs} strategy={strategy} apct={apct} apm={apm} pass={pass} total={total} failList={failList} store={store} />}
-        {tab === "history" && <HistoryTab page={page} strategy={strategy} chartCat={chartCat} setChartCat={setChartCat} store={store} />}
-        {tab === "audits" && <OpportunitiesTab />}
-        {tab === "agent" && <AgentTab page={page} pass={pass} fail={total - pass} />}
+        {isPending ? (
+          <PendingPanel page={page} store={store} />
+        ) : (
+          <>
+            {tab === "overview" && <OverviewTab page={page} recs={recs} strategy={strategy} apct={apct} apm={apm} pass={pass} total={total} failList={failList} store={store} />}
+            {tab === "history" && <HistoryTab page={page} strategy={strategy} chartCat={chartCat} setChartCat={setChartCat} store={store} />}
+            {tab === "audits" && <OpportunitiesTab />}
+            {tab === "agent" && <AgentTab page={page} pass={pass} fail={total - pass} unavailable={unavailableCount} />}
+          </>
+        )}
       </div>
     </div>
   );
@@ -121,7 +133,7 @@ function OverviewTab({
   const pageRecs = recs.filter((r) => r.pageId === page.id);
   return (
     <div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16, marginBottom: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 16, marginBottom: 20 }}>
         {CATEGORIES.map((c) => {
           const v = page.current[strategy][c.key];
           const bv = page.baseline[strategy][c.key].m;
@@ -229,31 +241,52 @@ function HistoryTab({
 }) {
   const runs = [...page.history].reverse().slice(0, 12);
   const GRID = "120px 1fr 84px 84px 84px 84px 100px";
-  const openReport = (d: Night) => {
+  const openReport = async (d: Night) => {
     const cats = CATEGORIES.map((c) => {
       const s = d.scores[strategy][c.key];
       return { label: c.label, median: s.m, range: `${s.lo}–${s.hi}`, key: c.key };
     });
-    const raw = JSON.stringify(
+    // Read the actual stored object for this night, not a fabricated payload
+    // (audit: audit trail). Seed / imported nights have no stored report, so
+    // show an honest summary of what IS stored instead of inventing PSI metadata.
+    let raw: string;
+    if (d.rawReportKey) {
+      try {
+        const res = await fetch(`/api/pages/${page.id}/report/${encodeURIComponent(d.rawReportKey)}`);
+        if (res.ok) {
+          const json = (await res.json()) as { report: unknown };
+          raw = JSON.stringify(json.report, null, 2);
+        } else {
+          raw = fallbackReport(d);
+        }
+      } catch {
+        raw = fallbackReport(d);
+      }
+    } else {
+      raw = fallbackReport(d);
+    }
+    store.openReport({ date: d.date, url: page.url, raw, cats });
+  };
+
+  function fallbackReport(d: Night): string {
+    return JSON.stringify(
       {
-        requestedUrl: `https://${page.url}`,
-        fetchTime: `${d.date} 03:00`,
+        note: "No raw PSI payload is stored for this night (seed / imported data). Showing the stored medians and ranges only.",
+        date: d.date,
         strategy,
-        lighthouseVersion: "12.2.1",
-        runs: d.sampleSize ?? 5,
-        categories: {
+        samples: d.samples ?? d.sampleSize ?? null,
+        scores: {
           performance: { median: d.scores[strategy].perf.m, range: [d.scores[strategy].perf.lo, d.scores[strategy].perf.hi] },
           accessibility: { median: d.scores[strategy].a11y.m, range: [d.scores[strategy].a11y.lo, d.scores[strategy].a11y.hi] },
           "best-practices": { median: d.scores[strategy].bp.m, range: [d.scores[strategy].bp.lo, d.scores[strategy].bp.hi] },
           seo: { median: d.scores[strategy].seo.m, range: [d.scores[strategy].seo.lo, d.scores[strategy].seo.hi] },
         },
-        storageKey: d.rawReportKey ?? `psi/${page.id}/${d.date.replace(" ", "-")}-${strategy}.json`,
+        agentChecksRecorded: d.agent?.length ?? 0,
       },
       null,
       2,
     );
-    store.openReport({ date: d.date, url: page.url, raw, cats });
-  };
+  }
 
   return (
     <div>
@@ -301,6 +334,21 @@ function HistoryTab({
   );
 }
 
+function PendingPanel({ page, store }: { page: WatchPage; store: ReturnType<typeof useStore> }) {
+  return (
+    <div style={{ padding: "56px 24px", textAlign: "center", background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13 }}>
+      <div style={{ fontSize: 16, fontWeight: 600 }}>No data yet</div>
+      <div style={{ fontSize: 13, color: C.muted, marginTop: 8, maxWidth: 460, marginInline: "auto", lineHeight: 1.55 }}>
+        This page is pending its first collection. Capture a baseline to anchor future comparisons, or run now to collect a first snapshot. It also joins the next nightly run automatically.
+      </div>
+      <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 22 }}>
+        <button onClick={() => store.captureBaseline(page.id)} style={{ border: "none", background: C.accent, color: "#fff", fontSize: 12.5, fontWeight: 550, padding: "9px 16px", borderRadius: 8, cursor: "pointer" }}>Capture baseline</button>
+        <button onClick={() => store.runPage(page.id)} style={{ border: `1px solid ${C.border2}`, background: "rgba(255,255,255,0.04)", color: C.text, fontSize: 12.5, fontWeight: 500, padding: "9px 16px", borderRadius: 8, cursor: "pointer" }}>Run now</button>
+      </div>
+    </div>
+  );
+}
+
 function OpportunitiesTab() {
   const audits = auditsFor();
   return (
@@ -327,10 +375,11 @@ function OpportunitiesTab() {
   );
 }
 
-function AgentTab({ page, pass, fail }: { page: WatchPage; pass: number; fail: number }) {
+function AgentTab({ page, pass, fail, unavailable }: { page: WatchPage; pass: number; fail: number; unavailable: number }) {
   const groups = new Map<string, WatchPage["agent"]>();
   page.agent.forEach((c) => groups.set(c.group, [...(groups.get(c.group) ?? []), c]));
   const date = page.history[page.history.length - 1]?.date ?? "—";
+  const allUnavailable = page.agent.length > 0 && unavailable === page.agent.length;
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20, padding: "15px 18px", background: C.panel, border: `1px solid ${C.border}`, borderRadius: 11 }}>
@@ -338,25 +387,41 @@ function AgentTab({ page, pass, fail }: { page: WatchPage; pass: number; fail: n
         <div style={{ marginLeft: "auto", display: "flex", gap: 16, fontSize: 12.5, fontWeight: 500 }}>
           <span style={{ color: C.green }}>{pass} passing</span>
           <span style={{ color: C.red }}>{fail} failing</span>
+          {unavailable > 0 && <span style={{ color: C.muted }}>{unavailable} unavailable</span>}
         </div>
       </div>
       {page.agent.length === 0 ? (
         <div style={{ padding: "40px 22px", textAlign: "center", background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, color: C.muted, fontSize: 13 }}>
           No agent-readiness scan yet. Run one from the header.
         </div>
+      ) : allUnavailable ? (
+        <div style={{ padding: "40px 22px", textAlign: "center", background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, color: C.muted, fontSize: 13 }}>
+          The last scan couldn&apos;t reach this page, so every check is unavailable — not failing. Try running again once the page is reachable.
+        </div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16, alignItems: "start" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16, alignItems: "start" }}>
           {[...groups.entries()].map(([name, checks]) => (
             <div key={name} style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, padding: "18px 20px" }}>
               <div style={{ fontSize: 11, fontWeight: 550, letterSpacing: "0.05em", textTransform: "uppercase", color: C.faint, marginBottom: 15 }}>{name}</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                {checks.map((chk) => (
-                  <div key={chk.name} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <span style={{ flex: "none", width: 18, height: 18, borderRadius: 5, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: C.bg, background: chk.pass ? C.green : C.red }}>{chk.pass ? "✓" : "✕"}</span>
-                    <span style={{ fontSize: 13, color: chk.pass ? C.dim : C.redSoft }}>{chk.name}</span>
-                    {chk.regressed && <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 600, color: C.redSoft, background: "rgba(255,92,108,0.14)", padding: "1px 7px", borderRadius: 4 }}>regressed</span>}
-                  </div>
-                ))}
+                {checks.map((chk) => {
+                  // Three states: pass (green ✓), fail (red ✕), unavailable (neutral –).
+                  const mark = chk.unavailable ? "–" : chk.pass ? "✓" : "✕";
+                  const markBg = chk.unavailable ? C.border2 : chk.pass ? C.green : C.red;
+                  const markColor = chk.unavailable ? C.muted : C.bg;
+                  const textColor = chk.unavailable ? C.faint : chk.pass ? C.dim : C.redSoft;
+                  return (
+                    <div key={chk.name} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <span style={{ flex: "none", width: 18, height: 18, borderRadius: 5, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: markColor, background: markBg }}>{mark}</span>
+                      <span style={{ fontSize: 13, color: textColor }}>{chk.name}</span>
+                      {chk.unavailable ? (
+                        <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 600, color: C.muted, background: "rgba(255,255,255,0.06)", padding: "1px 7px", borderRadius: 4 }}>unavailable</span>
+                      ) : (
+                        chk.regressed && <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 600, color: C.redSoft, background: "rgba(255,92,108,0.14)", padding: "1px 7px", borderRadius: 4 }}>regressed</span>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           ))}

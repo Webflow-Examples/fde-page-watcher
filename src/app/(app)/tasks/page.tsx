@@ -56,12 +56,17 @@ export default function TasksPage() {
 
   const openPage = (pageId: string) => router.push(`/pages/${pageId}`);
   const pageChip = (t: Rec) => (
-    <span
-      onClick={() => openPage(t.pageId)}
+    <button
+      type="button"
+      aria-label={`Open ${t.pageTitle} details`}
+      onClick={(e) => {
+        e.stopPropagation();
+        openPage(t.pageId);
+      }}
       style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 550, color: C.dim, background: "rgba(255,255,255,0.06)", border: `1px solid #2E2E34`, padding: "2px 8px", borderRadius: 5, cursor: "pointer" }}
     >
       {t.pageTitle} ↗
-    </span>
+    </button>
   );
 
   // List groups
@@ -140,62 +145,74 @@ export default function TasksPage() {
             ))}
           </div>
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16, alignItems: "start" }}>
-            {columns.map((col) => {
-              const items = sorted.filter((t) => t.taskStatus === col.status);
-              return (
-                <div
-                  key={col.status}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    if (dragKey.current) advanceTask(dragKey.current, col.status);
-                    dragKey.current = null;
-                  }}
-                  style={{ background: "#0F0F11", border: `1px solid ${C.border}`, borderRadius: 14, padding: 14 }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 6px 14px" }}>
-                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: col.accent }} />
-                    <span style={{ fontSize: 12.5, fontWeight: 600 }}>{col.label}</span>
-                    <span style={{ fontSize: 11.5, color: C.faint }}>{items.length}</span>
+          <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
+            {listGroups.map((grp, gi) => (
+              <div key={gi}>
+                {grp.label && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>{grp.label}</span>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: C.accentSoft, background: "rgba(59,137,255,0.14)", padding: "1px 8px", borderRadius: 20 }}>{grp.items.length}</span>
                   </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                    {items.map((t) => (
+                )}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16, alignItems: "start" }}>
+                  {columns.map((col) => {
+                    const items = grp.items.filter((t) => t.taskStatus === col.status);
+                    return (
                       <div
-                        key={t.key}
-                        draggable
-                        onDragStart={(e) => {
-                          dragKey.current = t.key;
-                          e.dataTransfer.effectAllowed = "move";
+                        key={col.status}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          if (dragKey.current) advanceTask(dragKey.current, col.status);
+                          dragKey.current = null;
                         }}
-                        style={{ background: C.panel2, border: `1px solid ${C.border2}`, borderRadius: 11, padding: 14, cursor: "grab" }}
+                        style={{ background: "#0F0F11", border: `1px solid ${C.border}`, borderRadius: 14, padding: 14 }}
                       >
-                        <div style={{ marginBottom: 9 }}>{pageChip(t)}</div>
-                        <div style={{ fontSize: 13.5, fontWeight: 600, lineHeight: 1.35 }}>{t.title}</div>
-                        {t.aiSummary && <div style={{ fontSize: 12, color: C.muted, marginTop: 6, lineHeight: 1.45 }}>{t.aiSummary}</div>}
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 11 }}>
-                          <span style={{ fontSize: 11, fontWeight: 600, color: C.amber, background: "rgba(255,154,61,0.13)", padding: "2px 8px", borderRadius: 5 }}>{t.savings} saved</span>
-                          <span style={{ fontSize: 11, fontWeight: 600, color: C.dim, background: "rgba(255,255,255,0.06)", padding: "2px 8px", borderRadius: 5 }}>{t.estTime}</span>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 6px 14px" }}>
+                          <span style={{ width: 8, height: 8, borderRadius: "50%", background: col.accent }} />
+                          <span style={{ fontSize: 12.5, fontWeight: 600 }}>{col.label}</span>
+                          <span style={{ fontSize: 11.5, color: C.faint }}>{items.length}</span>
                         </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 13 }}>
-                          {t.taskStatus === "done" ? (
-                            <>
-                              <span style={{ fontSize: 11.5, color: C.green, display: "flex", alignItems: "center", gap: 5 }}>
-                                <CheckIcon size={13} style={{ color: C.green }} />
-                                Done {t.doneDate}
-                              </span>
-                              <button onClick={() => advanceTask(t.key, "in-progress")} style={{ marginLeft: "auto", border: `1px solid ${C.border2}`, background: "rgba(255,255,255,0.03)", color: C.faint2, fontSize: 11.5, fontWeight: 500, padding: "6px 10px", borderRadius: 7, cursor: "pointer" }}>Reopen</button>
-                            </>
-                          ) : (
-                            <ActionButtons t={t} advance={advanceTask} />
-                          )}
+                        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                          {items.map((t) => (
+                            <div
+                              key={t.key}
+                              draggable
+                              onDragStart={(e) => {
+                                dragKey.current = t.key;
+                                e.dataTransfer.effectAllowed = "move";
+                              }}
+                              style={{ background: C.panel2, border: `1px solid ${C.border2}`, borderRadius: 11, padding: 14, cursor: "grab" }}
+                            >
+                              <div style={{ marginBottom: 9 }}>{pageChip(t)}</div>
+                              <div style={{ fontSize: 13.5, fontWeight: 600, lineHeight: 1.35 }}>{t.title}</div>
+                              {t.aiSummary && <div style={{ fontSize: 12, color: C.muted, marginTop: 6, lineHeight: 1.45 }}>{t.aiSummary}</div>}
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 11 }}>
+                                <span style={{ fontSize: 11, fontWeight: 600, color: C.amber, background: "rgba(255,154,61,0.13)", padding: "2px 8px", borderRadius: 5 }}>{t.savings} saved</span>
+                                <span style={{ fontSize: 11, fontWeight: 600, color: C.dim, background: "rgba(255,255,255,0.06)", padding: "2px 8px", borderRadius: 5 }}>{t.estTime}</span>
+                              </div>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 13 }}>
+                                {t.taskStatus === "done" ? (
+                                  <>
+                                    <span style={{ fontSize: 11.5, color: C.green, display: "flex", alignItems: "center", gap: 5 }}>
+                                      <CheckIcon size={13} style={{ color: C.green }} />
+                                      Done {t.doneDate}
+                                    </span>
+                                    <button onClick={() => advanceTask(t.key, "in-progress")} style={{ marginLeft: "auto", border: `1px solid ${C.border2}`, background: "rgba(255,255,255,0.03)", color: C.faint2, fontSize: 11.5, fontWeight: 500, padding: "6px 10px", borderRadius: 7, cursor: "pointer" }}>Reopen</button>
+                                  </>
+                                ) : (
+                                  <ActionButtons t={t} advance={advanceTask} />
+                                )}
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       </div>
-                    ))}
-                  </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </div>
         )}
       </div>

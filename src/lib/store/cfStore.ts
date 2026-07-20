@@ -121,8 +121,10 @@ class CfDataStore implements DataStore {
 
   async addMarker(pageId: string, marker: ChangeMarker): Promise<AppState> {
     const { DB } = cfEnv();
-    await DB.prepare("INSERT OR REPLACE INTO markers (tenant, page_id, i, marker_json) VALUES (?, ?, ?, ?)")
-      .bind(this.tenant, pageId, marker.i, JSON.stringify(marker))
+    // Keyed by the marker's stable id, not `i` — multiple markers can resolve
+    // to the same history index (`i` is derived from the marker's date).
+    await DB.prepare("INSERT OR REPLACE INTO markers (tenant, page_id, id, marker_json) VALUES (?, ?, ?, ?)")
+      .bind(this.tenant, pageId, marker.id, JSON.stringify(marker))
       .run();
 
     return this.withState((state) => {

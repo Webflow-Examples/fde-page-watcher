@@ -8,7 +8,7 @@
 export type CategoryKey = "perf" | "a11y" | "bp" | "seo";
 export type Strategy = "mobile" | "desktop";
 export type Flag = "priority" | "watching";
-export type PageStatus = "healthy" | "improvable" | "degraded";
+export type PageStatus = "healthy" | "improvable" | "degraded" | "pending";
 
 export const STRATEGIES: Strategy[] = ["mobile", "desktop"];
 
@@ -38,13 +38,16 @@ export interface Night {
   date: string; // display date, e.g. "Jul 16"
   iso?: string; // ISO date if produced by a real run
   scores: StrategyScores;
-  sampleSize?: number; // how many of the 5 runs succeeded (REQ-032)
+  samples?: Partial<Record<Strategy, number>>; // per-strategy successful sample size (REQ-032)
+  sampleSize?: number; // min across strategies; kept for older records / quick display
   rawReportKey?: string; // object-storage key for the full PSI payload (REQ-006)
+  agent?: AgentCheck[]; // agent-readiness scan recorded for this night, so history is retained (REQ-008)
 }
 
 /** A user-logged (or acted-upon) change marker on a page's timeline. */
 export interface ChangeMarker {
-  i: number; // history index the marker sits at
+  id: string; // stable unique id (follow-ups reference this, not the text)
+  i: number; // history index the marker sits at — resolved from `date`, not the latest night
   date: string;
   text: string;
 }
@@ -62,11 +65,14 @@ export interface AgentCheck {
 /** A scheduled follow-up comparison after a change marker (REQ-044). */
 export interface FollowUp {
   pageId: string;
-  markerText: string;
+  markerId: string; // unique marker reference (lookup no longer relies on text)
+  markerText: string; // retained for the Slack message
   markerDate: string;
   interval: "2d" | "7d" | "30d";
   dueISO: string;
   sent: boolean;
+  attempts?: number; // delivery attempts; a failed send is retried, not consumed (REQ-045)
+  lastAttemptISO?: string;
 }
 
 /** A watchlisted page and everything tracked about it. */
@@ -83,6 +89,11 @@ export interface WatchPage {
   agent: AgentCheck[]; // latest agent-readiness scan (per-check)
   baselineCapturedAt?: string;
   acted?: Record<string, boolean>;
+  // Async collection state (REQ-054): a run is queued/executed in the
+  // background; the client polls until it settles. Undefined == idle.
+  runState?: "running" | "failed";
+  lastRunAt?: string;
+  lastError?: string;
 }
 
 export type RecStatus = "inbox" | "task" | "ignored";
