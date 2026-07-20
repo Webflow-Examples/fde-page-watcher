@@ -20,12 +20,19 @@ export async function runPage(pageId: string): Promise<AppState> {
   const page = state.pages.find((p) => p.id === pageId);
   if (!page) throw new Error(`runPage: page ${pageId} not found`);
 
+  // Both strategies (and the agent scan) run concurrently so the whole page
+  // collects in roughly one run's wall-clock instead of the sum of ten runs —
+  // keeping the job inside its execution envelope (audit High #1).
+  const [stratResults, fresh] = await Promise.all([
+    Promise.all(STRATEGIES.map(async (strat) => ({ strat, res: await collect(page.url, strat) }))),
+    scan(page.url),
+  ]);
+
   const scores = {} as StrategyScores;
   const raw: Record<string, unknown> = {};
   let sampleSize = 5;
   let opportunities: { id: string; title: string; savingsMs: number }[] = [];
-  for (const strat of STRATEGIES) {
-    const res = await collect(page.url, strat);
+  for (const { strat, res } of stratResults) {
     scores[strat] = res.scores;
     raw[strat] = res.raw;
     sampleSize = Math.min(sampleSize, res.sampleSize);
@@ -42,9 +49,8 @@ export async function runPage(pageId: string): Promise<AppState> {
     rawReportKey: `${iso.slice(0, 10)}-${page.history.length}`,
   };
 
-  // Agent-readiness scan, with regressions computed against the prior scan.
+  // Agent-readiness regressions computed against the prior scan.
   const prev = page.agent;
-  const fresh = await scan(page.url);
   const agent = fresh.map((c) => {
     const before = prev.find((x) => x.name === c.name);
     return { ...c, regressed: !!before && before.pass && !c.pass };
@@ -100,10 +106,8 @@ export async function captureBaseline(pageId: string): Promise<AppState> {
   if (!page) throw new Error(`captureBaseline: page ${pageId} not found`);
 
   const baseline = {} as StrategyScores;
-  for (const strat of STRATEGIES) {
-    const res = await collect(page.url, strat);
-    baseline[strat] = res.scores;
-  }
+  const results = await Promise.all(STRATEGIES.map(async (strat) => ({ strat, res: await collect(page.url, strat) })));
+  for (const { strat, res } of results) baseline[strat] = res.scores;
   page.baseline = baseline;
   page.baselineCapturedAt = shortDate();
   page.status = classifyStatus(mediansOf(baseline.mobile), page.history, "mobile");
@@ -139,20 +143,34 @@ export async function processFollowUps(): Promise<void> {
     if (fu.sent || Date.parse(fu.dueISO) > now) continue;
     const page = state.pages.find((p) => p.id === fu.pageId);
     if (!page) {
+      // Page removed — nothing to compare against; retire the follow-up.
       fu.sent = true;
       changed = true;
       continue;
     }
-    const markerI = page.markers.find((m) => m.text === fu.markerText)?.i ?? page.history.length - 1;
+    // Look up the marker by its stable id, not its (non-unique) text.
+    const marker = page.markers.find((m) => m.id === fu.markerId);
+    const markerI = marker?.i ?? page.history.length - 1;
     const beforeNight = page.history[Math.max(0, markerI - 1)] ?? page.history[page.history.length - 1];
+    if (!beforeNight) {
+      fu.sent = true;
+      changed = true;
+      continue;
+    }
     const lines = CATEGORIES.map((c) => {
       const before = beforeNight.scores.mobile[c.key].m;
       const after = page.current.mobile[c.key];
       const d = after - before;
       return `${c.label}: ${before} → ${after} (${d >= 0 ? "+" : ""}${d})`;
     });
-    await postFollowup(page.title, fu.interval, lines);
-    fu.sent = true;
+    // Only consume the follow-up when Slack actually accepted it. A missing
+    // webhook (mock mode) or a transient failure leaves sent=false so it
+    // retries on the next nightly instead of being silently swallowed
+    // (audit High #3).
+    const { sent } = await postFollowup(page.title, fu.interval, lines);
+    fu.attempts = (fu.attempts ?? 0) + 1;
+    fu.lastAttemptISO = new Date().toISOString();
+    if (sent) fu.sent = true;
     changed = true;
   }
   if (changed) await s.saveState(state);

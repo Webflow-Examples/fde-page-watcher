@@ -66,6 +66,28 @@ export function advanceTask(key: string, to: TaskStatus): Promise<AppState> {
   });
 }
 
+/** Mark a page's collection run as in-flight (audit High #1: async runs). */
+export function markRunning(id: string): Promise<AppState> {
+  return withState((state) => {
+    const page = state.pages.find((p) => p.id === id);
+    if (!page) throw new Error(`markRunning: page ${id} not found`);
+    page.runState = "running";
+    delete page.lastError;
+  });
+}
+
+/** Settle a page's run: clear the flag on success, record the error on failure. */
+export function markRunFinished(id: string, error?: string): Promise<AppState> {
+  return withState((state) => {
+    const page = state.pages.find((p) => p.id === id);
+    if (!page) return; // page removed mid-run — nothing to settle
+    page.runState = error ? "failed" : undefined;
+    page.lastRunAt = new Date().toISOString();
+    if (error) page.lastError = error;
+    else delete page.lastError;
+  });
+}
+
 export interface NewPageInput {
   title: string;
   url: string;

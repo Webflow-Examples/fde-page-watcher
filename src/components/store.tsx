@@ -240,7 +240,7 @@ export function StoreProvider({ initial, children }: { initial: AppState; childr
             ...cur,
             recs: cur.recs.map((r) => (r.key === key ? { ...r, taskStatus: "done", doneDate: date } : r)),
             pages: cur.pages.map((p) =>
-              p.id === rec.pageId ? { ...p, markers: [...(p.markers || []), { i: p.history.length - 1, date, text: `Acted: ${rec.title}` }] } : p,
+              p.id === rec.pageId ? { ...p, markers: [...(p.markers || []), { id: crypto.randomUUID(), i: p.history.length - 1, date, text: `Acted: ${rec.title}` }] } : p,
             ),
           },
           { url: `/api/pages/${rec.pageId}/markers`, body: { text: `Acted: ${rec.title}`, date, recKey: key, taskStatus: "done" } },
@@ -315,7 +315,7 @@ export function StoreProvider({ initial, children }: { initial: AppState; childr
     mutate(
       {
         ...cur,
-        pages: cur.pages.map((p) => (p.id === id ? { ...p, markers: [...(p.markers || []), { i: p.history.length - 1, date, text: markerText.trim() }] } : p)),
+        pages: cur.pages.map((p) => (p.id === id ? { ...p, markers: [...(p.markers || []), { id: crypto.randomUUID(), i: p.history.length - 1, date, text: markerText.trim() }] } : p)),
       },
       { url: `/api/pages/${id}/markers`, body: { text: markerText.trim(), date } },
       { success: "Marker logged — 2, 7 & 30-day Slack reports scheduled", failure: "Couldn't log the marker — try again" },
@@ -326,14 +326,34 @@ export function StoreProvider({ initial, children }: { initial: AppState; childr
     (id: string) => {
       const cur = dataRef.current;
       const p = cur.pages.find((x) => x.id === id);
-      flash(`Async run queued for ${p ? p.title : "this page"}`);
+      flash(`Run started for ${p ? p.title : "this page"} — collecting in the background…`);
+      // The run route returns 202 immediately and collects in the background;
+      // poll the read model until this page's runState settles (audit High #1).
+      const poll = (tries: number) => {
+        if (tries > 40) return; // ~2-minute ceiling
+        window.setTimeout(() => {
+          fetch("/api/state")
+            .then((r) => (r.ok ? r.json() : null))
+            .then((res) => {
+              const st = (res?.state ?? null) as AppState | null;
+              if (!st) return poll(tries + 1);
+              apply(st);
+              const pg = st.pages.find((x) => x.id === id);
+              if (!pg) return;
+              if (pg.runState === "running") return poll(tries + 1);
+              flash(pg.runState === "failed" ? `Run failed for ${pg.title}` : `Run complete for ${pg.title}`);
+            })
+            .catch(() => poll(tries + 1));
+        }, 3000);
+      };
       fetch(`/api/pages/${id}/run`, { method: "POST" })
         .then(async (r) => {
           if (!r.ok) throw new Error(`HTTP ${r.status}`);
           const res = (await r.json().catch(() => null)) as { state?: AppState } | null;
           if (res?.state) apply(res.state);
+          poll(0);
         })
-        .catch(() => flash("Couldn't queue the run — try again"));
+        .catch(() => flash("Couldn't start the run — try again"));
     },
     [flash, apply],
   );

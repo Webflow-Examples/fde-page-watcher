@@ -56,3 +56,22 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 export function shortDate(d: Date = new Date()): string {
   return `${MONTHS[d.getMonth()]} ${d.getDate()}`;
 }
+
+/**
+ * Parse a date that may be an ISO string or a "Jul 16" display date into a
+ * Date (UTC midnight). Display dates carry no year, so `refYear` (default: the
+ * current UTC year) supplies one. Returns null if unparseable. Used to place
+ * change markers chronologically and to schedule follow-ups from the marker's
+ * own date rather than the wall clock (audit High #4).
+ */
+export function parseMarkerDate(s: string, refYear = new Date().getUTCFullYear()): Date | null {
+  const trimmed = (s ?? "").trim();
+  if (!trimmed) return null;
+  const m = /^([A-Za-z]{3,})\s+(\d{1,2})$/.exec(trimmed);
+  if (m) {
+    const mon = MONTHS.findIndex((mm) => mm.toLowerCase() === m[1].slice(0, 3).toLowerCase());
+    if (mon >= 0) return new Date(Date.UTC(refYear, mon, Number(m[2])));
+  }
+  const d = new Date(trimmed);
+  return Number.isNaN(d.getTime()) ? null : d;
+}

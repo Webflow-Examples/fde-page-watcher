@@ -104,14 +104,11 @@ export async function collect(url: string, strategy: Strategy, n = defaultRuns()
   // PSI is rate-limited. Real runs (with PAGESPEED_API_KEY) never take this path.
   if (process.env.PSI_MOCK) return mockCollect(url, strategy, n);
 
-  const runs: RunResult[] = [];
-  for (let i = 0; i < n; i++) {
-    try {
-      runs.push(await withRetry(url, strategy));
-    } catch {
-      // record failure; continue with remaining runs (reduced sample)
-    }
-  }
+  // Run the samples concurrently so wall-clock is ~one run, not the sum of
+  // five (audit High #1). Failed runs drop out and we keep the reduced sample
+  // (REQ-032); the whole strategy only fails if every run fails.
+  const settled = await Promise.allSettled(Array.from({ length: n }, () => withRetry(url, strategy)));
+  const runs: RunResult[] = settled.filter((r): r is PromiseFulfilledResult<RunResult> => r.status === "fulfilled").map((r) => r.value);
   if (runs.length === 0) throw new Error(`PSI collection failed for ${url} (${strategy})`);
 
   const scores = {} as NightScores;

@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 import { getStore } from "@/lib/store";
 import { scheduleFollowUps } from "@/lib/followups";
-import { shortDate } from "@/lib/ui";
-import type { TaskStatus } from "@/lib/types";
+import { parseMarkerDate, shortDate } from "@/lib/ui";
+import type { ChangeMarker, Night, TaskStatus } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,6 +13,22 @@ interface Body {
   date?: string;
   recKey?: string; // when the marker comes from completing a task
   taskStatus?: TaskStatus;
+}
+
+/**
+ * Resolve which history night a marker belongs to from its DATE, not the
+ * latest index (audit High #4). Picks the last night on or before the marker
+ * date; falls back to the most recent night if the date can't be placed.
+ */
+function resolveMarkerIndex(history: Night[], markerDate: string): number {
+  const target = parseMarkerDate(markerDate);
+  if (!target || history.length === 0) return Math.max(0, history.length - 1);
+  let idx = -1;
+  for (let i = 0; i < history.length; i++) {
+    const nightDate = parseMarkerDate(history[i].iso ?? history[i].date);
+    if (nightDate && nightDate.getTime() <= target.getTime()) idx = i;
+  }
+  return idx >= 0 ? idx : 0;
 }
 
 /**
@@ -31,7 +48,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!page) return NextResponse.json({ error: "page not found" }, { status: 404 });
 
   const date = body.date?.trim() || shortDate();
-  const marker = { i: Math.max(0, page.history.length - 1), date, text: body.text.trim() };
+  const marker: ChangeMarker = {
+    id: randomUUID(),
+    i: resolveMarkerIndex(page.history, date),
+    date,
+    text: body.text.trim(),
+  };
 
   // Sequential append + KV update (returns the updated state).
   const state = await s.addMarker(id, marker);
@@ -41,7 +63,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       r.key === body.recKey ? { ...r, taskStatus: body.taskStatus ?? r.taskStatus, doneDate: body.taskStatus === "done" ? date : r.doneDate } : r,
     );
   }
-  state.followUps = [...(state.followUps ?? []), ...scheduleFollowUps(id, marker.text, date)];
+  state.followUps = [...(state.followUps ?? []), ...scheduleFollowUps(id, marker)];
   await s.saveState(state);
 
   return NextResponse.json({ state });
