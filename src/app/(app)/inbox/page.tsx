@@ -104,6 +104,7 @@ export default function InboxPage() {
                     <span style={{ justifySelf: "start", fontSize: 10, fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase", color: C.accentSoft, background: "rgba(59,137,255,0.14)", padding: "3px 8px", borderRadius: 5 }}>New</span>
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontSize: 14, fontWeight: 600 }}>{it.title}</div>
+                      {it.aiSummary && <div style={{ fontSize: 12, color: C.muted, marginTop: 4, lineHeight: 1.45 }}>{it.aiSummary}</div>}
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
                         <span style={{ fontSize: 11, fontWeight: 550, color: C.dim, background: "rgba(255,255,255,0.06)", border: `1px solid #2E2E34`, padding: "2px 8px", borderRadius: 5 }}>{it.pageTitle}</span>
                         <span style={{ fontSize: 11.5, color: C.faint }}>{it.url}</span>

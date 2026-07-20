@@ -184,6 +184,7 @@ function OverviewTab({
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13.5, fontWeight: 500 }}>{r.title}</div>
               <div style={{ fontSize: 12, color: C.faint, marginTop: 2 }}>{r.category}</div>
+              {r.aiSummary && <div style={{ fontSize: 12, color: C.muted, marginTop: 6, lineHeight: 1.45 }}>{r.aiSummary}</div>}
             </div>
             <div style={{ fontSize: 13, fontWeight: 600, color: C.amber, whiteSpace: "nowrap" }}>{r.savings}</div>
             {r.status === "inbox" ? (

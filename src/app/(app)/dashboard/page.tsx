@@ -27,8 +27,11 @@ function agentSeries(id: string, pct: number): number[] {
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { pages, recs, strategy, setStrategy, dashSort, sortDash } = useStore();
+  const { pages, recs, strategy, setStrategy, dashSort, sortDash, watcherNote } = useStore();
   const w = buildWatcher(pages, recs, strategy);
+  const watcherTimestamp = watcherNote
+    ? new Date(watcherNote.generatedAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+    : "today 03:12";
 
   const rows = pages.map((p) => {
     const pass = p.agent.filter((c) => c.pass).length;
@@ -126,30 +129,36 @@ export default function DashboardPage() {
               </div>
               <div>
                 <div style={{ fontSize: 15, fontWeight: 600 }}>The Watcher</div>
-                <div style={{ fontSize: 11.5, color: C.faint }}>Summary updated today 03:12</div>
+                <div style={{ fontSize: 11.5, color: C.faint }}>Summary updated {watcherTimestamp}</div>
               </div>
               <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase", color: C.violet, background: "rgba(138,92,246,0.14)", padding: "3px 8px", borderRadius: 5 }}>
                 Agent
               </span>
             </div>
             <div style={{ marginTop: 16, fontSize: 13, lineHeight: 1.6, color: C.dim }}>
-              <p style={{ margin: "0 0 12px" }}>
-                Across <strong style={{ color: C.text }}>{w.total} monitored pages</strong>, overall health is <strong style={{ color: C.text }}>{w.overall}</strong>. {w.healthy} healthy, {w.improvable} improvable, and {w.degraded} degraded since baseline.
-              </p>
-              <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.05em", textTransform: "uppercase", color: C.faint, marginBottom: 6 }}>What changed</div>
-              <ul style={{ margin: "0 0 14px", paddingLeft: 18 }}>
-                {w.changed.map((b, i) => (
-                  <li key={i} style={{ marginBottom: 4 }}>
-                    {b.lead && <strong style={{ color: b.leadColor }}>{b.lead}</strong>} {b.text}
-                  </li>
-                ))}
-              </ul>
-              {w.topRec && (
+              {watcherNote ? (
+                <p style={{ margin: 0 }}>{watcherNote.text}</p>
+              ) : (
                 <>
-                  <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.05em", textTransform: "uppercase", color: C.faint, marginBottom: 6 }}>Top recommendation</div>
-                  <p style={{ margin: 0, padding: "11px 13px", background: "rgba(20,110,245,0.08)", border: "1px solid rgba(20,110,245,0.22)", borderRadius: 8 }}>
-                    Prioritize <strong style={{ color: C.text }}>{w.topRec.pageTitle}</strong> — acting on “{w.topRec.recTitle}” recovers an estimated <strong style={{ color: C.text }}>{w.topRec.savings}</strong> of load time.
+                  <p style={{ margin: "0 0 12px" }}>
+                    Across <strong style={{ color: C.text }}>{w.total} monitored pages</strong>, overall health is <strong style={{ color: C.text }}>{w.overall}</strong>. {w.healthy} healthy, {w.improvable} improvable, and {w.degraded} degraded since baseline.
                   </p>
+                  <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.05em", textTransform: "uppercase", color: C.faint, marginBottom: 6 }}>What changed</div>
+                  <ul style={{ margin: "0 0 14px", paddingLeft: 18 }}>
+                    {w.changed.map((b, i) => (
+                      <li key={i} style={{ marginBottom: 4 }}>
+                        {b.lead && <strong style={{ color: b.leadColor }}>{b.lead}</strong>} {b.text}
+                      </li>
+                    ))}
+                  </ul>
+                  {w.topRec && (
+                    <>
+                      <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.05em", textTransform: "uppercase", color: C.faint, marginBottom: 6 }}>Top recommendation</div>
+                      <p style={{ margin: 0, padding: "11px 13px", background: "rgba(20,110,245,0.08)", border: "1px solid rgba(20,110,245,0.22)", borderRadius: 8 }}>
+                        Prioritize <strong style={{ color: C.text }}>{w.topRec.pageTitle}</strong> — acting on “{w.topRec.recTitle}” recovers an estimated <strong style={{ color: C.text }}>{w.topRec.savings}</strong> of load time.
+                      </p>
+                    </>
+                  )}
                 </>
               )}
             </div>
