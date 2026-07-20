@@ -38,6 +38,8 @@ All are optional for local development — the app runs without them.
 | `PSI_MOCK`                   | When set, collection returns deterministic synthetic scores instead of calling PSI (tests).              |
 | `PSI_RUNS`                   | Override the number of PSI runs per strategy (1–5, default 5) for quick checks.                          |
 | `NIGHTLY_PAGE_CONCURRENCY`   | Number of pages collected concurrently by nightly (1–4, default 2).                                     |
+| `ANTHROPIC_API_KEY`          | Enables AI explanations for new recommendations and the nightly Watcher narrative.                       |
+| `ANTHROPIC_MOCK`             | Uses deterministic placeholder AI text without making Anthropic requests.                               |
 
 Put these in `.env.local`.
 
@@ -58,13 +60,11 @@ Put these in `.env.local`.
   pages start first with bounded concurrency, then due follow-ups run).
   `CRON_SECRET` is mandatory outside development.
 - **Storage** — a tenant-scoped `DataStore` (see `src/lib/store`) mirrors the
-  three Webflow Cloud tiers (key-value read model, append-only history/markers,
-  object storage for raw reports) on the local filesystem under `.data/`, with
-  an in-memory fallback for read-only hosts. Filesystem updates are serialized
-  per tenant within the process and committed with atomic file replacement.
-  A multi-instance Webflow adapter must implement `updateState` with a database
-  transaction or conditional/versioned write; that durable adapter remains
-  intentionally deferred.
+  state snapshot, append-only history/markers, and raw report tiers. Local
+  development uses the filesystem under `.data/`, with an in-memory fallback
+  for read-only hosts and per-tenant serialized atomic replacement. A deployed
+  OpenNext worker with `DB` and `REPORTS` bindings automatically uses D1 plus
+  R2; D1 state updates use version-guarded compare-and-swap retries.
 - **State mutations** go through targeted server-side domain endpoints
   (`/api/pages`, `/api/recs`, `/api/pages/[id]/*`) and the store-level atomic
   update primitive. External PSI/Slack work happens outside that critical
@@ -72,6 +72,10 @@ Put these in `.env.local`.
 - **Background execution** — the local runner adapts Next.js `after()`. This
   keeps the request short but is not a durable queue. `BackgroundJobRunner` is
   the replacement boundary for a future Webflow job/queue adapter.
+- **AI text** — new Lighthouse recommendations can receive concise Anthropic
+  explanations, and nightly runs refresh the Watcher narrative. Both paths
+  fail open to the existing non-AI UI when no key is configured or generation
+  fails.
 
 ## Deployment access decision
 
@@ -93,10 +97,9 @@ with an identity provider while keeping the route protection fail closed.
 
 ## Deferred integrations
 
-- Durable Webflow Cloud storage credentials/adapter
 - Durable Webflow background job/queue adapter
-- AI provider credentials and AI-authored Watcher output
-- PageSpeed or Slack production credentials
+- Production Anthropic, PageSpeed, and Slack credentials
+- Per-user identity and role-based authorization
 - Automated page remediation
 
 ## Product decisions

@@ -128,6 +128,7 @@ export default function TasksPage() {
                     <span style={{ justifySelf: "center", width: 9, height: 9, borderRadius: "50%", background: taskAccent(t.taskStatus) }} />
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontSize: 14, fontWeight: 600 }}>{t.title}</div>
+                      {t.aiSummary && <div style={{ fontSize: 12, color: C.muted, marginTop: 4, lineHeight: 1.45 }}>{t.aiSummary}</div>}
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
                         {pageChip(t)}
                         <span style={{ fontSize: 11.5, fontWeight: 550, color: taskAccent(t.taskStatus) }}>{taskLabel(t.taskStatus)}</span>
@@ -185,6 +186,7 @@ export default function TasksPage() {
                             >
                               <div style={{ marginBottom: 9 }}>{pageChip(t)}</div>
                               <div style={{ fontSize: 13.5, fontWeight: 600, lineHeight: 1.35 }}>{t.title}</div>
+                              {t.aiSummary && <div style={{ fontSize: 12, color: C.muted, marginTop: 6, lineHeight: 1.45 }}>{t.aiSummary}</div>}
                               <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 11 }}>
                                 <span style={{ fontSize: 11, fontWeight: 600, color: C.amber, background: "rgba(255,154,61,0.13)", padding: "2px 8px", borderRadius: 5 }}>{t.savings} saved</span>
                                 <span style={{ fontSize: 11, fontWeight: 600, color: C.dim, background: "rgba(255,255,255,0.06)", padding: "2px 8px", borderRadius: 5 }}>{t.estTime}</span>

@@ -5,6 +5,9 @@ import { scan } from "./agentReadiness";
 import { costBand } from "./cost";
 import { postAlert, postFollowup } from "./slack";
 import type { SlackDelivery } from "./slack";
+import { generateText } from "./anthropic";
+import { buildWatcher } from "./watcher";
+import { getEnv } from "./env";
 import { mediansOf, DROP_THRESHOLD } from "./scoring";
 import { parseMarkerDate, shortDate } from "./ui";
 import { CATEGORIES, STRATEGIES } from "./types";
@@ -109,29 +112,36 @@ async function insertRecommendations(
   opportunities: { id: string; title: string; savingsMs: number }[],
   now: Date,
 ): Promise<AppState> {
+  const snapshot = await dataStore.getState();
+  const page = snapshot.pages.find((item) => item.id === pageId);
+  if (!page) return snapshot;
+  const added = shortDate(now);
+  const candidates = await Promise.all(opportunities.slice(0, 6).map(async (opportunity) => {
+    const rec: Rec = {
+      key: `${pageId}:${opportunity.id}`,
+      pageId,
+      pageTitle: page.title,
+      url: page.url,
+      id: opportunity.id,
+      title: opportunity.title,
+      category: "Performance",
+      savings: `${(opportunity.savingsMs / 1000).toFixed(1)} s`,
+      estTime: costBand(`${opportunity.id} ${opportunity.title}`),
+      status: "inbox",
+      taskStatus: "todo",
+      added,
+      doneDate: null,
+    };
+    const summary = await summarizeRec(rec, page);
+    if (summary) rec.aiSummary = summary;
+    return rec;
+  }));
+
   return dataStore.updateState((state) => {
-    const page = state.pages.find((item) => item.id === pageId);
-    if (!page) return;
-    const added = shortDate(now);
-    for (const opportunity of opportunities.slice(0, 6)) {
-      const key = `${pageId}:${opportunity.id}`;
-      const title = opportunity.title.trim().toLowerCase();
-      if (state.recs.some((rec) => rec.key === key || (rec.pageId === pageId && rec.title.trim().toLowerCase() === title))) continue;
-      const rec: Rec = {
-        key,
-        pageId,
-        pageTitle: page.title,
-        url: page.url,
-        id: opportunity.id,
-        title: opportunity.title,
-        category: "Performance",
-        savings: `${(opportunity.savingsMs / 1000).toFixed(1)} s`,
-        estTime: costBand(`${opportunity.id} ${opportunity.title}`),
-        status: "inbox",
-        taskStatus: "todo",
-        added,
-        doneDate: null,
-      };
+    if (!state.pages.some((item) => item.id === pageId)) return;
+    for (const rec of candidates) {
+      const title = rec.title.trim().toLowerCase();
+      if (state.recs.some((item) => item.key === rec.key || (item.pageId === pageId && item.title.trim().toLowerCase() === title))) continue;
       state.recs.push(rec);
     }
   });
@@ -142,6 +152,46 @@ async function maybeAlert(page: WatchPage, alertFn: typeof postAlert): Promise<v
   const base = mediansOf(page.baseline.mobile);
   const affected = CATEGORIES.filter((category) => base[category.key] - page.current.mobile[category.key] >= DROP_THRESHOLD).map((category) => category.label);
   if (affected.length) await alertFn(page.title, page.url, affected);
+}
+
+/** Plain-English, one/two-sentence explanation of a newly-created recommendation. */
+async function summarizeRec(rec: Rec, page: WatchPage): Promise<string | null> {
+  const prompt = `You are writing a plain-English explanation of a Lighthouse performance recommendation for a marketing team member, not a developer.
+
+Page: "${page.title}" (${page.url})
+Recommendation: "${rec.title}"
+Category: ${rec.category}
+Estimated load-time savings: ${rec.savings}
+Estimated effort to implement: ${rec.estTime}
+
+Explain what this recommendation means and why it's worth doing, in plain terms. Reference the numbers naturally rather than restating them verbatim. Two sentences maximum. No preamble, no markdown.`;
+  return generateText(prompt, { maxTokens: 150 });
+}
+
+/** The Watcher's dashboard narrative: a short, factual read of overall health, refreshed once per nightly run. */
+async function generateWatcherNote(dataStore: DataStore, now: Date): Promise<void> {
+  const state = await dataStore.getState();
+  const w = buildWatcher(state.pages, state.recs, "mobile");
+  const degradedDetail = state.pages.flatMap((p) => {
+    if (p.status !== "degraded" || !p.baseline) return [];
+    const drop = Math.max(0, Math.round((mediansOf(p.baseline.mobile).perf ?? 0) - (p.current.mobile?.perf ?? 0)));
+    const marker = p.markers.length ? p.markers[p.markers.length - 1].text : null;
+    return [`${p.title}: dropped ${drop} performance points${marker ? ` after "${marker}"` : ""}`];
+  });
+
+  const prompt = `You are "The Watcher," an automated page-performance monitor writing a short status summary for a marketing team's dashboard.
+
+Overall: ${w.total} monitored pages — ${w.healthy} healthy, ${w.improvable} improvable, ${w.degraded} degraded.
+${degradedDetail.length ? `Degraded pages:\n${degradedDetail.join("\n")}` : "No pages are currently degraded."}
+${w.topRec ? `Top recommendation: on "${w.topRec.pageTitle}", "${w.topRec.recTitle}" would recover about ${w.topRec.savings} of load time.` : ""}
+
+Write a factual, specific 2-3 sentence summary of current page-performance health for this team, in a professional but direct tone (no hype, no exclamation points). Reference the concrete numbers above naturally. No preamble, no markdown, no headings — plain prose only.`;
+
+  const text = await generateText(prompt, { maxTokens: 250 });
+  if (!text) return;
+  await dataStore.updateState((draft) => {
+    draft.watcherNote = { text, generatedAt: now.toISOString() };
+  });
 }
 
 /** Capture a real baseline, then atomically apply it to the current page. */
@@ -175,7 +225,7 @@ export async function runNightly(options: CollectorDependencies = {}): Promise<{
   const d = deps(options);
   const snapshot = await d.dataStore.getState();
   const ordered = [...snapshot.pages].sort((a, b) => (a.flag === "priority" ? 0 : 1) - (b.flag === "priority" ? 0 : 1));
-  const configured = options.nightlyConcurrency ?? Number(process.env.NIGHTLY_PAGE_CONCURRENCY ?? 2);
+  const configured = options.nightlyConcurrency ?? Number(getEnv("NIGHTLY_PAGE_CONCURRENCY") ?? 2);
   const concurrency = Math.max(1, Math.min(4, Number.isFinite(configured) ? Math.floor(configured) : 2));
   const failed: string[] = [];
   const coalesced: string[] = [];
@@ -213,6 +263,7 @@ export async function runNightly(options: CollectorDependencies = {}): Promise<{
 
   await Promise.all(Array.from({ length: Math.min(concurrency, ordered.length) }, () => worker()));
   await processFollowUps(options);
+  await generateWatcherNote(d.dataStore, d.now());
   return { ran, failed, coalesced };
 }
 

@@ -65,7 +65,7 @@ function copyState(state: AppState): AppState {
   return structuredClone(state);
 }
 
-function normalizeState(state: AppState): AppState {
+export function normalizeState(state: AppState): AppState {
   for (const page of state.pages) {
     // Older pending records carried a zero-filled placeholder baseline. The
     // timestamp is the authoritative proof that baseline capture occurred.
