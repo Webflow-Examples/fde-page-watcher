@@ -31,8 +31,10 @@ export default function DashboardPage() {
   const w = buildWatcher(pages, recs, strategy);
 
   const rows = pages.map((p) => {
-    const pass = p.agent.filter((c) => c.pass).length;
-    const total = p.agent.length;
+    // Unavailable checks aren't failures — exclude them from the pass rate.
+    const available = p.agent.filter((c) => !c.unavailable);
+    const pass = available.filter((c) => c.pass).length;
+    const total = available.length;
     const pct = total ? Math.round((pass / total) * 100) : 0;
     const am = scoreMeta(pct);
     // A pending page (no baseline / history yet) has nothing to chart — show

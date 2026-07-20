@@ -238,6 +238,9 @@ export function StoreProvider({ initial, children }: { initial: AppState; childr
       const cur = dataRef.current;
       const rec = cur.recs.find((r) => r.key === key);
       if (!rec) return;
+      // Idempotent: re-dropping an already-done card onto Done must not log a
+      // second change marker or a duplicate set of follow-ups (audit).
+      if (to === rec.taskStatus) return;
       const date = shortDate();
       if (to === "done") {
         // Completing a task logs a change marker + schedules follow-ups, so it
