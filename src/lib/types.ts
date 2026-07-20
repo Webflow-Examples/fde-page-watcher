@@ -114,6 +114,7 @@ export interface Rec {
   taskStatus: TaskStatus;
   added: string;
   doneDate: string | null;
+  aiSummary?: string; // Claude-written plain-English explanation, generated once when the rec is created
 }
 
 /** A failing Lighthouse audit / opportunity shown on the page detail. */
@@ -125,11 +126,18 @@ export interface Audit {
   dot: string;
 }
 
+/** The Watcher's Claude-written dashboard narrative, refreshed once per nightly run. */
+export interface WatcherNote {
+  text: string;
+  generatedAt: string; // ISO
+}
+
 /** The full application state — the single source of truth persisted per tenant. */
 export interface AppState {
   pages: WatchPage[];
   recs: Rec[];
   followUps?: FollowUp[];
+  watcherNote?: WatcherNote;
 }
 
 export const TENANT = "brand-studio" as const;

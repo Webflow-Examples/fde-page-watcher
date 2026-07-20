@@ -3,6 +3,8 @@ import { collect } from "./psi";
 import { scan } from "./agentReadiness";
 import { costBand } from "./cost";
 import { postAlert, postFollowup } from "./slack";
+import { generateText } from "./anthropic";
+import { buildWatcher } from "./watcher";
 import { classifyStatus, mediansOf, DROP_THRESHOLD } from "./scoring";
 import { shortDate } from "./ui";
 import { CATEGORIES, STRATEGIES } from "./types";
@@ -92,6 +94,8 @@ export async function runPage(pageId: string): Promise<AppState> {
       added: today,
       doneDate: null,
     };
+    const summary = await summarizeRec(rec, pg);
+    if (summary) rec.aiSummary = summary;
     next.recs.push(rec);
   }
   await s.saveState(next);
@@ -105,6 +109,47 @@ async function maybeAlert(page: WatchPage): Promise<void> {
   const base = mediansOf(page.baseline.mobile);
   const affected = CATEGORIES.filter((c) => base[c.key] - page.current.mobile[c.key] >= DROP_THRESHOLD).map((c) => c.label);
   if (affected.length) await postAlert(page.title, page.url, affected);
+}
+
+/** Plain-English, one/two-sentence explanation of a newly-created recommendation. */
+async function summarizeRec(rec: Rec, page: WatchPage): Promise<string | null> {
+  const prompt = `You are writing a plain-English explanation of a Lighthouse performance recommendation for a marketing team member, not a developer.
+
+Page: "${page.title}" (${page.url})
+Recommendation: "${rec.title}"
+Category: ${rec.category}
+Estimated load-time savings: ${rec.savings}
+Estimated effort to implement: ${rec.estTime}
+
+Explain what this recommendation means and why it's worth doing, in plain terms. Reference the numbers naturally rather than restating them verbatim. Two sentences maximum. No preamble, no markdown.`;
+  return generateText(prompt, { maxTokens: 150 });
+}
+
+/** The Watcher's dashboard narrative: a short, factual read of overall health, refreshed once per nightly run. */
+async function generateWatcherNote(): Promise<void> {
+  const s = getStore();
+  const state = await s.getState();
+  const w = buildWatcher(state.pages, state.recs, "mobile");
+  const degradedDetail = state.pages
+    .filter((p) => p.status === "degraded")
+    .map((p) => {
+      const drop = Math.max(0, Math.round((mediansOf(p.baseline.mobile).perf ?? 0) - (p.current.mobile?.perf ?? 0)));
+      const marker = p.markers.length ? p.markers[p.markers.length - 1].text : null;
+      return `${p.title}: dropped ${drop} performance points${marker ? ` after "${marker}"` : ""}`;
+    });
+
+  const prompt = `You are "The Watcher," an automated page-performance monitor writing a short status summary for a marketing team's dashboard.
+
+Overall: ${w.total} monitored pages — ${w.healthy} healthy, ${w.improvable} improvable, ${w.degraded} degraded.
+${degradedDetail.length ? `Degraded pages:\n${degradedDetail.join("\n")}` : "No pages are currently degraded."}
+${w.topRec ? `Top recommendation: on "${w.topRec.pageTitle}", "${w.topRec.recTitle}" would recover about ${w.topRec.savings} of load time.` : ""}
+
+Write a factual, specific 2-3 sentence summary of current page-performance health for this team, in a professional but direct tone (no hype, no exclamation points). Reference the concrete numbers above naturally. No preamble, no markdown, no headings — plain prose only.`;
+
+  const text = await generateText(prompt, { maxTokens: 250 });
+  if (!text) return;
+  state.watcherNote = { text, generatedAt: new Date().toISOString() };
+  await s.saveState(state);
 }
 
 /** Capture (or re-capture) a baseline: the same five-run median path, per strategy (REQ-012). */
@@ -139,6 +184,7 @@ export async function runNightly(): Promise<{ ran: number; failed: string[] }> {
     }
   }
   await processFollowUps();
+  await generateWatcherNote();
   return { ran: ordered.length - failed.length, failed };
 }
 
