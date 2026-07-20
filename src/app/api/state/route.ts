@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getStore } from "@/lib/store";
+import { recoverStaleRuns } from "@/lib/mutations";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,6 +13,6 @@ export const dynamic = "force-dynamic";
 // (audit High #2). The client polls this endpoint for the authoritative state.
 
 export async function GET() {
-  const state = await getStore().getState();
+  const state = await recoverStaleRuns();
   return NextResponse.json({ state });
 }
