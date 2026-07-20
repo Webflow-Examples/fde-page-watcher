@@ -8,7 +8,7 @@
 export type CategoryKey = "perf" | "a11y" | "bp" | "seo";
 export type Strategy = "mobile" | "desktop";
 export type Flag = "priority" | "watching";
-export type PageStatus = "healthy" | "improvable" | "degraded";
+export type PageStatus = "healthy" | "improvable" | "degraded" | "pending";
 
 export const STRATEGIES: Strategy[] = ["mobile", "desktop"];
 

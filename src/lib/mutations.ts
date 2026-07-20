@@ -1,17 +1,6 @@
 import { getStore } from "./store";
-import { classifyStatus, mediansOf } from "./scoring";
 import { shortDate } from "./ui";
-import type {
-  AppState,
-  Flag,
-  Night,
-  NightScores,
-  RecStatus,
-  ScoreByCategory,
-  StrategyScores,
-  TaskStatus,
-  WatchPage,
-} from "./types";
+import type { AppState, Flag, NightScores, RecStatus, ScoreByCategory, TaskStatus, WatchPage } from "./types";
 
 /**
  * Server-side domain mutations. Each performs a read-modify-write against the
@@ -94,21 +83,24 @@ export interface NewPageInput {
   flag: Flag;
 }
 
-/**
- * Flat NightScores at a fixed set of medians (used to seed a brand-new page so
- * the demo renders history immediately). Ported from the old client path; Phase
- * 2 replaces this with a genuine pending / no-baseline state.
- */
-function flatScores(base: ScoreByCategory): StrategyScores {
-  const cs = (v: number, spread: number) => ({ m: v, lo: Math.max(0, v - spread), hi: Math.min(100, v + spread) });
-  const mobile: NightScores = { perf: cs(base.perf, 3), a11y: cs(base.a11y, 1), bp: cs(base.bp, 1), seo: cs(base.seo, 1) };
-  const desktop: NightScores = {
-    perf: cs(Math.min(100, base.perf + 18), 3),
-    a11y: cs(base.a11y, 1),
-    bp: cs(base.bp, 1),
-    seo: cs(base.seo, 1),
+/** A brand-new page starts pending: no baseline, no history, no scan. */
+export function pendingPage(id: string, title: string, url: string, flag: Flag): WatchPage {
+  const zeroCat = { m: 0, lo: 0, hi: 0 };
+  const zeroNight: NightScores = { perf: zeroCat, a11y: zeroCat, bp: zeroCat, seo: zeroCat };
+  const zeroScores: ScoreByCategory = { perf: 0, a11y: 0, bp: 0, seo: 0 };
+  return {
+    id,
+    title,
+    url,
+    flag,
+    status: "pending",
+    baseline: { mobile: zeroNight, desktop: zeroNight },
+    current: { mobile: zeroScores, desktop: zeroScores },
+    history: [],
+    markers: [],
+    agent: [],
+    acted: {},
   };
-  return { mobile, desktop };
 }
 
 export function addPage(input: NewPageInput): Promise<AppState> {
@@ -116,30 +108,8 @@ export function addPage(input: NewPageInput): Promise<AppState> {
     const title = input.title.trim();
     const url = input.url.trim();
     if (!title || !url) throw new Error("addPage: title and url are required");
-
-    const id = `p${Date.now()}`;
-    const base: ScoreByCategory = { perf: 70, a11y: 92, bp: 96, seo: 96 };
-    const scores = flatScores(base);
-    const template = state.pages[0]?.history ?? [];
-    const history: Night[] =
-      template.length > 0
-        ? template.map((d) => ({ i: d.i, date: d.date, scores }))
-        : Array.from({ length: 30 }, (_, i) => ({ i, date: "", scores }));
-
-    const page: WatchPage = {
-      id,
-      title,
-      url,
-      flag: input.flag,
-      status: "healthy",
-      baseline: scores,
-      current: { mobile: base, desktop: { ...base, perf: Math.min(100, base.perf + 18) } },
-      history,
-      markers: [],
-      agent: [],
-      acted: {},
-    };
-    page.status = classifyStatus(mediansOf(page.baseline.mobile), page.history, "mobile");
-    state.pages.push(page);
+    // No fabricated provenance (audit): the page begins pending and gets a
+    // real baseline/history once a baseline is captured or a run completes.
+    state.pages.push(pendingPage(`p${Date.now()}`, title, url, input.flag));
   });
 }

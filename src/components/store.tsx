@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import type { AppState, CategoryKey, Flag, Night, NightScores, ScoreByCategory, Strategy, StrategyScores } from "@/lib/types";
+import type { AppState, CategoryKey, Flag, NightScores, ScoreByCategory, Strategy } from "@/lib/types";
 import { shortDate } from "@/lib/ui";
 
 type SortDir = "asc" | "desc";
@@ -87,17 +87,24 @@ export function useStore(): StoreValue {
 
 const CAT_KEYS: CategoryKey[] = ["perf", "a11y", "bp", "seo"];
 
-/** Flat NightScores at a fixed set of medians (used when a new page has no runs yet). */
-function flatScores(base: ScoreByCategory): StrategyScores {
-  const cs = (v: number, spread: number) => ({ m: v, lo: Math.max(0, v - spread), hi: Math.min(100, v + spread) });
-  const mobile: NightScores = { perf: cs(base.perf, 3), a11y: cs(base.a11y, 1), bp: cs(base.bp, 1), seo: cs(base.seo, 1) };
-  const desktop: NightScores = {
-    perf: cs(Math.min(100, base.perf + 18), 3),
-    a11y: cs(base.a11y, 1),
-    bp: cs(base.bp, 1),
-    seo: cs(base.seo, 1),
+/** A brand-new page starts pending (no baseline / history) — no fabricated provenance. */
+function pendingOptimisticPage(id: string, title: string, url: string, flag: Flag): AppState["pages"][number] {
+  const zeroCat = { m: 0, lo: 0, hi: 0 };
+  const zeroNight: NightScores = { perf: zeroCat, a11y: zeroCat, bp: zeroCat, seo: zeroCat };
+  const zeroScores: ScoreByCategory = { perf: 0, a11y: 0, bp: 0, seo: 0 };
+  return {
+    id,
+    title,
+    url,
+    flag,
+    status: "pending",
+    baseline: { mobile: zeroNight, desktop: zeroNight },
+    current: { mobile: zeroScores, desktop: zeroScores },
+    history: [],
+    markers: [],
+    agent: [],
+    acted: {},
   };
-  return { mobile, desktop };
 }
 
 export function StoreProvider({ initial, children }: { initial: AppState; children: React.ReactNode }) {
@@ -266,39 +273,17 @@ export function StoreProvider({ initial, children }: { initial: AppState; childr
       return;
     }
     const cur = dataRef.current;
-    // Optimistic placeholder page (temp id) — the server generates the real id
-    // and returns the authoritative state, which replaces this on success.
-    const base: ScoreByCategory = { perf: 70, a11y: 92, bp: 96, seo: 96 };
-    const template = cur.pages[0]?.history ?? [];
-    const scores = flatScores(base);
-    const history: Night[] =
-      template.length > 0
-        ? template.map((d) => ({ i: d.i, date: d.date, scores }))
-        : Array.from({ length: 30 }, (_, i) => ({ i, date: "", scores }));
+    // Optimistic pending page (temp id) — the server generates the real id and
+    // returns the authoritative state, which replaces this on success.
     const optimistic: AppState = {
       ...cur,
-      pages: [
-        ...cur.pages,
-        {
-          id: `tmp${Date.now()}`,
-          title: f.title.trim(),
-          url: f.url.trim(),
-          flag: f.flag,
-          status: "healthy",
-          baseline: scores,
-          current: { mobile: base, desktop: { ...base, perf: Math.min(100, base.perf + 18) } },
-          history,
-          markers: [],
-          agent: [],
-          acted: {},
-        },
-      ],
+      pages: [...cur.pages, pendingOptimisticPage(`tmp${Date.now()}`, f.title.trim(), f.url.trim(), f.flag)],
     };
     setModal(null);
     mutate(
       optimistic,
       { url: `/api/pages`, body: { title: f.title.trim(), url: f.url.trim(), flag: f.flag } },
-      { success: `Added ${f.title.trim()} — included in the next nightly run`, failure: "Couldn't add the page — try again" },
+      { success: `Added ${f.title.trim()} — pending its first run`, failure: "Couldn't add the page — try again" },
     );
   }, [form, mutate, flash]);
 

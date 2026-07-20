@@ -37,7 +37,8 @@ export default function PageDetail() {
   const total = page.agent.length;
   const apct = total ? Math.round((pass / total) * 100) : 0;
   const apm = scoreMeta(apct);
-  const failList = page.agent.filter((c) => !c.pass);
+  const failList = page.agent.filter((c) => !c.pass && !c.unavailable);
+  const isPending = page.status === "pending" || page.history.length === 0;
 
   const tabs: { key: "overview" | "history" | "audits" | "agent"; label: string }[] = [
     { key: "overview", label: "Overview" },
@@ -87,10 +88,16 @@ export default function PageDetail() {
       </header>
 
       <div style={{ padding: "28px 40px 56px" }}>
-        {tab === "overview" && <OverviewTab page={page} recs={recs} strategy={strategy} apct={apct} apm={apm} pass={pass} total={total} failList={failList} store={store} />}
-        {tab === "history" && <HistoryTab page={page} strategy={strategy} chartCat={chartCat} setChartCat={setChartCat} store={store} />}
-        {tab === "audits" && <OpportunitiesTab />}
-        {tab === "agent" && <AgentTab page={page} pass={pass} fail={total - pass} />}
+        {isPending ? (
+          <PendingPanel page={page} store={store} />
+        ) : (
+          <>
+            {tab === "overview" && <OverviewTab page={page} recs={recs} strategy={strategy} apct={apct} apm={apm} pass={pass} total={total} failList={failList} store={store} />}
+            {tab === "history" && <HistoryTab page={page} strategy={strategy} chartCat={chartCat} setChartCat={setChartCat} store={store} />}
+            {tab === "audits" && <OpportunitiesTab />}
+            {tab === "agent" && <AgentTab page={page} pass={pass} fail={total - pass} />}
+          </>
+        )}
       </div>
     </div>
   );
@@ -316,6 +323,21 @@ function HistoryTab({
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+function PendingPanel({ page, store }: { page: WatchPage; store: ReturnType<typeof useStore> }) {
+  return (
+    <div style={{ padding: "56px 24px", textAlign: "center", background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13 }}>
+      <div style={{ fontSize: 16, fontWeight: 600 }}>No data yet</div>
+      <div style={{ fontSize: 13, color: C.muted, marginTop: 8, maxWidth: 460, marginInline: "auto", lineHeight: 1.55 }}>
+        This page is pending its first collection. Capture a baseline to anchor future comparisons, or run now to collect a first snapshot. It also joins the next nightly run automatically.
+      </div>
+      <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 22 }}>
+        <button onClick={() => store.captureBaseline(page.id)} style={{ border: "none", background: C.accent, color: "#fff", fontSize: 12.5, fontWeight: 550, padding: "9px 16px", borderRadius: 8, cursor: "pointer" }}>Capture baseline</button>
+        <button onClick={() => store.runPage(page.id)} style={{ border: `1px solid ${C.border2}`, background: "rgba(255,255,255,0.04)", color: C.text, fontSize: 12.5, fontWeight: 500, padding: "9px 16px", borderRadius: 8, cursor: "pointer" }}>Run now</button>
       </div>
     </div>
   );

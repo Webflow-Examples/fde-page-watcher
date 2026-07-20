@@ -35,12 +35,18 @@ export default function DashboardPage() {
     const total = p.agent.length;
     const pct = total ? Math.round((pass / total) * 100) : 0;
     const am = scoreMeta(pct);
+    // A pending page (no baseline / history yet) has nothing to chart — show
+    // em dashes rather than fabricated zeros (audit: no fabricated provenance).
+    const isPending = p.status === "pending" || p.history.length === 0;
     const cats = CATEGORIES.map((c) => {
+      if (isPending) {
+        return { key: c.key, score: null as number | null, fg: C.faint, delta: "", deltaFg: C.faint, series: [] as number[], line: C.faint };
+      }
       const v = p.current[strategy][c.key];
       const bv = p.baseline[strategy][c.key].m;
       const sm = scoreMeta(v);
       const dm = deltaMeta(v, bv);
-      return { key: c.key, score: v, fg: sm.fg, delta: dm.text, deltaFg: dm.fg, series: categorySeries(p.history, strategy, c.key, 7), line: sm.line };
+      return { key: c.key, score: v as number | null, fg: sm.fg, delta: dm.text, deltaFg: dm.fg, series: categorySeries(p.history, strategy, c.key, 7), line: sm.line };
     });
     const sortVals: Record<string, string | number> = { title: p.title.toLowerCase(), status: p.status, agent: pct };
     CATEGORIES.forEach((c) => (sortVals[c.key] = p.current[strategy][c.key]));
@@ -54,7 +60,7 @@ export default function DashboardPage() {
       agentPct: total ? `${pct}%` : "—",
       agentFg: am.fg,
       agentSub: total ? `${pass}/${total}` : "no scan",
-      agentSeries: agentSeries(p.id, pct),
+      agentSeries: total ? agentSeries(p.id, pct) : ([] as number[]),
       agentLine: am.line,
       sortVals,
     };
@@ -187,13 +193,13 @@ export default function DashboardPage() {
               <div>
                 <StatusBadge status={row.status} />
               </div>
-              {row.cats.map((c: { key: CategoryKey; score: number; fg: string; delta: string; deltaFg: string; series: number[]; line: string }) => (
+              {row.cats.map((c: { key: CategoryKey; score: number | null; fg: string; delta: string; deltaFg: string; series: number[]; line: string }) => (
                 <div key={c.key} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
                   <div style={{ width: 84, height: 30 }}>
                     <Sparkline series={c.series} color={c.line} w={84} h={30} />
                   </div>
                   <div style={{ display: "flex", alignItems: "baseline", gap: 5 }}>
-                    <span style={{ fontSize: 14, fontWeight: 600, color: c.fg }}>{c.score}</span>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: c.fg }}>{c.score === null ? "—" : c.score}</span>
                     <span style={{ fontSize: 10, fontWeight: 600, color: c.deltaFg }}>{c.delta}</span>
                   </div>
                 </div>
