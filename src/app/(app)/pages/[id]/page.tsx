@@ -228,31 +228,52 @@ function HistoryTab({
 }) {
   const runs = [...page.history].reverse().slice(0, 12);
   const GRID = "120px 1fr 84px 84px 84px 84px 100px";
-  const openReport = (d: Night) => {
+  const openReport = async (d: Night) => {
     const cats = CATEGORIES.map((c) => {
       const s = d.scores[strategy][c.key];
       return { label: c.label, median: s.m, range: `${s.lo}–${s.hi}`, key: c.key };
     });
-    const raw = JSON.stringify(
+    // Read the actual stored object for this night, not a fabricated payload
+    // (audit: audit trail). Seed / imported nights have no stored report, so
+    // show an honest summary of what IS stored instead of inventing PSI metadata.
+    let raw: string;
+    if (d.rawReportKey) {
+      try {
+        const res = await fetch(`/api/pages/${page.id}/report/${encodeURIComponent(d.rawReportKey)}`);
+        if (res.ok) {
+          const json = (await res.json()) as { report: unknown };
+          raw = JSON.stringify(json.report, null, 2);
+        } else {
+          raw = fallbackReport(d);
+        }
+      } catch {
+        raw = fallbackReport(d);
+      }
+    } else {
+      raw = fallbackReport(d);
+    }
+    store.openReport({ date: d.date, url: page.url, raw, cats });
+  };
+
+  function fallbackReport(d: Night): string {
+    return JSON.stringify(
       {
-        requestedUrl: `https://${page.url}`,
-        fetchTime: `${d.date} 03:00`,
+        note: "No raw PSI payload is stored for this night (seed / imported data). Showing the stored medians and ranges only.",
+        date: d.date,
         strategy,
-        lighthouseVersion: "12.2.1",
-        runs: d.sampleSize ?? 5,
-        categories: {
+        samples: d.samples ?? d.sampleSize ?? null,
+        scores: {
           performance: { median: d.scores[strategy].perf.m, range: [d.scores[strategy].perf.lo, d.scores[strategy].perf.hi] },
           accessibility: { median: d.scores[strategy].a11y.m, range: [d.scores[strategy].a11y.lo, d.scores[strategy].a11y.hi] },
           "best-practices": { median: d.scores[strategy].bp.m, range: [d.scores[strategy].bp.lo, d.scores[strategy].bp.hi] },
           seo: { median: d.scores[strategy].seo.m, range: [d.scores[strategy].seo.lo, d.scores[strategy].seo.hi] },
         },
-        storageKey: d.rawReportKey ?? `psi/${page.id}/${d.date.replace(" ", "-")}-${strategy}.json`,
+        agentChecksRecorded: d.agent?.length ?? 0,
       },
       null,
       2,
     );
-    store.openReport({ date: d.date, url: page.url, raw, cats });
-  };
+  }
 
   return (
     <div>

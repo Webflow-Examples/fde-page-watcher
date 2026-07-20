@@ -24,7 +24,7 @@ export interface CollectResult {
   scores: NightScores;
   opportunities: Opportunity[];
   sampleSize: number;
-  raw: unknown;
+  raws: unknown[]; // every successful run's raw payload — the full audit trail (REQ-006), not one representative
 }
 
 export function normalizeUrl(url: string): string {
@@ -123,7 +123,7 @@ export async function collect(url: string, strategy: Strategy, n = defaultRuns()
   const medianPerf = scores.perf.m;
   const rep = runs.slice().sort((a, b) => Math.abs(a.scores.perf - medianPerf) - Math.abs(b.scores.perf - medianPerf))[0];
 
-  return { scores, opportunities: rep.opportunities, sampleSize: runs.length, raw: rep.raw };
+  return { scores, opportunities: rep.opportunities, sampleSize: runs.length, raws: runs.map((r) => r.raw) };
 }
 
 function mockCollect(url: string, strategy: Strategy, n: number): CollectResult {
@@ -138,5 +138,6 @@ function mockCollect(url: string, strategy: Strategy, n: number): CollectResult 
     { id: "modern-image-formats", title: "Serve images in next-gen formats", savingsMs: 1200 },
     { id: "render-blocking-resources", title: "Eliminate render-blocking resources", savingsMs: 600 },
   ];
-  return { scores, opportunities, sampleSize: n, raw: { mock: true, url, strategy, note: "PSI_MOCK synthetic report" } };
+  const raws = Array.from({ length: n }, (_, k) => ({ mock: true, url, strategy, run: k + 1, note: "PSI_MOCK synthetic report" }));
+  return { scores, opportunities, sampleSize: n, raws };
 }
