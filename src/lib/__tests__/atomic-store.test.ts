@@ -5,7 +5,7 @@ import path from "node:path";
 import { createFsStore, type DataStore } from "../store/fsStore";
 import { advanceTask, pendingPage, setPageFlag } from "../mutations";
 import { captureBaseline, runPage } from "../collector";
-import type { AppState, CategoryScore, NightScores, Rec, Strategy } from "../types";
+import type { AppState, CategoryScore, NightScores, Rec } from "../types";
 
 const roots: string[] = [];
 
@@ -89,7 +89,7 @@ describe("atomic tenant updates", () => {
     let started = 0;
     const running = runPage("page", {
       dataStore,
-      collectFn: async (_url: string, _strategy: Strategy) => {
+      collectFn: async () => {
         started += 1;
         return gate.promise;
       },

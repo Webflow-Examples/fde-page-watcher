@@ -1,4 +1,5 @@
-import type { ChangeMarker, FollowUp } from "./types";
+import { randomUUID } from "node:crypto";
+import type { ChangeMarker, FollowUp, Night } from "./types";
 import { parseMarkerDate } from "./ui";
 
 const DAYS: { interval: FollowUp["interval"]; n: number }[] = [
@@ -16,6 +17,7 @@ const DAYS: { interval: FollowUp["interval"]; n: number }[] = [
 export function scheduleFollowUps(pageId: string, marker: ChangeMarker): FollowUp[] {
   const anchor = parseMarkerDate(marker.date) ?? new Date();
   return DAYS.map(({ interval, n }) => ({
+    id: randomUUID(),
     pageId,
     markerId: marker.id,
     markerText: marker.text,
@@ -25,4 +27,22 @@ export function scheduleFollowUps(pageId: string, marker: ChangeMarker): FollowU
     sent: false,
     attempts: 0,
   }));
+}
+
+/** Place a marker on the latest collected night at or before its ISO date. */
+export function resolveMarkerIndex(history: Night[], markerDate: string): number {
+  const target = parseMarkerDate(markerDate);
+  if (!target || history.length === 0) return Math.max(0, history.length - 1);
+  let bestIndex = -1;
+  let bestTime = Number.NEGATIVE_INFINITY;
+  for (const night of history) {
+    const date = parseMarkerDate(night.iso ?? night.date, target.getUTCFullYear());
+    if (!date) continue;
+    const time = date.getTime();
+    if (time <= target.getTime() && (time > bestTime || (time === bestTime && night.i > bestIndex))) {
+      bestTime = time;
+      bestIndex = night.i;
+    }
+  }
+  return bestIndex >= 0 ? bestIndex : history.reduce((min, night) => Math.min(min, night.i), history[0].i);
 }

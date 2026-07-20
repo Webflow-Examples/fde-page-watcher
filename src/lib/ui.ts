@@ -57,6 +57,25 @@ export function shortDate(d: Date = new Date()): string {
   return `${MONTHS[d.getMonth()]} ${d.getDate()}`;
 }
 
+/** Calendar date for form values and persisted marker dates (always UTC ISO). */
+export function isoDate(d: Date = new Date()): string {
+  return d.toISOString().slice(0, 10);
+}
+
+export function normalizeISODate(value: string, ref = new Date()): string | null {
+  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (iso) {
+    const year = Number(iso[1]);
+    const month = Number(iso[2]);
+    const day = Number(iso[3]);
+    const date = new Date(Date.UTC(year, month - 1, day));
+    if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null;
+    return date.toISOString().slice(0, 10);
+  }
+  const parsed = parseMarkerDate(value, ref.getUTCFullYear());
+  return parsed ? parsed.toISOString().slice(0, 10) : null;
+}
+
 /**
  * Parse a date that may be an ISO string or a "Jul 16" display date into a
  * Date (UTC midnight). Display dates carry no year, so `refYear` (default: the

@@ -37,17 +37,18 @@ export default function DashboardPage() {
     const total = available.length;
     const pct = total ? Math.round((pass / total) * 100) : 0;
     const am = scoreMeta(pct);
-    // A pending page (no baseline / history yet) has nothing to chart — show
-    // em dashes rather than fabricated zeros (audit: no fabricated provenance).
-    const isPending = p.status === "pending" || p.history.length === 0;
+    const hasSnapshot = p.history.length > 0 || !!p.baseline;
+    const hasBaseline = !!p.baseline && !!p.baselineCapturedAt;
     const cats = CATEGORIES.map((c) => {
-      if (isPending) {
+      if (!hasSnapshot) {
         return { key: c.key, score: null as number | null, fg: C.faint, delta: "", deltaFg: C.faint, series: [] as number[], line: C.faint };
       }
       const v = p.current[strategy][c.key];
-      const bv = p.baseline[strategy][c.key].m;
       const sm = scoreMeta(v);
-      const dm = deltaMeta(v, bv);
+      if (!hasBaseline) {
+        return { key: c.key, score: v as number | null, fg: sm.fg, delta: "", deltaFg: C.faint, series: categorySeries(p.history, strategy, c.key, 7), line: sm.line };
+      }
+      const dm = deltaMeta(v, p.baseline![strategy][c.key].m);
       return { key: c.key, score: v as number | null, fg: sm.fg, delta: dm.text, deltaFg: dm.fg, series: categorySeries(p.history, strategy, c.key, 7), line: sm.line };
     });
     const sortVals: Record<string, string | number> = { title: p.title.toLowerCase(), status: p.status, agent: pct };
@@ -107,6 +108,7 @@ export default function DashboardPage() {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
           <SegToggle
+            label="Dashboard strategy"
             value={strategy}
             onChange={setStrategy}
             options={[
