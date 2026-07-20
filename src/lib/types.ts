@@ -38,8 +38,10 @@ export interface Night {
   date: string; // display date, e.g. "Jul 16"
   iso?: string; // ISO date if produced by a real run
   scores: StrategyScores;
-  sampleSize?: number; // how many of the 5 runs succeeded (REQ-032)
+  samples?: Partial<Record<Strategy, number>>; // per-strategy successful sample size (REQ-032)
+  sampleSize?: number; // min across strategies; kept for older records / quick display
   rawReportKey?: string; // object-storage key for the full PSI payload (REQ-006)
+  agent?: AgentCheck[]; // agent-readiness scan recorded for this night, so history is retained (REQ-008)
 }
 
 /** A user-logged (or acted-upon) change marker on a page's timeline. */

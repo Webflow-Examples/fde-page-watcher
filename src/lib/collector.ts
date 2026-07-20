@@ -6,7 +6,7 @@ import { postAlert, postFollowup } from "./slack";
 import { classifyStatus, mediansOf, DROP_THRESHOLD } from "./scoring";
 import { shortDate } from "./ui";
 import { CATEGORIES, STRATEGIES } from "./types";
-import type { AppState, Night, Rec, StrategyScores, WatchPage } from "./types";
+import type { AppState, Night, Rec, Strategy, StrategyScores, WatchPage } from "./types";
 
 /**
  * Run the full collection path for a single page: 5 PSI runs per strategy, an
@@ -29,25 +29,18 @@ export async function runPage(pageId: string): Promise<AppState> {
   ]);
 
   const scores = {} as StrategyScores;
-  const raw: Record<string, unknown> = {};
-  let sampleSize = 5;
+  const samples: Partial<Record<Strategy, number>> = {};
+  const reportStrategies: Record<string, unknown> = {};
   let opportunities: { id: string; title: string; savingsMs: number }[] = [];
   for (const { strat, res } of stratResults) {
     scores[strat] = res.scores;
-    raw[strat] = res.raw;
-    sampleSize = Math.min(sampleSize, res.sampleSize);
+    samples[strat] = res.sampleSize;
+    // Retain ALL of the run's raw payloads per strategy, not one representative
+    // (audit: incomplete audit trail).
+    reportStrategies[strat] = { sampleSize: res.sampleSize, scores: res.scores, runs: res.raws };
     if (strat === "mobile") opportunities = res.opportunities;
   }
-
-  const iso = new Date().toISOString();
-  const night: Night = {
-    i: page.history.length,
-    date: shortDate(),
-    iso,
-    scores,
-    sampleSize,
-    rawReportKey: `${iso.slice(0, 10)}-${page.history.length}`,
-  };
+  const sampleSize = Math.min(...STRATEGIES.map((strat) => samples[strat] ?? 0));
 
   // Agent-readiness regressions computed against the prior scan.
   const prev = page.agent;
@@ -56,8 +49,24 @@ export async function runPage(pageId: string): Promise<AppState> {
     return { ...c, regressed: !!before && before.pass && !c.pass };
   });
 
+  const iso = new Date().toISOString();
+  const night: Night = {
+    i: page.history.length,
+    date: shortDate(),
+    iso,
+    scores,
+    samples,
+    sampleSize,
+    rawReportKey: `${iso.slice(0, 10)}-${page.history.length}`,
+    agent, // per-night agent scan, so the "recorded on that date" history is retained
+  };
+
+  // The stored object holds the full audit trail: every run's raw payload per
+  // strategy plus the agent scan recorded for this night (REQ-006/008).
+  const report = { pageId, i: night.i, date: night.date, iso, strategies: reportStrategies, agent };
+
   // Storage fan-out: sequential append + snapshot + status + object report.
-  const next = await s.appendNight(pageId, night, raw);
+  const next = await s.appendNight(pageId, night, report);
   const pg = next.pages.find((p) => p.id === pageId)!;
   pg.agent = agent;
 
