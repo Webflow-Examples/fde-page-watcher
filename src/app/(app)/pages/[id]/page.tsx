@@ -133,7 +133,7 @@ function OverviewTab({
   const pageRecs = recs.filter((r) => r.pageId === page.id);
   return (
     <div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16, marginBottom: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 16, marginBottom: 20 }}>
         {CATEGORIES.map((c) => {
           const v = page.current[strategy][c.key];
           const bv = page.baseline[strategy][c.key].m;
@@ -398,7 +398,7 @@ function AgentTab({ page, pass, fail, unavailable }: { page: WatchPage; pass: nu
           The last scan couldn&apos;t reach this page, so every check is unavailable — not failing. Try running again once the page is reachable.
         </div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16, alignItems: "start" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16, alignItems: "start" }}>
           {[...groups.entries()].map(([name, checks]) => (
             <div key={name} style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, padding: "18px 20px" }}>
               <div style={{ fontSize: 11, fontWeight: 550, letterSpacing: "0.05em", textTransform: "uppercase", color: C.faint, marginBottom: 15 }}>{name}</div>

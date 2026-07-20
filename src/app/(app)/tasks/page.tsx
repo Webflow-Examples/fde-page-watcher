@@ -56,12 +56,17 @@ export default function TasksPage() {
 
   const openPage = (pageId: string) => router.push(`/pages/${pageId}`);
   const pageChip = (t: Rec) => (
-    <span
-      onClick={() => openPage(t.pageId)}
+    <button
+      type="button"
+      aria-label={`Open ${t.pageTitle} details`}
+      onClick={(e) => {
+        e.stopPropagation();
+        openPage(t.pageId);
+      }}
       style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 550, color: C.dim, background: "rgba(255,255,255,0.06)", border: `1px solid #2E2E34`, padding: "2px 8px", borderRadius: 5, cursor: "pointer" }}
     >
       {t.pageTitle} ↗
-    </span>
+    </button>
   );
 
   // List groups

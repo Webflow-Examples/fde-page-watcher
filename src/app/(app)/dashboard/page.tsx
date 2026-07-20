@@ -172,9 +172,9 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* table */}
-        <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden" }}>
-          <div style={{ display: "grid", gridTemplateColumns: GRID, alignItems: "center", padding: "14px 24px", borderBottom: `1px solid ${C.border}`, fontSize: 11, fontWeight: 550, letterSpacing: "0.05em", textTransform: "uppercase", color: C.faint }}>
+        {/* table (horizontally scrollable on narrow screens instead of breaking) */}
+        <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 14, overflowX: "auto" }}>
+          <div style={{ display: "grid", gridTemplateColumns: GRID, alignItems: "center", padding: "14px 24px", borderBottom: `1px solid ${C.border}`, fontSize: 11, fontWeight: 550, letterSpacing: "0.05em", textTransform: "uppercase", color: C.faint, minWidth: 880 }}>
             {headers.map((h) => (
               <SortHeader key={h.col} label={h.label} align={h.align} active={dashSort.col === h.col} dir={dashSort.dir} onSort={() => sortDash(h.col)} />
             ))}
@@ -182,8 +182,17 @@ export default function DashboardPage() {
           {rows.map((row) => (
             <div
               key={row.id}
+              role="button"
+              tabIndex={0}
+              aria-label={`Open ${row.title} details`}
               onClick={() => router.push(`/pages/${row.id}`)}
-              style={{ display: "grid", gridTemplateColumns: GRID, alignItems: "center", padding: "16px 24px", borderBottom: `1px solid ${C.rowBorder}`, cursor: "pointer" }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  router.push(`/pages/${row.id}`);
+                }
+              }}
+              style={{ display: "grid", gridTemplateColumns: GRID, alignItems: "center", padding: "16px 24px", borderBottom: `1px solid ${C.rowBorder}`, cursor: "pointer", minWidth: 880 }}
             >
               <div style={{ minWidth: 0, paddingRight: 16 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 9 }}>

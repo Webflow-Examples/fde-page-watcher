@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { useStore } from "./store";
 import { C } from "@/lib/ui";
 import { scoreMeta } from "@/lib/scoring";
@@ -10,6 +11,8 @@ function Toast() {
   if (!toast) return null;
   return (
     <div
+      role="status"
+      aria-live="polite"
       style={{
         position: "fixed",
         bottom: 26,
@@ -34,15 +37,59 @@ function Toast() {
   );
 }
 
-function ModalShell({ width = 460, onClose, children }: { width?: number; onClose: () => void; children: React.ReactNode }) {
+function ModalShell({ width = 460, onClose, label, children }: { width?: number; onClose: () => void; label: string; children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  // Focus management (audit: modals lacked it) — trap Tab within the dialog,
+  // close on Escape, focus the first control on open, and restore focus to the
+  // trigger on close.
+  useEffect(() => {
+    const prev = document.activeElement as HTMLElement | null;
+    const node = ref.current;
+    const focusables = () =>
+      node
+        ? [...node.querySelectorAll<HTMLElement>('a[href],button,input,select,textarea,[tabindex]:not([tabindex="-1"])')].filter((el) => !el.hasAttribute("disabled"))
+        : [];
+    (focusables()[0] ?? node)?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+        return;
+      }
+      if (e.key === "Tab") {
+        const f = focusables();
+        if (f.length === 0) return;
+        const first = f[0];
+        const last = f[f.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      prev?.focus?.();
+    };
+  }, [onClose]);
+
   return (
     <div
       onClick={onClose}
       style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 70, padding: 24 }}
     >
       <div
+        ref={ref}
+        role="dialog"
+        aria-modal="true"
+        aria-label={label}
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
-        style={{ background: "#141416", border: `1px solid ${C.border2}`, borderRadius: 15, width, maxWidth: "100%", maxHeight: "82vh", overflow: "auto", boxShadow: "0 24px 70px rgba(0,0,0,0.6)" }}
+        style={{ background: "#141416", border: `1px solid ${C.border2}`, borderRadius: 15, width, maxWidth: "100%", maxHeight: "82vh", overflow: "auto", boxShadow: "0 24px 70px rgba(0,0,0,0.6)", outline: "none" }}
       >
         {children}
       </div>
@@ -79,7 +126,7 @@ function segBtn(active: boolean): React.CSSProperties {
 function AddModal() {
   const { form, setForm, submitAdd, closeModal } = useStore();
   return (
-    <ModalShell onClose={closeModal}>
+    <ModalShell onClose={closeModal} label="Add a page to the watchlist">
       <div style={{ padding: "22px 24px 0" }}>
         <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>Add a page to the watchlist</h3>
         <p style={{ margin: "7px 0 0", fontSize: 13, color: C.muted }}>It joins the next nightly run. Capture a baseline once it has data.</p>
@@ -106,7 +153,7 @@ function AddModal() {
 function MarkerModal() {
   const { markerText, markerDate, setMarkerText, setMarkerDate, submitMarker, closeModal } = useStore();
   return (
-    <ModalShell onClose={closeModal}>
+    <ModalShell onClose={closeModal} label="Log a change marker">
       <div style={{ padding: "22px 24px 0" }}>
         <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>Log a change marker</h3>
         <p style={{ margin: "7px 0 0", fontSize: 13, color: C.muted }}>Marks the timeline and schedules 2, 7 &amp; 30-day follow-up reports to Slack.</p>
@@ -129,7 +176,7 @@ function ReportModal() {
   const { report, closeModal } = useStore();
   if (!report) return null;
   return (
-    <ModalShell width={600} onClose={closeModal}>
+    <ModalShell width={600} onClose={closeModal} label={`Full report · ${report.date}`}>
       <div
         style={{ padding: "22px 24px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, background: "#141416" }}
       >
@@ -142,7 +189,7 @@ function ReportModal() {
         </button>
       </div>
       <div style={{ padding: "22px 24px" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 22 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 12, marginBottom: 22 }}>
           {report.cats.map((rc) => (
             <div key={rc.key} style={{ border: `1px solid ${C.border2}`, background: C.bgElev, borderRadius: 10, padding: 13 }}>
               <div style={{ fontSize: 11, color: C.muted }}>{rc.label}</div>
