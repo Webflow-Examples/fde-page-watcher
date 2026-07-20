@@ -3,6 +3,7 @@ import path from "node:path";
 import type { AppState, ChangeMarker, Night, WatchPage } from "../types";
 import { buildSeedState } from "../seed";
 import { classifyStatus, mediansOf } from "../scoring";
+import { resolveMarkerIndex } from "../followups";
 
 /**
  * Tenant-scoped data-access layer (REQ-001/002/031) backed by the local
@@ -21,10 +22,24 @@ import { classifyStatus, mediansOf } from "../scoring";
 export interface DataStore {
   readonly tenant: string;
   getState(): Promise<AppState>;
-  saveState(state: AppState): Promise<void>;
+  /**
+   * Atomically re-read, mutate, and commit the tenant state. Filesystem
+   * adapters serialize this callback; durable adapters can map it to a
+   * transaction or a conditional/versioned write.
+   */
+  updateState(mutate: (state: AppState) => void | Promise<void>): Promise<AppState>;
   /** Nightly write fan-out: sequential history append + snapshot update + raw report (REQ-016). */
-  appendNight(pageId: string, night: Night, rawReport?: unknown): Promise<AppState>;
-  addMarker(pageId: string, marker: ChangeMarker): Promise<AppState>;
+  appendNight(
+    pageId: string,
+    runId: string,
+    night: Omit<Night, "i" | "runId" | "rawReportKey">,
+    rawReport?: unknown,
+  ): Promise<{ state: AppState; night: Night | null; inserted: boolean }>;
+  addMarker(
+    pageId: string,
+    marker: Omit<ChangeMarker, "i">,
+    mutate?: (state: AppState, marker: ChangeMarker) => void,
+  ): Promise<AppState>;
   putReport(pageId: string, key: string, payload: unknown): Promise<void>;
   getReport(pageId: string, key: string): Promise<unknown | null>;
 }
@@ -44,6 +59,24 @@ interface Envelope {
  * a Server Component render never crashes the whole app when disk I/O fails.
  */
 const memoryState = new Map<string, AppState>();
+const stateQueues = new Map<string, Promise<void>>();
+
+function copyState(state: AppState): AppState {
+  return structuredClone(state);
+}
+
+function normalizeState(state: AppState): AppState {
+  for (const page of state.pages) {
+    // Older pending records carried a zero-filled placeholder baseline. The
+    // timestamp is the authoritative proof that baseline capture occurred.
+    if (!page.baselineCapturedAt) delete page.baseline;
+  }
+  state.followUps = (state.followUps ?? []).map((followUp) => ({
+    ...followUp,
+    id: followUp.id ?? `legacy:${followUp.pageId}:${followUp.markerId}:${followUp.interval}:${followUp.dueISO}`,
+  }));
+  return state;
+}
 
 // Hosts vary in how they signal "the filesystem isn't usable here": a plain
 // Node server throws standard errno codes (ENOENT/EROFS/EACCES/...), but
@@ -70,17 +103,21 @@ class FsDataStore implements DataStore {
   readonly tenant: string;
   private root: string;
 
-  constructor(tenant: string) {
+  constructor(tenant: string, rootDir = process.cwd()) {
     if (!tenant || !tenant.trim()) {
       // REQ-031: reject any access attempted without a tenant scope.
       throw new Error("DataStore: a tenant scope is required");
     }
     this.tenant = tenant;
-    this.root = path.join(process.cwd(), ".data", tenant);
+    this.root = path.join(rootDir, ".data", tenant);
   }
 
   private get stateFile() {
     return path.join(this.root, "state.json");
+  }
+
+  private get storageKey() {
+    return this.stateFile;
   }
 
   private async ensureDir(dir: string) {
@@ -94,7 +131,7 @@ class FsDataStore implements DataStore {
     await fs.rename(tmp, file);
   }
 
-  async getState(): Promise<AppState> {
+  private async readState(): Promise<AppState> {
     try {
       const raw = await fs.readFile(this.stateFile, "utf8");
       const env = JSON.parse(raw) as Envelope;
@@ -103,8 +140,9 @@ class FsDataStore implements DataStore {
       }
       // Mirror the durable snapshot into memory so later writes on a host
       // where disk isn't usable build on the latest persisted state.
-      memoryState.set(this.tenant, env.state);
-      return env.state;
+      const normalized = normalizeState(env.state);
+      memoryState.set(this.storageKey, copyState(normalized));
+      return copyState(normalized);
     } catch {
       // No file yet (the expected case on a fresh deploy), a corrupt/mismatched
       // one, or a host where disk reads don't work at all — in every case fall
@@ -112,19 +150,18 @@ class FsDataStore implements DataStore {
       // Component that renders the app shell never crashes. This alone isn't
       // evidence disk is broken, so it doesn't warn; saveState's own write
       // attempt below is what surfaces a genuine persistence failure.
-      const cached = memoryState.get(this.tenant);
-      if (cached) return cached;
+      const cached = memoryState.get(this.storageKey);
+      if (cached) return copyState(cached);
       const seeded = buildSeedState();
-      memoryState.set(this.tenant, seeded);
-      await this.saveState(seeded);
-      return seeded;
+      await this.persistState(seeded);
+      return copyState(seeded);
     }
   }
 
-  async saveState(state: AppState): Promise<void> {
+  private async persistState(state: AppState): Promise<void> {
     // The in-memory tier is always authoritative for the current process; this
     // is what lets reads and subsequent writes succeed even when disk doesn't.
-    memoryState.set(this.tenant, state);
+    memoryState.set(this.storageKey, copyState(state));
     const env: Envelope = { tenant: this.tenant, updatedAt: new Date().toISOString(), state };
     try {
       await this.atomicWrite(this.stateFile, JSON.stringify(env, null, 2));
@@ -133,39 +170,99 @@ class FsDataStore implements DataStore {
     }
   }
 
-  async appendNight(pageId: string, night: Night, rawReport?: unknown): Promise<AppState> {
-    // Sequential append (REQ-004). Best-effort on read-only hosts.
-    await this.appendLine(path.join(this.root, "history", `${pageId}.jsonl`), night);
+  async getState(): Promise<AppState> {
+    return this.readState();
+  }
 
-    // Object storage for the raw payload (REQ-006).
-    if (rawReport !== undefined && night.rawReportKey) {
-      await this.putReport(pageId, night.rawReportKey, rawReport);
-    }
+  async updateState(mutate: (state: AppState) => void | Promise<void>): Promise<AppState> {
+    const previous = stateQueues.get(this.storageKey) ?? Promise.resolve();
+    const operation = previous.catch(() => undefined).then(async () => {
+      const draft = await this.readState();
+      await mutate(draft);
+      await this.persistState(draft);
+      return copyState(draft);
+    });
+    stateQueues.set(this.storageKey, operation.then(() => undefined, () => undefined));
+    return operation;
+  }
 
-    // Update the KV read model: push the night, refresh snapshot + status.
-    const state = await this.getState();
-    const page = state.pages.find((p) => p.id === pageId);
-    if (page) {
+  async appendNight(
+    pageId: string,
+    runId: string,
+    input: Omit<Night, "i" | "runId" | "rawReportKey">,
+    rawReport?: unknown,
+  ): Promise<{ state: AppState; night: Night | null; inserted: boolean }> {
+    let committed: Night | null = null;
+    let inserted = false;
+    const state = await this.updateState(async (draft) => {
+      const page = draft.pages.find((p) => p.id === pageId);
+      if (!page) return;
+
+      const existing = page.history.find((n) => n.runId === runId);
+      if (existing) {
+        committed = existing;
+        return;
+      }
+
+      // A result from a superseded/stale job must never overwrite the current
+      // run. Requiring the active id also coalesces duplicate executions.
+      if (page.runState !== "running" || page.runId !== runId) return;
+
+      const i = page.history.reduce((max, item) => Math.max(max, item.i), -1) + 1;
+      const rawReportKey = `run-${runId}`;
+      const agent = input.agent?.map((check) => {
+        const before = page.agent.find((prior) => prior.name === check.name);
+        return { ...check, regressed: !!before && before.pass && !check.pass };
+      });
+      const night: Night = { ...input, i, runId, rawReportKey, agent };
+
+      // Keep the filesystem adapter's sequential/object fan-out inside the
+      // same per-tenant serialization boundary as the state commit.
+      await this.appendLine(path.join(this.root, "history", `${pageId}.jsonl`), night);
+      if (rawReport !== undefined) {
+        await this.putReport(pageId, rawReportKey, {
+          ...((rawReport && typeof rawReport === "object") ? rawReport : { payload: rawReport }),
+          pageId,
+          runId,
+          i,
+          date: night.date,
+          iso: night.iso,
+          agent,
+        });
+      }
+
       page.history.push(night);
       page.current = {
         mobile: mediansOf(night.scores.mobile),
         desktop: mediansOf(night.scores.desktop),
       };
-      page.status = classifyStatus(mediansOf(page.baseline.mobile), page.history, "mobile");
-      await this.saveState(state);
-    }
-    return state;
+      page.agent = agent ?? [];
+      page.status = page.baseline && page.baselineCapturedAt
+        ? classifyStatus(mediansOf(page.baseline.mobile), page.history, "mobile")
+        : "pending";
+      page.runState = undefined;
+      page.lastRunAt = night.iso ?? new Date().toISOString();
+      delete page.lastError;
+      committed = night;
+      inserted = true;
+    });
+    return { state, night: committed, inserted };
   }
 
-  async addMarker(pageId: string, marker: ChangeMarker): Promise<AppState> {
-    await this.appendLine(path.join(this.root, "markers", `${pageId}.jsonl`), marker);
-    const state = await this.getState();
-    const page = state.pages.find((p) => p.id === pageId);
-    if (page) {
+  async addMarker(
+    pageId: string,
+    input: Omit<ChangeMarker, "i">,
+    mutate?: (state: AppState, marker: ChangeMarker) => void,
+  ): Promise<AppState> {
+    return this.updateState(async (state) => {
+      const page = state.pages.find((p) => p.id === pageId);
+      if (!page) throw new Error(`addMarker: page ${pageId} not found`);
+      if (page.markers.some((item) => item.id === input.id)) return;
+      const marker: ChangeMarker = { ...input, i: resolveMarkerIndex(page.history, input.date) };
+      await this.appendLine(path.join(this.root, "markers", `${pageId}.jsonl`), marker);
       page.markers = [...(page.markers || []), marker];
-      await this.saveState(state);
-    }
-    return state;
+      mutate?.(state, marker);
+    });
   }
 
   async putReport(pageId: string, key: string, payload: unknown): Promise<void> {
@@ -200,9 +297,11 @@ class FsDataStore implements DataStore {
 
 /** Helper reused by page-status recompute callers. */
 export function recomputeStatus(page: WatchPage): void {
-  page.status = classifyStatus(mediansOf(page.baseline.mobile), page.history, "mobile");
+  page.status = page.baseline && page.baselineCapturedAt
+    ? classifyStatus(mediansOf(page.baseline.mobile), page.history, "mobile")
+    : "pending";
 }
 
-export function createFsStore(tenant: string): DataStore {
-  return new FsDataStore(tenant);
+export function createFsStore(tenant: string, rootDir?: string): DataStore {
+  return new FsDataStore(tenant, rootDir);
 }

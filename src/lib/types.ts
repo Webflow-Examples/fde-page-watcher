@@ -35,6 +35,7 @@ export type StrategyScores = Record<Strategy, NightScores>;
 /** One night's append-only history entry (sequential storage). */
 export interface Night {
   i: number; // ordinal index within the page's history
+  runId?: string; // stable collection id; absent only on seed/imported records
   date: string; // display date, e.g. "Jul 16"
   iso?: string; // ISO date if produced by a real run
   scores: StrategyScores;
@@ -64,6 +65,7 @@ export interface AgentCheck {
 
 /** A scheduled follow-up comparison after a change marker (REQ-044). */
 export interface FollowUp {
+  id: string; // stable delivery id so one attempt can be committed atomically
   pageId: string;
   markerId: string; // unique marker reference (lookup no longer relies on text)
   markerText: string; // retained for the Slack message
@@ -73,6 +75,9 @@ export interface FollowUp {
   sent: boolean;
   attempts?: number; // delivery attempts; a failed send is retried, not consumed (REQ-045)
   lastAttemptISO?: string;
+  lastHttpStatus?: number;
+  lastError?: string;
+  retryAfterISO?: string;
 }
 
 /** A watchlisted page and everything tracked about it. */
@@ -82,7 +87,7 @@ export interface WatchPage {
   url: string;
   flag: Flag;
   status: PageStatus;
-  baseline: StrategyScores; // baseline median+range per category, per strategy
+  baseline?: StrategyScores; // exists only after explicit baseline capture
   current: Record<Strategy, ScoreByCategory>; // latest snapshot median per category, per strategy
   history: Night[];
   markers: ChangeMarker[];
@@ -92,6 +97,8 @@ export interface WatchPage {
   // Async collection state (REQ-054): a run is queued/executed in the
   // background; the client polls until it settles. Undefined == idle.
   runState?: "running" | "failed";
+  runId?: string; // active or most-recent on-demand/nightly collection id
+  startedAt?: string;
   lastRunAt?: string;
   lastError?: string;
 }
