@@ -9,13 +9,6 @@ interface DispatchPayload {
   pageId: string;
   url: string;
   runs: number;
-  callbackUrl: string;
-}
-
-interface Env {
-  COLLECTION_WORKFLOW: Workflow<DispatchPayload>;
-  PAGESPEED_API_KEY: string;
-  CRON_SECRET: string;
 }
 
 interface StrategySummary {
@@ -25,123 +18,133 @@ interface StrategySummary {
   opportunities: LighthouseOpportunity[];
 }
 
-function sameValue(left: string, right: string): boolean {
-  const length = Math.max(left.length, right.length);
-  let difference = left.length ^ right.length;
-  for (let index = 0; index < length; index += 1) {
-    difference |= (left.charCodeAt(index) || 0) ^ (right.charCodeAt(index) || 0);
-  }
-  return difference === 0;
+function reportKey(jobId: string, strategy: Strategy): string {
+  return `collector-jobs/${jobId}/${strategy}.json`;
 }
 
-async function callback(env: Env, payload: DispatchPayload, path: string, body: unknown): Promise<void> {
-  const response = await fetch(`${payload.callbackUrl}/api/internal/jobs/${payload.jobId}/${path}`, {
-    method: "POST",
-    headers: { authorization: `Bearer ${env.CRON_SECRET}`, "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!response.ok) throw new Error(`App callback ${path} failed (${response.status}): ${(await response.text()).slice(0, 200)}`);
+async function sameValue(left: string, right: string): Promise<boolean> {
+  const encoder = new TextEncoder();
+  const [leftHash, rightHash] = await Promise.all([
+    crypto.subtle.digest("SHA-256", encoder.encode(left)),
+    crypto.subtle.digest("SHA-256", encoder.encode(right)),
+  ]);
+  const leftBytes = new Uint8Array(leftHash);
+  const rightBytes = new Uint8Array(rightHash);
+  let difference = 0;
+  for (let index = 0; index < leftBytes.length; index += 1) difference |= leftBytes[index] ^ rightBytes[index];
+  return difference === 0;
 }
 
 export class CollectorWorkflow extends WorkflowEntrypoint<Env, DispatchPayload> {
   async run(event: Readonly<WorkflowEvent<DispatchPayload>>, step: WorkflowStep): Promise<CollectionResult> {
     const payload = event.payload;
-    try {
-      await step.do("mark job running", { retries: { limit: 5, delay: "5 seconds", backoff: "exponential" } }, async () => {
-        await callback(this.env, payload, "start", { runId: payload.runId });
-        return { ok: true };
-      });
-
-      const collectStrategy = (strategy: Strategy) => step.do(
-        `collect and upload ${strategy}`,
-        { retries: { limit: 3, delay: "15 seconds", backoff: "exponential" }, timeout: "10 minutes" },
-        async () => {
-          const result = await collectPsi(payload.url, strategy, {
-            apiKey: this.env.PAGESPEED_API_KEY,
-            runs: payload.runs,
-          });
-          await callback(this.env, payload, "strategy", { runId: payload.runId, strategy, result });
-          return {
-            strategy,
-            scores: result.scores,
-            sampleSize: result.sampleSize,
-            opportunities: result.opportunities,
-          } satisfies StrategySummary;
-        },
-      );
-
-      // Keep each strategy in an independent retryable step. Raw reports are
-      // uploaded immediately, so multi-megabyte Lighthouse JSON is never saved
-      // in Workflow step state.
-      const mobile = await collectStrategy("mobile");
-      const desktop = await collectStrategy("desktop");
-      const agent = await step.do("scan agent readiness", { retries: { limit: 2, delay: "10 seconds" }, timeout: "2 minutes" }, async () => scan(payload.url));
-      const capturedAt = new Date().toISOString();
-      const scores = { mobile: mobile.scores, desktop: desktop.scores } satisfies StrategyScores;
-      const result: CollectionResult = {
-        schemaVersion: 1,
-        jobId: payload.jobId,
-        runId: payload.runId,
-        pageId: payload.pageId,
-        capturedAt,
-        scores,
-        samples: { mobile: mobile.sampleSize, desktop: desktop.sampleSize },
-        agent,
-        opportunities: mobile.opportunities,
-      };
-      await step.do("commit collection", { retries: { limit: 8, delay: "10 seconds", backoff: "exponential" } }, async () => {
-        await callback(this.env, payload, "complete", { result });
-        return { ok: true };
-      });
-      // Collection success is authoritative. Optional AI/Slack work gets its
-      // own retries but cannot turn a committed run into a failed run.
-      await step.do("enrich summaries", { retries: { limit: 2, delay: "20 seconds", backoff: "exponential" }, timeout: "2 minutes" }, async () => {
-        await callback(this.env, payload, "enrich", {});
-        return { ok: true };
-      }).catch(() => undefined);
-      await step.do("deliver notifications", { retries: { limit: 3, delay: "30 seconds", backoff: "exponential" }, timeout: "2 minutes" }, async () => {
-        await callback(this.env, payload, "notify", {});
-        return { ok: true };
-      }).catch(() => undefined);
-      return result;
-    } catch (error) {
-      await step.do("report terminal failure", { retries: { limit: 5, delay: "10 seconds", backoff: "exponential" } }, async () => {
-        await callback(this.env, payload, "fail", {
-          error: (error instanceof Error ? error.message : String(error)).slice(0, 500),
+    const collectStrategy = (strategy: Strategy) => step.do(
+      `collect and stage ${strategy}`,
+      { retries: { limit: 3, delay: "15 seconds", backoff: "exponential" }, timeout: "10 minutes" },
+      async () => {
+        const result = await collectPsi(payload.url, strategy, {
+          apiKey: this.env.PAGESPEED_API_KEY,
+          runs: payload.runs,
         });
-        return { ok: true };
-      }).catch(() => undefined);
-      throw error;
-    }
+        await this.env.RESULTS.put(reportKey(payload.jobId, strategy), JSON.stringify(result), {
+          httpMetadata: { contentType: "application/json" },
+          customMetadata: { jobId: payload.jobId, runId: payload.runId, pageId: payload.pageId, strategy },
+        });
+        return {
+          strategy,
+          scores: result.scores,
+          sampleSize: result.sampleSize,
+          opportunities: result.opportunities,
+        } satisfies StrategySummary;
+      },
+    );
+
+    // Only compact summaries cross the Workflow persistence boundary. Full
+    // Lighthouse payloads are staged in R2 and streamed to the app on demand.
+    const mobile = await collectStrategy("mobile");
+    const desktop = await collectStrategy("desktop");
+    const agent = await step.do("scan agent readiness", { retries: { limit: 2, delay: "10 seconds" }, timeout: "2 minutes" }, async () => scan(payload.url));
+    const capturedAt = await step.do("record capture time", async () =>
+      new Date().toISOString(),
+    );
+    const scores = { mobile: mobile.scores, desktop: desktop.scores } satisfies StrategyScores;
+    return {
+      schemaVersion: 1,
+      jobId: payload.jobId,
+      runId: payload.runId,
+      pageId: payload.pageId,
+      capturedAt,
+      scores,
+      samples: { mobile: mobile.sampleSize, desktop: desktop.sampleSize },
+      agent,
+      opportunities: mobile.opportunities,
+    } satisfies CollectionResult;
   }
 }
 
 function validPayload(value: unknown): value is DispatchPayload {
   if (!value || typeof value !== "object") return false;
   const item = value as Partial<DispatchPayload>;
-  if (!item.jobId || !item.runId || !item.pageId || !item.url || !item.callbackUrl) return false;
+  if (!item.jobId || !item.runId || !item.pageId || !item.url) return false;
   if (!Number.isInteger(item.runs) || item.runs! < 1 || item.runs! > 5) return false;
   try {
     const pageUrl = new URL(/^https?:\/\//i.test(item.url) ? item.url : `https://${item.url}`);
-    const callbackUrl = new URL(item.callbackUrl);
-    return ["http:", "https:"].includes(pageUrl.protocol) && callbackUrl.protocol === "https:";
+    return ["http:", "https:"].includes(pageUrl.protocol);
   } catch {
     return false;
   }
 }
 
-const worker = {
-  async fetch(request: Request, env: Env): Promise<Response> {
+function jobRoute(pathname: string): { jobId: string; strategy?: Strategy } | null {
+  const match = pathname.match(/^\/jobs\/([^/]+)(?:\/reports(?:\/(mobile|desktop))?)?$/);
+  if (!match) return null;
+  let jobId: string;
+  try {
+    jobId = decodeURIComponent(match[1]);
+  } catch {
+    return null;
+  }
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(jobId)) return null;
+  return { jobId, strategy: match[2] as Strategy | undefined };
+}
+
+function noStore(response: Response): Response {
+  response.headers.set("cache-control", "no-store");
+  return response;
+}
+
+async function handleRequest(request: Request, env: Env): Promise<Response> {
     const pathname = new URL(request.url).pathname;
     if (request.method === "GET" && pathname === "/health") {
-      return Response.json({ ok: true, service: "fde-page-collector", workflow: "fde-page-collection" });
+      return noStore(Response.json({ ok: true, service: "fde-page-collector", workflow: "fde-page-collection", resultTransport: "polling" }));
     }
-    if (request.method !== "POST" || (pathname !== "/jobs" && pathname !== "/jobs/batch")) {
+    const route = jobRoute(pathname);
+    const isDispatch = request.method === "POST" && (pathname === "/jobs" || pathname === "/jobs/batch");
+    if (!isDispatch && !route) {
       return Response.json({ error: "not found" }, { status: 404 });
     }
-    if (!sameValue(request.headers.get("authorization") ?? "", `Bearer ${env.CRON_SECRET}`)) {
+    if (!(await sameValue(request.headers.get("authorization") ?? "", `Bearer ${env.CRON_SECRET}`))) {
       return Response.json({ error: "unauthorized" }, { status: 401 });
     }
+
+    if (route && request.method === "GET" && !route.strategy) {
+      const instance = await env.COLLECTION_WORKFLOW.get(route.jobId);
+      return noStore(Response.json(await instance.status()));
+    }
+    if (route && request.method === "GET" && route.strategy) {
+      const report = await env.RESULTS.get(reportKey(route.jobId, route.strategy));
+      if (!report) return Response.json({ error: "report not found" }, { status: 404 });
+      const headers = new Headers({ "content-type": "application/json", "cache-control": "no-store" });
+      report.writeHttpMetadata(headers);
+      headers.set("etag", report.httpEtag);
+      return new Response(report.body, { headers });
+    }
+    if (route && request.method === "DELETE" && !route.strategy && pathname.endsWith("/reports")) {
+      await env.RESULTS.delete([reportKey(route.jobId, "mobile"), reportKey(route.jobId, "desktop")]);
+      return noStore(Response.json({ ok: true }));
+    }
+    if (!isDispatch) return Response.json({ error: "method not allowed" }, { status: 405 });
+
     const body = await request.json().catch(() => null);
     const payloads = pathname === "/jobs/batch"
       ? ((body as { jobs?: unknown[] } | null)?.jobs ?? [])
@@ -177,7 +180,21 @@ const worker = {
       }
       return Response.json({ error: String(error) }, { status: 500 });
     }
+}
+
+const worker = {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    try {
+      return await handleRequest(request, env);
+    } catch (error) {
+      console.error(JSON.stringify({
+        message: "collector request failed",
+        path: new URL(request.url).pathname,
+        error: error instanceof Error ? error.message : String(error),
+      }));
+      return Response.json({ error: "internal error" }, { status: 500 });
+    }
   },
-};
+} satisfies ExportedHandler<Env>;
 
 export default worker;

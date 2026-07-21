@@ -33,9 +33,8 @@ All are optional for local development — the app runs without them.
 | Variable                     | Purpose                                                                                                       |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------- |
 | `PAGESPEED_API_KEY`          | PSI credential. Configure it on the collector Worker; it is also used by the local runner.                     |
-| `CRON_SECRET`                | Shared bearer secret for nightly requests, Workflow dispatch, and collector callbacks.                        |
+| `CRON_SECRET`                | Shared bearer secret for nightly requests, Workflow dispatch, and result polling.                             |
 | `COLLECTOR_URL`              | Production Workflow endpoint, ending in `/jobs`.                                                              |
-| `COLLECTOR_CALLBACK_URL`     | Optional direct app Worker override. By default callbacks use Webflow's automatic `ASSETS_PREFIX`. Do not use the SSO-protected `*.wf.app` URL. |
 | `DATASET_MODE`               | `demo` uses the existing sample namespace; `live` uses an isolated, initially empty namespace.                |
 | `BASE_URL`                   | Webflow Cloud mount path (for example `/page-watch`); client routes and APIs are prefixed automatically.       |
 | `SLACK_WEBHOOK_URL`          | Incoming webhook for drop alerts and follow-up reports.                                                       |
@@ -50,10 +49,11 @@ Put these in `.env.local`.
 
 - **Collection** — baseline, on-demand, and nightly actions first reserve a
   durable D1 job and return `202`. In production a Cloudflare Workflow performs
-  up to five PSI samples per strategy, uploads the raw JSON to R2, scans agent
-  readiness, and calls the app back with a versioned result. Retries are durable,
-  duplicates coalesce, stale jobs become visible failures, and a run ID can
-  append history only once.
+  up to five PSI samples per strategy, stages the raw JSON in R2, and scans agent
+  readiness. The app polls the Workflow and imports completed results into its
+  own D1/R2 bindings, so site-wide SSO never has to admit an inbound callback.
+  Retries are durable, duplicates coalesce, stale jobs become visible failures,
+  and a run ID can append history only once.
 - **Baselines** — ordinary on-demand/nightly runs may store snapshots, history,
   recommendations, and scan results, but a page stays Pending until the user
   explicitly captures a baseline. Zero placeholders are never treated or shown
@@ -74,30 +74,27 @@ Put these in `.env.local`.
 - **Background execution** — Cloudflare Workflows own production execution.
   The local runner uses Next.js `after()` only for development.
 - **Post-commit enrichment** — after the scores/raw reports are safely stored,
-  the Workflow separately retries Anthropic recommendation explanations,
-  Watcher narrative refreshes, Slack alerts, and due follow-ups. Optional
-  integrations cannot roll back or mislabel a successful collection.
+  optional Anthropic recommendation explanations, Watcher narrative refreshes,
+  Slack alerts, and due follow-ups cannot roll back or mislabel a successful
+  collection.
 
 ## Production setup
 
 The interactive app relies on the enclosing site's SSO. There is no second
 HTTP Basic layer and no `FDE_ACCESS_*` configuration. Non-interactive nightly
-and collector callback endpoints remain protected by `CRON_SECRET`.
+and collector result endpoints remain protected by `CRON_SECRET`.
 
 1. Confirm the app has the `DB` and `REPORTS` declarations from
    `wrangler.json`. Webflow Cloud applies `0003_collection_jobs.sql` during the
    GitHub-driven deployment. Production intentionally fails instead of falling
    back to process memory when either binding is absent.
-2. Deploy `collector-worker/wrangler.jsonc`. Configure its
-   `PAGESPEED_API_KEY` and `CRON_SECRET` secrets.
+2. Deploy `collector-worker/wrangler.jsonc`. It binds the collector to the
+   `page-watcher-reports` R2 bucket for temporary raw-report staging. Configure
+   its `PAGESPEED_API_KEY` and `CRON_SECRET` secrets.
 3. Set `COLLECTOR_URL`, `CRON_SECRET`, and `DATASET_MODE` on the Webflow app.
-   `BASE_URL` and `ASSETS_PREFIX` are supplied automatically by Webflow Cloud;
-   `next.config.ts` captures them during the Webflow build, and the latter is
-   the direct Worker origin used for SSO-independent callbacks.
-   The callback route still requires the shared `CRON_SECRET`; do not point
-   `COLLECTOR_CALLBACK_URL` at the interactive `*.wf.app` URL because Webflow's
-   Cloudflare Access layer rejects non-interactive requests before they reach
-   the app.
+   `BASE_URL` is supplied automatically by Webflow Cloud. The app makes
+   authenticated outbound status/report requests to the collector; no direct
+   Webflow Worker origin or Access service token is required.
 4. Call `/api/health` after deployment. It returns `503` if durable storage or
    the production collector is missing, without exposing secret values.
 
