@@ -133,6 +133,9 @@ function validPayload(value: unknown): value is DispatchPayload {
 const worker = {
   async fetch(request: Request, env: Env): Promise<Response> {
     const pathname = new URL(request.url).pathname;
+    if (request.method === "GET" && pathname === "/health") {
+      return Response.json({ ok: true, service: "fde-page-collector", workflow: "fde-page-collection" });
+    }
     if (request.method !== "POST" || (pathname !== "/jobs" && pathname !== "/jobs/batch")) {
       return Response.json({ error: "not found" }, { status: 404 });
     }

@@ -3,6 +3,9 @@
   "name": "fde-page-collector",
   "main": "index.ts",
   "compatibility_date": "2026-07-20",
+  "secrets": {
+    "required": ["PAGESPEED_API_KEY", "CRON_SECRET"]
+  },
   "workflows": [
     {
       "binding": "COLLECTION_WORKFLOW",
