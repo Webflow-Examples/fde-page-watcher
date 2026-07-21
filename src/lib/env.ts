@@ -13,5 +13,13 @@ export function getEnv(name: string): string | undefined {
   } catch {
     // Not running on Cloudflare Workers.
   }
+
+  // Webflow's built-in routing values are framework environment variables,
+  // not ordinary Worker bindings. Keep these property reads static so the
+  // Next/OpenNext compiler preserves them in the server bundle. A computed
+  // `process.env[name]` lookup does not reliably expose them in Webflow Cloud.
+  if (name === "ASSETS_PREFIX") return process.env.ASSETS_PREFIX;
+  if (name === "BASE_URL") return process.env.BASE_URL;
+
   return process.env[name];
 }

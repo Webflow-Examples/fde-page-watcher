@@ -258,7 +258,12 @@ function requireCollectorConfig(): { collectorUrl: string; collectorSecret: stri
   const collectorSecret = getEnv("CRON_SECRET");
   const callbackUrl = getEnv("COLLECTOR_CALLBACK_URL") ?? getEnv("ASSETS_PREFIX");
   if (!collectorUrl || !collectorSecret || !callbackUrl) {
-    throw new Error("Collector is not configured (COLLECTOR_URL, CRON_SECRET, and ASSETS_PREFIX or COLLECTOR_CALLBACK_URL are required)");
+    const missing = [
+      !collectorUrl && "COLLECTOR_URL",
+      !collectorSecret && "CRON_SECRET",
+      !callbackUrl && "COLLECTOR_CALLBACK_URL or Webflow ASSETS_PREFIX",
+    ].filter(Boolean);
+    throw new Error(`Collector is not configured; missing: ${missing.join(", ")}`);
   }
   return { collectorUrl, collectorSecret, callbackUrl };
 }
