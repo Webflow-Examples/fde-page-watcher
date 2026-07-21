@@ -1,17 +1,17 @@
 import { NextResponse } from "next/server";
-import { runNightly } from "@/lib/collector";
 import { evaluateCronAccess } from "@/lib/access";
 import { getEnv } from "@/lib/env";
+import { getStore } from "@/lib/store";
+import { dispatchCollectionJobs, enqueueCollectionJob } from "@/lib/collectionJobs";
+import { runNightly } from "@/lib/collector";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 800;
+export const maxDuration = 20;
 
 /**
- * Nightly collection: priority pages first, both strategies, agent scan,
- * alerting, and due follow-ups (REQ-013). CRON_SECRET is mandatory outside
- * development and fails closed when deployment configuration is missing.
- * Wire a Webflow Cloud scheduled job (or GitHub Action) to POST here nightly.
+ * Nightly dispatcher. Long-running collection is owned by durable Workflows;
+ * this scheduled endpoint only reserves and dispatches one job per page.
  */
 export async function POST(req: Request) {
   const access = evaluateCronAccess(req.headers.get("authorization"), {
@@ -21,8 +21,21 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: access.message }, { status: access.status });
   }
   try {
-    const result = await runNightly();
-    return NextResponse.json({ ok: true, ...result });
+    if (!getEnv("COLLECTOR_URL") && process.env.NODE_ENV !== "production") {
+      const result = await runNightly();
+      return NextResponse.json({ ok: true, local: true, ...result });
+    }
+    const snapshot = await getStore().getState();
+    const pages = [...snapshot.pages].sort((a, b) => (a.flag === "priority" ? 0 : 1) - (b.flag === "priority" ? 0 : 1));
+    const jobIds: string[] = [];
+    let coalesced = 0;
+    for (const page of pages) {
+      const result = await enqueueCollectionJob(page.id, "nightly");
+      if (result.queued) jobIds.push(result.job.id);
+      else coalesced += 1;
+    }
+    await dispatchCollectionJobs(jobIds);
+    return NextResponse.json({ ok: true, queued: jobIds.length, coalesced, failed: [] }, { status: 202 });
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }

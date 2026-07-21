@@ -1,9 +1,10 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
-import type { AppState, ChangeMarker, Night } from "../types";
-import { buildSeedState } from "../seed";
+import type { AppState, ChangeMarker, CollectionJob, Night } from "../types";
+import { buildInitialState } from "../seed";
 import { classifyStatus, mediansOf } from "../scoring";
 import { resolveMarkerIndex } from "../followups";
 import { normalizeState, type DataStore } from "./fsStore";
+import { getEnv } from "../env";
 
 interface CfEnv {
   DB: D1Database;
@@ -39,7 +40,7 @@ class CfDataStore implements DataStore {
     const { DB } = cfEnv();
     const row = await DB.prepare("SELECT json FROM state WHERE tenant = ?").bind(this.tenant).first<StateRow>();
     if (!row) {
-      const seeded = buildSeedState();
+      const seeded = buildInitialState(getEnv("DATASET_MODE"));
       const now = new Date().toISOString();
       await DB.prepare(
         "INSERT INTO state (tenant, json, version, updated_at) VALUES (?, ?, 0, ?) ON CONFLICT(tenant) DO NOTHING",
@@ -62,25 +63,32 @@ class CfDataStore implements DataStore {
       const now = new Date().toISOString();
 
       if (!row) {
-        const state = buildSeedState();
+        const state = buildInitialState(getEnv("DATASET_MODE"));
         await mutate(state);
         const result = await DB.prepare(
           "INSERT INTO state (tenant, json, version, updated_at) VALUES (?, ?, 0, ?) ON CONFLICT(tenant) DO NOTHING",
         )
           .bind(this.tenant, JSON.stringify(state), now)
           .run();
-        if ((result.meta.rows_written ?? 0) > 0) return structuredClone(state);
+        if ((result.meta.rows_written ?? 0) > 0) {
+          await this.syncJobs([], state.jobs ?? []);
+          return structuredClone(state);
+        }
         continue;
       }
 
       const state = normalizeState(JSON.parse(row.json) as AppState);
+      const jobsBefore = structuredClone(state.jobs ?? []);
       await mutate(state);
       const result = await DB.prepare(
         "UPDATE state SET json = ?, version = version + 1, updated_at = ? WHERE tenant = ? AND version = ?",
       )
         .bind(JSON.stringify(state), now, this.tenant, row.version)
         .run();
-      if ((result.meta.rows_written ?? 0) > 0) return structuredClone(state);
+      if ((result.meta.rows_written ?? 0) > 0) {
+        await this.syncJobs(jobsBefore, state.jobs ?? []);
+        return structuredClone(state);
+      }
     }
     throw new Error("DataStore: state update retry exhausted");
   }
@@ -113,6 +121,7 @@ class CfDataStore implements DataStore {
       const night: Night = { ...input, i, runId, rawReportKey, agent };
 
       page.history.push(night);
+      if (page.history.length > 180) page.history = page.history.slice(-180);
       page.current = {
         mobile: mediansOf(night.scores.mobile),
         desktop: mediansOf(night.scores.desktop),
@@ -189,6 +198,30 @@ class CfDataStore implements DataStore {
     if (!object) return null;
     const parsed = (await object.json()) as { payload: unknown };
     return parsed.payload;
+  }
+
+  async deleteReport(pageId: string, key: string): Promise<void> {
+    const { REPORTS } = cfEnv();
+    await REPORTS.delete(`${this.tenant}/${pageId}/${key}.json`);
+  }
+
+  private async syncJobs(before: CollectionJob[], after: CollectionJob[]): Promise<void> {
+    const previous = new Map(before.map((job) => [job.id, JSON.stringify(job)]));
+    const next = new Map(after.map((job) => [job.id, JSON.stringify(job)]));
+    const { DB } = cfEnv();
+    for (const job of after) {
+      if (previous.get(job.id) === next.get(job.id)) continue;
+      await DB.prepare(
+        "INSERT INTO collection_jobs (tenant, id, page_id, state, job_json, updated_at) VALUES (?, ?, ?, ?, ?, ?) " +
+          "ON CONFLICT(tenant, id) DO UPDATE SET page_id = excluded.page_id, state = excluded.state, job_json = excluded.job_json, updated_at = excluded.updated_at",
+      )
+        .bind(this.tenant, job.id, job.pageId, job.state, JSON.stringify(job), job.updatedAt)
+        .run();
+    }
+    for (const job of before) {
+      if (next.has(job.id)) continue;
+      await DB.prepare("DELETE FROM collection_jobs WHERE tenant = ? AND id = ?").bind(this.tenant, job.id).run();
+    }
   }
 }
 

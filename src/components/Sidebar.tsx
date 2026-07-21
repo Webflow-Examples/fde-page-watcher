@@ -23,7 +23,7 @@ const navItems = [
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { recs } = useStore();
+  const { recs, pathFor } = useStore();
   const inboxCount = recs.filter((r) => r.status === "inbox").length;
   const taskCount = recs.filter((r) => r.status === "task").length;
 
@@ -57,12 +57,13 @@ export function Sidebar() {
 
       <nav className="sidebar-nav" style={{ display: "flex", flexDirection: "column", gap: 3, padding: "6px 12px" }}>
         {navItems.map(({ href, label, Icon, badge }) => {
-          const active = pathname === href || (href === "/dashboard" && pathname === "/");
+          const resolvedHref = pathFor(href);
+          const active = pathname === resolvedHref || (href === "/dashboard" && pathname === pathFor("/"));
           const count = badge === "inbox" ? inboxCount : badge === "tasks" ? taskCount : 0;
           return (
             <Link
               key={href}
-              href={href}
+              href={resolvedHref}
               className="sidebar-link"
               style={{
                 display: "flex",

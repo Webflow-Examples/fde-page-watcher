@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { AppState, ChangeMarker, Night, WatchPage } from "../types";
-import { buildSeedState } from "../seed";
+import { buildInitialState } from "../seed";
 import { classifyStatus, mediansOf } from "../scoring";
 import { resolveMarkerIndex } from "../followups";
 
@@ -42,6 +42,7 @@ export interface DataStore {
   ): Promise<AppState>;
   putReport(pageId: string, key: string, payload: unknown): Promise<void>;
   getReport(pageId: string, key: string): Promise<unknown | null>;
+  deleteReport(pageId: string, key: string): Promise<void>;
 }
 
 interface Envelope {
@@ -75,6 +76,7 @@ export function normalizeState(state: AppState): AppState {
     ...followUp,
     id: followUp.id ?? `legacy:${followUp.pageId}:${followUp.markerId}:${followUp.interval}:${followUp.dueISO}`,
   }));
+  state.jobs = state.jobs ?? [];
   return state;
 }
 
@@ -152,7 +154,7 @@ class FsDataStore implements DataStore {
       // attempt below is what surfaces a genuine persistence failure.
       const cached = memoryState.get(this.storageKey);
       if (cached) return copyState(cached);
-      const seeded = buildSeedState();
+      const seeded = buildInitialState();
       await this.persistState(seeded);
       return copyState(seeded);
     }
@@ -232,6 +234,9 @@ class FsDataStore implements DataStore {
       }
 
       page.history.push(night);
+      // The read model stays bounded; complete raw reports remain in object
+      // storage and the append-only tier retains the durable audit trail.
+      if (page.history.length > 180) page.history = page.history.slice(-180);
       page.current = {
         mobile: mediansOf(night.scores.mobile),
         desktop: mediansOf(night.scores.desktop),
@@ -281,6 +286,14 @@ class FsDataStore implements DataStore {
     } catch {
       // Missing file, or a host where report reads don't work at all.
       return null;
+    }
+  }
+
+  async deleteReport(pageId: string, key: string): Promise<void> {
+    try {
+      await fs.unlink(path.join(this.root, "reports", pageId, `${key}.json`));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") warnReadOnly(error);
     }
   }
 

@@ -9,6 +9,8 @@ export type CategoryKey = "perf" | "a11y" | "bp" | "seo";
 export type Strategy = "mobile" | "desktop";
 export type Flag = "priority" | "watching";
 export type PageStatus = "healthy" | "improvable" | "degraded" | "pending";
+export type CollectionJobKind = "baseline" | "run" | "nightly";
+export type CollectionJobState = "queued" | "dispatching" | "running" | "succeeded" | "failed";
 
 export const STRATEGIES: Strategy[] = ["mobile", "desktop"];
 
@@ -32,6 +34,15 @@ export type NightScores = Record<CategoryKey, CategoryScore>;
 /** Median+range per category, split by strategy. */
 export type StrategyScores = Record<Strategy, NightScores>;
 
+/** A normalized Lighthouse opportunity retained with the run that produced it. */
+export interface LighthouseOpportunity {
+  id: string;
+  title: string;
+  description?: string;
+  category: string;
+  savingsMs: number;
+}
+
 /** One night's append-only history entry (sequential storage). */
 export interface Night {
   i: number; // ordinal index within the page's history
@@ -43,6 +54,7 @@ export interface Night {
   sampleSize?: number; // min across strategies; kept for older records / quick display
   rawReportKey?: string; // object-storage key for the full PSI payload (REQ-006)
   agent?: AgentCheck[]; // agent-readiness scan recorded for this night, so history is retained (REQ-008)
+  opportunities?: LighthouseOpportunity[]; // real Lighthouse opportunities for this capture
 }
 
 /** A user-logged (or acted-upon) change marker on a page's timeline. */
@@ -96,11 +108,44 @@ export interface WatchPage {
   acted?: Record<string, boolean>;
   // Async collection state (REQ-054): a run is queued/executed in the
   // background; the client polls until it settles. Undefined == idle.
-  runState?: "running" | "failed";
+  runState?: "queued" | "dispatching" | "running" | "failed";
   runId?: string; // active or most-recent on-demand/nightly collection id
   startedAt?: string;
   lastRunAt?: string;
   lastError?: string;
+}
+
+/** Durable collection lifecycle surfaced to both the UI and the external collector. */
+export interface CollectionJob {
+  id: string;
+  runId: string;
+  pageId: string;
+  kind: CollectionJobKind;
+  state: CollectionJobState;
+  attempts: number;
+  createdAt: string;
+  updatedAt: string;
+  startedAt?: string;
+  completedAt?: string;
+  workflowId?: string;
+  error?: string;
+  enrichedAt?: string;
+  enrichmentError?: string;
+  notifiedAt?: string;
+  notificationError?: string;
+}
+
+/** Versioned, provider-neutral result committed by a collector job. */
+export interface CollectionResult {
+  schemaVersion: 1;
+  jobId: string;
+  runId: string;
+  pageId: string;
+  capturedAt: string;
+  scores: StrategyScores;
+  samples: Record<Strategy, number>;
+  agent: AgentCheck[];
+  opportunities: LighthouseOpportunity[];
 }
 
 export type RecStatus = "inbox" | "task" | "ignored";
@@ -143,6 +188,7 @@ export interface WatcherNote {
 export interface AppState {
   pages: WatchPage[];
   recs: Rec[];
+  jobs?: CollectionJob[];
   followUps?: FollowUp[];
   watcherNote?: WatcherNote;
 }

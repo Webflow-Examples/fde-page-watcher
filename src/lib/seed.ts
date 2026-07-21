@@ -181,5 +181,10 @@ export function buildSeedState(): AppState {
   setSt("hosting:r1", "task", "done", "Jul 9");
   setSt("ai:r3", "ignored");
 
-  return { pages, recs, followUps: [] };
+  return { pages, recs, jobs: [], followUps: [] };
+}
+
+/** Live environments begin empty; demo/local environments retain the prototype dataset. */
+export function buildInitialState(mode: string | undefined = process.env.DATASET_MODE): AppState {
+  return mode === "live" ? { pages: [], recs: [], jobs: [], followUps: [] } : buildSeedState();
 }

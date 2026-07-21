@@ -10,6 +10,10 @@
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv --include-runtime false ./cloudflare-env.d.ts",
+    "collector:typegen": "wrangler types --config collector-worker/wrangler.jsonc collector-worker/worker-configuration.d.ts",
+    "collector:check": "tsc -p collector-worker/tsconfig.json",
+    "collector:dry-run": "wrangler deploy --dry-run --config collector-worker/wrangler.jsonc",
+    "collector:deploy": "wrangler deploy --config collector-worker/wrangler.jsonc",
     "test": "vitest run"
   },
   "dependencies": {

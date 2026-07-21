@@ -36,7 +36,7 @@ function ActionButtons({ t, advance }: { t: Rec; advance: (key: string, to: Task
 
 export default function TasksPage() {
   const router = useRouter();
-  const { recs, taskGroup, setTaskGroup, taskView, setTaskView, taskSort, sortTask, advanceTask } = useStore();
+  const { recs, taskGroup, setTaskGroup, taskView, setTaskView, taskSort, sortTask, advanceTask, pathFor } = useStore();
   const dragKey = useRef<string | null>(null);
 
   const tasks = recs.filter((r) => r.status === "task");
@@ -54,7 +54,7 @@ export default function TasksPage() {
     });
   }
 
-  const openPage = (pageId: string) => router.push(`/pages/${pageId}`);
+  const openPage = (pageId: string) => router.push(pathFor(`/pages/${pageId}`));
   const pageChip = (t: Rec) => (
     <button
       type="button"

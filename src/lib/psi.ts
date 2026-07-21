@@ -1,35 +1,18 @@
-import { CATEGORIES } from "./types";
-import type { CategoryKey, NightScores, ScoreByCategory, Strategy } from "./types";
-import { median, range } from "./scoring";
+import type { LighthouseOpportunity, NightScores, Strategy } from "./types";
 import { getEnv } from "./env";
+import { collectPsi, runPsiOnce } from "./psiCore";
+
+export { normalizeUrl } from "./psiCore";
 
 // PageSpeed Insights (Lighthouse) client. Works keyless at low volume; set
 // PAGESPEED_API_KEY in .env.local for higher quota. Retries on failure and
 // records the reduced sample when some of the five runs fail (REQ-032).
 
-const PSI_ENDPOINT = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed";
-
-export interface Opportunity {
-  id: string;
-  title: string;
-  savingsMs: number;
-}
-
-export interface RunResult {
-  scores: ScoreByCategory;
-  opportunities: Opportunity[];
-  raw: unknown;
-}
-
 export interface CollectResult {
   scores: NightScores;
-  opportunities: Opportunity[];
+  opportunities: LighthouseOpportunity[];
   sampleSize: number;
   raws: unknown[]; // every successful run's raw payload — the full audit trail (REQ-006), not one representative
-}
-
-export function normalizeUrl(url: string): string {
-  return /^https?:\/\//i.test(url) ? url : `https://${url}`;
 }
 
 /** Runs per strategy — 5 per the spec, overridable via PSI_RUNS for quick checks. */
@@ -37,61 +20,9 @@ export function defaultRuns(): number {
   return Math.max(1, Math.min(5, Number(getEnv("PSI_RUNS")) || 5));
 }
 
-interface PsiResponse {
-  lighthouseResult?: {
-    categories?: Record<string, { score: number | null }>;
-    audits?: Record<string, { title?: string; score?: number | null; details?: { type?: string; overallSavingsMs?: number }; numericValue?: number }>;
-  };
-}
-
-function toScore(v: number | null | undefined): number {
-  return v == null ? 0 : Math.round(v * 100);
-}
-
 /** One PSI run for a URL + strategy. */
-export async function runOnce(url: string, strategy: Strategy, signal?: AbortSignal): Promise<RunResult> {
-  const params = new URLSearchParams({ url: normalizeUrl(url), strategy });
-  for (const c of CATEGORIES) params.append("category", c.psi);
-  const key = getEnv("PAGESPEED_API_KEY");
-  if (key) params.set("key", key);
-
-  const res = await fetch(`${PSI_ENDPOINT}?${params.toString()}`, { signal });
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`PSI ${res.status}: ${body.slice(0, 200)}`);
-  }
-  const json = (await res.json()) as PsiResponse;
-  const cats = json.lighthouseResult?.categories ?? {};
-  const scores: ScoreByCategory = {
-    perf: toScore(cats["performance"]?.score),
-    a11y: toScore(cats["accessibility"]?.score),
-    bp: toScore(cats["best-practices"]?.score),
-    seo: toScore(cats["seo"]?.score),
-  };
-
-  const audits = json.lighthouseResult?.audits ?? {};
-  const opportunities: Opportunity[] = Object.entries(audits)
-    .filter(([, a]) => a.details?.type === "opportunity" && (a.details?.overallSavingsMs ?? 0) > 0 && (a.score ?? 1) < 1)
-    .map(([id, a]) => ({ id, title: a.title ?? id, savingsMs: Math.round(a.details?.overallSavingsMs ?? 0) }))
-    .sort((x, y) => y.savingsMs - x.savingsMs);
-
-  return { scores, opportunities, raw: json };
-}
-
-async function withRetry(url: string, strategy: Strategy, attempts = 2): Promise<RunResult> {
-  let lastErr: unknown;
-  for (let i = 0; i < attempts; i++) {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 70_000);
-    try {
-      return await runOnce(url, strategy, ctrl.signal);
-    } catch (err) {
-      lastErr = err;
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-  throw lastErr;
+export async function runOnce(url: string, strategy: Strategy, signal?: AbortSignal) {
+  return runPsiOnce(url, strategy, { apiKey: getEnv("PAGESPEED_API_KEY"), signal });
 }
 
 /**
@@ -105,26 +36,7 @@ export async function collect(url: string, strategy: Strategy, n = defaultRuns()
   // PSI is rate-limited. Real runs (with PAGESPEED_API_KEY) never take this path.
   if (getEnv("PSI_MOCK")) return mockCollect(url, strategy, n);
 
-  // Run the samples concurrently so wall-clock is ~one run, not the sum of
-  // five (audit High #1). Failed runs drop out and we keep the reduced sample
-  // (REQ-032); the whole strategy only fails if every run fails.
-  const settled = await Promise.allSettled(Array.from({ length: n }, () => withRetry(url, strategy)));
-  const runs: RunResult[] = settled.filter((r): r is PromiseFulfilledResult<RunResult> => r.status === "fulfilled").map((r) => r.value);
-  if (runs.length === 0) throw new Error(`PSI collection failed for ${url} (${strategy})`);
-
-  const scores = {} as NightScores;
-  for (const c of CATEGORIES as { key: CategoryKey }[]) {
-    const vals = runs.map((r) => r.scores[c.key]);
-    const m = median(vals);
-    const { lo, hi } = range(vals);
-    scores[c.key] = { m, lo, hi };
-  }
-
-  // Representative run = the one whose performance equals the median.
-  const medianPerf = scores.perf.m;
-  const rep = runs.slice().sort((a, b) => Math.abs(a.scores.perf - medianPerf) - Math.abs(b.scores.perf - medianPerf))[0];
-
-  return { scores, opportunities: rep.opportunities, sampleSize: runs.length, raws: runs.map((r) => r.raw) };
+  return collectPsi(url, strategy, { apiKey: getEnv("PAGESPEED_API_KEY"), runs: n });
 }
 
 function mockCollect(url: string, strategy: Strategy, n: number): CollectResult {
@@ -134,10 +46,10 @@ function mockCollect(url: string, strategy: Strategy, n: number): CollectResult 
   const perf = Math.min(100, 52 + (h % 20) + bonus);
   const mk = (v: number, spread: number) => ({ m: Math.min(100, v), lo: Math.max(0, v - spread), hi: Math.min(100, v + spread) });
   const scores: NightScores = { perf: mk(perf, 3), a11y: mk(90, 1), bp: mk(95, 1), seo: mk(98, 1) };
-  const opportunities: Opportunity[] = [
-    { id: "unused-javascript", title: "Reduce unused JavaScript", savingsMs: 1800 },
-    { id: "modern-image-formats", title: "Serve images in next-gen formats", savingsMs: 1200 },
-    { id: "render-blocking-resources", title: "Eliminate render-blocking resources", savingsMs: 600 },
+  const opportunities: LighthouseOpportunity[] = [
+    { id: "unused-javascript", title: "Reduce unused JavaScript", category: "Performance", savingsMs: 1800 },
+    { id: "modern-image-formats", title: "Serve images in next-gen formats", category: "Performance", savingsMs: 1200 },
+    { id: "render-blocking-resources", title: "Eliminate render-blocking resources", category: "Performance", savingsMs: 600 },
   ];
   const raws = Array.from({ length: n }, (_, k) => ({ mock: true, url, strategy, run: k + 1, note: "PSI_MOCK synthetic report" }));
   return { scores, opportunities, sampleSize: n, raws };

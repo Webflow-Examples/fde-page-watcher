@@ -27,7 +27,7 @@ export default function PageDetail() {
   if (!page) {
     return (
       <div style={{ padding: 40 }}>
-        <button onClick={() => router.push("/dashboard")} style={{ border: "none", background: "none", color: C.muted, cursor: "pointer", fontSize: 13 }}>← Back to dashboard</button>
+        <button onClick={() => router.push(store.pathFor("/dashboard"))} style={{ border: "none", background: "none", color: C.muted, cursor: "pointer", fontSize: 13 }}>← Back to dashboard</button>
         <p style={{ color: C.muted, marginTop: 16 }}>Page not found. It may have been removed from the watchlist.</p>
       </div>
     );
@@ -55,7 +55,7 @@ export default function PageDetail() {
   return (
     <div>
       <header className="page-header" style={{ padding: "22px 40px 0", borderBottom: `1px solid ${C.border}` }}>
-        <button onClick={() => router.push("/dashboard")} style={{ display: "inline-flex", alignItems: "center", gap: 6, border: "none", background: "none", fontSize: 12.5, color: C.muted, cursor: "pointer", padding: "0 0 14px" }}>
+        <button onClick={() => router.push(store.pathFor("/dashboard"))} style={{ display: "inline-flex", alignItems: "center", gap: 6, border: "none", background: "none", fontSize: 12.5, color: C.muted, cursor: "pointer", padding: "0 0 14px" }}>
           <ChevronLeftIcon size={14} />
           Page performance
         </button>
@@ -69,9 +69,9 @@ export default function PageDetail() {
           </div>
           <div className="page-controls" style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <SegToggle label="Page strategy" value={strategy} onChange={setStrategy} options={[{ value: "mobile", label: "Mobile", icon: <MobileIcon size={13} /> }, { value: "desktop", label: "Desktop", icon: <DesktopIcon size={13} /> }]} />
-            <button disabled={page.runState === "running"} onClick={() => store.runPage(page.id)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 15px", border: "none", borderRadius: 8, background: C.accent, color: "#fff", fontSize: 12.5, fontWeight: 550, cursor: page.runState === "running" ? "wait" : "pointer", opacity: page.runState === "running" ? 0.65 : 1, whiteSpace: "nowrap" }}>
+            <button disabled={!!page.runState && page.runState !== "failed"} onClick={() => store.runPage(page.id)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 15px", border: "none", borderRadius: 8, background: C.accent, color: "#fff", fontSize: 12.5, fontWeight: 550, cursor: page.runState && page.runState !== "failed" ? "wait" : "pointer", opacity: page.runState && page.runState !== "failed" ? 0.65 : 1, whiteSpace: "nowrap" }}>
               <RefreshIcon size={15} style={{ color: "#fff" }} />
-              {page.runState === "running" ? "Running…" : "Run now"}
+              {page.runState === "queued" ? "Queued…" : page.runState === "dispatching" ? "Starting…" : page.runState === "running" ? "Running…" : "Run now"}
             </button>
             <button onClick={() => store.openMarker(page.id)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 15px", border: `1px solid ${C.border2}`, borderRadius: 8, background: "rgba(255,255,255,0.04)", color: C.text, fontSize: 12.5, fontWeight: 500, cursor: "pointer", whiteSpace: "nowrap" }}>
               <PlusIcon size={15} style={{ color: C.text }} />
@@ -107,16 +107,38 @@ export default function PageDetail() {
       </header>
 
       <div className="detail-content" style={{ padding: "28px 40px 56px" }}>
+        {page.runState && <CollectionStatus page={page} />}
         {isPending ? (
           <PendingPanel page={page} store={store} />
         ) : (
           <div role="tabpanel" id={`page-panel-${tab}`} aria-labelledby={`page-tab-${tab}`} tabIndex={0}>
             {tab === "overview" && <OverviewTab page={page} recs={recs} strategy={strategy} apct={apct} apm={apm} pass={pass} total={total} failList={failList} store={store} />}
             {tab === "history" && <HistoryTab page={page} strategy={strategy} chartCat={chartCat} setChartCat={setChartCat} store={store} />}
-            {tab === "audits" && <OpportunitiesTab />}
+            {tab === "audits" && <OpportunitiesTab page={page} />}
             {tab === "agent" && <AgentTab page={page} pass={pass} fail={total - pass} unavailable={unavailableCount} />}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function CollectionStatus({ page }: { page: WatchPage }) {
+  const failed = page.runState === "failed";
+  const title = page.runState === "queued"
+    ? "Collection queued"
+    : page.runState === "dispatching"
+      ? "Starting durable collector"
+      : page.runState === "running"
+        ? "Collecting mobile and desktop PSI data"
+        : "Last collection failed";
+  return (
+    <div style={{ marginBottom: 18, padding: "12px 15px", borderRadius: 9, border: `1px solid ${failed ? "rgba(255,92,108,0.35)" : "rgba(59,137,255,0.35)"}`, background: failed ? "rgba(255,92,108,0.09)" : "rgba(59,137,255,0.09)" }}>
+      <div style={{ fontSize: 12.5, fontWeight: 600, color: failed ? C.redSoft : C.accentSoft }}>{title}</div>
+      <div style={{ fontSize: 11.5, color: C.muted, marginTop: 3 }}>
+        {failed
+          ? page.lastError ?? "The collector stopped before a result could be committed. Start a new run to retry."
+          : "This state is persisted, so it is safe to refresh or leave the app while the job runs."}
       </div>
     </div>
   );
@@ -266,7 +288,7 @@ function HistoryTab({
     let raw: string;
     if (d.rawReportKey) {
       try {
-        const res = await fetch(`/api/pages/${page.id}/report/${encodeURIComponent(d.rawReportKey)}`);
+        const res = await fetch(store.pathFor(`/api/pages/${page.id}/report/${encodeURIComponent(d.rawReportKey)}`));
         if (res.ok) {
           const json = (await res.json()) as { report: unknown };
           raw = JSON.stringify(json.report, null, 2);
@@ -359,21 +381,27 @@ function PendingPanel({ page, store }: { page: WatchPage; store: ReturnType<type
           : "Run now to collect a first snapshot, or capture an explicit baseline to anchor future comparisons. This page also joins the next nightly run automatically."}
       </div>
       <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 22 }}>
-        <button onClick={() => store.captureBaseline(page.id)} style={{ border: "none", background: C.accent, color: "#fff", fontSize: 12.5, fontWeight: 550, padding: "9px 16px", borderRadius: 8, cursor: "pointer" }}>Capture baseline</button>
-        <button disabled={page.runState === "running"} onClick={() => store.runPage(page.id)} style={{ border: `1px solid ${C.border2}`, background: "rgba(255,255,255,0.04)", color: C.text, fontSize: 12.5, fontWeight: 500, padding: "9px 16px", borderRadius: 8, cursor: page.runState === "running" ? "wait" : "pointer", opacity: page.runState === "running" ? 0.65 : 1 }}>{page.runState === "running" ? "Running…" : "Run now"}</button>
+        <button disabled={!!page.runState && page.runState !== "failed"} onClick={() => store.captureBaseline(page.id)} style={{ border: "none", background: C.accent, color: "#fff", fontSize: 12.5, fontWeight: 550, padding: "9px 16px", borderRadius: 8, cursor: page.runState && page.runState !== "failed" ? "wait" : "pointer", opacity: page.runState && page.runState !== "failed" ? 0.65 : 1 }}>{page.runState && page.runState !== "failed" ? "Collection in progress…" : "Capture baseline"}</button>
+        <button disabled={!!page.runState && page.runState !== "failed"} onClick={() => store.runPage(page.id)} style={{ border: `1px solid ${C.border2}`, background: "rgba(255,255,255,0.04)", color: C.text, fontSize: 12.5, fontWeight: 500, padding: "9px 16px", borderRadius: 8, cursor: page.runState && page.runState !== "failed" ? "wait" : "pointer", opacity: page.runState && page.runState !== "failed" ? 0.65 : 1 }}>{page.runState === "queued" ? "Queued…" : page.runState === "dispatching" ? "Starting…" : page.runState === "running" ? "Running…" : "Run now"}</button>
       </div>
     </div>
   );
 }
 
-function OpportunitiesTab() {
-  const audits = auditsFor();
+function OpportunitiesTab({ page }: { page: WatchPage }) {
+  const latest = page.history[page.history.length - 1];
+  const audits = auditsFor(latest?.opportunities);
   return (
     <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, overflow: "hidden" }}>
       <div style={{ padding: "18px 22px", borderBottom: `1px solid ${C.border}` }}>
         <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>Failing audits &amp; opportunities</h3>
         <div style={{ fontSize: 12, color: C.faint, marginTop: 3 }}>Ordered by Lighthouse&apos;s estimated load-time savings.</div>
       </div>
+      {audits.length === 0 && (
+        <div style={{ padding: "42px 22px", textAlign: "center", color: C.muted, fontSize: 13 }}>
+          {latest ? "The representative Lighthouse run reported no load-time opportunities." : "No real Lighthouse opportunity data has been collected yet."}
+        </div>
+      )}
       {audits.map((a, i) => (
         <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 16, padding: "17px 22px", borderBottom: `1px solid ${C.rowBorder}` }}>
           <div style={{ flex: "none", width: 8, height: 8, borderRadius: "50%", marginTop: 6, background: a.dot }} />

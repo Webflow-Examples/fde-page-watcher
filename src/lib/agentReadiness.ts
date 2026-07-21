@@ -1,5 +1,5 @@
 import type { AgentCheck } from "./types";
-import { normalizeUrl } from "./psi";
+import { normalizeUrl } from "./psiCore";
 
 // Real, dependency-free agent-readiness scan. Each check is recorded pass/fail
 // (REQ-008); if the page is unreachable the whole scan is marked unavailable

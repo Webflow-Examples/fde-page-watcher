@@ -116,12 +116,21 @@ export function markRunFinished(id: string, runId: string, error?: string, dataS
 export function recoverStaleRuns(dataStore: DataStore = getStore(), now: Date = new Date()): Promise<AppState> {
   return withState((state) => {
     for (const page of state.pages) {
-      if (page.runState !== "running") continue;
+      if (!page.runState || page.runState === "failed") continue;
       const age = page.startedAt ? now.getTime() - Date.parse(page.startedAt) : Number.POSITIVE_INFINITY;
-      if (!Number.isFinite(age) || age > RUN_STALE_AFTER_MS) {
+      const durableJob = (state.jobs ?? []).some((item) => item.runId === page.runId && item.state === "running");
+      const staleAfter = durableJob ? 30 * 60 * 1000 : RUN_STALE_AFTER_MS;
+      if (!Number.isFinite(age) || age > staleAfter) {
         page.runState = "failed";
         page.lastRunAt = now.toISOString();
-        page.lastError = `Run ${page.runId ?? "unknown"} exceeded the ${Math.round(RUN_STALE_AFTER_MS / 60_000)} minute stale limit`;
+        page.lastError = `Run ${page.runId ?? "unknown"} exceeded the ${Math.round(staleAfter / 60_000)} minute stale limit`;
+        const job = (state.jobs ?? []).find((item) => item.runId === page.runId);
+        if (job && (job.state === "queued" || job.state === "dispatching" || job.state === "running")) {
+          job.state = "failed";
+          job.error = page.lastError;
+          job.updatedAt = now.toISOString();
+          job.completedAt = now.toISOString();
+        }
       }
     }
   }, dataStore);

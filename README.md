@@ -22,43 +22,46 @@ npm run build    # production build
 npm start        # serve the production build
 npm run lint     # eslint
 npm test         # vitest (unit + integration-focused concurrency tests)
+npm run collector:check    # type-check the durable Workflow worker
+npm run collector:dry-run  # bundle/validate the Workflow without deploying
 ```
 
 ## Environment
 
 All are optional for local development — the app runs without them.
 
-| Variable                     | Purpose                                                                                                  |
-| ---------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `PAGESPEED_API_KEY`          | PageSpeed Insights API key. Works keyless at low volume; a key raises the quota.                         |
-| `SLACK_WEBHOOK_URL`          | Incoming webhook for drop alerts and follow-up reports. Unset → attempts remain pending.                 |
-| `CRON_SECRET`                | Required outside development. Nightly callers send `Authorization: Bearer <CRON_SECRET>`.                |
-| `FDE_ACCESS_USERNAME`        | Required in production with `FDE_ACCESS_PASSWORD`; protects the app and mutation routes with HTTP Basic. |
-| `FDE_ACCESS_PASSWORD`        | Required in production with `FDE_ACCESS_USERNAME`; store it as a Webflow Cloud secret.                   |
-| `PSI_MOCK`                   | When set, collection returns deterministic synthetic scores instead of calling PSI (tests).              |
-| `PSI_RUNS`                   | Override the number of PSI runs per strategy (1–5, default 5) for quick checks.                          |
-| `NIGHTLY_PAGE_CONCURRENCY`   | Number of pages collected concurrently by nightly (1–4, default 2).                                     |
-| `ANTHROPIC_API_KEY`          | Enables AI explanations for new recommendations and the nightly Watcher narrative.                       |
-| `ANTHROPIC_MOCK`             | Uses deterministic placeholder AI text without making Anthropic requests.                               |
+| Variable                     | Purpose                                                                                                       |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `PAGESPEED_API_KEY`          | PSI credential. Configure it on the collector Worker; it is also used by the local runner.                     |
+| `CRON_SECRET`                | Shared bearer secret for nightly requests, Workflow dispatch, and collector callbacks.                        |
+| `COLLECTOR_URL`              | Production Workflow endpoint, ending in `/jobs`.                                                              |
+| `COLLECTOR_CALLBACK_URL`     | Optional direct app Worker override. By default callbacks use Webflow's automatic `ASSETS_PREFIX`.             |
+| `COLLECTOR_SECRET`           | Optional separate dispatch credential; defaults to `CRON_SECRET`.                                             |
+| `DATASET_MODE`               | `demo` uses the existing sample namespace; `live` uses an isolated, initially empty namespace.                |
+| `BASE_URL`                   | Webflow Cloud mount path (for example `/page-watch`); client routes and APIs are prefixed automatically.       |
+| `SLACK_WEBHOOK_URL`          | Incoming webhook for drop alerts and follow-up reports.                                                       |
+| `PSI_MOCK`                   | Local-only deterministic scores instead of PSI.                                                               |
+| `PSI_RUNS`                   | Samples per strategy (1–5, default 5).                                                                         |
+| `ANTHROPIC_API_KEY`          | Enables post-commit recommendation explanations and Watcher narratives on the app.                           |
+| `ANTHROPIC_MOCK`             | Uses deterministic placeholder AI text without making Anthropic requests.                                    |
 
 Put these in `.env.local`.
 
 ## How it works
 
-- **Collection** — `runPage` measures each page 5× per strategy via PSI (runs
-  execute concurrently), takes the per-category median with the run-to-run
-  range, runs a dependency-free agent-readiness scan, and appends a night to the
-  page's history. Every collection has a stable run ID. Duplicate requests for
-  an active page coalesce, stale runs recover as failed, and a run ID can append
-  history only once. On-demand `POST /api/pages/[id]/run` returns `202` and the
-  client polls until that job settles.
+- **Collection** — baseline, on-demand, and nightly actions first reserve a
+  durable D1 job and return `202`. In production a Cloudflare Workflow performs
+  up to five PSI samples per strategy, uploads the raw JSON to R2, scans agent
+  readiness, and calls the app back with a versioned result. Retries are durable,
+  duplicates coalesce, stale jobs become visible failures, and a run ID can
+  append history only once.
 - **Baselines** — ordinary on-demand/nightly runs may store snapshots, history,
   recommendations, and scan results, but a page stays Pending until the user
   explicitly captures a baseline. Zero placeholders are never treated or shown
   as real baselines.
-- **Nightly job** — wire a scheduled job to `POST /api/cron/nightly` (priority
-  pages start first with bounded concurrency, then due follow-ups run).
-  `CRON_SECRET` is mandatory outside development.
+- **Nightly job** — wire a scheduled job to `POST /api/cron/nightly`. It
+  priority-sorts the watchlist and dispatches Workflows; it does not hold a
+  Webflow request open while PSI runs. `CRON_SECRET` is mandatory.
 - **Storage** — a tenant-scoped `DataStore` (see `src/lib/store`) mirrors the
   state snapshot, append-only history/markers, and raw report tiers. Local
   development uses the filesystem under `.data/`, with an in-memory fallback
@@ -69,36 +72,37 @@ Put these in `.env.local`.
   (`/api/pages`, `/api/recs`, `/api/pages/[id]/*`) and the store-level atomic
   update primitive. External PSI/Slack work happens outside that critical
   section; result commits re-read authoritative state.
-- **Background execution** — the local runner adapts Next.js `after()`. This
-  keeps the request short but is not a durable queue. `BackgroundJobRunner` is
-  the replacement boundary for a future Webflow job/queue adapter.
-- **AI text** — new Lighthouse recommendations can receive concise Anthropic
-  explanations, and nightly runs refresh the Watcher narrative. Both paths
-  fail open to the existing non-AI UI when no key is configured or generation
-  fails.
+- **Background execution** — Cloudflare Workflows own production execution.
+  The local runner uses Next.js `after()` only for development.
+- **Post-commit enrichment** — after the scores/raw reports are safely stored,
+  the Workflow separately retries Anthropic recommendation explanations,
+  Watcher narrative refreshes, Slack alerts, and due follow-ups. Optional
+  integrations cannot roll back or mislabel a successful collection.
 
-## Deployment access decision
+## Production setup
 
-Webflow Cloud does not provide a private authenticated boundary for an app
-environment: its current documentation says anyone who can reach the deployed
-mount-path URL can view it. Therefore this repository protects all production
-app/API routes with HTTP Basic credentials in `proxy.ts`; missing credentials
-return `503` rather than exposing the app. The cron route is excluded from Basic
-auth because it uses its own mandatory bearer `CRON_SECRET`.
+The interactive app relies on the enclosing site's SSO. There is no second
+HTTP Basic layer and no `FDE_ACCESS_*` configuration. Non-interactive nightly
+and collector callback endpoints remain protected by `CRON_SECRET`.
 
-Configure `FDE_ACCESS_USERNAME`, `FDE_ACCESS_PASSWORD`, and `CRON_SECRET` as
-secret runtime environment variables before a production deployment. Local
-`npm run dev` remains open. See Webflow's [environment access and permissions](https://developers.webflow.com/webflow-cloud/environments)
-and [secret environment variable guidance](https://developers.webflow.com/webflow-cloud/environments).
+1. Confirm the app has the `DB` and `REPORTS` declarations from
+   `wrangler.json`. Webflow Cloud applies `0003_collection_jobs.sql` during the
+   GitHub-driven deployment. Production intentionally fails instead of falling
+   back to process memory when either binding is absent.
+2. Deploy `collector-worker/wrangler.jsonc`. Configure its
+   `PAGESPEED_API_KEY` and `CRON_SECRET` secrets.
+3. Set `COLLECTOR_URL`, `CRON_SECRET`, and `DATASET_MODE` on the Webflow app.
+   `BASE_URL` and `ASSETS_PREFIX` are supplied automatically by Webflow Cloud;
+   the latter is the direct Worker origin used for SSO-independent callbacks.
+4. Call `/api/health` after deployment. It returns `503` if durable storage or
+   the production collector is missing, without exposing secret values.
 
-This is a shared internal-tool boundary, not per-user identity or role-based
-authorization. If the deployment later needs individual accounts, replace it
-with an identity provider while keeping the route protection fail closed.
+Use `DATASET_MODE=demo` for the existing sample state and `DATASET_MODE=live`
+for real URLs. The two modes use separate tenant keys in the same D1 database,
+so switching modes is reversible and never overwrites the demo dataset.
 
 ## Deferred integrations
 
-- Durable Webflow background job/queue adapter
-- Production Anthropic, PageSpeed, and Slack credentials
 - Per-user identity and role-based authorization
 - Automated page remediation
 
