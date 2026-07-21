@@ -36,7 +36,6 @@ All are optional for local development — the app runs without them.
 | `CRON_SECRET`                | Shared bearer secret for nightly requests, Workflow dispatch, and collector callbacks.                        |
 | `COLLECTOR_URL`              | Production Workflow endpoint, ending in `/jobs`.                                                              |
 | `COLLECTOR_CALLBACK_URL`     | Optional direct app Worker override. By default callbacks use Webflow's automatic `ASSETS_PREFIX`.             |
-| `COLLECTOR_SECRET`           | Optional separate dispatch credential; defaults to `CRON_SECRET`.                                             |
 | `DATASET_MODE`               | `demo` uses the existing sample namespace; `live` uses an isolated, initially empty namespace.                |
 | `BASE_URL`                   | Webflow Cloud mount path (for example `/page-watch`); client routes and APIs are prefixed automatically.       |
 | `SLACK_WEBHOOK_URL`          | Incoming webhook for drop alerts and follow-up reports.                                                       |

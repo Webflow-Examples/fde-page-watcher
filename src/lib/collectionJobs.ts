@@ -255,7 +255,7 @@ export interface DispatchPayload {
 
 function requireCollectorConfig(): { collectorUrl: string; collectorSecret: string; callbackUrl: string } {
   const collectorUrl = getEnv("COLLECTOR_URL");
-  const collectorSecret = getEnv("COLLECTOR_SECRET") ?? getEnv("CRON_SECRET");
+  const collectorSecret = getEnv("CRON_SECRET");
   const callbackUrl = getEnv("COLLECTOR_CALLBACK_URL") ?? getEnv("ASSETS_PREFIX");
   if (!collectorUrl || !collectorSecret || !callbackUrl) {
     throw new Error("Collector is not configured (COLLECTOR_URL, CRON_SECRET, and ASSETS_PREFIX or COLLECTOR_CALLBACK_URL are required)");

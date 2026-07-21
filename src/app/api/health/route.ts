@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   const storage = getStoreDiagnostics();
-  const collectorConfigured = !!getEnv("COLLECTOR_URL") && !!(getEnv("COLLECTOR_CALLBACK_URL") ?? getEnv("ASSETS_PREFIX")) && !!(getEnv("COLLECTOR_SECRET") ?? getEnv("CRON_SECRET"));
+  const collectorConfigured = !!getEnv("COLLECTOR_URL") && !!(getEnv("COLLECTOR_CALLBACK_URL") ?? getEnv("ASSETS_PREFIX")) && !!getEnv("CRON_SECRET");
   const ok = storage.driver !== "unavailable" && (process.env.NODE_ENV !== "production" || collectorConfigured);
   return NextResponse.json(
     {
