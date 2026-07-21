@@ -28,6 +28,7 @@ interface R2ObjectBody {
 interface R2Bucket {
   get(key: string): Promise<R2ObjectBody | null>;
   put(key: string, value: string | ArrayBuffer | ReadableStream): Promise<unknown>;
+  delete(key: string): Promise<void>;
 }
 
 type Fetcher = unknown;

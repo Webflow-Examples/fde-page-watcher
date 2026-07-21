@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useStore } from "@/components/store";
 import { CATEGORIES } from "@/lib/types";
-import type { CategoryKey } from "@/lib/types";
+import type { CategoryKey, Night } from "@/lib/types";
 import { categorySeries, deltaMeta, scoreMeta } from "@/lib/scoring";
 import { buildWatcher } from "@/lib/watcher";
 import { C, flagChip } from "@/lib/ui";
@@ -13,25 +13,27 @@ import { ChevronDownIcon, DesktopIcon, MobileIcon } from "@/components/icons";
 
 const GRID = "minmax(150px,1fr) 128px 120px 120px 120px 120px 120px";
 
-function agentSeries(id: string, pct: number): number[] {
-  let s = 7;
-  for (const ch of id) s = (s * 31 + ch.charCodeAt(0)) % 101;
-  const arr: number[] = [];
-  for (let i = 0; i < 7; i++) {
-    const noise = ((s + i * 17) % 7) - 3;
-    arr.push(Math.max(0, Math.min(100, pct + (i - 6) + noise)));
-  }
-  arr[6] = pct;
-  return arr;
+function agentSeries(history: Night[]): number[] {
+  return history.slice(-7).flatMap((night) => {
+    const available = (night.agent ?? []).filter((check) => !check.unavailable);
+    return available.length ? [Math.round((available.filter((check) => check.pass).length / available.length) * 100)] : [];
+  });
 }
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { pages, recs, strategy, setStrategy, dashSort, sortDash, watcherNote } = useStore();
+  const { pages, recs, strategy, setStrategy, dashSort, sortDash, watcherNote, pathFor } = useStore();
   const w = buildWatcher(pages, recs, strategy);
+  const latestRunAt = pages
+    .flatMap((page) => page.lastRunAt ? [Date.parse(page.lastRunAt)] : [])
+    .filter(Number.isFinite)
+    .sort((a, b) => b - a)[0];
+  const lastRunLabel = latestRunAt
+    ? new Date(latestRunAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+    : "no completed live collection yet";
   const watcherTimestamp = watcherNote
     ? new Date(watcherNote.generatedAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
-    : "today 03:12";
+    : lastRunLabel;
 
   const rows = pages.map((p) => {
     // Unavailable checks aren't failures — exclude them from the pass rate.
@@ -66,7 +68,7 @@ export default function DashboardPage() {
       agentPct: total ? `${pct}%` : "—",
       agentFg: am.fg,
       agentSub: total ? `${pass}/${total}` : "no scan",
-      agentSeries: total ? agentSeries(p.id, pct) : ([] as number[]),
+      agentSeries: total ? agentSeries(p.history) : ([] as number[]),
       agentLine: am.line,
       sortVals,
     };
@@ -106,7 +108,7 @@ export default function DashboardPage() {
         <div>
           <h1 style={{ margin: 0, fontSize: 27, fontWeight: 600, letterSpacing: "-0.01em" }}>Page performance</h1>
           <p style={{ margin: "8px 0 0", fontSize: 13.5, color: C.muted }}>
-            Lighthouse &amp; agent-readiness across {w.total} monitored pages · last run today 03:00
+            Lighthouse &amp; agent-readiness across {w.total} monitored pages · last completed collection {lastRunLabel}
           </p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
@@ -196,11 +198,11 @@ export default function DashboardPage() {
               role="button"
               tabIndex={0}
               aria-label={`Open ${row.title} details`}
-              onClick={() => router.push(`/pages/${row.id}`)}
+              onClick={() => router.push(pathFor(`/pages/${row.id}`))}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
-                  router.push(`/pages/${row.id}`);
+                  router.push(pathFor(`/pages/${row.id}`));
                 }
               }}
               style={{ display: "grid", gridTemplateColumns: GRID, alignItems: "center", padding: "16px 24px", borderBottom: `1px solid ${C.rowBorder}`, cursor: "pointer", minWidth: 880 }}
@@ -239,7 +241,7 @@ export default function DashboardPage() {
           ))}
         </div>
         <p style={{ fontSize: 11.5, color: C.faint, margin: "15px 2px 0", lineHeight: 1.5 }}>
-          {`Each graph is the median of five nightly PSI runs over the last seven nights for the ${strategy} strategy; the number is tonight's median and the delta compares it to the stored baseline. Agent is the share of agent-readiness checks passing.`}
+          {`Each graph uses the stored PSI median (up to five samples) over the last seven collections for the ${strategy} strategy; the number is the latest median and the delta compares it to the stored baseline. Agent is derived from the recorded per-check history.`}
         </p>
       </div>
     </div>

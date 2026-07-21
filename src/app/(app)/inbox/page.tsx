@@ -17,7 +17,7 @@ interface Group {
 
 export default function InboxPage() {
   const router = useRouter();
-  const { recs, inboxGroup, setInboxGroup, inboxSort, sortInbox, saveTask, ignoreRec } = useStore();
+  const { recs, inboxGroup, setInboxGroup, inboxSort, sortInbox, saveTask, ignoreRec, pathFor } = useStore();
 
   let items = recs.filter((r) => r.status === "inbox");
   if (inboxSort.col) {
@@ -117,7 +117,7 @@ export default function InboxPage() {
                     <div style={{ justifySelf: "end", display: "flex", gap: 8 }}>
                       <button onClick={() => saveTask(it.key)} style={{ border: "none", background: C.accent, color: "#fff", fontSize: 12, fontWeight: 550, padding: "7px 13px", borderRadius: 7, cursor: "pointer", whiteSpace: "nowrap" }}>Save as task</button>
                       <button onClick={() => ignoreRec(it.key)} style={{ border: `1px solid ${C.border2}`, background: "rgba(255,255,255,0.03)", color: C.dim, fontSize: 12, fontWeight: 500, padding: "7px 13px", borderRadius: 7, cursor: "pointer", whiteSpace: "nowrap" }}>Ignore</button>
-                      <button onClick={() => router.push(`/pages/${it.pageId}`)} title="Open page" style={{ border: `1px solid ${C.border2}`, background: "rgba(255,255,255,0.03)", padding: "7px 9px", borderRadius: 7, cursor: "pointer", display: "flex", alignItems: "center" }}>
+                      <button onClick={() => router.push(pathFor(`/pages/${it.pageId}`))} title="Open page" style={{ border: `1px solid ${C.border2}`, background: "rgba(255,255,255,0.03)", padding: "7px 9px", borderRadius: 7, cursor: "pointer", display: "flex", alignItems: "center" }}>
                         <ExternalIcon size={15} style={{ color: C.dim }} />
                       </button>
                     </div>

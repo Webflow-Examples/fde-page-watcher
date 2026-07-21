@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { AppState, CategoryKey, Flag, ScoreByCategory, Strategy } from "@/lib/types";
 import { isoDate } from "@/lib/ui";
+import { withBasePath } from "@/lib/paths";
 
 type SortDir = "asc" | "desc";
 interface SortState {
@@ -24,6 +25,8 @@ export interface ReportData {
 }
 
 interface StoreValue extends AppState {
+  basePath: string;
+  pathFor: (path: string) => string;
   // global strategy toggle
   strategy: Strategy;
   setStrategy: (s: Strategy) => void;
@@ -104,7 +107,7 @@ function pendingOptimisticPage(id: string, title: string, url: string, flag: Fla
   };
 }
 
-export function StoreProvider({ initial, children }: { initial: AppState; children: React.ReactNode }) {
+export function StoreProvider({ initial, basePath = "", children }: { initial: AppState; basePath?: string; children: React.ReactNode }) {
   const [data, setData] = useState<AppState>(initial);
   const dataRef = useRef<AppState>(initial);
   const apply = useCallback((next: AppState) => {
@@ -128,6 +131,7 @@ export function StoreProvider({ initial, children }: { initial: AppState; childr
   const [form, setFormState] = useState<AddForm>({ title: "", url: "", flag: "priority" });
   const [markerText, setMarkerText] = useState("");
   const [markerDate, setMarkerDate] = useState("");
+  const pathFor = useCallback((path: string) => withBasePath(basePath, path), [basePath]);
 
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flash = useCallback((msg: string) => {
@@ -151,7 +155,7 @@ export function StoreProvider({ initial, children }: { initial: AppState; childr
     ) => {
       const prev = dataRef.current;
       apply(optimistic);
-      fetch(req.url, {
+      fetch(pathFor(req.url), {
         method: req.method ?? "POST",
         headers: req.body !== undefined ? { "content-type": "application/json" } : undefined,
         body: req.body !== undefined ? JSON.stringify(req.body) : undefined,
@@ -167,7 +171,7 @@ export function StoreProvider({ initial, children }: { initial: AppState; childr
           flash(msg.failure);
         });
     },
-    [apply, flash],
+    [apply, flash, pathFor],
   );
 
   const toggleSort = (prev: SortState, col: string): SortState => ({
@@ -316,7 +320,7 @@ export function StoreProvider({ initial, children }: { initial: AppState; childr
       // poll the read model until this page's runState settles (audit High #1).
       const poll = () => {
         window.setTimeout(() => {
-          fetch("/api/state")
+          fetch(pathFor("/api/state"))
             .then((r) => (r.ok ? r.json() : null))
             .then((res) => {
               const st = (res?.state ?? null) as AppState | null;
@@ -324,13 +328,13 @@ export function StoreProvider({ initial, children }: { initial: AppState; childr
               apply(st);
               const pg = st.pages.find((x) => x.id === id);
               if (!pg) return;
-              if (pg.runState === "running") return poll();
-              flash(pg.runState === "failed" ? `Run failed for ${pg.title}` : `Run complete for ${pg.title}`);
+              if (pg.runState === "queued" || pg.runState === "dispatching" || pg.runState === "running") return poll();
+              flash(pg.runState === "failed" ? `Run failed for ${pg.title}: ${pg.lastError ?? "see job status"}` : `Run complete for ${pg.title}`);
             })
             .catch(() => poll());
         }, 3000);
       };
-      fetch(`/api/pages/${id}/run`, { method: "POST" })
+      fetch(pathFor(`/api/pages/${id}/run`), { method: "POST" })
         .then(async (r) => {
           if (!r.ok) throw new Error(`HTTP ${r.status}`);
           const res = (await r.json().catch(() => null)) as { state?: AppState } | null;
@@ -339,26 +343,45 @@ export function StoreProvider({ initial, children }: { initial: AppState; childr
         })
         .catch(() => flash("Couldn't start the run — try again"));
     },
-    [flash, apply],
+    [flash, apply, pathFor],
   );
 
   const captureBaseline = useCallback(
     (id: string) => {
-      flash("Capturing baseline — 5 PSI runs per strategy…");
-      fetch(`/api/pages/${id}/baseline`, { method: "POST" })
+      const page = dataRef.current.pages.find((item) => item.id === id);
+      flash(`Baseline queued for ${page?.title ?? "this page"} — collecting in the background…`);
+      const poll = () => {
+        window.setTimeout(() => {
+          fetch(pathFor("/api/state"))
+            .then((response) => (response.ok ? response.json() : null))
+            .then((response) => {
+              const state = (response?.state ?? null) as AppState | null;
+              if (!state) return poll();
+              apply(state);
+              const current = state.pages.find((item) => item.id === id);
+              if (!current) return;
+              if (current.runState === "queued" || current.runState === "dispatching" || current.runState === "running") return poll();
+              flash(current.runState === "failed" ? `Baseline failed: ${current.lastError ?? "see job status"}` : `Baseline captured for ${current.title}`);
+            })
+            .catch(() => poll());
+        }, 3000);
+      };
+      fetch(pathFor(`/api/pages/${id}/baseline`), { method: "POST" })
         .then(async (r) => {
           if (!r.ok) throw new Error(`HTTP ${r.status}`);
           const res = (await r.json().catch(() => null)) as { state?: AppState } | null;
           if (res?.state) apply(res.state);
-          flash("Baseline captured");
+          poll();
         })
         .catch(() => flash("Baseline capture failed"));
     },
-    [flash, apply],
+    [flash, apply, pathFor],
   );
 
   const value: StoreValue = {
     ...data,
+    basePath,
+    pathFor,
     strategy,
     setStrategy,
     dashSort,

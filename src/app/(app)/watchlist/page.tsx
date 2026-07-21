@@ -10,7 +10,7 @@ const GRID = "minmax(260px,2.4fr) 160px 1fr 120px";
 
 export default function WatchlistPage() {
   const router = useRouter();
-  const { pages, setFlag, removePage, openAdd } = useStore();
+  const { pages, setFlag, removePage, openAdd, pathFor } = useStore();
 
   return (
     <div>
@@ -53,10 +53,22 @@ export default function WatchlistPage() {
                   ]}
                 />
               </div>
-              <div style={{ fontSize: 12.5, color: C.muted }}>{p.baselineCapturedAt ? `Captured ${p.baselineCapturedAt}` : "No baseline yet"}</div>
+              <div style={{ fontSize: 12.5, color: p.runState === "failed" ? C.redSoft : C.muted }}>
+                {p.runState === "queued"
+                  ? "Collection queued"
+                  : p.runState === "dispatching"
+                    ? "Collector starting"
+                    : p.runState === "running"
+                      ? "Collection running"
+                      : p.runState === "failed"
+                        ? `Failed: ${p.lastError ?? "retry from page"}`
+                        : p.baselineCapturedAt
+                          ? `Captured ${p.baselineCapturedAt}`
+                          : "No baseline yet"}
+              </div>
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
                 <button
-                  onClick={() => router.push(`/pages/${p.id}`)}
+                  onClick={() => router.push(pathFor(`/pages/${p.id}`))}
                   style={{ border: `1px solid ${C.border2}`, background: "rgba(255,255,255,0.03)", color: C.text, fontSize: 12, fontWeight: 500, padding: "6px 12px", borderRadius: 7, cursor: "pointer" }}
                 >
                   View

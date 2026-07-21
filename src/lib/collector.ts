@@ -106,11 +106,12 @@ export async function runPage(pageId: string, options: CollectorDependencies = {
   }
 }
 
-async function insertRecommendations(
+export async function insertRecommendations(
   dataStore: DataStore,
   pageId: string,
-  opportunities: { id: string; title: string; savingsMs: number }[],
+  opportunities: { id: string; title: string; category?: string; savingsMs: number }[],
   now: Date,
+  options: { summarize?: boolean } = {},
 ): Promise<AppState> {
   const snapshot = await dataStore.getState();
   const page = snapshot.pages.find((item) => item.id === pageId);
@@ -124,7 +125,7 @@ async function insertRecommendations(
       url: page.url,
       id: opportunity.id,
       title: opportunity.title,
-      category: "Performance",
+      category: opportunity.category ?? "Performance",
       savings: `${(opportunity.savingsMs / 1000).toFixed(1)} s`,
       estTime: costBand(`${opportunity.id} ${opportunity.title}`),
       status: "inbox",
@@ -132,8 +133,10 @@ async function insertRecommendations(
       added,
       doneDate: null,
     };
-    const summary = await summarizeRec(rec, page);
-    if (summary) rec.aiSummary = summary;
+    if (options.summarize !== false) {
+      const summary = await summarizeRec(rec, page);
+      if (summary) rec.aiSummary = summary;
+    }
     return rec;
   }));
 
@@ -169,7 +172,7 @@ Explain what this recommendation means and why it's worth doing, in plain terms.
 }
 
 /** The Watcher's dashboard narrative: a short, factual read of overall health, refreshed once per nightly run. */
-async function generateWatcherNote(dataStore: DataStore, now: Date): Promise<void> {
+export async function generateWatcherNote(dataStore: DataStore, now: Date): Promise<void> {
   const state = await dataStore.getState();
   const w = buildWatcher(state.pages, state.recs, "mobile");
   const degradedDetail = state.pages.flatMap((p) => {
@@ -191,6 +194,47 @@ Write a factual, specific 2-3 sentence summary of current page-performance healt
   if (!text) return;
   await dataStore.updateState((draft) => {
     draft.watcherNote = { text, generatedAt: now.toISOString() };
+  });
+}
+
+/** Fill optional AI prose after the durable collection commit has succeeded. */
+export async function enrichRecommendations(dataStore: DataStore, pageId: string): Promise<void> {
+  const snapshot = await dataStore.getState();
+  const page = snapshot.pages.find((item) => item.id === pageId);
+  if (!page) return;
+  const candidates = snapshot.recs.filter((item) => item.pageId === pageId && !item.aiSummary).slice(0, 4);
+  const summaries = await Promise.all(candidates.map(async (rec) => ({ key: rec.key, text: await summarizeRec(rec, page) })));
+  await dataStore.updateState((draft) => {
+    for (const summary of summaries) {
+      if (!summary.text) continue;
+      const rec = draft.recs.find((item) => item.key === summary.key);
+      if (rec && !rec.aiSummary) rec.aiSummary = summary.text;
+    }
+  });
+}
+
+/** Send the current run's drop alert at most once at the job-model level. */
+export async function notifyCollectionJob(dataStore: DataStore, jobId: string): Promise<void> {
+  const snapshot = await dataStore.getState();
+  const job = (snapshot.jobs ?? []).find((item) => item.id === jobId);
+  if (!job || job.state !== "succeeded" || job.notifiedAt) return;
+  const page = snapshot.pages.find((item) => item.id === job.pageId);
+  if (!page) return;
+  let delivery: SlackDelivery = { sent: true };
+  if (page.status === "degraded" && page.baseline) {
+    const baseline = mediansOf(page.baseline.mobile);
+    const affected = CATEGORIES
+      .filter((category) => baseline[category.key] - page.current.mobile[category.key] >= DROP_THRESHOLD)
+      .map((category) => category.label);
+    if (affected.length) delivery = await postAlert(page.title, page.url, affected);
+  }
+  if (!delivery.sent && getEnv("SLACK_WEBHOOK_URL")) throw new Error(delivery.error ?? "Slack delivery failed");
+  await dataStore.updateState((draft) => {
+    const current = (draft.jobs ?? []).find((item) => item.id === jobId);
+    if (current?.state === "succeeded" && !current.notifiedAt) {
+      current.notifiedAt = new Date().toISOString();
+      delete current.notificationError;
+    }
   });
 }
 
