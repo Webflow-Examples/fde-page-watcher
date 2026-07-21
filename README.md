@@ -92,7 +92,8 @@ and collector callback endpoints remain protected by `CRON_SECRET`.
    `PAGESPEED_API_KEY` and `CRON_SECRET` secrets.
 3. Set `COLLECTOR_URL`, `CRON_SECRET`, and `DATASET_MODE` on the Webflow app.
    `BASE_URL` and `ASSETS_PREFIX` are supplied automatically by Webflow Cloud;
-   the latter is the direct Worker origin used for SSO-independent callbacks.
+   `next.config.ts` captures them during the Webflow build, and the latter is
+   the direct Worker origin used for SSO-independent callbacks.
    The callback route still requires the shared `CRON_SECRET`; do not point
    `COLLECTOR_CALLBACK_URL` at the interactive `*.wf.app` URL because Webflow's
    Cloudflare Access layer rejects non-interactive requests before they reach
