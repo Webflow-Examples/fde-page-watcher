@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { AppState, CategoryKey, Flag, ScoreByCategory, Strategy } from "@/lib/types";
+import { collectionSettlementMessage, hasActiveCollections, startCollectionPolling } from "@/lib/collectionPolling";
 import { isoDate } from "@/lib/ui";
 import { withBasePath } from "@/lib/paths";
 
@@ -145,6 +146,23 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
     toastTimer.current = setTimeout(() => setToast(null), 2800);
   }, []);
   useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
+
+  const hasActiveCollection = hasActiveCollections(data);
+  useEffect(() => {
+    if (!hasActiveCollection) return;
+    // Reconcile immediately after a refresh/redeploy instead of waiting for a
+    // button-local timer that no longer exists.
+    return startCollectionPolling({
+      url: pathFor("/api/state"),
+      getState: () => dataRef.current,
+      onState: (next) => {
+        const previous = dataRef.current;
+        apply(next);
+        const message = collectionSettlementMessage(previous, next);
+        if (message) flash(message);
+      },
+    });
+  }, [apply, flash, hasActiveCollection, pathFor]);
 
   // ── persistence ──────────────────────────────────────────────────────
   // Optimistic mutate: apply the local prediction immediately, call the
@@ -316,30 +334,11 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
       const cur = dataRef.current;
       const p = cur.pages.find((x) => x.id === id);
       flash(`Run started for ${p ? p.title : "this page"} — collecting in the background…`);
-      // The run route returns 202 immediately and collects in the background;
-      // poll the read model until this page's runState settles (audit High #1).
-      const poll = () => {
-        window.setTimeout(() => {
-          fetch(pathFor("/api/state"))
-            .then((r) => (r.ok ? r.json() : null))
-            .then((res) => {
-              const st = (res?.state ?? null) as AppState | null;
-              if (!st) return poll();
-              apply(st);
-              const pg = st.pages.find((x) => x.id === id);
-              if (!pg) return;
-              if (pg.runState === "queued" || pg.runState === "dispatching" || pg.runState === "running") return poll();
-              flash(pg.runState === "failed" ? `Run failed for ${pg.title}: ${pg.lastError ?? "see job status"}` : `Run complete for ${pg.title}`);
-            })
-            .catch(() => poll());
-        }, 3000);
-      };
       fetch(pathFor(`/api/pages/${id}/run`), { method: "POST" })
         .then(async (r) => {
           if (!r.ok) throw new Error(`HTTP ${r.status}`);
           const res = (await r.json().catch(() => null)) as { state?: AppState } | null;
           if (res?.state) apply(res.state);
-          poll();
         })
         .catch(() => flash("Couldn't start the run — try again"));
     },
@@ -350,28 +349,11 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
     (id: string) => {
       const page = dataRef.current.pages.find((item) => item.id === id);
       flash(`Baseline queued for ${page?.title ?? "this page"} — collecting in the background…`);
-      const poll = () => {
-        window.setTimeout(() => {
-          fetch(pathFor("/api/state"))
-            .then((response) => (response.ok ? response.json() : null))
-            .then((response) => {
-              const state = (response?.state ?? null) as AppState | null;
-              if (!state) return poll();
-              apply(state);
-              const current = state.pages.find((item) => item.id === id);
-              if (!current) return;
-              if (current.runState === "queued" || current.runState === "dispatching" || current.runState === "running") return poll();
-              flash(current.runState === "failed" ? `Baseline failed: ${current.lastError ?? "see job status"}` : `Baseline captured for ${current.title}`);
-            })
-            .catch(() => poll());
-        }, 3000);
-      };
       fetch(pathFor(`/api/pages/${id}/baseline`), { method: "POST" })
         .then(async (r) => {
           if (!r.ok) throw new Error(`HTTP ${r.status}`);
           const res = (await r.json().catch(() => null)) as { state?: AppState } | null;
           if (res?.state) apply(res.state);
-          poll();
         })
         .catch(() => flash("Baseline capture failed"));
     },
