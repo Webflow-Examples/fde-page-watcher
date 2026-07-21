@@ -1,8 +1,8 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { evaluateCronAccess } from "@/lib/access";
 import { getEnv } from "@/lib/env";
 import { getStore } from "@/lib/store";
-import { dispatchCollectionJobs, enqueueCollectionJob } from "@/lib/collectionJobs";
+import { dispatchCollectionJobs, enqueueCollectionJob, finalizeCollectionJob, reconcileCollectionJobs } from "@/lib/collectionJobs";
 import { runNightly } from "@/lib/collector";
 
 export const runtime = "nodejs";
@@ -25,16 +25,22 @@ export async function POST(req: Request) {
       const result = await runNightly();
       return NextResponse.json({ ok: true, local: true, ...result });
     }
-    const snapshot = await getStore().getState();
+    const dataStore = getStore();
+    const snapshot = await reconcileCollectionJobs({
+      dataStore,
+      onCommitted: (jobId) => after(() => finalizeCollectionJob(jobId, dataStore).catch((error) => {
+        console.error(JSON.stringify({ message: "nightly finalization deferred", jobId, error: String(error).slice(0, 500) }));
+      })),
+    });
     const pages = [...snapshot.pages].sort((a, b) => (a.flag === "priority" ? 0 : 1) - (b.flag === "priority" ? 0 : 1));
     const jobIds: string[] = [];
     let coalesced = 0;
     for (const page of pages) {
-      const result = await enqueueCollectionJob(page.id, "nightly");
+      const result = await enqueueCollectionJob(page.id, "nightly", { dataStore });
       if (result.queued) jobIds.push(result.job.id);
       else coalesced += 1;
     }
-    await dispatchCollectionJobs(jobIds);
+    await dispatchCollectionJobs(jobIds, dataStore);
     return NextResponse.json({ ok: true, queued: jobIds.length, coalesced, failed: [] }, { status: 202 });
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });

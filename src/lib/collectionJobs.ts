@@ -1,7 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { collect } from "./psi";
 import { scan } from "./agentReadiness";
-import { insertRecommendations } from "./collector";
+import {
+  enrichRecommendations,
+  generateWatcherNote,
+  insertRecommendations,
+  notifyCollectionJob,
+  processFollowUps,
+} from "./collector";
 import { getEnv } from "./env";
 import { getStore, type DataStore } from "./store";
 import { shortDate } from "./ui";
@@ -205,8 +211,8 @@ export async function commitCollectionResult(
     trimJobs(draft);
   });
 
-  // Keep the callback fast: recommendations are real but optional AI prose is
-  // deferred; it must never put the durable collection commit at risk.
+  // Keep reconciliation fast: recommendations are real but optional AI prose
+  // is deferred; it must never put the durable collection commit at risk.
   return insertRecommendations(dataStore, result.pageId, result.opportunities, completedAt, { summarize: false });
 }
 
@@ -250,25 +256,47 @@ export interface DispatchPayload {
   pageId: string;
   url: string;
   runs: number;
-  callbackUrl: string;
 }
 
-function requireCollectorConfig(): { collectorUrl: string; collectorSecret: string; callbackUrl: string } {
+interface CollectorConfig {
+  collectorUrl: string;
+  collectorSecret: string;
+}
+
+interface CollectorInstanceStatus {
+  status: "queued" | "running" | "paused" | "errored" | "terminated" | "complete" | "waiting" | "waitingForPause" | "unknown";
+  error?: { name?: string; message?: string };
+  output?: unknown;
+}
+
+class TerminalCollectorError extends Error {}
+
+function requireCollectorConfig(overrides: Partial<CollectorConfig> = {}): CollectorConfig {
   const collectorUrl = getEnv("COLLECTOR_URL");
   const collectorSecret = getEnv("CRON_SECRET");
-  const callbackUrl = getEnv("COLLECTOR_CALLBACK_URL") ?? getEnv("ASSETS_PREFIX");
-  if (!collectorUrl || !collectorSecret || !callbackUrl) {
+  const resolved = {
+    collectorUrl: overrides.collectorUrl ?? collectorUrl,
+    collectorSecret: overrides.collectorSecret ?? collectorSecret,
+  };
+  if (!resolved.collectorUrl || !resolved.collectorSecret) {
     const missing = [
-      !collectorUrl && "COLLECTOR_URL",
-      !collectorSecret && "CRON_SECRET",
-      !callbackUrl && "COLLECTOR_CALLBACK_URL or Webflow ASSETS_PREFIX",
+      !resolved.collectorUrl && "COLLECTOR_URL",
+      !resolved.collectorSecret && "CRON_SECRET",
     ].filter(Boolean);
     throw new Error(`Collector is not configured; missing: ${missing.join(", ")}`);
   }
-  return { collectorUrl, collectorSecret, callbackUrl };
+  return resolved as CollectorConfig;
 }
 
-function dispatchPayloads(state: AppState, jobIds: string[], callbackUrl: string): DispatchPayload[] {
+function collectorBaseUrl(collectorUrl: string): string {
+  return collectorUrl.replace(/\/jobs\/?$/, "").replace(/\/$/, "");
+}
+
+function collectorHeaders(secret: string): HeadersInit {
+  return { authorization: `Bearer ${secret}`, "content-type": "application/json" };
+}
+
+function dispatchPayloads(state: AppState, jobIds: string[]): DispatchPayload[] {
   const runs = Math.max(1, Math.min(5, Number(getEnv("PSI_RUNS")) || 5));
   return jobIds.map((jobId) => {
     const job = (state.jobs ?? []).find((item) => item.id === jobId);
@@ -280,7 +308,6 @@ function dispatchPayloads(state: AppState, jobIds: string[], callbackUrl: string
       pageId: page.id,
       url: page.url,
       runs,
-      callbackUrl: callbackUrl.replace(/\/$/, ""),
     };
   });
 }
@@ -296,11 +323,11 @@ export async function dispatchCollectionJob(jobId: string, dataStore: DataStore 
   }
 
   const snapshot = await markCollectionJob(jobId, "dispatching", { dataStore });
-  const payload = dispatchPayloads(snapshot, [jobId], config.callbackUrl)[0];
+  const payload = dispatchPayloads(snapshot, [jobId])[0];
   try {
     const response = await fetch(config.collectorUrl, {
       method: "POST",
-      headers: { authorization: `Bearer ${config.collectorSecret}`, "content-type": "application/json" },
+      headers: collectorHeaders(config.collectorSecret),
       body: JSON.stringify(payload),
     });
     if (!response.ok) throw new Error(`Collector dispatch ${response.status}: ${(await response.text()).slice(0, 200)}`);
@@ -333,12 +360,12 @@ export async function dispatchCollectionJobs(jobIds: string[], dataStore: DataSt
       page.runState = "dispatching";
     }
   });
-  const payloads = dispatchPayloads(dispatching, jobIds, config.callbackUrl);
-  const batchUrl = `${config.collectorUrl.replace(/\/jobs\/?$/, "")}/jobs/batch`;
+  const payloads = dispatchPayloads(dispatching, jobIds);
+  const batchUrl = `${collectorBaseUrl(config.collectorUrl)}/jobs/batch`;
   try {
     const response = await fetch(batchUrl, {
       method: "POST",
-      headers: { authorization: `Bearer ${config.collectorSecret}`, "content-type": "application/json" },
+      headers: collectorHeaders(config.collectorSecret),
       body: JSON.stringify({ jobs: payloads }),
     });
     if (!response.ok) throw new Error(`Collector batch dispatch ${response.status}: ${(await response.text()).slice(0, 200)}`);
@@ -356,4 +383,166 @@ export async function dispatchCollectionJobs(jobIds: string[], dataStore: DataSt
     await Promise.all(jobIds.map((jobId) => failCollectionJob(jobId, error, dataStore)));
     throw error;
   }
+}
+
+function isCollectorStatus(value: unknown): value is CollectorInstanceStatus {
+  if (!value || typeof value !== "object") return false;
+  const status = (value as { status?: unknown }).status;
+  return typeof status === "string" && [
+    "queued", "running", "paused", "errored", "terminated", "complete", "waiting", "waitingForPause", "unknown",
+  ].includes(status);
+}
+
+function isCollectionResult(value: unknown): value is CollectionResult {
+  if (!value || typeof value !== "object") return false;
+  const item = value as Partial<CollectionResult>;
+  return item.schemaVersion === 1
+    && typeof item.jobId === "string"
+    && typeof item.runId === "string"
+    && typeof item.pageId === "string"
+    && typeof item.capturedAt === "string"
+    && STRATEGIES.every((strategy) => !!item.scores?.[strategy] && Number.isFinite(item.samples?.[strategy]))
+    && Array.isArray(item.agent)
+    && Array.isArray(item.opportunities);
+}
+
+async function collectorJson(fetchFn: typeof fetch, url: string, secret: string): Promise<unknown> {
+  const response = await fetchFn(url, { headers: collectorHeaders(secret), cache: "no-store" });
+  if (!response.ok) {
+    const message = (await response.text()).slice(0, 200);
+    const error = new Error(`Collector read ${response.status}: ${message}`);
+    if (response.status >= 400 && response.status < 500) throw new TerminalCollectorError(error.message);
+    throw error;
+  }
+  try {
+    return await response.json();
+  } catch {
+    throw new TerminalCollectorError("Collector returned invalid JSON");
+  }
+}
+
+export interface ReconcileCollectionOptions {
+  dataStore?: DataStore;
+  fetchFn?: typeof fetch;
+  collectorUrl?: string;
+  collectorSecret?: string;
+  onCommitted?: (jobId: string) => void;
+}
+
+/**
+ * Pull Workflow state and completed reports into the app's own D1/R2 store.
+ * This keeps production independent of inbound callbacks blocked by site SSO.
+ */
+export async function reconcileCollectionJobs(options: ReconcileCollectionOptions = {}): Promise<AppState> {
+  const dataStore = options.dataStore ?? getStore();
+  const fetchFn = options.fetchFn ?? fetch;
+  const snapshot = await dataStore.getState();
+  const active = (snapshot.jobs ?? []).filter((job) => ACTIVE_STATES.has(job.state));
+  if (active.length === 0) return snapshot;
+
+  let config: CollectorConfig;
+  try {
+    config = requireCollectorConfig(options);
+  } catch {
+    return snapshot;
+  }
+  const baseUrl = collectorBaseUrl(config.collectorUrl);
+
+  await Promise.all(active.map(async (job) => {
+    const workflowId = job.workflowId ?? job.id;
+    try {
+      const statusValue = await collectorJson(
+        fetchFn,
+        `${baseUrl}/jobs/${encodeURIComponent(workflowId)}`,
+        config.collectorSecret,
+      );
+      if (!isCollectorStatus(statusValue)) throw new TerminalCollectorError("Collector returned an invalid job status");
+
+      if (statusValue.status === "queued") return;
+      if (["running", "paused", "waiting", "waitingForPause"].includes(statusValue.status)) {
+        if (job.state !== "running") await markCollectionJob(job.id, "running", { dataStore });
+        return;
+      }
+      if (statusValue.status === "errored" || statusValue.status === "terminated" || statusValue.status === "unknown") {
+        throw new TerminalCollectorError(statusValue.error?.message ?? `Collector workflow ${statusValue.status}`);
+      }
+      if (!isCollectionResult(statusValue.output)) throw new TerminalCollectorError("Collector completed without a valid result");
+      if (statusValue.output.jobId !== job.id || statusValue.output.runId !== job.runId || statusValue.output.pageId !== job.pageId) {
+        throw new TerminalCollectorError("Collector result identity does not match the requested job");
+      }
+      if (!Number.isFinite(Date.parse(statusValue.output.capturedAt))) {
+        throw new TerminalCollectorError("Collector result has an invalid capture timestamp");
+      }
+      if (job.state !== "running") await markCollectionJob(job.id, "running", { dataStore });
+
+      const [mobile, desktop] = await Promise.all(STRATEGIES.map((strategy) => collectorJson(
+        fetchFn,
+        `${baseUrl}/jobs/${encodeURIComponent(workflowId)}/reports/${strategy}`,
+        config.collectorSecret,
+      )));
+      await commitCollectionResult(statusValue.output, { strategies: { mobile, desktop } }, dataStore);
+      options.onCommitted?.(job.id);
+
+      // The result now exists in the app's R2 bucket. Collector staging data is
+      // best-effort cleanup; a cleanup outage must not undo a successful run.
+      await fetchFn(`${baseUrl}/jobs/${encodeURIComponent(workflowId)}/reports`, {
+        method: "DELETE",
+        headers: collectorHeaders(config.collectorSecret),
+      }).catch(() => undefined);
+    } catch (error) {
+      if (error instanceof TerminalCollectorError) {
+        await failCollectionJob(job.id, error, dataStore);
+        return;
+      }
+      console.error(JSON.stringify({
+        message: "collector reconciliation deferred",
+        jobId: job.id,
+        error: errorText(error),
+      }));
+    }
+  }));
+
+  return dataStore.getState();
+}
+
+/** Run optional AI/Slack work only after one authoritative result is committed. */
+export async function finalizeCollectionJob(jobId: string, dataStore: DataStore = getStore()): Promise<void> {
+  const snapshot = await dataStore.getState();
+  const job = (snapshot.jobs ?? []).find((item) => item.id === jobId);
+  if (!job || job.state !== "succeeded") return;
+
+  if (!job.enrichedAt) {
+    try {
+      await Promise.all([
+        enrichRecommendations(dataStore, job.pageId),
+        generateWatcherNote(dataStore, new Date()),
+      ]);
+      await dataStore.updateState((draft) => {
+        const current = (draft.jobs ?? []).find((item) => item.id === job.id);
+        if (current?.state === "succeeded") {
+          current.enrichedAt = new Date().toISOString();
+          delete current.enrichmentError;
+        }
+      });
+    } catch (error) {
+      await dataStore.updateState((draft) => {
+        const current = (draft.jobs ?? []).find((item) => item.id === job.id);
+        if (current) current.enrichmentError = errorText(error);
+      });
+    }
+  }
+  if (!job.notifiedAt) {
+    try {
+      await notifyCollectionJob(dataStore, job.id);
+    } catch (error) {
+      await dataStore.updateState((draft) => {
+        const current = (draft.jobs ?? []).find((item) => item.id === job.id);
+        if (current) current.notificationError = errorText(error);
+      });
+    }
+  }
+
+  await processFollowUps({ dataStore }).catch((error) => {
+    console.error(JSON.stringify({ message: "follow-up delivery deferred", error: errorText(error) }));
+  });
 }

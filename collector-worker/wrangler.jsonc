@@ -2,7 +2,8 @@
   "$schema": "../node_modules/wrangler/config-schema.json",
   "name": "fde-page-collector",
   "main": "index.ts",
-  "compatibility_date": "2026-07-20",
+  "compatibility_date": "2026-07-21",
+  "compatibility_flags": ["nodejs_compat"],
   "secrets": {
     "required": ["PAGESPEED_API_KEY", "CRON_SECRET"]
   },
@@ -11,6 +12,12 @@
       "binding": "COLLECTION_WORKFLOW",
       "name": "fde-page-collection",
       "class_name": "CollectorWorkflow"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "RESULTS",
+      "bucket_name": "page-watcher-reports"
     }
   ],
   "observability": {

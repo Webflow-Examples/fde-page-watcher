@@ -9,10 +9,7 @@ export async function GET() {
   const storage = getStoreDiagnostics();
   const dispatchConfigured = !!getEnv("COLLECTOR_URL");
   const authConfigured = !!getEnv("CRON_SECRET");
-  const explicitCallbackConfigured = !!getEnv("COLLECTOR_CALLBACK_URL");
-  const webflowCallbackConfigured = !!getEnv("ASSETS_PREFIX");
-  const callbackConfigured = explicitCallbackConfigured || webflowCallbackConfigured;
-  const collectorConfigured = dispatchConfigured && authConfigured && callbackConfigured;
+  const collectorConfigured = dispatchConfigured && authConfigured;
   const ok = storage.driver !== "unavailable" && (process.env.NODE_ENV !== "production" || collectorConfigured);
   return NextResponse.json(
     {
@@ -24,8 +21,7 @@ export async function GET() {
         configured: collectorConfigured,
         dispatchConfigured,
         authConfigured,
-        callbackConfigured,
-        callbackSource: explicitCallbackConfigured ? "explicit" : webflowCallbackConfigured ? "webflow" : "missing",
+        resultTransport: "polling",
       },
     },
     { status: ok ? 200 : 503 },
