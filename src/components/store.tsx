@@ -90,6 +90,11 @@ export function useStore(): StoreValue {
 
 const CAT_KEYS: CategoryKey[] = ["perf", "a11y", "bp", "seo"];
 
+const toggleSort = (prev: SortState, col: string): SortState => ({
+  col,
+  dir: prev.col === col && prev.dir === "desc" ? "asc" : "desc",
+});
+
 /** A brand-new page starts pending (no baseline / history) — no fabricated provenance. */
 function pendingOptimisticPage(id: string, title: string, url: string, flag: Flag): AppState["pages"][number] {
   const zeroScores: ScoreByCategory = { perf: 0, a11y: 0, bp: 0, seo: 0 };
@@ -173,11 +178,6 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
     },
     [apply, flash, pathFor],
   );
-
-  const toggleSort = (prev: SortState, col: string): SortState => ({
-    col,
-    dir: prev.col === col && prev.dir === "desc" ? "asc" : "desc",
-  });
 
   // ── mutations ────────────────────────────────────────────────────────
   const setFlag = useCallback(
@@ -378,6 +378,25 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
     [flash, apply, pathFor],
   );
 
+  const sortDash = useCallback((col: string) => setDashSort((p) => toggleSort(p, col)), []);
+  const sortInbox = useCallback((col: string) => setInboxSort((p) => toggleSort(p, col)), []);
+  const sortTask = useCallback((col: string) => setTaskSort((p) => toggleSort(p, col)), []);
+  const openAdd = useCallback(() => {
+    setFormState({ title: "", url: "", flag: "priority" });
+    setModal("add");
+  }, []);
+  const openMarker = useCallback((pageId: string) => {
+    setMarkerPageId(pageId);
+    setMarkerText("");
+    setMarkerDate(isoDate());
+    setModal("marker");
+  }, []);
+  const closeModal = useCallback(() => setModal(null), []);
+  const openReport = useCallback((r: ReportData) => {
+    setReport(r);
+    setModal("report");
+  }, []);
+
   const value: StoreValue = {
     ...data,
     basePath,
@@ -385,39 +404,28 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
     strategy,
     setStrategy,
     dashSort,
-    sortDash: (col) => setDashSort((p) => toggleSort(p, col)),
+    sortDash,
     inboxGroup,
     setInboxGroup,
     inboxSort,
-    sortInbox: (col) => setInboxSort((p) => toggleSort(p, col)),
+    sortInbox,
     taskGroup,
     setTaskGroup,
     taskView,
     setTaskView,
     taskSort,
-    sortTask: (col) => setTaskSort((p) => toggleSort(p, col)),
+    sortTask,
     tab,
     setTab,
     chartCat,
     setChartCat,
     modal,
     markerPageId,
-    openAdd: () => {
-      setFormState({ title: "", url: "", flag: "priority" });
-      setModal("add");
-    },
-    openMarker: (pageId) => {
-      setMarkerPageId(pageId);
-      setMarkerText("");
-      setMarkerDate(isoDate());
-      setModal("marker");
-    },
-    closeModal: () => setModal(null),
+    openAdd,
+    openMarker,
+    closeModal,
     report,
-    openReport: (r) => {
-      setReport(r);
-      setModal("report");
-    },
+    openReport,
     toast,
     flash,
     form,

@@ -39,6 +39,13 @@ function Toast() {
 
 function ModalShell({ width = 460, onClose, label, children }: { width?: number; onClose: () => void; label: string; children: React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
+  // Keep the latest onClose in a ref so the focus-management effect can run
+  // once on open without re-running (and stealing focus back to the first
+  // control) each time the parent hands us a new onClose identity.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
   // Focus management (audit: modals lacked it) — trap Tab within the dialog,
   // close on Escape, focus the first control on open, and restore focus to the
   // trigger on close.
@@ -53,7 +60,7 @@ function ModalShell({ width = 460, onClose, label, children }: { width?: number;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (e.key === "Tab") {
@@ -75,7 +82,8 @@ function ModalShell({ width = 460, onClose, label, children }: { width?: number;
       document.removeEventListener("keydown", onKey);
       prev?.focus?.();
     };
-  }, [onClose]);
+    // Run once per mount; onClose is read via onCloseRef to avoid re-running.
+  }, []);
 
   return (
     <div
