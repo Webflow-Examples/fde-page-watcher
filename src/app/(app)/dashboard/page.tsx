@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useStore } from "@/components/store";
 import { CATEGORIES } from "@/lib/types";
 import type { CategoryKey, Night } from "@/lib/types";
-import { categorySeries, deltaMeta, scoreMeta } from "@/lib/scoring";
+import { categoryTrendSeries, deltaMeta, scoreMeta } from "@/lib/scoring";
 import { buildWatcher } from "@/lib/watcher";
 import { C, flagChip } from "@/lib/ui";
 import { Sparkline } from "@/components/charts";
@@ -50,11 +50,19 @@ export default function DashboardPage() {
       }
       const v = p.current[strategy][c.key];
       const sm = scoreMeta(v);
+      const series = categoryTrendSeries(
+        p.history,
+        strategy,
+        c.key,
+        7,
+        hasBaseline ? p.baseline![strategy][c.key].m : undefined,
+        p.baselineCapturedAt,
+      );
       if (!hasBaseline) {
-        return { key: c.key, score: v as number | null, fg: sm.fg, delta: "", deltaFg: C.faint, series: categorySeries(p.history, strategy, c.key, 7), line: sm.line };
+        return { key: c.key, score: v as number | null, fg: sm.fg, delta: "", deltaFg: C.faint, series, line: sm.line };
       }
       const dm = deltaMeta(v, p.baseline![strategy][c.key].m);
-      return { key: c.key, score: v as number | null, fg: sm.fg, delta: dm.text, deltaFg: dm.fg, series: categorySeries(p.history, strategy, c.key, 7), line: sm.line };
+      return { key: c.key, score: v as number | null, fg: sm.fg, delta: dm.text, deltaFg: dm.fg, series, line: sm.line };
     });
     const sortVals: Record<string, string | number> = { title: p.title.toLowerCase(), status: p.status, agent: pct };
     CATEGORIES.forEach((c) => (sortVals[c.key] = p.current[strategy][c.key]));
@@ -241,7 +249,7 @@ export default function DashboardPage() {
           ))}
         </div>
         <p style={{ fontSize: 11.5, color: C.faint, margin: "15px 2px 0", lineHeight: 1.5 }}>
-          {`Each graph uses the stored PSI median (up to five samples) over the last seven collections for the ${strategy} strategy; the number is the latest median and the delta compares it to the stored baseline. Agent is derived from the recorded per-check history.`}
+          {`Baselined graphs start at the stored baseline and show up to seven points for the ${strategy} strategy; pending pages show their available collections. The number is the latest median and the delta compares it to the baseline. Agent is derived from recorded per-check history.`}
         </p>
       </div>
     </div>

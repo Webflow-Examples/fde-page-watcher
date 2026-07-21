@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { median, range, noiseBand, classifyStatus, DROP_THRESHOLD } from "../scoring";
+import { median, range, noiseBand, classifyStatus, categoryTrendSeries, DROP_THRESHOLD } from "../scoring";
 import type { CategoryScore, Night, NightScores, ScoreByCategory, StrategyScores } from "../types";
 
 const cat = (m: number): CategoryScore => ({ m, lo: m - 2, hi: m + 2 });
@@ -34,6 +34,35 @@ describe("noiseBand", () => {
     // moves: 10, 10 -> mean 10 -> 2x = 20
     const hist = [night(0, 50), night(1, 60), night(2, 70)];
     expect(noiseBand(hist, "mobile", "perf")).toBe(20);
+  });
+});
+
+describe("categoryTrendSeries", () => {
+  it("starts live status charts at the explicit baseline", () => {
+    const history = [
+      { ...night(0, 30), iso: "2026-07-21T22:00:00.000Z" },
+      { ...night(1, 42), iso: "2026-07-21T22:10:00.000Z" },
+      { ...night(2, 40), iso: "2026-07-22T22:10:00.000Z" },
+    ];
+    expect(categoryTrendSeries(history, "mobile", "perf", 7, 42, "2026-07-21T22:10:00.000Z")).toEqual([42, 40]);
+  });
+
+  it("returns only the baseline when no later collection exists", () => {
+    const history = [{ ...night(0, 42), iso: "2026-07-21T22:10:00.000Z" }];
+    expect(categoryTrendSeries(history, "mobile", "perf", 7, 42, "2026-07-21T22:10:00.000Z")).toEqual([42]);
+  });
+
+  it("keeps the baseline anchor when the compact chart reaches its point limit", () => {
+    const history = Array.from({ length: 9 }, (_, index) => ({
+      ...night(index, 40 + index),
+      iso: `2026-07-${String(21 + index).padStart(2, "0")}T22:10:00.000Z`,
+    }));
+    expect(categoryTrendSeries(history, "mobile", "perf", 3, 42, "2026-07-21T22:10:00.000Z")).toEqual([42, 47, 48]);
+  });
+
+  it("retains undated demo history", () => {
+    const history = [night(0, 30), night(1, 42)];
+    expect(categoryTrendSeries(history, "mobile", "perf", 7, 42, "Jun 17")).toEqual([30, 42]);
   });
 });
 

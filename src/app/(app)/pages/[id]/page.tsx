@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useStore } from "@/components/store";
 import { CATEGORIES } from "@/lib/types";
 import type { CategoryKey, Night, Rec, WatchPage } from "@/lib/types";
-import { categorySeries, deltaMeta, scoreMeta } from "@/lib/scoring";
+import { categoryTrendSeries, deltaMeta, scoreMeta } from "@/lib/scoring";
 import { auditsFor } from "@/lib/audits";
 import { C, taskLabel } from "@/lib/ui";
 import { HistoryChart, Sparkline } from "@/components/charts";
@@ -185,7 +185,13 @@ function OverviewTab({
               </div>
               <div style={{ fontSize: 11.5, color: C.faint, marginTop: 7 }}>Baseline {bv} · ± {night.hi - night.lo} range</div>
               <div style={{ height: 52, marginTop: 6 }}>
-                <Sparkline series={categorySeries(page.history, strategy, c.key, 30)} color={sm.line} h={52} sw={2} w={200} />
+                <Sparkline
+                  series={categoryTrendSeries(page.history, strategy, c.key, 30, bv, page.baselineCapturedAt)}
+                  color={sm.line}
+                  h={52}
+                  sw={2}
+                  w={200}
+                />
               </div>
             </div>
           );

@@ -78,6 +78,35 @@ export function categorySeries(history: Night[], strategy: Strategy, key: Catego
 }
 
 /**
+ * Compact status charts start at the explicit baseline and exclude earlier
+ * exploratory runs. Seed/demo history has no ISO timestamps, so it retains
+ * its original full-series behavior.
+ */
+export function categoryTrendSeries(
+  history: Night[],
+  strategy: Strategy,
+  key: CategoryKey,
+  days: number,
+  baseline?: number,
+  baselineCapturedAt?: string,
+): number[] {
+  const capturedAt = baselineCapturedAt && /^\d{4}-\d{2}-\d{2}T/.test(baselineCapturedAt)
+    ? Date.parse(baselineCapturedAt)
+    : Number.NaN;
+  const hasLiveHistory = history.some((night) => night.iso && Number.isFinite(Date.parse(night.iso)));
+  if (baseline === undefined || !Number.isFinite(capturedAt) || !hasLiveHistory) {
+    return categorySeries(history, strategy, key, days);
+  }
+
+  const afterBaseline = history.filter((night) => {
+    const captured = night.iso ? Date.parse(night.iso) : Number.NaN;
+    return Number.isFinite(captured) && captured > capturedAt;
+  });
+  const laterPoints = days > 1 ? categorySeries(afterBaseline, strategy, key, days - 1) : [];
+  return [baseline, ...laterPoints];
+}
+
+/**
  * A page's historical noise band for a category (one strategy): how much the
  * median naturally wobbles night to night. Mean absolute run-to-run delta,
  * floored so a flat history still tolerates normal PSI jitter.

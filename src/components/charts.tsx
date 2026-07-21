@@ -1,4 +1,5 @@
 import type { CategoryKey, ChangeMarker, Night, Strategy } from "@/lib/types";
+import { plottedSparklineSeries } from "@/lib/charting";
 import { C } from "@/lib/ui";
 
 /** Compact area sparkline (ported from the design's buildSpark). */
@@ -20,8 +21,9 @@ export function Sparkline({
   dot?: number;
 }) {
   if (series.length === 0) return null;
-  let lo = Math.min(...series);
-  let hi = Math.max(...series);
+  const plotted = plottedSparklineSeries(series);
+  let lo = Math.min(...plotted);
+  let hi = Math.max(...plotted);
   if (hi - lo < 6) {
     const m = (hi + lo) / 2;
     lo = m - 4;
@@ -29,11 +31,11 @@ export function Sparkline({
   }
   lo -= 1;
   hi += 1;
-  const n = series.length;
+  const n = plotted.length;
   const x = (i: number) => pad + (n > 1 ? (i / (n - 1)) * (w - 2 * pad) : 0);
   const y = (v: number) => pad + (1 - (v - lo) / (hi - lo)) * (h - 2 * pad);
-  const pts = series.map((v, i) => `${x(i)},${y(v)}`).join(" ");
-  const last = series[n - 1];
+  const pts = plotted.map((v, i) => `${x(i)},${y(v)}`).join(" ");
+  const last = plotted[n - 1];
   const area = `${x(0)},${h - pad} ${pts} ${x(n - 1)},${h - pad}`;
   return (
     <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h} preserveAspectRatio="none" style={{ display: "block" }}>
