@@ -5,14 +5,13 @@
   "compatibility_date": "2026-07-21",
   "compatibility_flags": ["nodejs_compat"],
   "secrets": {
-    "required": ["PAGESPEED_API_KEY", "CRON_SECRET", "CF_ACCESS_CLIENT_ID", "CF_ACCESS_CLIENT_SECRET"]
+    "required": ["PAGESPEED_API_KEY", "CRON_SECRET"]
   },
   "vars": {
-    "PAGE_WATCHER_NIGHTLY_URL": "https://page-watcher.wf.app/api/cron/nightly"
+    "NIGHTLY_TENANT": "brand-studio:live"
   },
   "triggers": {
     "crons": [
-      "0 17 22 7 *",
       "0 3 * * *"
     ]
   },
@@ -23,9 +22,17 @@
       "class_name": "CollectorWorkflow"
     }
   ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "page-watcher-fde",
+      "database_id": "b717842d-d780-4f62-936b-f928c93b5f29",
+      "migrations_dir": "../migrations"
+    }
+  ],
   "r2_buckets": [
     {
-      "binding": "RESULTS",
+      "binding": "REPORTS",
       "bucket_name": "page-watcher-reports"
     }
   ],

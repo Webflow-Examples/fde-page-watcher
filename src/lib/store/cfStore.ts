@@ -3,15 +3,16 @@ import type { AppState, ChangeMarker, CollectionJob, Night } from "../types";
 import { buildInitialState } from "../seed";
 import { mediansOf, pageTrend } from "../scoring";
 import { resolveMarkerIndex } from "../followups";
-import { normalizeState, type DataStore } from "./fsStore";
+import type { DataStore } from "./fsStore";
+import { normalizeState } from "./normalize";
 import { getEnv } from "../env";
 
-interface CfEnv {
+export interface CfEnv {
   DB: D1Database;
   REPORTS: R2Bucket;
 }
 
-function cfEnv(): CfEnv {
+export function getLocalCloudflareBindings(): CfEnv {
   return getCloudflareContext().env as unknown as CfEnv;
 }
 
@@ -37,7 +38,7 @@ class CfDataStore implements DataStore {
   }
 
   async getState(): Promise<AppState> {
-    const { DB } = cfEnv();
+    const { DB } = getLocalCloudflareBindings();
     const row = await DB.prepare("SELECT json FROM state WHERE tenant = ?").bind(this.tenant).first<StateRow>();
     if (!row) {
       const seeded = buildInitialState(getEnv("DATASET_MODE"));
@@ -57,7 +58,7 @@ class CfDataStore implements DataStore {
    * reloads the latest version and reapplies the state-only mutation.
    */
   async updateState(mutate: (state: AppState) => void | Promise<void>): Promise<AppState> {
-    const { DB } = cfEnv();
+    const { DB } = getLocalCloudflareBindings();
     for (let attempt = 0; attempt < 8; attempt += 1) {
       const row = await DB.prepare("SELECT json, version FROM state WHERE tenant = ?").bind(this.tenant).first<StateRow>();
       const now = new Date().toISOString();
@@ -136,7 +137,7 @@ class CfDataStore implements DataStore {
     });
 
     if (commit.night) {
-      const { DB } = cfEnv();
+      const { DB } = getLocalCloudflareBindings();
       await DB.prepare("INSERT OR IGNORE INTO history (tenant, page_id, i, night_json) VALUES (?, ?, ?, ?)")
         .bind(this.tenant, pageId, commit.night.i, JSON.stringify(commit.night))
         .run();
@@ -177,7 +178,7 @@ class CfDataStore implements DataStore {
     });
 
     if (commit.marker) {
-      const { DB } = cfEnv();
+      const { DB } = getLocalCloudflareBindings();
       await DB.prepare("INSERT OR REPLACE INTO markers (tenant, page_id, id, marker_json) VALUES (?, ?, ?, ?)")
         .bind(this.tenant, pageId, commit.marker.id, JSON.stringify(commit.marker))
         .run();
@@ -186,12 +187,12 @@ class CfDataStore implements DataStore {
   }
 
   async putReport(pageId: string, key: string, payload: unknown): Promise<void> {
-    const { REPORTS } = cfEnv();
+    const { REPORTS } = getLocalCloudflareBindings();
     await REPORTS.put(`${this.tenant}/${pageId}/${key}.json`, JSON.stringify({ tenant: this.tenant, payload }));
   }
 
   async getReport(pageId: string, key: string): Promise<unknown | null> {
-    const { REPORTS } = cfEnv();
+    const { REPORTS } = getLocalCloudflareBindings();
     const object = await REPORTS.get(`${this.tenant}/${pageId}/${key}.json`);
     if (!object) return null;
     const parsed = (await object.json()) as { payload: unknown };
@@ -199,14 +200,14 @@ class CfDataStore implements DataStore {
   }
 
   async deleteReport(pageId: string, key: string): Promise<void> {
-    const { REPORTS } = cfEnv();
+    const { REPORTS } = getLocalCloudflareBindings();
     await REPORTS.delete(`${this.tenant}/${pageId}/${key}.json`);
   }
 
   private async syncJobs(before: CollectionJob[], after: CollectionJob[]): Promise<void> {
     const previous = new Map(before.map((job) => [job.id, JSON.stringify(job)]));
     const next = new Map(after.map((job) => [job.id, JSON.stringify(job)]));
-    const { DB } = cfEnv();
+    const { DB } = getLocalCloudflareBindings();
     for (const job of after) {
       if (previous.get(job.id) === next.get(job.id)) continue;
       await DB.prepare(

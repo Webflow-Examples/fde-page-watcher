@@ -7,7 +7,7 @@
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
-    "types": ["./worker-configuration.d.ts"]
+    "types": ["./worker-configuration.d.ts", "node"]
   },
-  "include": ["index.ts", "scheduler.ts", "worker-configuration.d.ts", "../src/lib/psiCore.ts", "../src/lib/agentReadiness.ts", "../src/lib/scoring.ts", "../src/lib/types.ts"]
+  "include": ["*.ts", "worker-configuration.d.ts", "../src/lib/psiCore.ts", "../src/lib/agentReadiness.ts", "../src/lib/cost.ts", "../src/lib/followups.ts", "../src/lib/scoring.ts", "../src/lib/seed.ts", "../src/lib/store/normalize.ts", "../src/lib/types.ts", "../src/lib/ui.ts"]
 }

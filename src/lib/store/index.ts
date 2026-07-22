@@ -2,6 +2,7 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { TENANT, type Tenant } from "../types";
 import { createFsStore, type DataStore } from "./fsStore";
 import { createCfStore } from "./cfStore";
+import { createRemoteStore } from "./remoteStore";
 import { getEnv } from "../env";
 
 export type { DataStore } from "./fsStore";
@@ -15,7 +16,7 @@ export type { DataStore } from "./fsStore";
  * bindings present), otherwise falls back to the filesystem adapter used by
  * plain `next dev`. STORAGE_DRIVER=fs forces the fs adapter even on Workers.
  */
-function deploymentTenant(): Tenant {
+export function deploymentTenant(): Tenant {
   // Keep the existing sample state at the legacy tenant key. Live mode gets an
   // isolated key, so changing DATASET_MODE is a reversible demo/live switch.
   return getEnv("DATASET_MODE") === "live" ? `${TENANT}:live` : TENANT;
@@ -23,6 +24,7 @@ function deploymentTenant(): Tenant {
 
 export function getStore(tenant: Tenant = deploymentTenant()): DataStore {
   if (!tenant) throw new Error("getStore: a tenant scope is required");
+  if (getEnv("STORAGE_DRIVER") === "remote") return createRemoteStore(tenant);
   if (getEnv("STORAGE_DRIVER") !== "fs") {
     try {
       const { env } = getCloudflareContext();
@@ -38,13 +40,17 @@ export function getStore(tenant: Tenant = deploymentTenant()): DataStore {
 }
 
 export interface StoreDiagnostics {
-  driver: "cloudflare" | "filesystem" | "unavailable";
+  driver: "remote" | "cloudflare" | "filesystem" | "unavailable";
   db: boolean;
   reports: boolean;
 }
 
 /** Read-only deployment diagnostic; never exposes binding values or secrets. */
 export function getStoreDiagnostics(): StoreDiagnostics {
+  if (getEnv("STORAGE_DRIVER") === "remote") {
+    const configured = !!(getEnv("FDE_DATA_URL") ?? getEnv("COLLECTOR_URL")) && !!getEnv("CRON_SECRET");
+    return { driver: configured ? "remote" : "unavailable", db: configured, reports: configured };
+  }
   if (getEnv("STORAGE_DRIVER") === "fs") {
     return { driver: process.env.NODE_ENV === "production" ? "unavailable" : "filesystem", db: false, reports: false };
   }

@@ -256,6 +256,7 @@ export interface DispatchPayload {
   pageId: string;
   url: string;
   runs: number;
+  tenant?: string;
 }
 
 interface CollectorConfig {
@@ -296,7 +297,7 @@ function collectorHeaders(secret: string): HeadersInit {
   return { authorization: `Bearer ${secret}`, "content-type": "application/json" };
 }
 
-function dispatchPayloads(state: AppState, jobIds: string[]): DispatchPayload[] {
+function dispatchPayloads(state: AppState, jobIds: string[], tenant?: string): DispatchPayload[] {
   const runs = Math.max(1, Math.min(5, Number(getEnv("PSI_RUNS")) || 5));
   return jobIds.map((jobId) => {
     const job = (state.jobs ?? []).find((item) => item.id === jobId);
@@ -308,6 +309,7 @@ function dispatchPayloads(state: AppState, jobIds: string[]): DispatchPayload[] 
       pageId: page.id,
       url: page.url,
       runs,
+      tenant,
     };
   });
 }
@@ -323,7 +325,7 @@ export async function dispatchCollectionJob(jobId: string, dataStore: DataStore 
   }
 
   const snapshot = await markCollectionJob(jobId, "dispatching", { dataStore });
-  const payload = dispatchPayloads(snapshot, [jobId])[0];
+  const payload = dispatchPayloads(snapshot, [jobId], dataStore.tenant)[0];
   try {
     const response = await fetch(config.collectorUrl, {
       method: "POST",
@@ -360,7 +362,7 @@ export async function dispatchCollectionJobs(jobIds: string[], dataStore: DataSt
       page.runState = "dispatching";
     }
   });
-  const payloads = dispatchPayloads(dispatching, jobIds);
+  const payloads = dispatchPayloads(dispatching, jobIds, dataStore.tenant);
   const batchUrl = `${collectorBaseUrl(config.collectorUrl)}/jobs/batch`;
   try {
     const response = await fetch(batchUrl, {
