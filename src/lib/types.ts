@@ -135,6 +135,7 @@ export interface CollectionJob {
   enrichmentError?: string;
   notifiedAt?: string;
   notificationError?: string;
+  finalizationStartedAt?: string;
 }
 
 /** Versioned, provider-neutral result committed by a collector job. */

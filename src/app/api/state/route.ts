@@ -16,12 +16,36 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   const dataStore = getStore();
-  await reconcileCollectionJobs({
-    dataStore,
-    onCommitted: (jobId) => after(() => finalizeCollectionJob(jobId, dataStore).catch((error) => {
-      console.error(JSON.stringify({ message: "collection finalization deferred", jobId, error: String(error).slice(0, 500) }));
-    })),
+  await reconcileCollectionJobs({ dataStore });
+  const recovered = await recoverStaleRuns(dataStore);
+  const now = new Date();
+  const ready = (recovered.jobs ?? []).filter((job) => {
+    if (job.state !== "succeeded" || (job.enrichedAt && job.notifiedAt)) return false;
+    return !job.finalizationStartedAt || now.getTime() - Date.parse(job.finalizationStartedAt) > 10 * 60 * 1000;
+  }).slice(0, 4);
+  const claimed: string[] = [];
+  const state = ready.length === 0 ? recovered : await dataStore.updateState((draft) => {
+    for (const candidate of ready) {
+      const job = (draft.jobs ?? []).find((item) => item.id === candidate.id);
+      if (!job || job.state !== "succeeded" || (job.enrichedAt && job.notifiedAt)) continue;
+      if (job.finalizationStartedAt && now.getTime() - Date.parse(job.finalizationStartedAt) <= 10 * 60 * 1000) continue;
+      job.finalizationStartedAt = now.toISOString();
+      claimed.push(job.id);
+    }
   });
-  const state = await recoverStaleRuns(dataStore);
+  for (const jobId of claimed) {
+    after(async () => {
+      try {
+        await finalizeCollectionJob(jobId, dataStore);
+      } catch (error) {
+        console.error(JSON.stringify({ message: "collection finalization deferred", jobId, error: String(error).slice(0, 500) }));
+      } finally {
+        await dataStore.updateState((draft) => {
+          const job = (draft.jobs ?? []).find((item) => item.id === jobId);
+          if (job) delete job.finalizationStartedAt;
+        }).catch(() => undefined);
+      }
+    });
+  }
   return NextResponse.json({ state });
 }
