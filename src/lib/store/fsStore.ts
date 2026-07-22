@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { AppState, ChangeMarker, Night, WatchPage } from "../types";
 import { buildInitialState } from "../seed";
-import { classifyStatus, mediansOf } from "../scoring";
+import { mediansOf, pageTrend } from "../scoring";
 import { resolveMarkerIndex } from "../followups";
 
 /**
@@ -71,6 +71,13 @@ export function normalizeState(state: AppState): AppState {
     // Older pending records carried a zero-filled placeholder baseline. The
     // timestamp is the authoritative proof that baseline capture occurred.
     if (!page.baselineCapturedAt) delete page.baseline;
+    // Migrate the original health vocabulary into the baseline-trend model.
+    // Recomputing from source data is safer than mapping "improvable" because
+    // that legacy value described a transient drop, not improvement.
+    const storedStatus = page.status as string;
+    if (["healthy", "improvable", "degraded"].includes(storedStatus)) {
+      page.status = pageTrend(page, "mobile");
+    }
   }
   state.followUps = (state.followUps ?? []).map((followUp) => ({
     ...followUp,
@@ -242,9 +249,7 @@ class FsDataStore implements DataStore {
         desktop: mediansOf(night.scores.desktop),
       };
       page.agent = agent ?? [];
-      page.status = page.baseline && page.baselineCapturedAt
-        ? classifyStatus(mediansOf(page.baseline.mobile), page.history, "mobile")
-        : "pending";
+      page.status = pageTrend(page, "mobile");
       page.runState = undefined;
       page.lastRunAt = night.iso ?? new Date().toISOString();
       delete page.lastError;
@@ -310,9 +315,7 @@ class FsDataStore implements DataStore {
 
 /** Helper reused by page-status recompute callers. */
 export function recomputeStatus(page: WatchPage): void {
-  page.status = page.baseline && page.baselineCapturedAt
-    ? classifyStatus(mediansOf(page.baseline.mobile), page.history, "mobile")
-    : "pending";
+  page.status = pageTrend(page, "mobile");
 }
 
 export function createFsStore(tenant: string, rootDir?: string): DataStore {

@@ -8,7 +8,7 @@ import type { SlackDelivery } from "./slack";
 import { generateText } from "./anthropic";
 import { buildWatcher } from "./watcher";
 import { getEnv } from "./env";
-import { mediansOf, DROP_THRESHOLD } from "./scoring";
+import { mediansOf, pageHasPersistentRegression, pageRangeComparison, pageRangeTrend, DROP_THRESHOLD } from "./scoring";
 import { parseMarkerDate, shortDate } from "./ui";
 import { CATEGORIES, STRATEGIES } from "./types";
 import type { AppState, FollowUp, Night, Rec, Strategy, StrategyScores, WatchPage } from "./types";
@@ -151,7 +151,7 @@ export async function insertRecommendations(
 }
 
 async function maybeAlert(page: WatchPage, alertFn: typeof postAlert): Promise<void> {
-  if (page.status !== "degraded" || !page.baseline) return;
+  if (!page.baseline || !pageHasPersistentRegression(page, "mobile")) return;
   const base = mediansOf(page.baseline.mobile);
   const affected = CATEGORIES.filter((category) => base[category.key] - page.current.mobile[category.key] >= DROP_THRESHOLD).map((category) => category.label);
   if (affected.length) await alertFn(page.title, page.url, affected);
@@ -171,29 +171,29 @@ Explain what this recommendation means and why it's worth doing, in plain terms.
   return generateText(prompt, { maxTokens: 150 });
 }
 
-/** The Watcher's dashboard narrative: a short, factual read of overall health, refreshed once per nightly run. */
+/** The Watcher's dashboard narrative: a short, factual read of current conditions, refreshed once per nightly run. */
 export async function generateWatcherNote(dataStore: DataStore, now: Date): Promise<void> {
   const state = await dataStore.getState();
-  const w = buildWatcher(state.pages, state.recs, "mobile");
-  const degradedDetail = state.pages.flatMap((p) => {
-    if (p.status !== "degraded" || !p.baseline) return [];
-    const drop = Math.max(0, Math.round((mediansOf(p.baseline.mobile).perf ?? 0) - (p.current.mobile?.perf ?? 0)));
+  const w = buildWatcher(state.pages, state.recs, "desktop", 30);
+  const regressionDetail = state.pages.flatMap((p) => {
+    if (pageRangeTrend(p, "desktop", 30) !== "regressing" || !p.baseline) return [];
+    const drop = Math.abs(pageRangeComparison(p, "desktop", "perf", 30)?.delta ?? 0);
     const marker = p.markers.length ? p.markers[p.markers.length - 1].text : null;
     return [`${p.title}: dropped ${drop} performance points${marker ? ` after "${marker}"` : ""}`];
   });
 
   const prompt = `You are "The Watcher," an automated page-performance monitor writing a short status summary for a marketing team's dashboard.
 
-Overall: ${w.total} monitored pages — ${w.healthy} healthy, ${w.improvable} improvable, ${w.degraded} degraded.
-${degradedDetail.length ? `Degraded pages:\n${degradedDetail.join("\n")}` : "No pages are currently degraded."}
+Current desktop conditions over the last 30 days: ${w.total} monitored pages — ${w.regressing} regressions, ${w.lowPerformance} below the Performance threshold, ${w.agentGaps} with agent-readiness gaps, and ${w.qualityIssues} with other Lighthouse quality issues.
+${regressionDetail.length ? `Regressing pages:\n${regressionDetail.join("\n")}` : "No pages are currently regressing over the last 30 days."}
 ${w.topRec ? `Top recommendation: on "${w.topRec.pageTitle}", "${w.topRec.recTitle}" would recover about ${w.topRec.savings} of load time.` : ""}
 
-Write a factual, specific 2-3 sentence summary of current page-performance health for this team, in a professional but direct tone (no hype, no exclamation points). Reference the concrete numbers above naturally. No preamble, no markdown, no headings — plain prose only.`;
+Write a factual, specific 2-3 sentence summary of current page conditions for this team, in a professional but direct tone (no hype, no exclamation points). Do not call pages healthy: range trend and absolute quality are separate concepts. Reference the concrete numbers above naturally. No preamble, no markdown, no headings — plain prose only.`;
 
   const text = await generateText(prompt, { maxTokens: 250 });
   if (!text) return;
   await dataStore.updateState((draft) => {
-    draft.watcherNote = { text, generatedAt: now.toISOString() };
+    draft.watcherNote = { text, generatedAt: now.toISOString(), modelVersion: 3 };
   });
 }
 
@@ -221,7 +221,7 @@ export async function notifyCollectionJob(dataStore: DataStore, jobId: string): 
   const page = snapshot.pages.find((item) => item.id === job.pageId);
   if (!page) return;
   let delivery: SlackDelivery = { sent: true };
-  if (page.status === "degraded" && page.baseline) {
+  if (page.baseline && pageHasPersistentRegression(page, "mobile")) {
     const baseline = mediansOf(page.baseline.mobile);
     const affected = CATEGORIES
       .filter((category) => baseline[category.key] - page.current.mobile[category.key] >= DROP_THRESHOLD)
@@ -260,7 +260,7 @@ export async function captureBaseline(pageId: string, options: CollectorDependen
     };
     // The newly captured snapshot is the comparison anchor. Classification of
     // later ordinary runs is enabled from this point forward.
-    authoritative.status = "healthy";
+    authoritative.status = "stable";
   });
 }
 

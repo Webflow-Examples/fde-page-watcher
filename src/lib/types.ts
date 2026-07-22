@@ -7,8 +7,10 @@
 
 export type CategoryKey = "perf" | "a11y" | "bp" | "seo";
 export type Strategy = "mobile" | "desktop";
+export type RangeDays = 3 | 7 | 30 | 90;
 export type Flag = "priority" | "watching";
-export type PageStatus = "healthy" | "improvable" | "degraded" | "pending";
+/** Baseline-relative Performance trend stored on each page. */
+export type PageStatus = "stable" | "improving" | "regressing" | "pending";
 export type CollectionJobKind = "baseline" | "run" | "nightly";
 export type CollectionJobState = "queued" | "dispatching" | "running" | "succeeded" | "failed";
 
@@ -182,6 +184,8 @@ export interface Audit {
 export interface WatcherNote {
   text: string;
   generatedAt: string; // ISO
+  /** Guards the UI from showing prose generated with an obsolete summary model. */
+  modelVersion?: number;
 }
 
 /** The full application state — the single source of truth persisted per tenant. */

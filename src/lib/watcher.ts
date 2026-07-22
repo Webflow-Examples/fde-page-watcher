@@ -1,7 +1,7 @@
-import type { Rec, Strategy, WatchPage } from "./types";
+import type { RangeDays, Rec, Strategy, WatchPage } from "./types";
 import { C } from "./ui";
 import { savingsValue } from "./ui";
-import { DROP_THRESHOLD } from "./scoring";
+import { DROP_THRESHOLD, pageRangeComparison, pageRangeTrend } from "./scoring";
 
 /** "A" · "A and B" · "A, B and C". */
 function listJoin(names: string[]): string {
@@ -17,60 +17,89 @@ export interface WatcherBullet {
 }
 
 export interface WatcherSummary {
-  overall: string;
   total: number;
-  healthy: number;
-  improvable: number;
-  degraded: number;
+  stable: number;
+  improving: number;
+  regressing: number;
+  lowPerformance: number;
+  agentGaps: number;
+  qualityIssues: number;
   changed: WatcherBullet[];
   topRec: { pageTitle: string; recTitle: string; savings: string } | null;
 }
 
-/**
- * The Watcher: an agent-authored read of current conditions, what changed since
- * baseline, and a top recommendation (REQ-049). Derived live from stored state.
- */
-export function buildWatcher(pages: WatchPage[], recs: Rec[], strategy: Strategy): WatcherSummary {
-  const healthy = pages.filter((p) => p.status === "healthy").length;
-  const improvable = pages.filter((p) => p.status === "improvable").length;
-  const degraded = pages.filter((p) => p.status === "degraded").length;
-  const overall = degraded >= 2 ? "under strain" : degraded === 1 ? "steady, with one page degraded" : improvable > 0 ? "steady" : "strong";
+export const LOW_PERFORMANCE_THRESHOLD = 60;
+export const QUALITY_SCORE_THRESHOLD = 90;
 
-  const ranked = pages.filter((p) => p.status !== "pending" && p.baseline);
+function hasSnapshot(page: WatchPage): boolean {
+  return page.history.length > 0 || !!page.baseline;
+}
+
+function hasAgentGap(page: WatchPage): boolean {
+  const available = page.agent.filter((check) => !check.unavailable);
+  return available.length > 0 && available.some((check) => !check.pass);
+}
+
+/**
+ * The Watcher: an agent-authored read of current conditions, what changed over
+ * the selected range, and a top recommendation (REQ-049). Derived live from stored state.
+ */
+export function buildWatcher(pages: WatchPage[], recs: Rec[], strategy: Strategy, rangeDays: RangeDays = 30): WatcherSummary {
+  const trends = new Map(pages.map((page) => [page.id, pageRangeTrend(page, strategy, rangeDays)]));
+  const stable = pages.filter((p) => trends.get(p.id) === "stable").length;
+  const improving = pages.filter((p) => trends.get(p.id) === "improving").length;
+  const regressing = pages.filter((p) => trends.get(p.id) === "regressing").length;
+  const lowPerformance = pages.filter((p) => hasSnapshot(p) && p.current[strategy].perf < LOW_PERFORMANCE_THRESHOLD).length;
+  const agentGaps = pages.filter(hasAgentGap).length;
+  const qualityIssues = pages.filter((p) => hasSnapshot(p) && (["a11y", "bp", "seo"] as const).some((key) => p.current[strategy][key] < QUALITY_SCORE_THRESHOLD)).length;
+
+  const ranked = pages.filter((p) => trends.get(p.id) !== "pending" && p.baseline);
+  const regressionPages = ranked.filter((p) => trends.get(p.id) === "regressing");
+  const improvingPages = ranked.filter((p) => trends.get(p.id) === "improving");
 
   const changed: WatcherBullet[] = [];
-  for (const p of ranked.filter((x) => x.status === "degraded")) {
-    const drop = (p.baseline?.[strategy]?.perf.m ?? 0) - (p.current[strategy]?.perf ?? 0);
+  for (const p of regressionPages) {
+    const drop = Math.abs(pageRangeComparison(p, strategy, "perf", rangeDays)?.delta ?? 0);
     const marker = p.markers.length ? p.markers[p.markers.length - 1].text.toLowerCase() : null;
     changed.push({
       lead: p.title,
       leadColor: C.red,
-      text: `dropped ${Math.max(0, drop)} points on Performance${marker ? ` after ${marker}` : ""}.`,
+      text: `fell ${drop} points on ${strategy} Performance over the last ${rangeDays} days${marker ? ` after ${marker}` : ""}.`,
     });
   }
-  const below = ranked.filter((p) => p.status !== "degraded" && (p.current[strategy]?.perf ?? 100) < 60);
+  for (const p of improvingPages) {
+    const gain = Math.abs(pageRangeComparison(p, strategy, "perf", rangeDays)?.delta ?? 0);
+    changed.push({
+      lead: p.title,
+      leadColor: C.green,
+      text: `gained ${gain} points on ${strategy} Performance over the last ${rangeDays} days.`,
+    });
+  }
+  const below = ranked.filter((p) => (p.current[strategy]?.perf ?? 100) < LOW_PERFORMANCE_THRESHOLD);
   if (below.length) {
     const names = below.map((p) => p.title);
     changed.push({
       lead: listJoin(names),
       leadColor: C.amber,
-      text: `${names.length > 1 ? "remain" : "remains"} below the 60 Performance threshold.`,
+      text: `${names.length > 1 ? "remain" : "remains"} below the ${LOW_PERFORMANCE_THRESHOLD} Performance threshold.`,
     });
   }
 
-  // Evaluate Accessibility and SEO against baseline instead of asserting they
-  // are stable — the Watcher must not make claims it hasn't checked (audit).
-  const stable: string[] = [];
-  for (const [key, label] of [["a11y", "Accessibility"], ["seo", "SEO"]] as const) {
-    const dropped = ranked.filter((p) => (p.baseline?.[strategy]?.[key].m ?? 0) - (p.current[strategy]?.[key] ?? 0) >= DROP_THRESHOLD);
-    if (dropped.length === 0) stable.push(label);
-    else changed.push({ lead: listJoin(dropped.map((p) => p.title)), leadColor: C.amber, text: `dropped on ${label} since baseline.` });
-  }
-  if (stable.length) {
-    changed.push({ lead: "", leadColor: "", text: `${listJoin(stable)} ${stable.length > 1 ? "are" : "is"} stable across the board.` });
+  // Evaluate Accessibility and SEO over the same selected range instead of
+  // asserting they are stable — the Watcher must not make unchecked claims.
+  const stableCategories: string[] = [];
+  if (ranked.length) {
+    for (const [key, label] of [["a11y", "Accessibility"], ["seo", "SEO"]] as const) {
+      const dropped = ranked.filter((p) => (pageRangeComparison(p, strategy, key, rangeDays)?.delta ?? 0) <= -DROP_THRESHOLD);
+      if (dropped.length === 0) stableCategories.push(label);
+      else changed.push({ lead: listJoin(dropped.map((p) => p.title)), leadColor: C.amber, text: `dropped on ${label} over the last ${rangeDays} days.` });
+    }
+    if (stableCategories.length) {
+      changed.push({ lead: "", leadColor: "", text: `${listJoin(stableCategories)} ${stableCategories.length > 1 ? "are" : "is"} stable across the board.` });
+    }
   }
 
-  const focus = ranked.find((p) => p.status === "degraded") ?? [...ranked].sort((a, b) => (a.current[strategy]?.perf ?? 100) - (b.current[strategy]?.perf ?? 100))[0];
+  const focus = regressionPages[0] ?? [...ranked].sort((a, b) => (a.current[strategy]?.perf ?? 100) - (b.current[strategy]?.perf ?? 100))[0];
   let topRec: WatcherSummary["topRec"] = null;
   if (focus) {
     // Only recommend something still actionable — not an ignored or completed rec.
@@ -80,5 +109,5 @@ export function buildWatcher(pages: WatchPage[], recs: Rec[], strategy: Strategy
     if (cand) topRec = { pageTitle: focus.title, recTitle: cand.title, savings: cand.savings };
   }
 
-  return { overall, total: pages.length, healthy, improvable, degraded, changed, topRec };
+  return { total: pages.length, stable, improving, regressing, lowPerformance, agentGaps, qualityIssues, changed, topRec };
 }

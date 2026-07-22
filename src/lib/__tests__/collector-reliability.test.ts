@@ -2,10 +2,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { createFsStore, type DataStore } from "../store/fsStore";
+import { createFsStore, normalizeState, type DataStore } from "../store/fsStore";
 import { pendingPage, recoverStaleRuns, requestPageRun, RUN_STALE_AFTER_MS } from "../mutations";
 import { captureBaseline, executePageRun, runNightly, runPage } from "../collector";
-import type { AppState, CategoryScore, NightScores } from "../types";
+import type { AppState, CategoryScore, NightScores, PageStatus, StrategyScores } from "../types";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -30,6 +30,19 @@ async function dataStore(pages = [pendingPage("page", "Page", "https://example.c
 }
 
 describe("pending pages and explicit baselines", () => {
+  it("migrates persisted health labels into the baseline-trend model", () => {
+    const legacy = pendingPage("legacy", "Legacy", "https://example.com/legacy", "priority");
+    const baseline: StrategyScores = { mobile: scores(80), desktop: scores(80) };
+    legacy.baseline = baseline;
+    legacy.baselineCapturedAt = "Jul 21";
+    legacy.current = { mobile: { perf: 65, a11y: 92, bp: 96, seo: 99 }, desktop: { perf: 65, a11y: 92, bp: 96, seo: 99 } };
+    legacy.history = [{ i: 0, date: "Jul 22", scores: { mobile: scores(65), desktop: scores(65) } }];
+    legacy.status = "healthy" as PageStatus;
+
+    const migrated = normalizeState({ pages: [legacy], recs: [] });
+    expect(migrated.pages[0].status).toBe("regressing");
+  });
+
   it("stores an on-demand snapshot but remains pending before baseline capture", async () => {
     const store = await dataStore();
     const state = await runPage("page", {
@@ -76,7 +89,7 @@ describe("pending pages and explicit baselines", () => {
     });
     expect(captured.pages[0].baseline?.mobile.perf.m).toBe(80);
     expect(captured.pages[0].current.mobile.perf).toBe(80);
-    expect(captured.pages[0].status).toBe("healthy");
+    expect(captured.pages[0].status).toBe("stable");
 
     const classified = await runPage("page", {
       dataStore: store,
@@ -86,7 +99,7 @@ describe("pending pages and explicit baselines", () => {
     });
     expect(classified.pages[0].history).toHaveLength(2);
     expect(classified.pages[0].current.mobile.perf - classified.pages[0].baseline!.mobile.perf.m).toBe(-15);
-    expect(classified.pages[0].status).toBe("degraded");
+    expect(classified.pages[0].status).toBe("regressing");
   });
 });
 

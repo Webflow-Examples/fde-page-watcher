@@ -34,7 +34,7 @@ const DESKTOP_PERF_BONUS = 18;
 
 const clamp = (v: number) => Math.max(0, Math.min(100, Math.round(v)));
 
-const STATUS_MAP: Record<Seed["status"], PageStatus> = { healthy: "healthy", room: "improvable", dropped: "degraded" };
+const STATUS_MAP: Record<Seed["status"], PageStatus> = { healthy: "stable", room: "regressing", dropped: "regressing" };
 
 function dateFor(i: number): string {
   const d = new Date(2026, 5, 17);

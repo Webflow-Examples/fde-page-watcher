@@ -197,7 +197,7 @@ export async function commitCollectionResult(
         mobile: Object.fromEntries(Object.entries(result.scores.mobile).map(([key, score]) => [key, score.m])) as typeof page.current.mobile,
         desktop: Object.fromEntries(Object.entries(result.scores.desktop).map(([key, score]) => [key, score.m])) as typeof page.current.desktop,
       };
-      page.status = "healthy";
+      page.status = "stable";
     }
     currentJob.state = "succeeded";
     currentJob.updatedAt = completedAt.toISOString();

@@ -1,7 +1,7 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import type { AppState, ChangeMarker, CollectionJob, Night } from "../types";
 import { buildInitialState } from "../seed";
-import { classifyStatus, mediansOf } from "../scoring";
+import { mediansOf, pageTrend } from "../scoring";
 import { resolveMarkerIndex } from "../followups";
 import { normalizeState, type DataStore } from "./fsStore";
 import { getEnv } from "../env";
@@ -127,9 +127,7 @@ class CfDataStore implements DataStore {
         desktop: mediansOf(night.scores.desktop),
       };
       page.agent = agent ?? [];
-      page.status = page.baseline && page.baselineCapturedAt
-        ? classifyStatus(mediansOf(page.baseline.mobile), page.history, "mobile")
-        : "pending";
+      page.status = pageTrend(page, "mobile");
       page.runState = undefined;
       page.lastRunAt = night.iso ?? new Date().toISOString();
       delete page.lastError;
