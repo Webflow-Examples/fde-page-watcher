@@ -1,10 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { median, range, noiseBand, classifyStatus, categoryTrendSeries, DROP_THRESHOLD } from "../scoring";
-import type { CategoryScore, Night, NightScores, ScoreByCategory, StrategyScores } from "../types";
+import { median, range, noiseBand, classifyStatus, categoryTrendSeries, hasPersistentRegression, historyForRange, pageRangeTrend, rangeComparison, DROP_THRESHOLD } from "../scoring";
+import type { CategoryScore, Night, NightScores, ScoreByCategory, StrategyScores, WatchPage } from "../types";
 
 const cat = (m: number): CategoryScore => ({ m, lo: m - 2, hi: m + 2 });
 const nightScores = (perf: number): NightScores => ({ perf: cat(perf), a11y: cat(95), bp: cat(95), seo: cat(95) });
 const strat = (perf: number): StrategyScores => ({ mobile: nightScores(perf), desktop: nightScores(perf) });
+const dualStrat = (mobile: number, desktop: number): StrategyScores => ({ mobile: nightScores(mobile), desktop: nightScores(desktop) });
 const night = (i: number, perf: number): Night => ({ i, date: `d${i}`, scores: strat(perf) });
 
 describe("median / range", () => {
@@ -66,23 +67,66 @@ describe("categoryTrendSeries", () => {
   });
 });
 
+describe("selected range comparisons", () => {
+  it("filters live history to the requested calendar range", () => {
+    const history = [
+      { ...night(0, 60), iso: "2026-07-01T00:00:00.000Z" },
+      { ...night(1, 70), iso: "2026-07-18T00:00:00.000Z" },
+      { ...night(2, 75), iso: "2026-07-20T00:00:00.000Z" },
+    ];
+    expect(historyForRange(history, 3, Date.parse("2026-07-21T00:00:00.000Z")).map((item) => item.i)).toEqual([1, 2]);
+  });
+
+  it("compares non-overlapping medians at the beginning and end", () => {
+    const history = [night(0, 80), night(1, 81), night(2, 79), night(3, 70), night(4, 69), night(5, 71)];
+    expect(rangeComparison(history, "mobile", "perf")).toMatchObject({ from: 80, to: 70, delta: -10, windowSize: 3 });
+  });
+
+  it("calculates mobile and desktop trends independently", () => {
+    const history: Night[] = [
+      { i: 0, date: "d0", scores: dualStrat(50, 80) },
+      { i: 1, date: "d1", scores: dualStrat(50, 78) },
+      { i: 2, date: "d2", scores: dualStrat(50, 70) },
+      { i: 3, date: "d3", scores: dualStrat(50, 65) },
+    ];
+    const page: WatchPage = {
+      id: "devices",
+      title: "Devices",
+      url: "https://example.com",
+      flag: "priority",
+      status: "stable",
+      baseline: dualStrat(50, 80),
+      baselineCapturedAt: "Jun 17",
+      current: { mobile: { perf: 50, a11y: 95, bp: 95, seo: 95 }, desktop: { perf: 65, a11y: 95, bp: 95, seo: 95 } },
+      history,
+      markers: [],
+      agent: [],
+    };
+    expect(pageRangeTrend(page, "mobile", 3)).toBe("stable");
+    expect(pageRangeTrend(page, "desktop", 3)).toBe("regressing");
+  });
+});
+
 describe("classifyStatus", () => {
   const base: ScoreByCategory = { perf: 80, a11y: 95, bp: 95, seo: 95 };
-  it("is healthy when the latest night is within the noise band", () => {
+  it("is stable when the latest night is within the noise band", () => {
     const hist = [night(0, 80), night(1, 79), night(2, 80)];
-    expect(classifyStatus(base, hist, "mobile")).toBe("healthy");
+    expect(classifyStatus(base, hist, "mobile")).toBe("stable");
   });
-  it("is degraded when the drop persists across the last two nights", () => {
-    const hist = [night(0, 80), night(1, 80 - DROP_THRESHOLD - 2), night(2, 80 - DROP_THRESHOLD - 3)];
-    expect(classifyStatus(base, hist, "mobile")).toBe("degraded");
+  it("is improving when the latest night rises beyond the noise band", () => {
+    const hist = [night(0, 80), night(1, 80), night(2, 80), night(3, 87)];
+    expect(classifyStatus(base, hist, "mobile")).toBe("improving");
   });
-  it("is improvable for a single-night dip beyond the band but not persistent", () => {
-    // flat history => band floors at 4; last night drops 5 (> band) while the
-    // prior night is still at baseline, so it isn't a persistent (degraded) drop
+  it("is regressing when the latest night falls beyond the noise band", () => {
     const hist = [night(0, 80), night(1, 80), night(2, 80), night(3, 75)];
-    expect(classifyStatus(base, hist, "mobile")).toBe("improvable");
+    expect(classifyStatus(base, hist, "mobile")).toBe("regressing");
   });
-  it("is healthy with no history", () => {
-    expect(classifyStatus(base, [], "mobile")).toBe("healthy");
+  it("is stable with no history", () => {
+    expect(classifyStatus(base, [], "mobile")).toBe("stable");
+  });
+  it("keeps the stricter consecutive-drop rule for alerts", () => {
+    const hist = [night(0, 80), night(1, 80 - DROP_THRESHOLD - 2), night(2, 80 - DROP_THRESHOLD - 3)];
+    expect(hasPersistentRegression(base, hist, "mobile")).toBe(true);
+    expect(hasPersistentRegression(base, [night(0, 80), night(1, 80 - DROP_THRESHOLD - 2)], "mobile")).toBe(false);
   });
 });

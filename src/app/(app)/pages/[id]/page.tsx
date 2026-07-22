@@ -4,19 +4,19 @@ import { useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useStore } from "@/components/store";
 import { CATEGORIES } from "@/lib/types";
-import type { CategoryKey, Night, Rec, WatchPage } from "@/lib/types";
-import { categoryTrendSeries, deltaMeta, scoreMeta } from "@/lib/scoring";
+import type { CategoryKey, Night, RangeDays, Rec, WatchPage } from "@/lib/types";
+import { deltaMeta, pageHistoryForRange, pageRangeComparison, pageRangeSeries, pageRangeTrend, scoreMeta } from "@/lib/scoring";
 import { auditsFor } from "@/lib/audits";
 import { C, taskLabel } from "@/lib/ui";
 import { HistoryChart, Sparkline } from "@/components/charts";
-import { SegToggle, StatusBadge } from "@/components/bits";
+import { DeviceChangeLabels, SegToggle } from "@/components/bits";
 import { ChevronLeftIcon, DesktopIcon, MobileIcon, PlusIcon, RefreshIcon } from "@/components/icons";
 
 export default function PageDetail() {
   const router = useRouter();
   const { id } = useParams<{ id: string }>();
   const store = useStore();
-  const { pages, recs, strategy, setStrategy, tab, setTab, chartCat, setChartCat } = store;
+  const { pages, recs, strategy, setStrategy, rangeDays, setRangeDays, tab, setTab, chartCat, setChartCat } = store;
   const page = pages.find((p) => p.id === id);
 
   useEffect(() => {
@@ -61,14 +61,24 @@ export default function PageDetail() {
         </button>
         <div className="detail-heading" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 24, paddingBottom: 20 }}>
           <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
-              <h1 style={{ margin: 0, fontSize: 25, fontWeight: 600, letterSpacing: "-0.01em" }}>{page.title}</h1>
-              <StatusBadge status={page.status} />
-            </div>
+            <h1 style={{ margin: 0, fontSize: 25, fontWeight: 600, letterSpacing: "-0.01em" }}>{page.title}</h1>
             <div style={{ fontSize: 13, color: C.muted, marginTop: 7 }}>{page.url}</div>
+            {!isPending && (
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 11 }}>
+                <span style={{ color: C.faint, fontSize: 11.5, paddingTop: 1 }}>Performance change · last {rangeDays} days</span>
+                <DeviceChangeLabels mobile={pageRangeTrend(page, "mobile", rangeDays)} desktop={pageRangeTrend(page, "desktop", rangeDays)} size={11} />
+              </div>
+            )}
           </div>
           <div className="page-controls" style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <SegToggle label="Page strategy" value={strategy} onChange={setStrategy} options={[{ value: "mobile", label: "Mobile", icon: <MobileIcon size={13} /> }, { value: "desktop", label: "Desktop", icon: <DesktopIcon size={13} /> }]} />
+            <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+              <span style={{ fontSize: 11.5, color: C.muted }}>Primary</span>
+              <SegToggle label="Primary page device" value={strategy} onChange={setStrategy} options={[{ value: "desktop", label: "Desktop", icon: <DesktopIcon size={13} /> }, { value: "mobile", label: "Mobile", icon: <MobileIcon size={13} /> }]} />
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+              <span style={{ fontSize: 11.5, color: C.muted }}>Range</span>
+              <SegToggle label="Page date range" value={rangeDays} onChange={setRangeDays} options={[3, 7, 30, 90].map((days) => ({ value: days as RangeDays, label: `${days}d` }))} />
+            </div>
             <button disabled={!!page.runState && page.runState !== "failed"} onClick={() => store.runPage(page.id)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 15px", border: "none", borderRadius: 8, background: C.accent, color: "#fff", fontSize: 12.5, fontWeight: 550, cursor: page.runState && page.runState !== "failed" ? "wait" : "pointer", opacity: page.runState && page.runState !== "failed" ? 0.65 : 1, whiteSpace: "nowrap" }}>
               <RefreshIcon size={15} style={{ color: "#fff" }} />
               {page.runState === "queued" ? "Queued…" : page.runState === "dispatching" ? "Starting…" : page.runState === "running" ? "Running…" : "Run now"}
@@ -112,8 +122,8 @@ export default function PageDetail() {
           <PendingPanel page={page} store={store} />
         ) : (
           <div role="tabpanel" id={`page-panel-${tab}`} aria-labelledby={`page-tab-${tab}`} tabIndex={0}>
-            {tab === "overview" && <OverviewTab page={page} recs={recs} strategy={strategy} apct={apct} apm={apm} pass={pass} total={total} failList={failList} store={store} />}
-            {tab === "history" && <HistoryTab page={page} strategy={strategy} chartCat={chartCat} setChartCat={setChartCat} store={store} />}
+            {tab === "overview" && <OverviewTab page={page} recs={recs} strategy={strategy} rangeDays={rangeDays} apct={apct} apm={apm} pass={pass} total={total} failList={failList} store={store} />}
+            {tab === "history" && <HistoryTab page={page} strategy={strategy} rangeDays={rangeDays} chartCat={chartCat} setChartCat={setChartCat} store={store} />}
             {tab === "audits" && <OpportunitiesTab page={page} />}
             {tab === "agent" && <AgentTab page={page} pass={pass} fail={total - pass} unavailable={unavailableCount} />}
           </div>
@@ -148,6 +158,7 @@ function OverviewTab({
   page,
   recs,
   strategy,
+  rangeDays,
   apct,
   apm,
   pass,
@@ -158,6 +169,7 @@ function OverviewTab({
   page: WatchPage;
   recs: Rec[];
   strategy: "mobile" | "desktop";
+  rangeDays: RangeDays;
   apct: number;
   apm: { fg: string; ring: string };
   pass: number;
@@ -165,28 +177,40 @@ function OverviewTab({
   failList: { name: string }[];
   store: ReturnType<typeof useStore>;
 }) {
-  const last = page.history[page.history.length - 1];
   const pageRecs = recs.filter((r) => r.pageId === page.id);
+  const secondaryStrategy = strategy === "mobile" ? "desktop" : "mobile";
   return (
     <div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 16, marginBottom: 20 }}>
         {CATEGORIES.map((c) => {
           const v = page.current[strategy][c.key];
-          const bv = page.baseline![strategy][c.key].m;
+          const secondary = page.current[secondaryStrategy][c.key];
+          const baseline = page.baseline![strategy][c.key].m;
+          const secondaryBaseline = page.baseline![secondaryStrategy][c.key].m;
           const sm = scoreMeta(v);
-          const dm = deltaMeta(v, bv);
-          const night = last?.scores[strategy][c.key] ?? page.baseline![strategy][c.key];
+          const secondaryMeta = scoreMeta(secondary);
+          const comparison = pageRangeComparison(page, strategy, c.key, rangeDays);
+          const dm = comparison ? deltaMeta(comparison.to, comparison.from) : null;
           return (
             <div key={c.key} style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, padding: "18px 19px 8px" }}>
               <div style={{ fontSize: 12.5, color: C.muted, marginBottom: 10 }}>{c.label}</div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <span style={{ fontSize: 32, fontWeight: 600, lineHeight: 1, color: sm.fg }}>{v}</span>
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 12, fontWeight: 600, padding: "3px 8px", borderRadius: 6, color: dm.fg, background: dm.chip }}>{dm.text}</span>
+              <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 14 }}>
+                <div>
+                  <div style={{ fontSize: 10, color: C.faint, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 5 }}>{strategy}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ fontSize: 32, fontWeight: 600, lineHeight: 1, color: sm.fg }}>{v}</span>
+                    {dm && <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 12, fontWeight: 600, padding: "3px 8px", borderRadius: 6, color: dm.fg, background: dm.chip }}>{dm.text}</span>}
+                  </div>
+                </div>
+                <div style={{ textAlign: "right", paddingBottom: 1 }}>
+                  <div style={{ fontSize: 10, color: C.faint, textTransform: "uppercase", letterSpacing: "0.04em" }}>{secondaryStrategy}</div>
+                  <div style={{ fontSize: 18, fontWeight: 600, color: secondaryMeta.fg, marginTop: 3 }}>{secondary}</div>
+                </div>
               </div>
-              <div style={{ fontSize: 11.5, color: C.faint, marginTop: 7 }}>Baseline {bv} · ± {night.hi - night.lo} range</div>
+              <div style={{ fontSize: 11, color: C.faint, marginTop: 8 }}>Change over {rangeDays}d · baseline {strategy === "mobile" ? "M" : "D"} {baseline} · {secondaryStrategy === "mobile" ? "M" : "D"} {secondaryBaseline}</div>
               <div style={{ height: 52, marginTop: 6 }}>
                 <Sparkline
-                  series={categoryTrendSeries(page.history, strategy, c.key, 30, bv, page.baselineCapturedAt)}
+                  series={pageRangeSeries(page, strategy, c.key, rangeDays)}
                   color={sm.line}
                   h={52}
                   sw={2}
@@ -271,17 +295,20 @@ function OverviewTab({
 function HistoryTab({
   page,
   strategy,
+  rangeDays,
   chartCat,
   setChartCat,
   store,
 }: {
   page: WatchPage;
   strategy: "mobile" | "desktop";
+  rangeDays: RangeDays;
   chartCat: CategoryKey;
   setChartCat: (c: CategoryKey) => void;
   store: ReturnType<typeof useStore>;
 }) {
-  const runs = [...page.history].reverse().slice(0, 12);
+  const rangeHistory = pageHistoryForRange(page, rangeDays);
+  const runs = [...rangeHistory].reverse().slice(0, 12);
   const GRID = "120px 1fr 84px 84px 84px 84px 100px";
   const openReport = async (d: Night) => {
     const cats = CATEGORIES.map((c) => {
@@ -334,14 +361,29 @@ function HistoryTab({
     <div>
       <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, padding: 22, marginBottom: 20 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-          <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>Score over time · {page.history.length} nights</h3>
+          <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>Score over time · last {rangeDays} days</h3>
           <SegToggle label="History category" value={chartCat} onChange={setChartCat} options={CATEGORIES.map((c) => ({ value: c.key, label: c.short }))} />
         </div>
-        <div style={{ fontSize: 12, color: C.faint, marginBottom: 16 }}>Median line with the run-to-run range shaded; dashed line is the baseline; vertical markers are logged changes.</div>
-        <HistoryChart history={page.history} strategy={strategy} catKey={chartCat} baseline={page.baseline![strategy][chartCat].m} markers={page.markers} />
+        <div style={{ fontSize: 12, color: C.faint, marginBottom: 18 }}>Desktop and Mobile are stacked for comparison. Each median line includes its run-to-run range; the dashed line is that device&apos;s original baseline.</div>
+        {rangeHistory.length < 2 ? (
+          <div style={{ padding: "42px 16px", textAlign: "center", color: C.muted, fontSize: 13 }}>At least two collections inside this range are required to chart change.</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
+            {(["desktop", "mobile"] as const).map((device) => (
+              <div key={device}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 7 }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, textTransform: "capitalize", color: device === "desktop" ? C.violetSoft : C.accentSoft }}>{device}</span>
+                  <span style={{ fontSize: 11, color: C.faint }}>Latest {page.current[device][chartCat]}</span>
+                </div>
+                <HistoryChart history={rangeHistory} strategy={device} catKey={chartCat} baseline={page.baseline![device][chartCat].m} markers={page.markers} />
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="table-scroll" style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13 }}>
+        <div style={{ padding: "13px 22px", borderBottom: `1px solid ${C.border}`, fontSize: 12, color: C.muted }}>Nightly detail · <span style={{ color: C.text, textTransform: "capitalize", fontWeight: 600 }}>{strategy}</span> primary</div>
         <div className="narrow-table" style={{ display: "grid", gridTemplateColumns: GRID, padding: "14px 22px", borderBottom: `1px solid ${C.border}`, fontSize: 11, fontWeight: 550, letterSpacing: "0.05em", textTransform: "uppercase", color: C.faint }}>
           <div>Night</div>
           <div>Marker</div>

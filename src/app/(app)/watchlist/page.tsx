@@ -10,7 +10,7 @@ const GRID = "minmax(260px,2.4fr) 160px 1fr 120px";
 
 export default function WatchlistPage() {
   const router = useRouter();
-  const { pages, setFlag, removePage, openAdd, pathFor } = useStore();
+  const { pages, setFlag, removePage, openAdd, pathFor, preferredStrategy, setPreferredStrategy } = useStore();
 
   return (
     <div>
@@ -29,6 +29,23 @@ export default function WatchlistPage() {
       </header>
 
       <div style={{ padding: "0 40px 48px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 24, background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, padding: "17px 20px", marginBottom: 16 }}>
+          <div>
+            <div style={{ fontSize: 13.5, fontWeight: 600 }}>Default chart device</div>
+            <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Choose which device is primary when the app opens. Both device Change labels remain visible.</div>
+          </div>
+          <div style={{ flex: "none" }}>
+            <SegToggle
+              label="Default chart device"
+              value={preferredStrategy}
+              onChange={setPreferredStrategy}
+              options={[
+                { value: "desktop", label: "Desktop first" },
+                { value: "mobile", label: "Mobile first" },
+              ]}
+            />
+          </div>
+        </div>
         <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden" }}>
           <div style={{ display: "grid", gridTemplateColumns: GRID, alignItems: "center", padding: "14px 24px", borderBottom: `1px solid ${C.border}`, fontSize: 11, fontWeight: 550, letterSpacing: "0.05em", textTransform: "uppercase", color: C.faint }}>
             <div>Page</div>

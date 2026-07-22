@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import type { AppState, CategoryKey, Flag, ScoreByCategory, Strategy } from "@/lib/types";
+import type { AppState, CategoryKey, Flag, RangeDays, ScoreByCategory, Strategy } from "@/lib/types";
 import { collectionSettlementMessage, hasActiveCollections, startCollectionPolling } from "@/lib/collectionPolling";
 import { isoDate } from "@/lib/ui";
 import { withBasePath } from "@/lib/paths";
@@ -31,6 +31,10 @@ interface StoreValue extends AppState {
   // global strategy toggle
   strategy: Strategy;
   setStrategy: (s: Strategy) => void;
+  preferredStrategy: Strategy;
+  setPreferredStrategy: (s: Strategy) => void;
+  rangeDays: RangeDays;
+  setRangeDays: (days: RangeDays) => void;
   // dashboard sort
   dashSort: SortState;
   sortDash: (col: string) => void;
@@ -82,6 +86,9 @@ interface StoreValue extends AppState {
 }
 
 const Ctx = createContext<StoreValue | null>(null);
+const STRATEGY_PREFERENCE_KEY = "page-watcher:preferred-strategy";
+const RANGE_PREFERENCE_KEY = "page-watcher:range-days";
+const RANGE_DAYS = new Set<RangeDays>([3, 7, 30, 90]);
 
 export function useStore(): StoreValue {
   const v = useContext(Ctx);
@@ -121,7 +128,9 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
     setData(next);
   }, []);
 
-  const [strategy, setStrategy] = useState<Strategy>("mobile");
+  const [strategy, setStrategy] = useState<Strategy>("desktop");
+  const [preferredStrategy, setPreferredStrategyState] = useState<Strategy>("desktop");
+  const [rangeDays, setRangeDaysState] = useState<RangeDays>(30);
   const [dashSort, setDashSort] = useState<SortState>({ col: null, dir: "desc" });
   const [inboxGroup, setInboxGroup] = useState<"none" | "page" | "rec">("page");
   const [inboxSort, setInboxSort] = useState<SortState>({ col: null, dir: "desc" });
@@ -138,6 +147,42 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
   const [markerText, setMarkerText] = useState("");
   const [markerDate, setMarkerDate] = useState("");
   const pathFor = useCallback((path: string) => withBasePath(basePath, path), [basePath]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try {
+        const savedStrategy = window.localStorage.getItem(STRATEGY_PREFERENCE_KEY);
+        if (savedStrategy === "mobile" || savedStrategy === "desktop") {
+          setPreferredStrategyState(savedStrategy);
+          setStrategy(savedStrategy);
+        }
+        const savedRange = Number(window.localStorage.getItem(RANGE_PREFERENCE_KEY)) as RangeDays;
+        if (RANGE_DAYS.has(savedRange)) setRangeDaysState(savedRange);
+      } catch {
+        // Browser storage can be disabled; desktop + 30 days remain safe defaults.
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  const setPreferredStrategy = useCallback((next: Strategy) => {
+    setPreferredStrategyState(next);
+    setStrategy(next);
+    try {
+      window.localStorage.setItem(STRATEGY_PREFERENCE_KEY, next);
+    } catch {
+      // The preference still applies for the current session.
+    }
+  }, []);
+
+  const setRangeDays = useCallback((next: RangeDays) => {
+    setRangeDaysState(next);
+    try {
+      window.localStorage.setItem(RANGE_PREFERENCE_KEY, String(next));
+    } catch {
+      // The filter still applies for the current session.
+    }
+  }, []);
 
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flash = useCallback((msg: string) => {
@@ -385,6 +430,10 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
     pathFor,
     strategy,
     setStrategy,
+    preferredStrategy,
+    setPreferredStrategy,
+    rangeDays,
+    setRangeDays,
     dashSort,
     sortDash,
     inboxGroup,

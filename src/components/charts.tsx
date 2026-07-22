@@ -70,7 +70,7 @@ export function HistoryChart({
   const padT = 22;
   const padB = 30;
   const at = (d: Night, which: "m" | "lo" | "hi") => d.scores[strategy][catKey][which];
-  const vals: number[] = [];
+  const vals: number[] = [baseline];
   h.forEach((d) => vals.push(at(d, "lo"), at(d, "hi")));
   let lo = Math.floor(Math.min(...vals) / 5) * 5 - 3;
   let hi = Math.ceil(Math.max(...vals) / 5) * 5 + 3;
@@ -78,15 +78,16 @@ export function HistoryChart({
   hi = Math.min(100, Math.max(hi, lo + 10));
   const x = (i: number) => padL + (i / (n - 1)) * (W - padL - padR);
   const y = (v: number) => padT + (1 - (v - lo) / (hi - lo)) * (H - padT - padB);
-  const line = C.accentBright;
-  const bandTop = h.map((d) => `${x(d.i)},${y(at(d, "hi"))}`).join(" ");
+  const line = strategy === "desktop" ? C.violetSoft : C.accentBright;
+  const band = strategy === "desktop" ? "rgba(183,156,255,0.15)" : "rgba(59,137,255,0.16)";
+  const bandTop = h.map((d, index) => `${x(index)},${y(at(d, "hi"))}`).join(" ");
   const bandBot = h
-    .map((d) => `${x(d.i)},${y(at(d, "lo"))}`)
+    .map((d, index) => `${x(index)},${y(at(d, "lo"))}`)
     .reverse()
     .join(" ");
-  const medPts = h.map((d) => `${x(d.i)},${y(at(d, "m"))}`).join(" ");
+  const medPts = h.map((d, index) => `${x(index)},${y(at(d, "m"))}`).join(" ");
   const ticks = [lo, Math.round((lo + hi) / 2), hi];
-  const xLabels = [0, 7, 14, 21, 29].filter((i) => i < n);
+  const xLabels = [...new Set([0, Math.round((n - 1) / 2), n - 1])];
   const ld = h[n - 1];
 
   return (
@@ -104,22 +105,26 @@ export function HistoryChart({
           {h[i].date}
         </text>
       ))}
-      <polygon points={`${bandTop} ${bandBot}`} fill="rgba(59,137,255,0.16)" />
+      <polygon points={`${bandTop} ${bandBot}`} fill={band} />
       <line x1={padL} x2={W - padR} y1={y(baseline)} y2={y(baseline)} stroke="#5A5A62" strokeWidth={1.2} strokeDasharray="5 4" />
       <text x={W - padR} y={y(baseline) - 6} textAnchor="end" fontSize={10} fill={C.muted}>
         baseline {baseline}
       </text>
       <polyline points={medPts} fill="none" stroke={line} strokeWidth={2.4} strokeLinejoin="round" strokeLinecap="round" />
-      <circle cx={x(ld.i)} cy={y(at(ld, "m"))} r={4} fill={line} stroke={C.panel} strokeWidth={2} />
-      {(markers || []).map((mk, k) => (
-        <g key={`mk${k}`}>
-          <line x1={x(mk.i)} x2={x(mk.i)} y1={padT - 4} y2={H - padB} stroke="#9564FF" strokeWidth={1.4} strokeDasharray="4 3" />
-          <circle cx={x(mk.i)} cy={padT - 4} r={3.5} fill="#9564FF" />
-          <text x={x(mk.i) + 7} y={padT + 7} fontSize={10.5} fontWeight={600} fill={C.violetSoft}>
-            {mk.text}
-          </text>
-        </g>
-      ))}
+      <circle cx={x(n - 1)} cy={y(at(ld, "m"))} r={4} fill={line} stroke={C.panel} strokeWidth={2} />
+      {(markers || []).map((mk, k) => {
+        const markerIndex = h.findIndex((night) => night.i === mk.i);
+        if (markerIndex < 0) return null;
+        return (
+          <g key={`mk${k}`}>
+            <line x1={x(markerIndex)} x2={x(markerIndex)} y1={padT - 4} y2={H - padB} stroke="#9564FF" strokeWidth={1.4} strokeDasharray="4 3" />
+            <circle cx={x(markerIndex)} cy={padT - 4} r={3.5} fill="#9564FF" />
+            <text x={x(markerIndex) + 7} y={padT + 7} fontSize={10.5} fontWeight={600} fill={C.violetSoft}>
+              {mk.text}
+            </text>
+          </g>
+        );
+      })}
     </svg>
   );
 }

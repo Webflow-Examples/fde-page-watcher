@@ -26,6 +26,27 @@ export function StatusBadge({ status, size = 12.5 }: { status: PageStatus; size?
   );
 }
 
+/** Compact always-visible mobile + desktop Performance trends. */
+export function DeviceChangeLabels({ mobile, desktop, size = 11.5 }: { mobile: PageStatus; desktop: PageStatus; size?: number }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 5 }}>
+      <DeviceChangeLine device="M" name="Mobile" status={mobile} size={size} />
+      <DeviceChangeLine device="D" name="Desktop" status={desktop} size={size} />
+    </div>
+  );
+}
+
+function DeviceChangeLine({ device, name, status, size }: { device: "M" | "D"; name: string; status: PageStatus; size: number }) {
+  const sm = statusMeta(status);
+  return (
+    <span aria-label={`${name} Performance change: ${sm.label}`} title={`${name} Performance change: ${sm.label}`} style={{ display: "inline-flex", alignItems: "center", gap: 5, color: sm.fg, fontSize: size, fontWeight: 550, whiteSpace: "nowrap" }}>
+      <span style={{ width: 14, color: C.faint2, fontSize: size - 1, fontWeight: 650 }}>{device}</span>
+      <StatusShape shape={sm.shape} color={sm.fg} />
+      {sm.label}
+    </span>
+  );
+}
+
 export function StatusShape({ shape, color }: { shape: "circle" | "triangle" | "square"; color: string }) {
   if (shape === "triangle") {
     return <span style={{ width: 0, height: 0, borderLeft: "4px solid transparent", borderRight: "4px solid transparent", borderBottom: `7px solid ${color}` }} />;
@@ -36,14 +57,14 @@ export function StatusShape({ shape, color }: { shape: "circle" | "triangle" | "
   return <span style={{ width: 7, height: 7, borderRadius: "50%", background: color }} />;
 }
 
-export interface SegOption<T extends string> {
+export interface SegOption<T extends string | number> {
   value: T;
   label: string;
   icon?: React.ReactNode;
 }
 
 /** Segmented pill toggle (strategy, group-by, view switches). */
-export function SegToggle<T extends string>({ options, value, onChange, label }: { options: SegOption<T>[]; value: T; onChange: (v: T) => void; label?: string }) {
+export function SegToggle<T extends string | number>({ options, value, onChange, label }: { options: SegOption<T>[]; value: T; onChange: (v: T) => void; label?: string }) {
   return (
     <div role="group" aria-label={label} style={{ display: "inline-flex", padding: 3, background: "rgba(255,255,255,0.05)", border: `1px solid ${C.border2}`, borderRadius: 8 }}>
       {options.map((o) => {

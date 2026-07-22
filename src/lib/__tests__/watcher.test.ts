@@ -6,18 +6,22 @@ const cat = (m: number): CategoryScore => ({ m, lo: m - 1, hi: m + 1 });
 const ns = (s: ScoreByCategory): NightScores => ({ perf: cat(s.perf), a11y: cat(s.a11y), bp: cat(s.bp), seo: cat(s.seo) });
 const strat = (s: ScoreByCategory): StrategyScores => ({ mobile: ns(s), desktop: ns(s) });
 
-function page(id: string, baseline: ScoreByCategory, current: ScoreByCategory, status: WatchPage["status"] = "healthy"): WatchPage {
+function page(id: string, baseline: ScoreByCategory, current: ScoreByCategory): WatchPage {
   return {
     id,
     title: id,
     url: `${id}.com`,
     flag: "priority",
-    status,
+    status: "stable",
     baseline: strat(baseline),
     current: { mobile: current, desktop: current },
-    history: [],
+    history: [
+      { i: 0, date: "Jul 20", scores: strat(baseline) },
+      { i: 1, date: "Jul 21", scores: strat(current) },
+    ],
     markers: [],
     agent: [],
+    baselineCapturedAt: "2026-07-21T12:00:00.000Z",
   };
 }
 
@@ -42,7 +46,7 @@ describe("buildWatcher — Accessibility/SEO truthfulness", () => {
 });
 
 describe("buildWatcher — top recommendation", () => {
-  const focus = page("pricing", good, { ...good, perf: 50 }, "degraded");
+  const focus = page("pricing", good, { ...good, perf: 50 });
   const rec = (id: string, savings: string, status: Rec["status"], taskStatus: Rec["taskStatus"]): Rec => ({
     key: `pricing:${id}`,
     pageId: "pricing",
@@ -67,5 +71,27 @@ describe("buildWatcher — top recommendation", () => {
     ];
     const w = buildWatcher([focus], recs, "mobile");
     expect(w.topRec?.recTitle).toBe("active-title");
+  });
+});
+
+describe("buildWatcher — actionable counts", () => {
+  it("separates regression trend from absolute quality and agent gaps", () => {
+    const current: ScoreByCategory = { perf: 50, a11y: 95, bp: 80, seo: 95 };
+    const watched = page("pricing", good, current);
+    watched.agent = [
+      { name: "robots.txt", group: "Discoverability", pass: true },
+      { name: "WebMCP", group: "API / Auth / MCP", pass: false },
+    ];
+
+    const w = buildWatcher([watched], [], "mobile");
+    expect(w).toMatchObject({
+      total: 1,
+      stable: 0,
+      improving: 0,
+      regressing: 1,
+      lowPerformance: 1,
+      agentGaps: 1,
+      qualityIssues: 1,
+    });
   });
 });
