@@ -2,6 +2,7 @@ import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloud
 import { collectPsi } from "../src/lib/psiCore";
 import { scan } from "../src/lib/agentReadiness";
 import type { CollectionResult, LighthouseOpportunity, Strategy, StrategyScores } from "../src/lib/types";
+import { dispatchScheduledNightly, schedulerError, SCHEDULER_STATUS_KEY } from "./scheduler";
 
 interface DispatchPayload {
   jobId: string;
@@ -193,6 +194,38 @@ const worker = {
         error: error instanceof Error ? error.message : String(error),
       }));
       return Response.json({ error: "internal error" }, { status: 500 });
+    }
+  },
+  async scheduled(controller: ScheduledController, env: Env): Promise<void> {
+    const observedAt = new Date().toISOString();
+    try {
+      const result = await dispatchScheduledNightly(controller, env);
+      const record = { ...result, observedAt };
+      await env.RESULTS.put(SCHEDULER_STATUS_KEY, JSON.stringify(record), {
+        httpMetadata: { contentType: "application/json" },
+      });
+      console.log(JSON.stringify({ message: "nightly scheduler completed", ...record }));
+    } catch (error) {
+      const detail = schedulerError(error);
+      const record = {
+        status: "failed",
+        cron: controller.cron,
+        scheduledAt: new Date(controller.scheduledTime).toISOString(),
+        observedAt,
+        ...detail,
+      };
+      try {
+        await env.RESULTS.put(SCHEDULER_STATUS_KEY, JSON.stringify(record), {
+          httpMetadata: { contentType: "application/json" },
+        });
+      } catch (statusError) {
+        console.error(JSON.stringify({
+          message: "nightly scheduler status write failed",
+          error: statusError instanceof Error ? statusError.message : String(statusError),
+        }));
+      }
+      console.error(JSON.stringify({ event: "nightly scheduler failed", ...record }));
+      throw error;
     }
   },
 } satisfies ExportedHandler<Env>;

@@ -5,7 +5,16 @@
   "compatibility_date": "2026-07-21",
   "compatibility_flags": ["nodejs_compat"],
   "secrets": {
-    "required": ["PAGESPEED_API_KEY", "CRON_SECRET"]
+    "required": ["PAGESPEED_API_KEY", "CRON_SECRET", "CF_ACCESS_CLIENT_ID", "CF_ACCESS_CLIENT_SECRET"]
+  },
+  "vars": {
+    "PAGE_WATCHER_NIGHTLY_URL": "https://page-watcher.wf.app/api/cron/nightly"
+  },
+  "triggers": {
+    "crons": [
+      "0 17 22 7 *",
+      "0 3 * * *"
+    ]
   },
   "workflows": [
     {
