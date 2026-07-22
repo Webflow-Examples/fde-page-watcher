@@ -1,6 +1,6 @@
 export const NIGHTLY_CRON = "0 3 * * *";
-export const ONE_TIME_TEST_CRON = "0 17 22 7 *";
-export const ONE_TIME_TEST_AT = "2026-07-22T17:00";
+export const ONE_TIME_TEST_CRON = "0 20 22 7 *";
+export const ONE_TIME_TEST_AT = "2026-07-22T20:00";
 export const SCHEDULER_STATUS_KEY = "scheduler/latest.json";
 
 export interface SchedulerEnvironment {

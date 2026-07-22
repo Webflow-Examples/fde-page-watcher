@@ -23,8 +23,8 @@ function controller(cron: string, scheduledAt: string) {
 }
 
 describe("collector nightly scheduler", () => {
-  it("dispatches the one-time noon test with both Access and cron authentication", async () => {
-    const event = controller(ONE_TIME_TEST_CRON, "2026-07-22T17:00:00.000Z");
+  it("dispatches the one-time production test with both Access and cron authentication", async () => {
+    const event = controller(ONE_TIME_TEST_CRON, "2026-07-22T20:00:00.000Z");
     const fetchFn = vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
       const headers = new Headers(init?.headers);
       expect(String(input)).toBe(env.PAGE_WATCHER_NIGHTLY_URL);
@@ -54,7 +54,7 @@ describe("collector nightly scheduler", () => {
   });
 
   it("permanently skips the one-time test trigger outside its intended date", async () => {
-    const event = controller(ONE_TIME_TEST_CRON, "2027-07-22T17:00:00.000Z");
+    const event = controller(ONE_TIME_TEST_CRON, "2027-07-22T20:00:00.000Z");
     const fetchFn = vi.fn() as unknown as typeof fetch;
 
     await expect(dispatchScheduledNightly(event, env, fetchFn)).resolves.toMatchObject({ status: "skipped" });

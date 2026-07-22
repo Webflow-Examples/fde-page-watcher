@@ -64,8 +64,8 @@ Put these in `.env.local`.
 - **Nightly job** — the collector Worker calls `POST /api/cron/nightly` from a
   Cloudflare Cron Trigger at 03:00 UTC. It authenticates through Access with a
   service token and through the app route with `CRON_SECRET`, then priority-sorts
-  the watchlist and dispatches Workflows. A guarded `0 17 22 7 *` trigger exists
-  only for the Jul 22, 2026 noon-CDT production test and no-ops in later years.
+  the watchlist and dispatches Workflows. A guarded `0 20 22 7 *` trigger exists
+  only for the Jul 22, 2026 3 PM CDT production test and no-ops in later years.
 - **Storage** — a tenant-scoped `DataStore` (see `src/lib/store`) mirrors the
   state snapshot, append-only history/markers, and raw report tiers. Local
   development uses the filesystem under `.data/`, with an in-memory fallback
