@@ -10,6 +10,7 @@ import { C, flagChip } from "@/lib/ui";
 import { Sparkline } from "@/components/charts";
 import { DeviceChangeLabels, SegToggle, SortHeader } from "@/components/bits";
 import { DesktopIcon, MobileIcon } from "@/components/icons";
+import { formatSuccessfulRunAt, lastSuccessfulRunAt, latestSuccessfulRunAt } from "@/lib/collectionStatus";
 
 const GRID = "minmax(170px,1fr) 142px 126px 126px 126px 126px 120px";
 
@@ -29,13 +30,8 @@ export default function DashboardPage() {
   const currentWatcherNote = watcherNote?.modelVersion === 3 && strategy === "desktop" && rangeDays === 30 ? watcherNote : undefined;
   const regressingPages = pages.filter((page) => ["mobile", "desktop"].some((device) => pageRangeTrend(page, device as "mobile" | "desktop", rangeDays) === "regressing")).length;
   const lowPerformancePages = pages.filter((page) => page.history.length > 0 && (page.current.mobile.perf < 60 || page.current.desktop.perf < 60)).length;
-  const latestRunAt = pages
-    .flatMap((page) => page.lastRunAt ? [Date.parse(page.lastRunAt)] : [])
-    .filter(Number.isFinite)
-    .sort((a, b) => b - a)[0];
-  const lastRunLabel = latestRunAt
-    ? new Date(latestRunAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
-    : "no completed live collection yet";
+  const latestSuccessAt = latestSuccessfulRunAt(pages);
+  const lastRunLabel = formatSuccessfulRunAt(latestSuccessAt);
   const watcherTimestamp = currentWatcherNote
     ? new Date(currentWatcherNote.generatedAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
     : lastRunLabel;
@@ -75,6 +71,8 @@ export default function DashboardPage() {
       id: p.id,
       title: p.title,
       url: p.url,
+      successfulRunAt: lastSuccessfulRunAt(p),
+      successfulRunLabel: formatSuccessfulRunAt(lastSuccessfulRunAt(p)),
       mobileTrend,
       desktopTrend,
       flag: flagChip(p.flag),
@@ -122,7 +120,7 @@ export default function DashboardPage() {
         <div>
           <h1 style={{ margin: 0, fontSize: 27, fontWeight: 600, letterSpacing: "-0.01em" }}>Page performance</h1>
           <p style={{ margin: "8px 0 0", fontSize: 13.5, color: C.muted }}>
-            Lighthouse &amp; agent-readiness across {w.total} monitored pages · last completed collection {lastRunLabel}
+            Lighthouse &amp; agent-readiness across {w.total} monitored pages · {latestSuccessAt ? `latest successful PSI run ${lastRunLabel}` : "no successful live PSI run yet"}
           </p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
@@ -235,6 +233,7 @@ export default function DashboardPage() {
                   <span style={{ flex: "none", fontSize: 10, fontWeight: 550, letterSpacing: "0.03em", textTransform: "uppercase", padding: "2px 7px", borderRadius: 4, color: row.flag.fg, background: row.flag.bg }}>{row.flag.label}</span>
                 </div>
                 <div style={{ fontSize: 12, color: C.faint, marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{row.url}</div>
+                <div style={{ fontSize: 10.5, color: C.faint, marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{row.successfulRunAt ? `Last successful run · ${row.successfulRunLabel}` : row.successfulRunLabel}</div>
               </div>
               <div>
                 <DeviceChangeLabels mobile={row.mobileTrend} desktop={row.desktopTrend} />

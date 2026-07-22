@@ -11,6 +11,7 @@ import { C, taskLabel } from "@/lib/ui";
 import { HistoryChart, Sparkline } from "@/components/charts";
 import { DeviceChangeLabels, SegToggle } from "@/components/bits";
 import { ChevronLeftIcon, DesktopIcon, MobileIcon, PlusIcon, RefreshIcon } from "@/components/icons";
+import { formatSuccessfulRunAt, lastSuccessfulRunAt } from "@/lib/collectionStatus";
 
 export default function PageDetail() {
   const router = useRouter();
@@ -44,6 +45,8 @@ export default function PageDetail() {
   const apm = scoreMeta(apct);
   const failList = available.filter((c) => !c.pass);
   const isPending = !page.baseline || !page.baselineCapturedAt;
+  const successfulRunAt = lastSuccessfulRunAt(page);
+  const successfulRunLabel = formatSuccessfulRunAt(successfulRunAt);
 
   const tabs: { key: "overview" | "history" | "audits" | "agent"; label: string }[] = [
     { key: "overview", label: "Overview" },
@@ -63,6 +66,10 @@ export default function PageDetail() {
           <div>
             <h1 style={{ margin: 0, fontSize: 25, fontWeight: 600, letterSpacing: "-0.01em" }}>{page.title}</h1>
             <div style={{ fontSize: 13, color: C.muted, marginTop: 7 }}>{page.url}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: C.faint, marginTop: 7 }}>
+              <span aria-hidden="true" style={{ width: 6, height: 6, borderRadius: "50%", background: successfulRunAt ? C.green : C.faint, flex: "none" }} />
+              {successfulRunAt ? `Last successful PSI run · ${successfulRunLabel}` : successfulRunLabel}
+            </div>
             {!isPending && (
               <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 11 }}>
                 <span style={{ color: C.faint, fontSize: 11.5, paddingTop: 1 }}>Performance change · last {rangeDays} days</span>

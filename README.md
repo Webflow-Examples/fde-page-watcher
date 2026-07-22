@@ -35,6 +35,9 @@ All are optional for local development — the app runs without them.
 | `PAGESPEED_API_KEY`          | PSI credential. Configure it on the collector Worker; it is also used by the local runner.                     |
 | `CRON_SECRET`                | Shared bearer secret for nightly requests, Workflow dispatch, and result polling.                             |
 | `COLLECTOR_URL`              | Production Workflow endpoint, ending in `/jobs`.                                                              |
+| `PAGE_WATCHER_NIGHTLY_URL`   | Collector Worker target for the authenticated nightly dispatcher.                                             |
+| `CF_ACCESS_CLIENT_ID`        | Collector Worker service-token client ID for reaching the SSO-protected app.                                  |
+| `CF_ACCESS_CLIENT_SECRET`    | Collector Worker service-token secret for reaching the SSO-protected app.                                     |
 | `DATASET_MODE`               | `demo` uses the existing sample namespace; `live` uses an isolated, initially empty namespace.                |
 | `BASE_URL`                   | Webflow Cloud mount path (for example `/page-watch`); client routes and APIs are prefixed automatically.       |
 | `SLACK_WEBHOOK_URL`          | Incoming webhook for drop alerts and follow-up reports.                                                       |
@@ -58,9 +61,11 @@ Put these in `.env.local`.
   recommendations, and scan results, but a page stays Pending until the user
   explicitly captures a baseline. Zero placeholders are never treated or shown
   as real baselines.
-- **Nightly job** — wire a scheduled job to `POST /api/cron/nightly`. It
-  priority-sorts the watchlist and dispatches Workflows; it does not hold a
-  Webflow request open while PSI runs. `CRON_SECRET` is mandatory.
+- **Nightly job** — the collector Worker calls `POST /api/cron/nightly` from a
+  Cloudflare Cron Trigger at 03:00 UTC. It authenticates through Access with a
+  service token and through the app route with `CRON_SECRET`, then priority-sorts
+  the watchlist and dispatches Workflows. A guarded `0 17 22 7 *` trigger exists
+  only for the Jul 22, 2026 noon-CDT production test and no-ops in later years.
 - **Storage** — a tenant-scoped `DataStore` (see `src/lib/store`) mirrors the
   state snapshot, append-only history/markers, and raw report tiers. Local
   development uses the filesystem under `.data/`, with an in-memory fallback
@@ -89,8 +94,10 @@ and collector result endpoints remain protected by `CRON_SECRET`.
    GitHub-driven deployment. Production intentionally fails instead of falling
    back to process memory when either binding is absent.
 2. Deploy `collector-worker/wrangler.jsonc`. It binds the collector to the
-   `page-watcher-reports` R2 bucket for temporary raw-report staging. Configure
-   its `PAGESPEED_API_KEY` and `CRON_SECRET` secrets.
+   `page-watcher-reports` R2 bucket for temporary raw-report staging and owns
+   the nightly Cron Trigger. Configure its `PAGESPEED_API_KEY`, `CRON_SECRET`,
+   `CF_ACCESS_CLIENT_ID`, and `CF_ACCESS_CLIENT_SECRET` secrets, and allow that
+   service token through the app's Cloudflare Access policy.
 3. Set `COLLECTOR_URL`, `CRON_SECRET`, and `DATASET_MODE` on the Webflow app.
    `BASE_URL` is supplied automatically by Webflow Cloud. The app makes
    authenticated outbound status/report requests to the collector; no direct
