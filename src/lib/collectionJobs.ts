@@ -22,6 +22,7 @@ import type {
   Strategy,
   StrategyScores,
 } from "./types";
+import { isPageActivelyMonitored } from "./watchCapacity";
 
 export const JOB_STALE_AFTER_MS = 30 * 60 * 1000;
 const ACTIVE_STATES = new Set<CollectionJobState>(["queued", "dispatching", "running"]);
@@ -61,6 +62,7 @@ export async function enqueueCollectionJob(
     draft.jobs = draft.jobs ?? [];
     const page = draft.pages.find((item) => item.id === pageId);
     if (!page) throw new Error(`enqueueCollectionJob: page ${pageId} not found`);
+    if (!isPageActivelyMonitored(page)) throw new Error(`enqueueCollectionJob: page ${pageId} is paused`);
     const active = draft.jobs.find((item) => item.pageId === pageId && ACTIVE_STATES.has(item.state));
     if (active) {
       const age = now.getTime() - Date.parse(active.updatedAt);

@@ -102,6 +102,8 @@ export interface SegOption<T extends string | number> {
   value: T;
   label: string;
   icon?: React.ReactNode;
+  disabled?: boolean;
+  title?: string;
 }
 
 /** Segmented pill toggle (strategy, group-by, view switches). */
@@ -115,6 +117,8 @@ export function SegToggle<T extends string | number>({ options, value, onChange,
             key={o.value}
             type="button"
             aria-pressed={active}
+            disabled={o.disabled}
+            title={o.title}
             onClick={() => onChange(o.value)}
             style={{
               display: "flex",
@@ -125,9 +129,10 @@ export function SegToggle<T extends string | number>({ options, value, onChange,
               fontWeight: 550,
               padding: o.icon ? "6px 11px" : "5px 12px",
               borderRadius: 6,
-              cursor: "pointer",
-              color: active ? "#FFFFFF" : C.faint2,
+              cursor: o.disabled ? "not-allowed" : "pointer",
+              color: active ? "#FFFFFF" : o.disabled ? C.faint : C.faint2,
               background: active ? "rgba(255,255,255,0.10)" : "transparent",
+              opacity: o.disabled ? 0.45 : 1,
             }}
           >
             {o.icon}

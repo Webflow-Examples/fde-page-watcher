@@ -1,9 +1,12 @@
 import type { AppState } from "../types";
 import { normalizeAgentIgnoreSettings } from "../agentScoring";
 import { pageTrend } from "../scoring";
+import { normalizeWatchCapacity } from "../watchCapacity";
 
 /** Apply compatible, idempotent upgrades when reading persisted state. */
 export function normalizeState(state: AppState): AppState {
+  state.agentIgnoreDefaults = normalizeAgentIgnoreSettings(state.agentIgnoreDefaults);
+  if (normalizeWatchCapacity(state.pages)) delete state.watcherNote;
   for (const page of state.pages) {
     // Older pending records carried a zero-filled placeholder baseline. The
     // timestamp is the authoritative proof that baseline capture occurred.
@@ -16,6 +19,7 @@ export function normalizeState(state: AppState): AppState {
       page.status = pageTrend(page, "mobile");
     }
     page.agentIgnores = normalizeAgentIgnoreSettings(page.agentIgnores);
+    page.agentIgnoreRestores = normalizeAgentIgnoreSettings(page.agentIgnoreRestores);
   }
   state.followUps = (state.followUps ?? []).map((followUp) => ({
     ...followUp,

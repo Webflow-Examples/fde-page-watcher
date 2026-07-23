@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { setAgentIgnore } from "@/lib/mutations";
-import type { AgentIgnoreScope } from "@/lib/types";
+import type { AgentIgnoreOverrideMode, AgentIgnoreScope } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,6 +9,7 @@ interface Body {
   scope?: AgentIgnoreScope;
   value?: string;
   ignored?: boolean;
+  mode?: AgentIgnoreOverrideMode;
 }
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -19,12 +20,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
   const value = body.value?.trim();
   if (!value) return NextResponse.json({ error: "value is required" }, { status: 400 });
-  if (typeof body.ignored !== "boolean") {
-    return NextResponse.json({ error: "ignored must be a boolean" }, { status: 400 });
+  const validMode = body.mode === "inherit" || body.mode === "ignore" || body.mode === "restore";
+  if (!validMode && typeof body.ignored !== "boolean") {
+    return NextResponse.json({ error: "mode must be 'inherit', 'ignore', or 'restore'" }, { status: 400 });
   }
 
   try {
-    const state = await setAgentIgnore(id, body.scope, value, body.ignored);
+    const state = await setAgentIgnore(id, body.scope, value, validMode ? body.mode! : body.ignored!);
     return NextResponse.json({ state });
   } catch (error) {
     const message = String(error);

@@ -1,11 +1,12 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import type { AgentIgnoreScope, AppState, CategoryKey, Flag, RangeDays, ScoreByCategory, Strategy } from "@/lib/types";
-import { updateAgentIgnoreSettings } from "@/lib/agentScoring";
+import type { AgentIgnoreOverrideMode, AgentIgnoreScope, AppState, CategoryKey, Flag, RangeDays, ScoreByCategory, Strategy } from "@/lib/types";
+import { updateAgentIgnoreOverride, updateAgentIgnoreSettings } from "@/lib/agentScoring";
 import { collectionSettlementMessage, hasActiveCollections, startCollectionPolling } from "@/lib/collectionPolling";
 import { isoDate } from "@/lib/ui";
 import { withBasePath } from "@/lib/paths";
+import { defaultNewPageFlag, flagCapacityError } from "@/lib/watchCapacity";
 
 type SortDir = "asc" | "desc";
 interface SortState {
@@ -16,7 +17,6 @@ interface SortState {
 interface AddForm {
   title: string;
   url: string;
-  flag: Flag;
 }
 
 export interface ReportData {
@@ -76,7 +76,9 @@ interface StoreValue extends AppState {
   setMarkerDate: (d: string) => void;
   // actions
   setFlag: (id: string, flag: Flag) => void;
-  setAgentIgnore: (id: string, scope: AgentIgnoreScope, value: string, ignored: boolean) => void;
+  renamePage: (id: string, title: string) => void;
+  setAgentIgnore: (id: string, scope: AgentIgnoreScope, value: string, mode: AgentIgnoreOverrideMode) => void;
+  setDefaultAgentIgnore: (scope: AgentIgnoreScope, value: string, ignored: boolean) => void;
   removePage: (id: string) => void;
   saveTask: (key: string) => void;
   ignoreRec: (key: string) => void;
@@ -119,6 +121,7 @@ function pendingOptimisticPage(id: string, title: string, url: string, flag: Fla
     markers: [],
     agent: [],
     agentIgnores: { checks: [], groups: [] },
+    agentIgnoreRestores: { checks: [], groups: [] },
     acted: {},
   };
 }
@@ -148,7 +151,7 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
   const [markerPageId, setMarkerPageId] = useState<string | null>(null);
   const [report, setReport] = useState<ReportData | null>(null);
   const [toast, setToast] = useState<string | null>(null);
-  const [form, setFormState] = useState<AddForm>({ title: "", url: "", flag: "priority" });
+  const [form, setFormState] = useState<AddForm>({ title: "", url: "" });
   const [markerText, setMarkerText] = useState("");
   const [markerDate, setMarkerDate] = useState("");
   const pathFor = useCallback((path: string) => withBasePath(basePath, path), [basePath]);
@@ -259,31 +262,84 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
   const setFlag = useCallback(
     (id: string, flag: Flag) => {
       const cur = dataRef.current;
+      const page = cur.pages.find((item) => item.id === id);
+      if (flag === "paused" && page?.runState && page.runState !== "failed") {
+        flash("Wait for the current collection to finish before pausing this page");
+        return;
+      }
+      const capacityError = flagCapacityError(cur.pages, id, flag);
+      if (capacityError) {
+        flash(capacityError);
+        return;
+      }
       mutate(
-        { ...cur, pages: cur.pages.map((p) => (p.id === id ? { ...p, flag } : p)) },
+        { ...cur, watcherNote: undefined, pages: cur.pages.map((p) => (p.id === id ? { ...p, flag } : p)) },
         { url: `/api/pages/${id}/flag`, body: { flag } },
-        { failure: "Couldn't update the flag — try again" },
+        { failure: "Couldn't update the monitoring status — check the limits and try again" },
+      );
+    },
+    [flash, mutate],
+  );
+
+  const renamePage = useCallback(
+    (id: string, value: string) => {
+      const title = value.trim();
+      const cur = dataRef.current;
+      const page = cur.pages.find((item) => item.id === id);
+      if (!page || !title || title === page.title) return;
+      mutate(
+        {
+          ...cur,
+          watcherNote: undefined,
+          pages: cur.pages.map((item) => (item.id === id ? { ...item, title } : item)),
+          recs: cur.recs.map((rec) => (rec.pageId === id ? { ...rec, pageTitle: title } : rec)),
+        },
+        { url: `/api/pages/${id}`, method: "PATCH", body: { title } },
+        {
+          success: `Renamed page to ${title}`,
+          failure: "Couldn't rename the page — try again",
+        },
       );
     },
     [mutate],
   );
 
   const setAgentIgnore = useCallback(
-    (id: string, scope: AgentIgnoreScope, value: string, ignored: boolean) => {
+    (id: string, scope: AgentIgnoreScope, value: string, mode: AgentIgnoreOverrideMode) => {
       const cur = dataRef.current;
       mutate(
         {
           ...cur,
-          pages: cur.pages.map((page) => (
-            page.id === id
-              ? { ...page, agentIgnores: updateAgentIgnoreSettings(page.agentIgnores, scope, value, ignored) }
-              : page
-          )),
+          pages: cur.pages.map((page) => {
+            if (page.id !== id) return page;
+            const next = updateAgentIgnoreOverride(page.agentIgnores, page.agentIgnoreRestores, scope, value, mode);
+            return { ...page, agentIgnores: next.ignores, agentIgnoreRestores: next.restores };
+          }),
         },
-        { url: `/api/pages/${id}/agent-ignores`, body: { scope, value, ignored } },
+        { url: `/api/pages/${id}/agent-ignores`, body: { scope, value, mode } },
         {
-          success: `${scope === "group" ? "Category" : "Check"} ${ignored ? "ignored" : "restored"}`,
-          failure: `Couldn't ${ignored ? "ignore" : "restore"} the ${scope} — try again`,
+          success: mode === "inherit"
+            ? `${scope === "group" ? "Category" : "Check"} now uses the Watch List default`
+            : `${scope === "group" ? "Category" : "Check"} ${mode === "ignore" ? "ignored" : "restored"} for this page`,
+          failure: `Couldn't update the ${scope} override — try again`,
+        },
+      );
+    },
+    [mutate],
+  );
+
+  const setDefaultAgentIgnore = useCallback(
+    (scope: AgentIgnoreScope, value: string, ignored: boolean) => {
+      const cur = dataRef.current;
+      mutate(
+        {
+          ...cur,
+          agentIgnoreDefaults: updateAgentIgnoreSettings(cur.agentIgnoreDefaults, scope, value, ignored),
+        },
+        { url: "/api/settings/agent-ignores", body: { scope, value, ignored } },
+        {
+          success: `${scope === "group" ? "Category" : "Check"} ${ignored ? "ignored" : "restored"} by default`,
+          failure: `Couldn't update the default ${scope} — try again`,
         },
       );
     },
@@ -300,6 +356,7 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
           pages: cur.pages.filter((x) => x.id !== id),
           recs: cur.recs.filter((r) => r.pageId !== id),
           followUps: (cur.followUps ?? []).filter((f) => f.pageId !== id),
+          watcherNote: undefined,
         },
         { url: `/api/pages/${id}`, method: "DELETE" },
         { success: `Removed ${p ? p.title : "page"} — excluded from future runs`, failure: "Couldn't remove the page — try again" },
@@ -375,17 +432,26 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
       return;
     }
     const cur = dataRef.current;
+    const flag = defaultNewPageFlag(cur.pages);
     // Optimistic pending page (temp id) — the server generates the real id and
     // returns the authoritative state, which replaces this on success.
     const optimistic: AppState = {
       ...cur,
-      pages: [...cur.pages, pendingOptimisticPage(`tmp${Date.now()}`, f.title.trim(), f.url.trim(), f.flag)],
+      watcherNote: undefined,
+      pages: [...cur.pages, pendingOptimisticPage(`tmp${Date.now()}`, f.title.trim(), f.url.trim(), flag)],
     };
     setModal(null);
     mutate(
       optimistic,
-      { url: `/api/pages`, body: { title: f.title.trim(), url: f.url.trim(), flag: f.flag } },
-      { success: `Added ${f.title.trim()} — pending its first run`, failure: "Couldn't add the page — try again" },
+      // Let the server derive the status inside its atomic update so a racing
+      // add becomes Paused instead of failing or exceeding the active limit.
+      { url: `/api/pages`, body: { title: f.title.trim(), url: f.url.trim() } },
+      {
+        success: flag === "paused"
+          ? `Added ${f.title.trim()} — paused with no collections scheduled`
+          : `Added ${f.title.trim()} — pending its first run`,
+        failure: "Couldn't add the page — try again",
+      },
     );
   }, [form, mutate, flash]);
 
@@ -444,7 +510,7 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
   const sortInbox = useCallback((col: string) => setInboxSort((p) => toggleSort(p, col)), []);
   const sortTask = useCallback((col: string) => setTaskSort((p) => toggleSort(p, col)), []);
   const openAdd = useCallback(() => {
-    setFormState({ title: "", url: "", flag: "priority" });
+    setFormState({ title: "", url: "" });
     setModal("add");
   }, []);
   const openMarker = useCallback((pageId: string) => {
@@ -501,7 +567,9 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
     setMarkerText,
     setMarkerDate,
     setFlag,
+    renamePage,
     setAgentIgnore,
+    setDefaultAgentIgnore,
     removePage,
     saveTask,
     ignoreRec,

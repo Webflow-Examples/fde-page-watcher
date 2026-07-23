@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { agentCheckKey, updateAgentIgnoreSettings } from "./agentScoring";
+import { isKnownAgentIgnoreTarget } from "./agentChecks";
+import { updateAgentIgnoreOverride, updateAgentIgnoreSettings } from "./agentScoring";
 import { getStore } from "./store";
 import type { DataStore } from "./store";
 import { shortDate } from "./ui";
-import type { AgentIgnoreScope, AppState, Flag, RecStatus, ScoreByCategory, TaskStatus, WatchPage } from "./types";
+import type { AgentIgnoreOverrideMode, AgentIgnoreScope, AppState, Flag, RecStatus, ScoreByCategory, TaskStatus, WatchPage } from "./types";
+import { defaultNewPageFlag, flagCapacityError } from "./watchCapacity";
 
 /**
  * Server-side domain mutations. Each executes inside the store's atomic
@@ -21,7 +23,27 @@ export function setPageFlag(id: string, flag: Flag, dataStore: DataStore = getSt
   return withState((state) => {
     const page = state.pages.find((p) => p.id === id);
     if (!page) throw new Error(`setPageFlag: page ${id} not found`);
+    if (flag === "paused" && page.runState && page.runState !== "failed") {
+      throw new Error("setPageFlag: wait for the current collection to finish before pausing this page");
+    }
+    const capacityError = flagCapacityError(state.pages, id, flag);
+    if (capacityError) throw new Error(`setPageFlag: ${capacityError}`);
     page.flag = flag;
+    delete state.watcherNote;
+  }, dataStore);
+}
+
+export function setPageTitle(id: string, value: string, dataStore: DataStore = getStore()): Promise<AppState> {
+  return withState((state) => {
+    const title = value.trim();
+    if (!title) throw new Error("setPageTitle: title is required");
+    const page = state.pages.find((item) => item.id === id);
+    if (!page) throw new Error(`setPageTitle: page ${id} not found`);
+    page.title = title;
+    for (const rec of state.recs) {
+      if (rec.pageId === id) rec.pageTitle = title;
+    }
+    delete state.watcherNote;
   }, dataStore);
 }
 
@@ -29,17 +51,37 @@ export function setAgentIgnore(
   id: string,
   scope: AgentIgnoreScope,
   value: string,
-  ignored: boolean,
+  ignoredOrMode: boolean | AgentIgnoreOverrideMode,
   dataStore: DataStore = getStore(),
 ): Promise<AppState> {
   return withState((state) => {
     const page = state.pages.find((p) => p.id === id);
     if (!page) throw new Error(`setAgentIgnore: page ${id} not found`);
-    const exists = scope === "group"
-      ? page.agent.some((check) => check.group === value)
-      : page.agent.some((check) => agentCheckKey(check) === value);
-    if (!exists) throw new Error(`setAgentIgnore: ${scope} does not exist on page ${id}`);
-    page.agentIgnores = updateAgentIgnoreSettings(page.agentIgnores, scope, value, ignored);
+    if (!isKnownAgentIgnoreTarget(scope, value)) {
+      throw new Error(`setAgentIgnore: ${scope} does not exist`);
+    }
+    // Boolean calls are retained for compatibility with older clients:
+    // false clears a local ignore and returns to the global default.
+    const mode = typeof ignoredOrMode === "boolean"
+      ? ignoredOrMode ? "ignore" : "inherit"
+      : ignoredOrMode;
+    const next = updateAgentIgnoreOverride(page.agentIgnores, page.agentIgnoreRestores, scope, value, mode);
+    page.agentIgnores = next.ignores;
+    page.agentIgnoreRestores = next.restores;
+  }, dataStore);
+}
+
+export function setDefaultAgentIgnore(
+  scope: AgentIgnoreScope,
+  value: string,
+  ignored: boolean,
+  dataStore: DataStore = getStore(),
+): Promise<AppState> {
+  return withState((state) => {
+    if (!isKnownAgentIgnoreTarget(scope, value)) {
+      throw new Error(`setDefaultAgentIgnore: ${scope} does not exist`);
+    }
+    state.agentIgnoreDefaults = updateAgentIgnoreSettings(state.agentIgnoreDefaults, scope, value, ignored);
   }, dataStore);
 }
 
@@ -48,6 +90,7 @@ export function removePage(id: string, dataStore: DataStore = getStore()): Promi
     state.pages = state.pages.filter((p) => p.id !== id);
     state.recs = state.recs.filter((r) => r.pageId !== id);
     state.followUps = (state.followUps ?? []).filter((f) => f.pageId !== id);
+    delete state.watcherNote;
   }, dataStore);
 }
 
@@ -98,6 +141,7 @@ export async function requestPageRun(
   const state = await withState((draft) => {
     const page = draft.pages.find((p) => p.id === id);
     if (!page) throw new Error(`requestPageRun: page ${id} not found`);
+    if (page.flag === "paused") throw new Error(`requestPageRun: page ${id} is paused`);
     if (page.runState === "running" && page.runId) {
       const age = page.startedAt ? now.getTime() - Date.parse(page.startedAt) : Number.POSITIVE_INFINITY;
       if (Number.isFinite(age) && age <= RUN_STALE_AFTER_MS) {
@@ -158,7 +202,7 @@ export function recoverStaleRuns(dataStore: DataStore = getStore(), now: Date = 
 export interface NewPageInput {
   title: string;
   url: string;
-  flag: Flag;
+  flag?: Flag;
 }
 
 /** A brand-new page starts pending: no baseline, no history, no scan. */
@@ -175,6 +219,7 @@ export function pendingPage(id: string, title: string, url: string, flag: Flag):
     markers: [],
     agent: [],
     agentIgnores: { checks: [], groups: [] },
+    agentIgnoreRestores: { checks: [], groups: [] },
     acted: {},
   };
 }
@@ -184,8 +229,15 @@ export function addPage(input: NewPageInput, dataStore: DataStore = getStore()):
     const title = input.title.trim();
     const url = input.url.trim();
     if (!title || !url) throw new Error("addPage: title and url are required");
+    // Explicit flags remain supported for API compatibility. The normal add
+    // flow omits one so capacity is decided atomically with the persisted
+    // state, including when two clients add at the same time.
+    const flag = input.flag ?? defaultNewPageFlag(state.pages);
+    const capacityError = flagCapacityError(state.pages, null, flag);
+    if (capacityError) throw new Error(`addPage: ${capacityError}`);
     // No fabricated provenance (audit): the page begins pending and gets a
     // real baseline/history once a baseline is captured or a run completes.
-    state.pages.push(pendingPage(`p-${randomUUID()}`, title, url, input.flag));
+    state.pages.push(pendingPage(`p-${randomUUID()}`, title, url, flag));
+    delete state.watcherNote;
   }, dataStore);
 }

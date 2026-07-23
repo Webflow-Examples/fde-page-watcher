@@ -26,9 +26,9 @@ export const C = {
 } as const;
 
 export function flagChip(flag: Flag): { label: string; fg: string; bg: string } {
-  return flag === "priority"
-    ? { label: "Priority", fg: C.accentSoft, bg: "rgba(59,137,255,0.16)" }
-    : { label: "Watching", fg: C.faint2, bg: "rgba(255,255,255,0.06)" };
+  if (flag === "priority") return { label: "Priority", fg: C.accentSoft, bg: "rgba(59,137,255,0.16)" };
+  if (flag === "paused") return { label: "Paused", fg: C.amber, bg: "rgba(255,154,61,0.12)" };
+  return { label: "Watching", fg: C.faint2, bg: "rgba(255,255,255,0.06)" };
 }
 
 export function taskLabel(ts: TaskStatus): string {

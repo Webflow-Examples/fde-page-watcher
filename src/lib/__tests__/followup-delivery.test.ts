@@ -50,4 +50,54 @@ describe("follow-up attempt commits", () => {
     expect(stored.lastHttpStatus).toBe(500);
     expect(stored.lastError).toHaveLength(500);
   });
+
+  it("leaves due follow-ups pending while their page is paused", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "fde-followup-paused-"));
+    roots.push(root);
+    const dataStore = createFsStore("test", root);
+    const marker: ChangeMarker = { id: "marker", i: 0, date: "2026-07-16", text: "Deployment" };
+    const followUp = scheduleFollowUps("page", marker)[0];
+    followUp.dueISO = "2026-07-18T00:00:00.000Z";
+    await dataStore.updateState((state) => {
+      const page = pendingPage("page", "Page", "https://example.com", "paused");
+      page.history = [{ i: 0, date: "Jul 14", iso: "2026-07-14T03:00:00.000Z", scores: strategyScores(70) }];
+      page.current = { mobile: { perf: 70, a11y: 70, bp: 70, seo: 70 }, desktop: { perf: 70, a11y: 70, bp: 70, seo: 70 } };
+      page.markers = [marker];
+      state.pages = [page];
+      state.recs = [];
+      state.followUps = [followUp];
+    });
+    let deliveries = 0;
+
+    await processFollowUps({
+      dataStore,
+      now: () => new Date("2026-07-20T03:00:00.000Z"),
+      followupFn: async () => {
+        deliveries += 1;
+        return { sent: true, status: 200 };
+      },
+    });
+
+    const stored = (await dataStore.getState()).followUps![0];
+    expect(deliveries).toBe(0);
+    expect(stored.sent).toBe(false);
+    expect(stored.attempts).toBe(0);
+
+    await dataStore.updateState((state) => {
+      state.pages[0].flag = "watching";
+    });
+    await processFollowUps({
+      dataStore,
+      now: () => new Date("2026-07-20T03:00:00.000Z"),
+      followupFn: async () => {
+        deliveries += 1;
+        return { sent: true, status: 200 };
+      },
+    });
+
+    const resumed = (await dataStore.getState()).followUps![0];
+    expect(deliveries).toBe(1);
+    expect(resumed.sent).toBe(true);
+    expect(resumed.attempts).toBe(1);
+  });
 });

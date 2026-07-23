@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useStore } from "./store";
 import { C } from "@/lib/ui";
 import { scoreMeta } from "@/lib/scoring";
 import { CheckIcon, CloseIcon } from "./icons";
+import { defaultNewPageFlag, MAX_ACTIVE_PAGES, watchCapacity } from "@/lib/watchCapacity";
 
 function Toast() {
   const { toast } = useStore();
@@ -118,37 +119,121 @@ const labelStyle: React.CSSProperties = { display: "block", fontSize: 12, fontWe
 const cancelBtn: React.CSSProperties = { border: `1px solid ${C.border2}`, background: "rgba(255,255,255,0.03)", color: C.text, fontSize: 13, fontWeight: 500, padding: "9px 16px", borderRadius: 7, cursor: "pointer" };
 const primaryBtn: React.CSSProperties = { border: "none", background: C.accent, color: "#fff", fontSize: 13, fontWeight: 550, padding: "9px 18px", borderRadius: 7, cursor: "pointer" };
 
-function segBtn(active: boolean): React.CSSProperties {
-  return {
-    border: "none",
-    fontSize: 12.5,
-    fontWeight: 550,
-    padding: "7px 14px",
-    borderRadius: 6,
-    cursor: "pointer",
-    color: active ? "#FFFFFF" : C.faint2,
-    background: active ? "rgba(255,255,255,0.09)" : "transparent",
-  };
-}
-
 function AddModal() {
-  const { form, setForm, submitAdd, closeModal } = useStore();
+  const { pages, form, setForm, submitAdd, closeModal, pathFor } = useStore();
+  const capacity = watchCapacity(pages);
+  const willPause = defaultNewPageFlag(pages) === "paused";
+  const titleTouched = useRef(false);
+  const lookupSequence = useRef(0);
+  const [titleLookup, setTitleLookup] = useState<"idle" | "loading" | "found" | "unavailable">("idle");
+
+  useEffect(() => {
+    const sequence = ++lookupSequence.current;
+    const value = form.url.trim();
+    if (!value || titleTouched.current) {
+      setTitleLookup("idle");
+      return;
+    }
+
+    // Wait until typing has paused; each URL change aborts the previous lookup
+    // and prevents a slower, stale response from replacing a newer title.
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      if (titleTouched.current || sequence !== lookupSequence.current) return;
+      setTitleLookup("loading");
+      try {
+        const response = await fetch(pathFor("/api/page-title"), {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ url: value }),
+          signal: controller.signal,
+        });
+        const result = (await response.json().catch(() => null)) as { title?: string } | null;
+        if (!response.ok || !result?.title?.trim()) throw new Error("Title unavailable");
+        if (sequence !== lookupSequence.current || titleTouched.current) return;
+        setForm({ title: result.title.trim() });
+        setTitleLookup("found");
+      } catch {
+        if (controller.signal.aborted || sequence !== lookupSequence.current) return;
+        setTitleLookup("unavailable");
+      }
+    }, 600);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [form.url, pathFor, setForm]);
+
+  const lookupMessage =
+    titleLookup === "loading"
+      ? "Looking up the page title…"
+      : titleLookup === "found"
+        ? "Page title found."
+        : titleLookup === "unavailable"
+          ? "We couldn’t find a page title. Enter one below."
+          : null;
+
   return (
     <ModalShell onClose={closeModal} label="Add a page to the watchlist">
       <div style={{ padding: "22px 24px 0" }}>
         <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>Add a page to the watchlist</h3>
-        <p style={{ margin: "7px 0 0", fontSize: 13, color: C.muted }}>It joins the next nightly run. Capture a baseline once it has data.</p>
+        <p style={{ margin: "7px 0 0", fontSize: 13, color: C.muted }}>Enter a URL and we’ll fill in its page title when available.</p>
       </div>
       <div style={{ padding: "20px 24px" }}>
-        <label htmlFor="add-page-title" style={labelStyle}>Page title</label>
-        <input id="add-page-title" value={form.title} onChange={(e) => setForm({ title: e.target.value })} placeholder="e.g. Localization" style={{ ...inputStyle, marginBottom: 16 }} />
         <label htmlFor="add-page-url" style={labelStyle}>URL</label>
-        <input id="add-page-url" type="url" value={form.url} onChange={(e) => setForm({ url: e.target.value })} placeholder="https://webflow.com/localization" style={{ ...inputStyle, marginBottom: 16 }} />
-        <div style={{ ...labelStyle, marginBottom: 8 }}>Flag</div>
-        <div role="group" aria-label="Flag" style={{ display: "inline-flex", padding: 3, background: "rgba(255,255,255,0.05)", border: `1px solid ${C.border2}`, borderRadius: 8 }}>
-          <button type="button" aria-pressed={form.flag === "priority"} onClick={() => setForm({ flag: "priority" })} style={segBtn(form.flag === "priority")}>Priority</button>
-          <button type="button" aria-pressed={form.flag === "watching"} onClick={() => setForm({ flag: "watching" })} style={segBtn(form.flag === "watching")}>Watching</button>
-        </div>
+        <input
+          id="add-page-url"
+          type="url"
+          value={form.url}
+          onChange={(event) => {
+            const url = event.target.value;
+            if (!url.trim()) {
+              titleTouched.current = false;
+              setTitleLookup("idle");
+              setForm({ url, title: "" });
+              return;
+            }
+            setForm({ url });
+          }}
+          placeholder="https://webflow.com/localization"
+          autoComplete="url"
+          style={{ ...inputStyle, marginBottom: lookupMessage ? 6 : 16 }}
+        />
+        {lookupMessage && (
+          <div aria-live="polite" style={{ minHeight: 16, marginBottom: 10, fontSize: 11.5, color: titleLookup === "unavailable" ? C.amber : C.faint }}>
+            {lookupMessage}
+          </div>
+        )}
+        <label htmlFor="add-page-title" style={labelStyle}>Page title</label>
+        <input
+          id="add-page-title"
+          value={form.title}
+          onChange={(event) => {
+            titleTouched.current = true;
+            setTitleLookup("idle");
+            setForm({ title: event.target.value });
+          }}
+          placeholder="e.g. Localization"
+          autoComplete="off"
+          style={{ ...inputStyle, marginBottom: 16 }}
+        />
+        {willPause && (
+          <div
+            role="alert"
+            style={{
+              border: "1px solid rgba(255,154,61,0.28)",
+              background: "rgba(255,154,61,0.08)",
+              borderRadius: 8,
+              padding: "10px 12px",
+              color: C.amber,
+              fontSize: 11.5,
+              lineHeight: 1.45,
+            }}
+          >
+            {capacity.active} of {MAX_ACTIVE_PAGES} active slots are in use. This page will be added as Paused and won’t join nightly runs until another page is paused.
+          </div>
+        )}
       </div>
       <div style={{ padding: "0 24px 22px", display: "flex", justifyContent: "flex-end", gap: 10 }}>
         <button onClick={closeModal} style={cancelBtn}>Cancel</button>

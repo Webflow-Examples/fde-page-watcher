@@ -1,4 +1,5 @@
 import type { AgentCheck } from "./types";
+import { AGENT_CHECK_GROUPS } from "./agentChecks";
 import { normalizeUrl } from "./psiCore";
 
 // Real, dependency-free agent-readiness scan. Each check is recorded pass/fail
@@ -33,7 +34,7 @@ export async function scan(url: string): Promise<AgentCheck[]> {
   const base = await probe(full);
   if (!base) {
     // Unreachable → every check unavailable, not failing.
-    return GROUPS.flatMap((g) => g.items.map((name) => ({ name, group: g.name, pass: false, unavailable: true, detail: "page unreachable" })));
+    return AGENT_CHECK_GROUPS.flatMap((g) => g.items.map((name) => ({ name, group: g.name, pass: false, unavailable: true, detail: "page unreachable" })));
   }
 
   const robotsRes = await probe(`${origin}/robots.txt`);
@@ -77,15 +78,7 @@ export async function scan(url: string): Promise<AgentCheck[]> {
     ACP: { pass: false },
   };
 
-  return GROUPS.flatMap((g) =>
+  return AGENT_CHECK_GROUPS.flatMap((g) =>
     g.items.map((name) => ({ name, group: g.name, pass: results[name]?.pass ?? false, detail: results[name]?.detail })),
   );
 }
-
-const GROUPS: { name: string; items: string[] }[] = [
-  { name: "Discoverability", items: ["robots.txt", "Sitemap", "Link headers", "DNS for AI Discovery (DNS-AID)"] },
-  { name: "Content Accessibility", items: ["Markdown negotiation"] },
-  { name: "Bot Access Control", items: ["AI bot rules", "Content Signals", "Web Bot Auth"] },
-  { name: "API / Auth / MCP", items: ["API Catalog", "OAuth discovery", "OAuth Protected Resource", "Auth.md", "MCP Server Card", "A2A Agent Card", "Agent Skills", "WebMCP"] },
-  { name: "Commerce", items: ["x402", "MPP", "UCP", "ACP"] },
-];

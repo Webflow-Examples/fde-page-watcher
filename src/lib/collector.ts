@@ -13,6 +13,7 @@ import { parseMarkerDate, shortDate } from "./ui";
 import { CATEGORIES, STRATEGIES } from "./types";
 import type { AppState, FollowUp, Night, Rec, Strategy, StrategyScores, WatchPage } from "./types";
 import { markRunFinished, requestPageRun } from "./mutations";
+import { isPageActivelyMonitored } from "./watchCapacity";
 
 type CollectFn = typeof collect;
 type ScanFn = typeof scan;
@@ -174,8 +175,9 @@ Explain what this recommendation means and why it's worth doing, in plain terms.
 /** The Watcher's dashboard narrative: a short, factual read of current conditions, refreshed once per nightly run. */
 export async function generateWatcherNote(dataStore: DataStore, now: Date): Promise<void> {
   const state = await dataStore.getState();
-  const w = buildWatcher(state.pages, state.recs, "desktop", 30);
+  const w = buildWatcher(state.pages, state.recs, "desktop", 30, state.agentIgnoreDefaults);
   const regressionDetail = state.pages.flatMap((p) => {
+    if (!isPageActivelyMonitored(p)) return [];
     if (pageRangeTrend(p, "desktop", 30) !== "regressing" || !p.baseline) return [];
     const drop = Math.abs(pageRangeComparison(p, "desktop", "perf", 30)?.delta ?? 0);
     const marker = p.markers.length ? p.markers[p.markers.length - 1].text : null;
@@ -244,6 +246,7 @@ export async function captureBaseline(pageId: string, options: CollectorDependen
   const snapshot = await d.dataStore.getState();
   const page = snapshot.pages.find((item) => item.id === pageId);
   if (!page) throw new Error(`captureBaseline: page ${pageId} not found`);
+  if (!isPageActivelyMonitored(page)) throw new Error(`captureBaseline: page ${pageId} is paused`);
 
   const baseline = {} as StrategyScores;
   const results = await Promise.all(STRATEGIES.map(async (strategy) => ({ strategy, result: await d.collectFn(page.url, strategy) })));
@@ -268,7 +271,9 @@ export async function captureBaseline(pageId: string, options: CollectorDependen
 export async function runNightly(options: CollectorDependencies = {}): Promise<{ ran: number; failed: string[]; coalesced: string[] }> {
   const d = deps(options);
   const snapshot = await d.dataStore.getState();
-  const ordered = [...snapshot.pages].sort((a, b) => (a.flag === "priority" ? 0 : 1) - (b.flag === "priority" ? 0 : 1));
+  const ordered = snapshot.pages
+    .filter(isPageActivelyMonitored)
+    .sort((a, b) => (a.flag === "priority" ? 0 : 1) - (b.flag === "priority" ? 0 : 1));
   const configured = options.nightlyConcurrency ?? Number(getEnv("NIGHTLY_PAGE_CONCURRENCY") ?? 2);
   const concurrency = Math.max(1, Math.min(4, Number.isFinite(configured) ? Math.floor(configured) : 2));
   const failed: string[] = [];
@@ -340,6 +345,8 @@ async function claimFollowUp(dataStore: DataStore, id: string, now: Date): Promi
   await dataStore.updateState((state) => {
     const item = (state.followUps ?? []).find((followUp) => followUp.id === id);
     if (!item || item.sent || Date.parse(item.dueISO) > now.getTime()) return;
+    const page = state.pages.find((candidate) => candidate.id === item.pageId);
+    if (!page || !isPageActivelyMonitored(page)) return;
     if (item.retryAfterISO && Date.parse(item.retryAfterISO) > now.getTime()) return;
     if (item.lastAttemptISO && now.getTime() - Date.parse(item.lastAttemptISO) < FOLLOW_UP_CLAIM_WINDOW_MS) return;
     item.attempts = (item.attempts ?? 0) + 1;

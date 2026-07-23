@@ -1,4 +1,4 @@
-import type { AgentCheck, AgentIgnoreScope, AgentIgnoreSettings } from "./types";
+import type { AgentCheck, AgentIgnoreOverrideMode, AgentIgnoreScope, AgentIgnoreSettings } from "./types";
 
 const CHECK_KEY_SEPARATOR = "\u001f";
 
@@ -38,17 +38,69 @@ export function updateAgentIgnoreSettings(
   return { ...normalized, [key]: [...values].sort() };
 }
 
+export function agentIgnoreOverrideMode(
+  ignores: AgentIgnoreSettings | undefined,
+  restores: AgentIgnoreSettings | undefined,
+  scope: AgentIgnoreScope,
+  value: string,
+): AgentIgnoreOverrideMode {
+  const ignoreSettings = normalizeAgentIgnoreSettings(ignores);
+  const restoreSettings = normalizeAgentIgnoreSettings(restores);
+  const key = scope === "group" ? "groups" : "checks";
+  if (ignoreSettings[key].includes(value)) return "ignore";
+  if (restoreSettings[key].includes(value)) return "restore";
+  return "inherit";
+}
+
+export function updateAgentIgnoreOverride(
+  ignores: AgentIgnoreSettings | undefined,
+  restores: AgentIgnoreSettings | undefined,
+  scope: AgentIgnoreScope,
+  value: string,
+  mode: AgentIgnoreOverrideMode,
+): { ignores: AgentIgnoreSettings; restores: AgentIgnoreSettings } {
+  let nextIgnores = updateAgentIgnoreSettings(ignores, scope, value, false);
+  let nextRestores = updateAgentIgnoreSettings(restores, scope, value, false);
+  if (mode === "ignore") nextIgnores = updateAgentIgnoreSettings(nextIgnores, scope, value, true);
+  if (mode === "restore") nextRestores = updateAgentIgnoreSettings(nextRestores, scope, value, true);
+  return { ignores: nextIgnores, restores: nextRestores };
+}
+
+export function isAgentGroupIgnored(
+  group: string,
+  ignores?: AgentIgnoreSettings,
+  defaults?: AgentIgnoreSettings,
+  restores?: AgentIgnoreSettings,
+): boolean {
+  const pageIgnores = normalizeAgentIgnoreSettings(ignores);
+  const pageRestores = normalizeAgentIgnoreSettings(restores);
+  if (pageRestores.groups.includes(group)) return false;
+  if (pageIgnores.groups.includes(group)) return true;
+  return normalizeAgentIgnoreSettings(defaults).groups.includes(group);
+}
+
 export function isAgentCheckIgnored(
   check: Pick<AgentCheck, "group" | "name">,
-  settings?: AgentIgnoreSettings,
+  ignores?: AgentIgnoreSettings,
+  defaults?: AgentIgnoreSettings,
+  restores?: AgentIgnoreSettings,
 ): boolean {
-  const normalized = normalizeAgentIgnoreSettings(settings);
-  return normalized.groups.includes(check.group) || normalized.checks.includes(agentCheckKey(check));
+  const pageIgnores = normalizeAgentIgnoreSettings(ignores);
+  const pageRestores = normalizeAgentIgnoreSettings(restores);
+  const checkKey = agentCheckKey(check);
+  if (pageRestores.checks.includes(checkKey)) return false;
+  if (pageIgnores.checks.includes(checkKey)) return true;
+  if (pageRestores.groups.includes(check.group)) return false;
+  if (pageIgnores.groups.includes(check.group)) return true;
+  const globalDefaults = normalizeAgentIgnoreSettings(defaults);
+  return globalDefaults.groups.includes(check.group) || globalDefaults.checks.includes(checkKey);
 }
 
 export function summarizeAgentChecks(
   checks: AgentCheck[],
-  settings?: AgentIgnoreSettings,
+  ignores?: AgentIgnoreSettings,
+  defaults?: AgentIgnoreSettings,
+  restores?: AgentIgnoreSettings,
 ): AgentScoreSummary {
   let pass = 0;
   let fail = 0;
@@ -56,7 +108,7 @@ export function summarizeAgentChecks(
   let ignored = 0;
 
   for (const check of checks) {
-    if (isAgentCheckIgnored(check, settings)) ignored += 1;
+    if (isAgentCheckIgnored(check, ignores, defaults, restores)) ignored += 1;
     else if (check.unavailable) unavailable += 1;
     else if (check.pass) pass += 1;
     else fail += 1;

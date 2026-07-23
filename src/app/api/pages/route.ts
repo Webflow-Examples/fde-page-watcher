@@ -17,10 +17,14 @@ export async function POST(req: Request) {
   if (!body.title?.trim() || !body.url?.trim()) {
     return NextResponse.json({ error: "title and url are required" }, { status: 400 });
   }
+  if (body.flag !== undefined && body.flag !== "priority" && body.flag !== "watching" && body.flag !== "paused") {
+    return NextResponse.json({ error: "flag must be 'priority', 'watching', or 'paused'" }, { status: 400 });
+  }
   try {
-    const state = await addPage({ title: body.title, url: body.url, flag: body.flag === "watching" ? "watching" : "priority" });
+    const state = await addPage({ title: body.title, url: body.url, flag: body.flag });
     return NextResponse.json({ state });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    const message = String(err);
+    return NextResponse.json({ error: message }, { status: message.includes("Only ") ? 409 : 500 });
   }
 }

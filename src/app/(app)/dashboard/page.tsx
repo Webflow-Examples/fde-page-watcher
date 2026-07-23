@@ -12,26 +12,33 @@ import { Sparkline } from "@/components/charts";
 import { DeviceChangeLabels, SegToggle, SortHeader } from "@/components/bits";
 import { DesktopIcon, MobileIcon } from "@/components/icons";
 import { formatSuccessfulRunAt, lastSuccessfulRunAt, latestSuccessfulRunAt } from "@/lib/collectionStatus";
+import { isPageActivelyMonitored } from "@/lib/watchCapacity";
 
 const GRID = "minmax(170px,1fr) 142px 126px 126px 126px 126px 120px";
 
-function agentSeries(history: Night[], ignores?: AgentIgnoreSettings): number[] {
+function agentSeries(
+  history: Night[],
+  ignores?: AgentIgnoreSettings,
+  defaults?: AgentIgnoreSettings,
+  restores?: AgentIgnoreSettings,
+): number[] {
   return history.slice(-7).flatMap((night) => {
-    const summary = summarizeAgentChecks(night.agent ?? [], ignores);
+    const summary = summarizeAgentChecks(night.agent ?? [], ignores, defaults, restores);
     return summary.total ? [summary.percent] : [];
   });
 }
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { pages, recs, strategy, setStrategy, rangeDays, setRangeDays, dashSort, sortDash, watcherNote, pathFor } = useStore();
-  const mobileWatcher = buildWatcher(pages, recs, "mobile", rangeDays);
-  const desktopWatcher = buildWatcher(pages, recs, "desktop", rangeDays);
+  const { pages, recs, agentIgnoreDefaults, strategy, setStrategy, rangeDays, setRangeDays, dashSort, sortDash, watcherNote, pathFor } = useStore();
+  const mobileWatcher = buildWatcher(pages, recs, "mobile", rangeDays, agentIgnoreDefaults);
+  const desktopWatcher = buildWatcher(pages, recs, "desktop", rangeDays, agentIgnoreDefaults);
   const w = strategy === "mobile" ? mobileWatcher : desktopWatcher;
+  const activePages = pages.filter(isPageActivelyMonitored);
   const currentWatcherNote = watcherNote?.modelVersion === 3 && strategy === "desktop" && rangeDays === 30 ? watcherNote : undefined;
-  const regressingPages = pages.filter((page) => ["mobile", "desktop"].some((device) => pageRangeTrend(page, device as "mobile" | "desktop", rangeDays) === "regressing")).length;
-  const lowPerformancePages = pages.filter((page) => page.history.length > 0 && (page.current.mobile.perf < 60 || page.current.desktop.perf < 60)).length;
-  const latestSuccessAt = latestSuccessfulRunAt(pages);
+  const regressingPages = activePages.filter((page) => ["mobile", "desktop"].some((device) => pageRangeTrend(page, device as "mobile" | "desktop", rangeDays) === "regressing")).length;
+  const lowPerformancePages = activePages.filter((page) => page.history.length > 0 && (page.current.mobile.perf < 60 || page.current.desktop.perf < 60)).length;
+  const latestSuccessAt = latestSuccessfulRunAt(activePages);
   const lastRunLabel = formatSuccessfulRunAt(latestSuccessAt);
   const watcherTimestamp = currentWatcherNote
     ? new Date(currentWatcherNote.generatedAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
@@ -42,7 +49,7 @@ export default function DashboardPage() {
     const desktopTrend = pageRangeTrend(p, "desktop", rangeDays);
     const trend = strategy === "mobile" ? mobileTrend : desktopTrend;
     const secondaryStrategy = strategy === "mobile" ? "desktop" : "mobile";
-    const agentSummary = summarizeAgentChecks(p.agent, p.agentIgnores);
+    const agentSummary = summarizeAgentChecks(p.agent, p.agentIgnores, agentIgnoreDefaults, p.agentIgnoreRestores);
     const { pass, total, ignored, percent: pct } = agentSummary;
     const am = scoreMeta(pct);
     const hasSnapshot = p.history.length > 0 || !!p.baseline;
@@ -78,7 +85,7 @@ export default function DashboardPage() {
       agentPct: total ? `${pct}%` : "—",
       agentFg: am.fg,
       agentSub: total ? `${pass}/${total}${ignored ? ` · ${ignored} ignored` : ""}` : ignored ? `${ignored} ignored` : "no scan",
-      agentSeries: total ? agentSeries(historyForRange(p.history, rangeDays), p.agentIgnores) : ([] as number[]),
+      agentSeries: total ? agentSeries(historyForRange(p.history, rangeDays), p.agentIgnores, agentIgnoreDefaults, p.agentIgnoreRestores) : ([] as number[]),
       agentLine: am.line,
       sortVals,
     };

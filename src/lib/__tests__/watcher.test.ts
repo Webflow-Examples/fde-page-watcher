@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildWatcher } from "../watcher";
+import { agentCheckKey } from "../agentScoring";
 import type { CategoryScore, NightScores, Rec, ScoreByCategory, StrategyScores, WatchPage } from "../types";
 
 const cat = (m: number): CategoryScore => ({ m, lo: m - 1, hi: m + 1 });
@@ -26,6 +27,19 @@ function page(id: string, baseline: ScoreByCategory, current: ScoreByCategory): 
 }
 
 const good: ScoreByCategory = { perf: 80, a11y: 95, bp: 95, seo: 95 };
+
+describe("buildWatcher — concise Performance changes", () => {
+  it("omits filter context already shown elsewhere in the summary", () => {
+    const regression = page("customers", good, { ...good, perf: 60 });
+    regression.markers = [{ id: "launch", i: 1, date: "Jul 21", text: "CMS launch" }];
+    const improvement = page("homepage", good, { ...good, perf: 92 });
+
+    const w = buildWatcher([regression, improvement], [], "desktop", 3);
+
+    expect(w.changed.find((bullet) => bullet.lead === "customers")?.text).toBe("fell 20 points.");
+    expect(w.changed.find((bullet) => bullet.lead === "homepage")?.text).toBe("gained 12 points.");
+  });
+});
 
 describe("buildWatcher — Accessibility/SEO truthfulness", () => {
   it("claims stability only when both categories actually held", () => {
@@ -104,5 +118,29 @@ describe("buildWatcher — actionable counts", () => {
     watched.agentIgnores = { checks: [], groups: ["API / Auth / MCP"] };
 
     expect(buildWatcher([watched], [], "mobile").agentGaps).toBe(0);
+  });
+
+  it("applies global ignores unless the page explicitly restores the check", () => {
+    const watched = page("pricing", good, good);
+    watched.agent = [{ name: "WebMCP", group: "API / Auth / MCP", pass: false }];
+    const defaults = { checks: [], groups: ["API / Auth / MCP"] };
+
+    expect(buildWatcher([watched], [], "mobile", 30, defaults).agentGaps).toBe(0);
+
+    watched.agentIgnoreRestores = { checks: [agentCheckKey(watched.agent[0])], groups: [] };
+    expect(buildWatcher([watched], [], "mobile", 30, defaults).agentGaps).toBe(1);
+  });
+
+  it("excludes paused pages without removing their stored history", () => {
+    const active = page("active", good, good);
+    const paused = page("paused", good, { ...good, perf: 40 });
+    paused.flag = "paused";
+    const storedNights = paused.history.length;
+
+    const summary = buildWatcher([active, paused], [], "mobile");
+
+    expect(summary.total).toBe(1);
+    expect(summary.regressing).toBe(0);
+    expect(paused.history).toHaveLength(storedNights);
   });
 });

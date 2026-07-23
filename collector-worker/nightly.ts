@@ -1,5 +1,6 @@
 import { createFdeStore, type FdeStoreBindings } from "./dataStore";
 import type { CollectionJob, CollectionJobState } from "../src/lib/types";
+import { isPageActivelyMonitored } from "../src/lib/watchCapacity";
 
 const ACTIVE = new Set<CollectionJobState>(["queued", "dispatching", "running"]);
 const STALE_AFTER_MS = 30 * 60 * 1000;
@@ -42,7 +43,9 @@ export async function dispatchFdeNightly(env: NightlyEnvironment): Promise<Night
   let coalesced = 0;
   const state = await store.updateState((draft) => {
     draft.jobs = draft.jobs ?? [];
-    const pages = [...draft.pages].sort((a, b) => (a.flag === "priority" ? 0 : 1) - (b.flag === "priority" ? 0 : 1));
+    const pages = draft.pages
+      .filter(isPageActivelyMonitored)
+      .sort((a, b) => (a.flag === "priority" ? 0 : 1) - (b.flag === "priority" ? 0 : 1));
     for (const page of pages) {
       const active = draft.jobs.find((job) => job.pageId === page.id && ACTIVE.has(job.state));
       if (active) {

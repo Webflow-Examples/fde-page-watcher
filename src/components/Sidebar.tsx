@@ -111,7 +111,7 @@ export function Sidebar() {
             {runLabel}
           </div>
           <div style={{ fontSize: 11.5, color: C.muted, marginTop: 6, lineHeight: 1.5 }}>
-            5 runs per page per strategy via PSI, plus one agent-readiness scan.
+            5 runs per active page per strategy via PSI, plus one agent-readiness scan.
           </div>
         </div>
       </div>
