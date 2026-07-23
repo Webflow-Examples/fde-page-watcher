@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
+import { agentCheckKey, updateAgentIgnoreSettings } from "./agentScoring";
 import { getStore } from "./store";
 import type { DataStore } from "./store";
 import { shortDate } from "./ui";
-import type { AppState, Flag, RecStatus, ScoreByCategory, TaskStatus, WatchPage } from "./types";
+import type { AgentIgnoreScope, AppState, Flag, RecStatus, ScoreByCategory, TaskStatus, WatchPage } from "./types";
 
 /**
  * Server-side domain mutations. Each executes inside the store's atomic
@@ -21,6 +22,24 @@ export function setPageFlag(id: string, flag: Flag, dataStore: DataStore = getSt
     const page = state.pages.find((p) => p.id === id);
     if (!page) throw new Error(`setPageFlag: page ${id} not found`);
     page.flag = flag;
+  }, dataStore);
+}
+
+export function setAgentIgnore(
+  id: string,
+  scope: AgentIgnoreScope,
+  value: string,
+  ignored: boolean,
+  dataStore: DataStore = getStore(),
+): Promise<AppState> {
+  return withState((state) => {
+    const page = state.pages.find((p) => p.id === id);
+    if (!page) throw new Error(`setAgentIgnore: page ${id} not found`);
+    const exists = scope === "group"
+      ? page.agent.some((check) => check.group === value)
+      : page.agent.some((check) => agentCheckKey(check) === value);
+    if (!exists) throw new Error(`setAgentIgnore: ${scope} does not exist on page ${id}`);
+    page.agentIgnores = updateAgentIgnoreSettings(page.agentIgnores, scope, value, ignored);
   }, dataStore);
 }
 
@@ -155,6 +174,7 @@ export function pendingPage(id: string, title: string, url: string, flag: Flag):
     history: [],
     markers: [],
     agent: [],
+    agentIgnores: { checks: [], groups: [] },
     acted: {},
   };
 }

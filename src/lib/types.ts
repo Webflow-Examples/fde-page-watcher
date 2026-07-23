@@ -77,6 +77,14 @@ export interface AgentCheck {
   detail?: string;
 }
 
+export type AgentIgnoreScope = "check" | "group";
+
+/** Page-specific applicability overrides that survive future scans. */
+export interface AgentIgnoreSettings {
+  checks: string[];
+  groups: string[];
+}
+
 /** A scheduled follow-up comparison after a change marker (REQ-044). */
 export interface FollowUp {
   id: string; // stable delivery id so one attempt can be committed atomically
@@ -106,6 +114,7 @@ export interface WatchPage {
   history: Night[];
   markers: ChangeMarker[];
   agent: AgentCheck[]; // latest agent-readiness scan (per-check)
+  agentIgnores?: AgentIgnoreSettings; // checks/categories that do not apply to this page
   baselineCapturedAt?: string;
   acted?: Record<string, boolean>;
   // Async collection state (REQ-054): a run is queued/executed in the

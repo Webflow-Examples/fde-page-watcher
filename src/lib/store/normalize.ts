@@ -1,4 +1,5 @@
 import type { AppState } from "../types";
+import { normalizeAgentIgnoreSettings } from "../agentScoring";
 import { pageTrend } from "../scoring";
 
 /** Apply compatible, idempotent upgrades when reading persisted state. */
@@ -14,6 +15,7 @@ export function normalizeState(state: AppState): AppState {
     if (["healthy", "improvable", "degraded"].includes(storedStatus)) {
       page.status = pageTrend(page, "mobile");
     }
+    page.agentIgnores = normalizeAgentIgnoreSettings(page.agentIgnores);
   }
   state.followUps = (state.followUps ?? []).map((followUp) => ({
     ...followUp,

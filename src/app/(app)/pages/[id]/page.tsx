@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useStore } from "@/components/store";
 import { CATEGORIES } from "@/lib/types";
 import type { CategoryKey, Night, RangeDays, Rec, WatchPage } from "@/lib/types";
+import { agentCheckKey, isAgentCheckIgnored, normalizeAgentIgnoreSettings, summarizeAgentChecks } from "@/lib/agentScoring";
 import { deltaMeta, pageHistoryForRange, pageRangeComparison, pageRangeSeries, pageRangeTrend, scoreMeta } from "@/lib/scoring";
 import { auditsFor } from "@/lib/audits";
 import { C, taskLabel } from "@/lib/ui";
@@ -35,16 +36,10 @@ export default function PageDetail() {
     );
   }
 
-  // Unavailable checks (scan couldn't reach the page, REQ-033) are neither
-  // passing nor failing — exclude them from the pass rate and the fail list
-  // instead of counting them as red failures (audit).
-  const available = page.agent.filter((c) => !c.unavailable);
-  const unavailableCount = page.agent.length - available.length;
-  const pass = available.filter((c) => c.pass).length;
-  const total = available.length;
-  const apct = total ? Math.round((pass / total) * 100) : 0;
+  const agentSummary = summarizeAgentChecks(page.agent, page.agentIgnores);
+  const { pass, fail, total, unavailable: unavailableCount, ignored, percent: apct } = agentSummary;
   const apm = scoreMeta(apct);
-  const failList = available.filter((c) => !c.pass);
+  const failList = page.agent.filter((check) => !isAgentCheckIgnored(check, page.agentIgnores) && !check.unavailable && !check.pass);
   const isPending = !page.baseline || !page.baselineCapturedAt;
   const successfulRunAt = lastSuccessfulRunAt(page);
   const successfulRunLabel = formatSuccessfulRunAt(successfulRunAt);
@@ -129,10 +124,10 @@ export default function PageDetail() {
           <PendingPanel page={page} store={store} />
         ) : (
           <div role="tabpanel" id={`page-panel-${tab}`} aria-labelledby={`page-tab-${tab}`} tabIndex={0}>
-            {tab === "overview" && <OverviewTab page={page} recs={recs} strategy={strategy} rangeDays={rangeDays} apct={apct} apm={apm} pass={pass} total={total} failList={failList} store={store} />}
+            {tab === "overview" && <OverviewTab page={page} recs={recs} strategy={strategy} rangeDays={rangeDays} apct={apct} apm={apm} pass={pass} total={total} ignored={ignored} failList={failList} store={store} />}
             {tab === "history" && <HistoryTab page={page} strategy={strategy} rangeDays={rangeDays} chartCat={chartCat} setChartCat={setChartCat} store={store} />}
             {tab === "audits" && <OpportunitiesTab page={page} />}
-            {tab === "agent" && <AgentTab page={page} pass={pass} fail={total - pass} unavailable={unavailableCount} />}
+            {tab === "agent" && <AgentTab page={page} pass={pass} fail={fail} ignored={ignored} unavailable={unavailableCount} store={store} />}
           </div>
         )}
       </div>
@@ -170,6 +165,7 @@ function OverviewTab({
   apm,
   pass,
   total,
+  ignored,
   failList,
   store,
 }: {
@@ -181,6 +177,7 @@ function OverviewTab({
   apm: { fg: string; ring: string };
   pass: number;
   total: number;
+  ignored: number;
   failList: { name: string }[];
   store: ReturnType<typeof useStore>;
 }) {
@@ -236,13 +233,21 @@ function OverviewTab({
           </div>
           <div style={{ lineHeight: 1.45 }}>
             <div style={{ fontSize: 15, fontWeight: 600 }}>Agent-readiness</div>
-            <div style={{ fontSize: 12.5, color: C.muted }}>{total ? `${pass} of ${total} checks passing` : "No scan yet"}</div>
+            <div style={{ fontSize: 12.5, color: C.muted }}>
+              {total
+                ? `${pass} of ${total} applicable checks passing · ${ignored} ignored`
+                : page.agent.length
+                  ? `No applicable checks · ${ignored} ignored`
+                  : "No scan yet"}
+            </div>
             <div style={{ fontSize: 11.5, color: C.faint, marginTop: 2 }}>Pass rate, computed live from per-check results — not a composite score</div>
           </div>
         </div>
         <div style={{ flex: 1, minWidth: 0, borderLeft: `1px solid ${C.border}`, paddingLeft: 26 }}>
           {failList.length === 0 ? (
-            <div style={{ fontSize: 13, color: C.green, fontWeight: 500 }}>{total ? "All tracked checks passing." : "Run a scan to see per-check results."}</div>
+            <div style={{ fontSize: 13, color: total ? C.green : C.muted, fontWeight: 500 }}>
+              {total ? "All applicable checks passing." : page.agent.length ? "No applicable checks are currently scored." : "Run a scan to see per-check results."}
+            </div>
           ) : (
             <div>
               <div style={{ fontSize: 11, fontWeight: 550, letterSpacing: "0.05em", textTransform: "uppercase", color: C.faint, marginBottom: 11 }}>Failing checks</div>
@@ -475,18 +480,34 @@ function OpportunitiesTab({ page }: { page: WatchPage }) {
   );
 }
 
-function AgentTab({ page, pass, fail, unavailable }: { page: WatchPage; pass: number; fail: number; unavailable: number }) {
+function AgentTab({
+  page,
+  pass,
+  fail,
+  ignored,
+  unavailable,
+  store,
+}: {
+  page: WatchPage;
+  pass: number;
+  fail: number;
+  ignored: number;
+  unavailable: number;
+  store: ReturnType<typeof useStore>;
+}) {
   const groups = new Map<string, WatchPage["agent"]>();
   page.agent.forEach((c) => groups.set(c.group, [...(groups.get(c.group) ?? []), c]));
   const date = page.history[page.history.length - 1]?.date ?? "—";
-  const allUnavailable = page.agent.length > 0 && unavailable === page.agent.length;
+  const ignores = normalizeAgentIgnoreSettings(page.agentIgnores);
+  const allApplicableUnavailable = page.agent.length > 0 && pass === 0 && fail === 0 && unavailable > 0;
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20, padding: "15px 18px", background: C.panel, border: `1px solid ${C.border}`, borderRadius: 11 }}>
-        <div style={{ fontSize: 13, color: C.faint2 }}>Recorded per check on {date} — pass/fail only, never a composite score.</div>
-        <div style={{ marginLeft: "auto", display: "flex", gap: 16, fontSize: 12.5, fontWeight: 500 }}>
+        <div style={{ fontSize: 13, color: C.faint2 }}>Recorded per check on {date}. Ignored checks are excluded from the score.</div>
+        <div style={{ marginLeft: "auto", display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 16, fontSize: 12.5, fontWeight: 500 }}>
           <span style={{ color: C.green }}>{pass} passing</span>
           <span style={{ color: C.red }}>{fail} failing</span>
+          <span style={{ color: C.violetSoft }}>{ignored} ignored</span>
           {unavailable > 0 && <span style={{ color: C.muted }}>{unavailable} unavailable</span>}
         </div>
       </div>
@@ -494,37 +515,79 @@ function AgentTab({ page, pass, fail, unavailable }: { page: WatchPage; pass: nu
         <div style={{ padding: "40px 22px", textAlign: "center", background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, color: C.muted, fontSize: 13 }}>
           No agent-readiness scan yet. Run one from the header.
         </div>
-      ) : allUnavailable ? (
-        <div style={{ padding: "40px 22px", textAlign: "center", background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, color: C.muted, fontSize: 13 }}>
-          The last scan couldn&apos;t reach this page, so every check is unavailable — not failing. Try running again once the page is reachable.
-        </div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16, alignItems: "start" }}>
-          {[...groups.entries()].map(([name, checks]) => (
-            <div key={name} style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, padding: "18px 20px" }}>
-              <div style={{ fontSize: 11, fontWeight: 550, letterSpacing: "0.05em", textTransform: "uppercase", color: C.faint, marginBottom: 15 }}>{name}</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                {checks.map((chk) => {
-                  // Three states: pass (green ✓), fail (red ✕), unavailable (neutral –).
-                  const mark = chk.unavailable ? "–" : chk.pass ? "✓" : "✕";
-                  const markBg = chk.unavailable ? C.border2 : chk.pass ? C.green : C.red;
-                  const markColor = chk.unavailable ? C.muted : C.bg;
-                  const textColor = chk.unavailable ? C.faint : chk.pass ? C.dim : C.redSoft;
-                  return (
-                    <div key={chk.name} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <span style={{ flex: "none", width: 18, height: 18, borderRadius: 5, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: markColor, background: markBg }}>{mark}</span>
-                      <span style={{ fontSize: 13, color: textColor }}>{chk.name}</span>
-                      {chk.unavailable ? (
-                        <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 600, color: C.muted, background: "rgba(255,255,255,0.06)", padding: "1px 7px", borderRadius: 4 }}>unavailable</span>
-                      ) : (
-                        chk.regressed && <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 600, color: C.redSoft, background: "rgba(255,92,108,0.14)", padding: "1px 7px", borderRadius: 4 }}>regressed</span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+        <div>
+          {allApplicableUnavailable && (
+            <div style={{ marginBottom: 16, padding: "13px 16px", background: "rgba(255,255,255,0.035)", border: `1px solid ${C.border}`, borderRadius: 10, color: C.muted, fontSize: 12.5 }}>
+              The last scan couldn&apos;t reach this page, so every applicable check is unavailable — not failing. Try running again once the page is reachable.
             </div>
-          ))}
+          )}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 16, alignItems: "start" }}>
+            {[...groups.entries()].map(([name, checks]) => {
+              const groupIgnored = ignores.groups.includes(name);
+              return (
+                <div
+                  key={name}
+                  style={{
+                    background: groupIgnored ? `linear-gradient(rgba(138,92,246,0.07), rgba(138,92,246,0.07)), ${C.panel}` : C.panel,
+                    border: `1px solid ${groupIgnored ? "rgba(138,92,246,0.28)" : C.border}`,
+                    borderRadius: 13,
+                    padding: "18px 20px",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 15 }}>
+                    <div style={{ minWidth: 0, fontSize: 11, fontWeight: 550, letterSpacing: "0.05em", textTransform: "uppercase", color: groupIgnored ? C.violetSoft : C.faint }}>{name}</div>
+                    <button
+                      type="button"
+                      aria-label={`${groupIgnored ? "Restore" : "Ignore"} ${name} category`}
+                      onClick={() => store.setAgentIgnore(page.id, "group", name, !groupIgnored)}
+                      style={{ marginLeft: "auto", flex: "none", border: `1px solid ${groupIgnored ? "rgba(183,156,255,0.30)" : C.border2}`, background: groupIgnored ? "rgba(138,92,246,0.14)" : "rgba(255,255,255,0.03)", color: groupIgnored ? C.violetSoft : C.faint2, fontSize: 10.5, fontWeight: 550, padding: "4px 8px", borderRadius: 6, cursor: "pointer" }}
+                    >
+                      {groupIgnored ? "Restore category" : "Ignore category"}
+                    </button>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                    {checks.map((chk) => {
+                      const checkKey = agentCheckKey(chk);
+                      const individuallyIgnored = ignores.checks.includes(checkKey);
+                      const checkIgnored = groupIgnored || individuallyIgnored;
+                      // Four states: pass, fail, unavailable, and ignored.
+                      const mark = checkIgnored || chk.unavailable ? "–" : chk.pass ? "✓" : "✕";
+                      const markBg = checkIgnored ? "rgba(138,92,246,0.18)" : chk.unavailable ? C.border2 : chk.pass ? C.green : C.red;
+                      const markColor = checkIgnored ? C.violetSoft : chk.unavailable ? C.muted : C.bg;
+                      const textColor = checkIgnored ? C.faint : chk.unavailable ? C.faint : chk.pass ? C.dim : C.redSoft;
+                      return (
+                        <div key={chk.name} style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}>
+                          <span style={{ flex: "none", width: 18, height: 18, borderRadius: 5, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: markColor, background: markBg }}>{mark}</span>
+                          <span style={{ minWidth: 0, flex: 1, fontSize: 13, color: textColor }}>{chk.name}</span>
+                          {groupIgnored ? (
+                            <span style={{ flex: "none", fontSize: 10, fontWeight: 600, color: C.violetSoft }}>ignored</span>
+                          ) : (
+                            <>
+                              {!individuallyIgnored && chk.unavailable && (
+                                <span style={{ flex: "none", fontSize: 10, fontWeight: 600, color: C.muted, background: "rgba(255,255,255,0.06)", padding: "1px 7px", borderRadius: 4 }}>unavailable</span>
+                              )}
+                              {!individuallyIgnored && !chk.unavailable && chk.regressed && (
+                                <span style={{ flex: "none", fontSize: 10, fontWeight: 600, color: C.redSoft, background: "rgba(255,92,108,0.14)", padding: "1px 7px", borderRadius: 4 }}>regressed</span>
+                              )}
+                              <button
+                                type="button"
+                                aria-label={`${individuallyIgnored ? "Restore" : "Ignore"} ${chk.name} check`}
+                                onClick={() => store.setAgentIgnore(page.id, "check", checkKey, !individuallyIgnored)}
+                                style={{ flex: "none", border: "none", background: "transparent", color: individuallyIgnored ? C.violetSoft : C.faint, fontSize: 10.5, fontWeight: 550, padding: "2px 0", cursor: "pointer" }}
+                              >
+                                {individuallyIgnored ? "Restore" : "Ignore"}
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>

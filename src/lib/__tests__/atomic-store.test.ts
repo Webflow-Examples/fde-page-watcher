@@ -3,7 +3,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createFsStore, type DataStore } from "../store/fsStore";
-import { advanceTask, pendingPage, setPageFlag } from "../mutations";
+import { advanceTask, pendingPage, setAgentIgnore, setPageFlag } from "../mutations";
+import { agentCheckKey } from "../agentScoring";
 import { captureBaseline, runPage } from "../collector";
 import type { AppState, CategoryScore, NightScores, Rec } from "../types";
 
@@ -123,5 +124,21 @@ describe("atomic tenant updates", () => {
     expect(state.recs[0].taskStatus).toBe("in-progress");
     expect(state.pages[0].baseline?.mobile.perf.m).toBe(82);
     expect(state.pages[0].baselineCapturedAt).toBe("2026-07-20T12:00:00.000Z");
+  });
+
+  it("persists page-specific agent-readiness ignores", async () => {
+    const dataStore = await storeWithState();
+    const check = { group: "API / Auth / MCP", name: "WebMCP", pass: false };
+    await dataStore.updateState((state) => {
+      state.pages[0].agent = [check];
+    });
+
+    await setAgentIgnore("page", "check", agentCheckKey(check), true, dataStore);
+    const ignored = await dataStore.getState();
+    expect(ignored.pages[0].agentIgnores?.checks).toEqual([agentCheckKey(check)]);
+
+    await setAgentIgnore("page", "check", agentCheckKey(check), false, dataStore);
+    const restored = await dataStore.getState();
+    expect(restored.pages[0].agentIgnores?.checks).toEqual([]);
   });
 });
