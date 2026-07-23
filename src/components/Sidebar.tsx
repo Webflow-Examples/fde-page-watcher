@@ -15,17 +15,18 @@ const noopSubscribe = () => () => {};
 const serverRunLabel = () => "Tonight · 3:00 AM UTC";
 
 const navItems = [
-  { href: "/dashboard", label: "Dashboard", Icon: DashboardIcon, badge: null as "inbox" | "tasks" | null },
+  { href: "/dashboard", label: "Dashboard", Icon: DashboardIcon, badge: null as "inbox" | "tasks" | "watchlist" | null },
   { href: "/inbox", label: "Inbox", Icon: InboxIcon, badge: "inbox" as const },
   { href: "/tasks", label: "Tasks", Icon: TasksIcon, badge: "tasks" as const },
-  { href: "/watchlist", label: "Watchlist", Icon: EyeIcon, badge: null },
+  { href: "/watchlist", label: "Watchlist", Icon: EyeIcon, badge: "watchlist" as const },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { recs, pathFor } = useStore();
+  const { pages, recs, pathFor } = useStore();
   const inboxCount = recs.filter((r) => r.status === "inbox").length;
   const taskCount = recs.filter((r) => r.status === "task").length;
+  const watchlistCount = pages.length;
 
   // Next run in the viewer's local timezone (UTC fallback during SSR/hydration).
   const runLabel = useSyncExternalStore(noopSubscribe, formatNextRunLocal, serverRunLabel);
@@ -59,7 +60,7 @@ export function Sidebar() {
         {navItems.map(({ href, label, Icon, badge }) => {
           const resolvedHref = pathFor(href);
           const active = pathname === resolvedHref || (href === "/dashboard" && pathname === pathFor("/"));
-          const count = badge === "inbox" ? inboxCount : badge === "tasks" ? taskCount : 0;
+          const count = badge === "inbox" ? inboxCount : badge === "tasks" ? taskCount : badge === "watchlist" ? watchlistCount : 0;
           return (
             <Link
               key={href}
@@ -86,8 +87,8 @@ export function Sidebar() {
                     marginLeft: "auto",
                     fontSize: 11,
                     fontWeight: 600,
-                    color: badge === "inbox" ? C.accentSoft : C.dim,
-                    background: badge === "inbox" ? "rgba(59,137,255,0.16)" : "rgba(255,255,255,0.08)",
+                    color: badge === "inbox" ? C.accentSoft : badge === "watchlist" ? C.violetSoft : C.dim,
+                    background: badge === "inbox" ? "rgba(59,137,255,0.16)" : badge === "watchlist" ? "rgba(138,92,246,0.16)" : "rgba(255,255,255,0.08)",
                     padding: "1px 8px",
                     borderRadius: 20,
                   }}
@@ -100,7 +101,7 @@ export function Sidebar() {
         })}
       </nav>
 
-      <div className="sidebar-schedule" style={{ marginTop: 26, padding: "0 20px" }}>
+      <div className="sidebar-schedule" style={{ marginTop: "auto", padding: "26px 20px 22px" }}>
         <div style={{ fontSize: 10.5, fontWeight: 550, letterSpacing: "0.06em", color: C.faint, textTransform: "uppercase", marginBottom: 10 }}>
           Next nightly run
         </div>
