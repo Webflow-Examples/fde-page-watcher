@@ -94,4 +94,15 @@ describe("buildWatcher — actionable counts", () => {
       qualityIssues: 1,
     });
   });
+
+  it("does not count an ignored failure as an agent gap", () => {
+    const watched = page("pricing", good, good);
+    watched.agent = [
+      { name: "robots.txt", group: "Discoverability", pass: true },
+      { name: "WebMCP", group: "API / Auth / MCP", pass: false },
+    ];
+    watched.agentIgnores = { checks: [], groups: ["API / Auth / MCP"] };
+
+    expect(buildWatcher([watched], [], "mobile").agentGaps).toBe(0);
+  });
 });

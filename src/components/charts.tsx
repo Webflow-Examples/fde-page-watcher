@@ -1,6 +1,35 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
 import type { CategoryKey, ChangeMarker, Night, Strategy } from "@/lib/types";
 import { plottedSparklineSeries } from "@/lib/charting";
 import { C } from "@/lib/ui";
+
+const HISTORY_CHART_DEFAULT_WIDTH = 900;
+
+function useResponsiveChartWidth(defaultWidth: number) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(defaultWidth);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const updateWidth = (nextWidth: number) => {
+      if (!Number.isFinite(nextWidth) || nextWidth <= 0) return;
+      setWidth((currentWidth) => (Math.abs(currentWidth - nextWidth) < 0.5 ? currentWidth : nextWidth));
+    };
+
+    updateWidth(container.getBoundingClientRect().width);
+    const observer = new ResizeObserver((entries) => {
+      updateWidth(entries[0]?.contentRect.width ?? 0);
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
+
+  return { containerRef, width };
+}
 
 /** Compact area sparkline (ported from the design's buildSpark). */
 export function Sparkline({
@@ -62,10 +91,10 @@ export function HistoryChart({
   baseline: number;
   markers: ChangeMarker[];
 }) {
+  const { containerRef, width: W } = useResponsiveChartWidth(HISTORY_CHART_DEFAULT_WIDTH);
   const h = history;
   const n = h.length;
   if (n < 2) return null;
-  const W = 900;
   const H = 264;
   const padL = 38;
   const padR = 20;
@@ -93,8 +122,8 @@ export function HistoryChart({
   const ld = h[n - 1];
 
   return (
-    <div style={{ position: "relative", width: "100%", height: H }}>
-      <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} preserveAspectRatio="none" style={{ display: "block" }}>
+    <div ref={containerRef} data-history-chart style={{ position: "relative", width: "100%", height: H }}>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} style={{ display: "block" }}>
         {ticks.map((t, k) => (
           <g key={`g${k}`}>
             <line x1={padL} x2={W - padR} y1={y(t)} y2={y(t)} stroke="#24242A" strokeWidth={1} />

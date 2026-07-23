@@ -1,7 +1,8 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import type { AppState, CategoryKey, Flag, RangeDays, ScoreByCategory, Strategy } from "@/lib/types";
+import type { AgentIgnoreScope, AppState, CategoryKey, Flag, RangeDays, ScoreByCategory, Strategy } from "@/lib/types";
+import { updateAgentIgnoreSettings } from "@/lib/agentScoring";
 import { collectionSettlementMessage, hasActiveCollections, startCollectionPolling } from "@/lib/collectionPolling";
 import { isoDate } from "@/lib/ui";
 import { withBasePath } from "@/lib/paths";
@@ -75,6 +76,7 @@ interface StoreValue extends AppState {
   setMarkerDate: (d: string) => void;
   // actions
   setFlag: (id: string, flag: Flag) => void;
+  setAgentIgnore: (id: string, scope: AgentIgnoreScope, value: string, ignored: boolean) => void;
   removePage: (id: string) => void;
   saveTask: (key: string) => void;
   ignoreRec: (key: string) => void;
@@ -116,6 +118,7 @@ function pendingOptimisticPage(id: string, title: string, url: string, flag: Fla
     history: [],
     markers: [],
     agent: [],
+    agentIgnores: { checks: [], groups: [] },
     acted: {},
   };
 }
@@ -123,6 +126,8 @@ function pendingOptimisticPage(id: string, title: string, url: string, flag: Fla
 export function StoreProvider({ initial, basePath = "", children }: { initial: AppState; basePath?: string; children: React.ReactNode }) {
   const [data, setData] = useState<AppState>(initial);
   const dataRef = useRef<AppState>(initial);
+  const mutationQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const mutationSequenceRef = useRef(0);
   const apply = useCallback((next: AppState) => {
     dataRef.current = next;
     setData(next);
@@ -222,20 +227,28 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
       msg: { success?: string; failure: string },
     ) => {
       const prev = dataRef.current;
+      const sequence = ++mutationSequenceRef.current;
       apply(optimistic);
-      fetch(pathFor(req.url), {
-        method: req.method ?? "POST",
-        headers: req.body !== undefined ? { "content-type": "application/json" } : undefined,
-        body: req.body !== undefined ? JSON.stringify(req.body) : undefined,
-      })
-        .then(async (r) => {
+
+      // Preserve the user's action order. Without this queue, a slower earlier
+      // toggle can reach the API after a later restore and become the persisted
+      // final state. Only the newest response reconciles the optimistic client
+      // state; it contains every earlier mutation because requests are serial.
+      mutationQueueRef.current = mutationQueueRef.current
+        .catch(() => undefined)
+        .then(async () => {
+          const r = await fetch(pathFor(req.url), {
+            method: req.method ?? "POST",
+            headers: req.body !== undefined ? { "content-type": "application/json" } : undefined,
+            body: req.body !== undefined ? JSON.stringify(req.body) : undefined,
+          });
           if (!r.ok) throw new Error(`HTTP ${r.status}`);
           const res = (await r.json().catch(() => null)) as { state?: AppState } | null;
-          if (res?.state) apply(res.state);
+          if (res?.state && sequence === mutationSequenceRef.current) apply(res.state);
           if (msg.success) flash(msg.success);
         })
         .catch(() => {
-          apply(prev);
+          if (sequence === mutationSequenceRef.current) apply(prev);
           flash(msg.failure);
         });
     },
@@ -250,6 +263,28 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
         { ...cur, pages: cur.pages.map((p) => (p.id === id ? { ...p, flag } : p)) },
         { url: `/api/pages/${id}/flag`, body: { flag } },
         { failure: "Couldn't update the flag — try again" },
+      );
+    },
+    [mutate],
+  );
+
+  const setAgentIgnore = useCallback(
+    (id: string, scope: AgentIgnoreScope, value: string, ignored: boolean) => {
+      const cur = dataRef.current;
+      mutate(
+        {
+          ...cur,
+          pages: cur.pages.map((page) => (
+            page.id === id
+              ? { ...page, agentIgnores: updateAgentIgnoreSettings(page.agentIgnores, scope, value, ignored) }
+              : page
+          )),
+        },
+        { url: `/api/pages/${id}/agent-ignores`, body: { scope, value, ignored } },
+        {
+          success: `${scope === "group" ? "Category" : "Check"} ${ignored ? "ignored" : "restored"}`,
+          failure: `Couldn't ${ignored ? "ignore" : "restore"} the ${scope} — try again`,
+        },
       );
     },
     [mutate],
@@ -466,6 +501,7 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
     setMarkerText,
     setMarkerDate,
     setFlag,
+    setAgentIgnore,
     removePage,
     saveTask,
     ignoreRec,

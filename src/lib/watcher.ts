@@ -1,4 +1,5 @@
 import type { RangeDays, Rec, Strategy, WatchPage } from "./types";
+import { summarizeAgentChecks } from "./agentScoring";
 import { C } from "./ui";
 import { savingsValue } from "./ui";
 import { DROP_THRESHOLD, pageRangeComparison, pageRangeTrend } from "./scoring";
@@ -36,8 +37,7 @@ function hasSnapshot(page: WatchPage): boolean {
 }
 
 function hasAgentGap(page: WatchPage): boolean {
-  const available = page.agent.filter((check) => !check.unavailable);
-  return available.length > 0 && available.some((check) => !check.pass);
+  return summarizeAgentChecks(page.agent, page.agentIgnores).fail > 0;
 }
 
 /**

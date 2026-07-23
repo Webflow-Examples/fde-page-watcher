@@ -3,7 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useStore } from "@/components/store";
 import { CATEGORIES } from "@/lib/types";
-import type { CategoryKey, Night } from "@/lib/types";
+import type { AgentIgnoreSettings, CategoryKey, Night } from "@/lib/types";
+import { summarizeAgentChecks } from "@/lib/agentScoring";
 import { deltaMeta, historyForRange, pageRangeComparison, pageRangeSeries, pageRangeTrend, scoreMeta } from "@/lib/scoring";
 import { buildWatcher } from "@/lib/watcher";
 import { C, flagChip } from "@/lib/ui";
@@ -14,10 +15,10 @@ import { formatSuccessfulRunAt, lastSuccessfulRunAt, latestSuccessfulRunAt } fro
 
 const GRID = "minmax(170px,1fr) 142px 126px 126px 126px 126px 120px";
 
-function agentSeries(history: Night[]): number[] {
+function agentSeries(history: Night[], ignores?: AgentIgnoreSettings): number[] {
   return history.slice(-7).flatMap((night) => {
-    const available = (night.agent ?? []).filter((check) => !check.unavailable);
-    return available.length ? [Math.round((available.filter((check) => check.pass).length / available.length) * 100)] : [];
+    const summary = summarizeAgentChecks(night.agent ?? [], ignores);
+    return summary.total ? [summary.percent] : [];
   });
 }
 
@@ -41,11 +42,8 @@ export default function DashboardPage() {
     const desktopTrend = pageRangeTrend(p, "desktop", rangeDays);
     const trend = strategy === "mobile" ? mobileTrend : desktopTrend;
     const secondaryStrategy = strategy === "mobile" ? "desktop" : "mobile";
-    // Unavailable checks aren't failures — exclude them from the pass rate.
-    const available = p.agent.filter((c) => !c.unavailable);
-    const pass = available.filter((c) => c.pass).length;
-    const total = available.length;
-    const pct = total ? Math.round((pass / total) * 100) : 0;
+    const agentSummary = summarizeAgentChecks(p.agent, p.agentIgnores);
+    const { pass, total, ignored, percent: pct } = agentSummary;
     const am = scoreMeta(pct);
     const hasSnapshot = p.history.length > 0 || !!p.baseline;
     const hasBaseline = !!p.baseline && !!p.baselineCapturedAt;
@@ -79,8 +77,8 @@ export default function DashboardPage() {
       cats,
       agentPct: total ? `${pct}%` : "—",
       agentFg: am.fg,
-      agentSub: total ? `${pass}/${total}` : "no scan",
-      agentSeries: total ? agentSeries(historyForRange(p.history, rangeDays)) : ([] as number[]),
+      agentSub: total ? `${pass}/${total}${ignored ? ` · ${ignored} ignored` : ""}` : ignored ? `${ignored} ignored` : "no scan",
+      agentSeries: total ? agentSeries(historyForRange(p.history, rangeDays), p.agentIgnores) : ([] as number[]),
       agentLine: am.line,
       sortVals,
     };
@@ -108,44 +106,24 @@ export default function DashboardPage() {
   ];
 
   const tiles = [
-    { label: "Monitored pages", value: w.total, color: C.text, sub: `Last ${rangeDays} days` },
-    { label: "Regressions", value: regressingPages, color: C.red, sub: `M ${mobileWatcher.regressing} · D ${desktopWatcher.regressing}` },
-    { label: "Low performance", value: lowPerformancePages, color: C.amber, sub: `M ${mobileWatcher.lowPerformance} · D ${desktopWatcher.lowPerformance}` },
-    { label: "Agent gaps", value: w.agentGaps, color: C.violetSoft, sub: "Pages with failed checks" },
+    { label: "Monitored pages", value: w.total, color: C.accentSoft, tint: "rgba(20,110,245,0.09)", border: "rgba(59,137,255,0.22)", sub: `Last ${rangeDays} days` },
+    { label: "Regressions", value: regressingPages, color: C.red, tint: "rgba(255,92,108,0.08)", border: "rgba(255,92,108,0.20)", sub: `M ${mobileWatcher.regressing} · D ${desktopWatcher.regressing}` },
+    { label: "Low performance", value: lowPerformancePages, color: C.amber, tint: "rgba(255,154,61,0.08)", border: "rgba(255,154,61,0.20)", sub: `M ${mobileWatcher.lowPerformance} · D ${desktopWatcher.lowPerformance}` },
+    { label: "Agent gaps", value: w.agentGaps, color: C.violetSoft, tint: "rgba(138,92,246,0.09)", border: "rgba(138,92,246,0.22)", sub: "Pages with failed checks" },
   ];
 
   return (
     <div>
-      <header style={{ padding: "30px 40px 24px", display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 24 }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: 27, fontWeight: 600, letterSpacing: "-0.01em" }}>Page performance</h1>
-          <p style={{ margin: "8px 0 0", fontSize: 13.5, color: C.muted }}>
-            Lighthouse &amp; agent-readiness across {w.total} monitored pages · {latestSuccessAt ? `latest successful PSI run ${lastRunLabel}` : "no successful live PSI run yet"}
-          </p>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-            <span style={{ fontSize: 11.5, color: C.muted }}>Charts</span>
-            <SegToggle
-              label="Dashboard chart device"
-              value={strategy}
-              onChange={setStrategy}
-              options={[
-                { value: "desktop", label: "Desktop", icon: <DesktopIcon size={13} /> },
-                { value: "mobile", label: "Mobile", icon: <MobileIcon size={13} /> },
-              ]}
-            />
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-            <span style={{ fontSize: 11.5, color: C.muted }}>Range</span>
-            <SegToggle label="Dashboard date range" value={rangeDays} onChange={setRangeDays} options={[3, 7, 30, 90].map((days) => ({ value: days as 3 | 7 | 30 | 90, label: `${days}d` }))} />
-          </div>
-        </div>
+      <header style={{ padding: "30px 40px 24px" }}>
+        <h1 style={{ margin: 0, fontSize: 27, fontWeight: 600, letterSpacing: "-0.01em" }}>Page performance</h1>
+        <p style={{ margin: "8px 0 0", fontSize: 13.5, color: C.muted }}>
+          Lighthouse &amp; agent-readiness across {w.total} monitored pages · {latestSuccessAt ? `latest successful PSI run ${lastRunLabel}` : "no successful live PSI run yet"}
+        </p>
       </header>
 
       <div style={{ padding: "0 40px 48px" }}>
         {/* summary */}
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(320px,1fr) minmax(0,1.15fr)", gap: 14, marginBottom: 20, alignItems: "stretch" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(320px,1fr) minmax(0,1.15fr)", gap: 14, marginBottom: 40, alignItems: "stretch" }}>
           <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 12, padding: "20px 22px", display: "flex", flexDirection: "column" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
               <div style={{ flex: "none", width: 34, height: 34, borderRadius: 9, background: "linear-gradient(135deg,#146EF5,#8A5CF6)", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -196,13 +174,26 @@ export default function DashboardPage() {
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gridAutoRows: "1fr", gap: 14 }}>
             {tiles.map((t) => (
-              <div key={t.label} style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 12, padding: "17px 19px" }}>
+              <div key={t.label} style={{ background: `linear-gradient(${t.tint}, ${t.tint}), ${C.panel}`, border: `1px solid ${t.border}`, borderRadius: 12, padding: "17px 19px" }}>
                 <div style={{ fontSize: 12, color: C.muted }}>{t.label}</div>
                 <div style={{ fontSize: 29, fontWeight: 600, marginTop: 5, color: t.color }}>{t.value}</div>
                 <div style={{ fontSize: 11, color: C.faint, marginTop: 3 }}>{t.sub}</div>
               </div>
             ))}
           </div>
+        </div>
+
+        <div className="dashboard-table-controls" style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, marginBottom: 10, overflowX: "auto" }}>
+          <SegToggle
+            label="Dashboard chart device"
+            value={strategy}
+            onChange={setStrategy}
+            options={[
+              { value: "desktop", label: "Desktop", icon: <DesktopIcon size={13} /> },
+              { value: "mobile", label: "Mobile", icon: <MobileIcon size={13} /> },
+            ]}
+          />
+          <SegToggle label="Dashboard date range" value={rangeDays} onChange={setRangeDays} options={[3, 7, 30, 90].map((days) => ({ value: days as 3 | 7 | 30 | 90, label: `${days}d` }))} />
         </div>
 
         {/* table (horizontally scrollable on narrow screens instead of breaking) */}
@@ -254,10 +245,8 @@ export default function DashboardPage() {
                 <div style={{ width: 84, height: 30 }}>
                   <Sparkline series={row.agentSeries} color={row.agentLine} w={84} h={30} />
                 </div>
-                <div style={{ display: "flex", alignItems: "baseline", gap: 5 }}>
-                  <span style={{ fontSize: 14, fontWeight: 600, color: row.agentFg }}>{row.agentPct}</span>
-                  <span style={{ fontSize: 10, color: C.faint }}>{row.agentSub}</span>
-                </div>
+                <div style={{ fontSize: 14, fontWeight: 600, lineHeight: 1, color: row.agentFg }}>{row.agentPct}</div>
+                <div style={{ fontSize: 10, lineHeight: 1.2, color: C.faint, textAlign: "center", whiteSpace: "nowrap" }}>{row.agentSub}</div>
               </div>
             </div>
           ))}
