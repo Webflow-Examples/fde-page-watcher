@@ -38,11 +38,13 @@ export function Sparkline({
   const last = plotted[n - 1];
   const area = `${x(0)},${h - pad} ${pts} ${x(n - 1)},${h - pad}`;
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h} preserveAspectRatio="none" style={{ display: "block" }}>
-      <polygon points={area} fill={color} opacity={0.13} />
-      <polyline points={pts} fill="none" stroke={color} strokeWidth={sw} strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-      <circle cx={x(n - 1)} cy={y(last)} r={dot} fill={color} />
-    </svg>
+    <div style={{ position: "relative", width: "100%", height: h }}>
+      <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h} preserveAspectRatio="none" style={{ display: "block" }}>
+        <polygon points={area} fill={color} opacity={0.13} />
+        <polyline points={pts} fill="none" stroke={color} strokeWidth={sw} strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+      </svg>
+      <FixedChartDot kind="sparkline" x={x(n - 1)} y={y(last)} viewWidth={w} viewHeight={h} radius={dot} color={color} />
+    </div>
   );
 }
 
@@ -91,40 +93,89 @@ export function HistoryChart({
   const ld = h[n - 1];
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={264} preserveAspectRatio="none" style={{ display: "block" }}>
-      {ticks.map((t, k) => (
-        <g key={`g${k}`}>
-          <line x1={padL} x2={W - padR} y1={y(t)} y2={y(t)} stroke="#24242A" strokeWidth={1} />
-          <text x={padL - 8} y={y(t) + 3.5} textAnchor="end" fontSize={10} fill={C.faint}>
-            {t}
-          </text>
-        </g>
-      ))}
-      {xLabels.map((i, k) => (
-        <text key={`x${k}`} x={x(i)} y={H - 10} textAnchor="middle" fontSize={10} fill={C.faint}>
-          {h[i].date}
-        </text>
-      ))}
-      <polygon points={`${bandTop} ${bandBot}`} fill={band} />
-      <line x1={padL} x2={W - padR} y1={y(baseline)} y2={y(baseline)} stroke="#5A5A62" strokeWidth={1.2} strokeDasharray="5 4" />
-      <text x={W - padR} y={y(baseline) - 6} textAnchor="end" fontSize={10} fill={C.muted}>
-        baseline {baseline}
-      </text>
-      <polyline points={medPts} fill="none" stroke={line} strokeWidth={2.4} strokeLinejoin="round" strokeLinecap="round" />
-      <circle cx={x(n - 1)} cy={y(at(ld, "m"))} r={4} fill={line} stroke={C.panel} strokeWidth={2} />
-      {(markers || []).map((mk, k) => {
-        const markerIndex = h.findIndex((night) => night.i === mk.i);
-        if (markerIndex < 0) return null;
-        return (
-          <g key={`mk${k}`}>
-            <line x1={x(markerIndex)} x2={x(markerIndex)} y1={padT - 4} y2={H - padB} stroke="#9564FF" strokeWidth={1.4} strokeDasharray="4 3" />
-            <circle cx={x(markerIndex)} cy={padT - 4} r={3.5} fill="#9564FF" />
-            <text x={x(markerIndex) + 7} y={padT + 7} fontSize={10.5} fontWeight={600} fill={C.violetSoft}>
-              {mk.text}
+    <div style={{ position: "relative", width: "100%", height: H }}>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} preserveAspectRatio="none" style={{ display: "block" }}>
+        {ticks.map((t, k) => (
+          <g key={`g${k}`}>
+            <line x1={padL} x2={W - padR} y1={y(t)} y2={y(t)} stroke="#24242A" strokeWidth={1} />
+            <text x={padL - 8} y={y(t) + 3.5} textAnchor="end" fontSize={10} fill={C.faint}>
+              {t}
             </text>
           </g>
-        );
+        ))}
+        {xLabels.map((i, k) => (
+          <text key={`x${k}`} x={x(i)} y={H - 10} textAnchor="middle" fontSize={10} fill={C.faint}>
+            {h[i].date}
+          </text>
+        ))}
+        <polygon points={`${bandTop} ${bandBot}`} fill={band} />
+        <line x1={padL} x2={W - padR} y1={y(baseline)} y2={y(baseline)} stroke="#5A5A62" strokeWidth={1.2} strokeDasharray="5 4" />
+        <text x={W - padR} y={y(baseline) - 6} textAnchor="end" fontSize={10} fill={C.muted}>
+          baseline {baseline}
+        </text>
+        <polyline points={medPts} fill="none" stroke={line} strokeWidth={2.4} strokeLinejoin="round" strokeLinecap="round" />
+        {(markers || []).map((mk, k) => {
+          const markerIndex = h.findIndex((night) => night.i === mk.i);
+          if (markerIndex < 0) return null;
+          return (
+            <g key={`mk${k}`}>
+              <line x1={x(markerIndex)} x2={x(markerIndex)} y1={padT - 4} y2={H - padB} stroke="#9564FF" strokeWidth={1.4} strokeDasharray="4 3" />
+              <text x={x(markerIndex) + 7} y={padT + 7} fontSize={10.5} fontWeight={600} fill={C.violetSoft}>
+                {mk.text}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+      <FixedChartDot kind="history-line" x={x(n - 1)} y={y(at(ld, "m"))} viewWidth={W} viewHeight={H} radius={4} color={line} borderColor={C.panel} borderWidth={2} />
+      {(markers || []).map((mk) => {
+        const markerIndex = h.findIndex((night) => night.i === mk.i);
+        if (markerIndex < 0) return null;
+        return <FixedChartDot key={mk.id} kind="history-marker" x={x(markerIndex)} y={padT - 4} viewWidth={W} viewHeight={H} radius={3.5} color="#9564FF" />;
       })}
-    </svg>
+    </div>
+  );
+}
+
+function FixedChartDot({
+  kind,
+  x,
+  y,
+  viewWidth,
+  viewHeight,
+  radius,
+  color,
+  borderColor,
+  borderWidth = 0,
+}: {
+  kind: "sparkline" | "history-line" | "history-marker";
+  x: number;
+  y: number;
+  viewWidth: number;
+  viewHeight: number;
+  radius: number;
+  color: string;
+  borderColor?: string;
+  borderWidth?: number;
+}) {
+  return (
+    <span
+      aria-hidden="true"
+      data-chart-dot={kind}
+      style={{
+        position: "absolute",
+        left: `${(x / viewWidth) * 100}%`,
+        top: `${(y / viewHeight) * 100}%`,
+        width: radius * 2,
+        height: radius * 2,
+        boxSizing: "content-box",
+        display: "block",
+        borderRadius: "50%",
+        background: color,
+        border: borderWidth && borderColor ? `${borderWidth}px solid ${borderColor}` : "none",
+        transform: "translate(-50%, -50%)",
+        pointerEvents: "none",
+      }}
+    />
   );
 }

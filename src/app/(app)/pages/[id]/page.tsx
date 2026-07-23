@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useStore } from "@/components/store";
 import { CATEGORIES } from "@/lib/types";
 import type { CategoryKey, Night, RangeDays, Rec, WatchPage } from "@/lib/types";
@@ -9,12 +9,13 @@ import { deltaMeta, pageHistoryForRange, pageRangeComparison, pageRangeSeries, p
 import { auditsFor } from "@/lib/audits";
 import { C, taskLabel } from "@/lib/ui";
 import { HistoryChart, Sparkline } from "@/components/charts";
-import { DeviceChangeLabels, SegToggle } from "@/components/bits";
+import { DeviceStatusCards, SegToggle } from "@/components/bits";
 import { ChevronLeftIcon, DesktopIcon, MobileIcon, PlusIcon, RefreshIcon } from "@/components/icons";
 import { formatSuccessfulRunAt, lastSuccessfulRunAt } from "@/lib/collectionStatus";
 
 export default function PageDetail() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { id } = useParams<{ id: string }>();
   const store = useStore();
   const { pages, recs, strategy, setStrategy, rangeDays, setRangeDays, tab, setTab, chartCat, setChartCat } = store;
@@ -47,6 +48,12 @@ export default function PageDetail() {
   const isPending = !page.baseline || !page.baselineCapturedAt;
   const successfulRunAt = lastSuccessfulRunAt(page);
   const successfulRunLabel = formatSuccessfulRunAt(successfulRunAt);
+  const watchedPageHref = /^[a-z][a-z\d+.-]*:\/\//i.test(page.url) ? page.url : `https://${page.url}`;
+  const mobileTrend = pageRangeTrend(page, "mobile", rangeDays);
+  const desktopTrend = pageRangeTrend(page, "desktop", rangeDays);
+  const isStatusPreview = process.env.NODE_ENV === "development" && searchParams.get("statusPreview") === "compare";
+  const displayedMobileTrend = isStatusPreview ? "regressing" : mobileTrend;
+  const displayedDesktopTrend = isStatusPreview ? "improving" : desktopTrend;
 
   const tabs: { key: "overview" | "history" | "audits" | "agent"; label: string }[] = [
     { key: "overview", label: "Overview" },
@@ -57,44 +64,37 @@ export default function PageDetail() {
 
   return (
     <div>
-      <header className="page-header" style={{ padding: "22px 40px 0", borderBottom: `1px solid ${C.border}` }}>
+      <header className="page-header" style={{ padding: "22px 40px 0" }}>
         <button onClick={() => router.push(store.pathFor("/dashboard"))} style={{ display: "inline-flex", alignItems: "center", gap: 6, border: "none", background: "none", fontSize: 12.5, color: C.muted, cursor: "pointer", padding: "0 0 14px" }}>
           <ChevronLeftIcon size={14} />
-          Page performance
+          Dashboard
         </button>
-        <div className="detail-heading" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 24, paddingBottom: 20 }}>
-          <div>
-            <h1 style={{ margin: 0, fontSize: 25, fontWeight: 600, letterSpacing: "-0.01em" }}>{page.title}</h1>
-            <div style={{ fontSize: 13, color: C.muted, marginTop: 7 }}>{page.url}</div>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: C.faint, marginTop: 7 }}>
+        <div className="detail-heading" style={{ display: "grid", gridTemplateColumns: isPending ? "minmax(0, 1fr)" : "auto minmax(0, 1fr)", alignItems: "start", gap: 24 }}>
+          {!isPending && <DeviceStatusCards mobile={displayedMobileTrend} desktop={displayedDesktopTrend} />}
+          <div className="page-summary">
+            <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+              <h1 style={{ margin: 0, fontSize: 25, fontWeight: 600, letterSpacing: "-0.01em" }}>{page.title}</h1>
+              {isStatusPreview && <span style={{ padding: "3px 7px", borderRadius: 5, color: C.violetSoft, background: "rgba(138,92,246,0.15)", fontSize: 10, fontWeight: 650, letterSpacing: "0.03em", textTransform: "uppercase" }}>Status preview</span>}
+            </div>
+            <a className="watched-page-link" href={watchedPageHref} target="_blank" rel="noreferrer" style={{ display: "inline-block", fontSize: 13, color: C.muted, marginTop: 7, whiteSpace: "nowrap" }}>{page.url}</a>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: C.faint, marginTop: 7, whiteSpace: "nowrap" }}>
               <span aria-hidden="true" style={{ width: 6, height: 6, borderRadius: "50%", background: successfulRunAt ? C.green : C.faint, flex: "none" }} />
               {successfulRunAt ? `Last successful PSI run · ${successfulRunLabel}` : successfulRunLabel}
             </div>
-            {!isPending && (
-              <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 11 }}>
-                <span style={{ color: C.faint, fontSize: 11.5, paddingTop: 1 }}>Performance change · last {rangeDays} days</span>
-                <DeviceChangeLabels mobile={pageRangeTrend(page, "mobile", rangeDays)} desktop={pageRangeTrend(page, "desktop", rangeDays)} size={11} />
-              </div>
-            )}
           </div>
-          <div className="page-controls" style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-              <span style={{ fontSize: 11.5, color: C.muted }}>Primary</span>
-              <SegToggle label="Primary page device" value={strategy} onChange={setStrategy} options={[{ value: "desktop", label: "Desktop", icon: <DesktopIcon size={13} /> }, { value: "mobile", label: "Mobile", icon: <MobileIcon size={13} /> }]} />
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-              <span style={{ fontSize: 11.5, color: C.muted }}>Range</span>
-              <SegToggle label="Page date range" value={rangeDays} onChange={setRangeDays} options={[3, 7, 30, 90].map((days) => ({ value: days as RangeDays, label: `${days}d` }))} />
-            </div>
-            <button disabled={!!page.runState && page.runState !== "failed"} onClick={() => store.runPage(page.id)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 15px", border: "none", borderRadius: 8, background: C.accent, color: "#fff", fontSize: 12.5, fontWeight: 550, cursor: page.runState && page.runState !== "failed" ? "wait" : "pointer", opacity: page.runState && page.runState !== "failed" ? 0.65 : 1, whiteSpace: "nowrap" }}>
-              <RefreshIcon size={15} style={{ color: "#fff" }} />
-              {page.runState === "queued" ? "Queued…" : page.runState === "dispatching" ? "Starting…" : page.runState === "running" ? "Running…" : "Run now"}
-            </button>
-            <button onClick={() => store.openMarker(page.id)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 15px", border: `1px solid ${C.border2}`, borderRadius: 8, background: "rgba(255,255,255,0.04)", color: C.text, fontSize: 12.5, fontWeight: 500, cursor: "pointer", whiteSpace: "nowrap" }}>
-              <PlusIcon size={15} style={{ color: C.text }} />
-              Log change marker
-            </button>
-          </div>
+        </div>
+        <hr aria-hidden="true" style={{ margin: "20px 0", border: 0, borderTop: `1px solid ${C.border}` }} />
+        <div className="page-controls" style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, paddingBottom: 20 }}>
+          <SegToggle label="Primary page device" value={strategy} onChange={setStrategy} options={[{ value: "desktop", label: "Desktop", icon: <DesktopIcon size={13} /> }, { value: "mobile", label: "Mobile", icon: <MobileIcon size={13} /> }]} />
+          <SegToggle label="Page date range" value={rangeDays} onChange={setRangeDays} options={[3, 7, 30, 90].map((days) => ({ value: days as RangeDays, label: `${days}d` }))} />
+          <button disabled={!!page.runState && page.runState !== "failed"} onClick={() => store.runPage(page.id)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 15px", border: "none", borderRadius: 8, background: C.accent, color: "#fff", fontSize: 12.5, fontWeight: 550, cursor: page.runState && page.runState !== "failed" ? "wait" : "pointer", opacity: page.runState && page.runState !== "failed" ? 0.65 : 1, whiteSpace: "nowrap" }}>
+            <RefreshIcon size={15} style={{ color: "#fff" }} />
+            {page.runState === "queued" ? "Queued…" : page.runState === "dispatching" ? "Starting…" : page.runState === "running" ? "Running…" : "Run now"}
+          </button>
+          <button onClick={() => store.openMarker(page.id)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 15px", border: "none", borderRadius: 8, background: C.green, color: C.bg, fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
+            <PlusIcon size={15} style={{ color: C.bg }} />
+            Marker
+          </button>
         </div>
         {!isPending && <div className="detail-tabs" role="tablist" aria-label="Page detail" style={{ display: "flex", gap: 2 }}>
           {tabs.map((t) => (
@@ -199,22 +199,22 @@ function OverviewTab({
           const comparison = pageRangeComparison(page, strategy, c.key, rangeDays);
           const dm = comparison ? deltaMeta(comparison.to, comparison.from) : null;
           return (
-            <div key={c.key} style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, padding: "18px 19px 8px" }}>
-              <div style={{ fontSize: 12.5, color: C.muted, marginBottom: 10 }}>{c.label}</div>
-              <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 14 }}>
-                <div>
+            <div key={c.key} style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, padding: "18px 14px 8px" }}>
+              <div style={{ fontSize: 13, color: C.text, fontWeight: 600, marginBottom: 10 }}>{c.label}</div>
+              <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", alignItems: "end", gap: 8 }}>
+                <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 10, color: C.faint, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 5 }}>{strategy}</div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <span style={{ fontSize: 32, fontWeight: 600, lineHeight: 1, color: sm.fg }}>{v}</span>
-                    {dm && <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 12, fontWeight: 600, padding: "3px 8px", borderRadius: 6, color: dm.fg, background: dm.chip }}>{dm.text}</span>}
+                    {dm && <span style={{ display: "inline-flex", alignItems: "center", gap: 3, flex: "none", whiteSpace: "nowrap", fontSize: 12, fontWeight: 600, padding: "3px 6px", borderRadius: 6, color: dm.fg, background: dm.chip }}>{dm.text}</span>}
                   </div>
                 </div>
-                <div style={{ textAlign: "right", paddingBottom: 1 }}>
+                <div style={{ minWidth: 0, textAlign: "right", paddingBottom: 1 }}>
                   <div style={{ fontSize: 10, color: C.faint, textTransform: "uppercase", letterSpacing: "0.04em" }}>{secondaryStrategy}</div>
                   <div style={{ fontSize: 18, fontWeight: 600, color: secondaryMeta.fg, marginTop: 3 }}>{secondary}</div>
                 </div>
               </div>
-              <div style={{ fontSize: 11, color: C.faint, marginTop: 8 }}>Change over {rangeDays}d · baseline {strategy === "mobile" ? "M" : "D"} {baseline} · {secondaryStrategy === "mobile" ? "M" : "D"} {secondaryBaseline}</div>
+              <div style={{ fontSize: 11, color: C.faint, marginTop: 8 }}>Baseline {strategy === "mobile" ? "M" : "D"} {baseline} · {secondaryStrategy === "mobile" ? "M" : "D"} {secondaryBaseline}</div>
               <div style={{ height: 52, marginTop: 6 }}>
                 <Sparkline
                   series={pageRangeSeries(page, strategy, c.key, rangeDays)}
@@ -249,7 +249,7 @@ function OverviewTab({
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                 {failList.map((f) => (
                   <span key={f.name} style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12.5, color: C.redSoft, background: "rgba(255,92,108,0.13)", padding: "5px 11px", borderRadius: 7 }}>
-                    <span style={{ width: 15, height: 15, borderRadius: 4, background: C.red, color: C.bg, fontSize: 9, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</span>
+                    <span style={{ flex: "0 0 15px", width: 15, height: 15, aspectRatio: "1 / 1", borderRadius: 4, background: C.red, color: C.bg, fontSize: 9, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</span>
                     {f.name}
                   </span>
                 ))}

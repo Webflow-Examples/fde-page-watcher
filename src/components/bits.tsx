@@ -27,11 +27,52 @@ export function StatusBadge({ status, size = 12.5 }: { status: PageStatus; size?
 }
 
 /** Compact always-visible mobile + desktop Performance trends. */
-export function DeviceChangeLabels({ mobile, desktop, size = 11.5 }: { mobile: PageStatus; desktop: PageStatus; size?: number }) {
+export function DeviceChangeLabels({ mobile, desktop, size = 11.5, direction = "column" }: { mobile: PageStatus; desktop: PageStatus; size?: number; direction?: "row" | "column" }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 5 }}>
+    <div style={{ display: "flex", flexDirection: direction, alignItems: "flex-start", gap: direction === "row" ? 14 : 5 }}>
       <DeviceChangeLine device="M" name="Mobile" status={mobile} size={size} />
       <DeviceChangeLine device="D" name="Desktop" status={desktop} size={size} />
+    </div>
+  );
+}
+
+/** Prominent mobile + desktop Performance status tiles for page headers. */
+export function DeviceStatusCards({ mobile, desktop }: { mobile: PageStatus; desktop: PageStatus }) {
+  return (
+    <div className="page-status-cards" style={{ display: "flex", alignItems: "flex-start", justifyContent: "flex-end", gap: 8 }}>
+      <DeviceStatusCard name="Desktop" status={desktop} />
+      <DeviceStatusCard name="Mobile" status={mobile} />
+    </div>
+  );
+}
+
+function DeviceStatusCard({ name, status }: { name: "Mobile" | "Desktop"; status: PageStatus }) {
+  const sm = statusMeta(status);
+  const pulseClass = status === "improving" ? " status-tile-indicator--slow" : status === "regressing" ? " status-tile-indicator--fast" : "";
+  return (
+    <div
+      aria-label={`${name} Performance change: ${sm.label}`}
+      title={`${name} Performance change: ${sm.label}`}
+      style={{
+        width: 101,
+        height: 101,
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "space-between",
+        padding: 11,
+        border: `1px solid ${sm.fg}`,
+        borderRadius: 10,
+        color: sm.fg,
+        background: sm.bg,
+      }}
+    >
+      <span style={{ fontSize: 12, lineHeight: 1, fontWeight: 700 }}>{name}</span>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 650, whiteSpace: "nowrap" }}>
+        <span aria-hidden="true" className={`status-tile-indicator${pulseClass}`}>
+          <StatusShape shape={sm.shape} color={sm.fg} />
+        </span>
+        {sm.label}
+      </span>
     </div>
   );
 }
