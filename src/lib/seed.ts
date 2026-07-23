@@ -1,4 +1,5 @@
 import type { AgentCheck, AppState, CategoryKey, Night, NightScores, PageStatus, Rec, StrategyScores, WatchPage } from "./types";
+import { AGENT_CHECK_GROUPS } from "./agentChecks";
 
 // Faithful port of the source design's seed generator so the freshly-seeded
 // app renders identically to the prototype, then real runs append on top.
@@ -11,7 +12,7 @@ interface Seed {
   id: string;
   title: string;
   url: string;
-  flag: "priority" | "watching";
+  flag: "priority" | "watching" | "paused";
   base: Record<CategoryKey, number>;
   status: "healthy" | "room" | "dropped";
   marker?: { i: number; text: string };
@@ -22,7 +23,7 @@ const SEEDS: Seed[] = [
   { id: "pricing", title: "Pricing", url: "webflow.com/pricing", flag: "priority", base: { perf: 69, a11y: 93, bp: 96, seo: 100 }, status: "dropped", marker: { i: 22, text: "Deployed new hero video" } },
   { id: "designer", title: "Designer", url: "webflow.com/product/designer", flag: "priority", base: { perf: 61, a11y: 91, bp: 92, seo: 92 }, status: "room", marker: { i: 17, text: "Compressed hero imagery" } },
   { id: "enterprise", title: "Enterprise", url: "webflow.com/enterprise", flag: "watching", base: { perf: 82, a11y: 98, bp: 100, seo: 100 }, status: "healthy" },
-  { id: "ai", title: "AI", url: "webflow.com/ai", flag: "priority", base: { perf: 64, a11y: 89, bp: 96, seo: 92 }, status: "room" },
+  { id: "ai", title: "AI", url: "webflow.com/ai", flag: "watching", base: { perf: 64, a11y: 89, bp: 96, seo: 92 }, status: "room" },
   { id: "hosting", title: "Hosting", url: "webflow.com/hosting", flag: "watching", base: { perf: 78, a11y: 95, bp: 100, seo: 100 }, status: "healthy" },
   { id: "templates", title: "Templates", url: "webflow.com/templates", flag: "watching", base: { perf: 56, a11y: 88, bp: 92, seo: 85 }, status: "room" },
 ];
@@ -48,14 +49,6 @@ function toDesktop(mobile: NightScores): NightScores {
   return { perf: bump(mobile.perf), a11y: { ...mobile.a11y }, bp: { ...mobile.bp }, seo: { ...mobile.seo } };
 }
 
-// Agent-readiness definitions (per-check, grouped) — matches the design.
-const AGENT_GROUPS: { name: string; items: string[] }[] = [
-  { name: "Discoverability", items: ["robots.txt", "Sitemap", "Link headers", "DNS for AI Discovery (DNS-AID)"] },
-  { name: "Content Accessibility", items: ["Markdown negotiation"] },
-  { name: "Bot Access Control", items: ["AI bot rules", "Content Signals", "Web Bot Auth"] },
-  { name: "API / Auth / MCP", items: ["API Catalog", "OAuth discovery", "OAuth Protected Resource", "Auth.md", "MCP Server Card", "A2A Agent Card", "Agent Skills", "WebMCP"] },
-  { name: "Commerce", items: ["x402", "MPP", "UCP", "ACP"] },
-];
 const AGENT_FAILS: Record<string, string[]> = {
   pricing: ["Markdown negotiation", "WebMCP", "DNS for AI Discovery (DNS-AID)"],
   designer: ["WebMCP", "ACP", "Web Bot Auth"],
@@ -74,7 +67,7 @@ function agentFor(id: string): AgentCheck[] {
   const fails = AGENT_FAILS[id] || [];
   const regs = AGENT_REGRESSED[id] || [];
   const out: AgentCheck[] = [];
-  for (const g of AGENT_GROUPS) {
+  for (const g of AGENT_CHECK_GROUPS) {
     for (const name of g.items) {
       out.push({ name, group: g.name, pass: !fails.includes(name), regressed: regs.includes(name) });
     }
@@ -181,10 +174,12 @@ export function buildSeedState(): AppState {
   setSt("hosting:r1", "task", "done", "Jul 9");
   setSt("ai:r3", "ignored");
 
-  return { pages, recs, jobs: [], followUps: [] };
+  return { pages, recs, agentIgnoreDefaults: { checks: [], groups: [] }, jobs: [], followUps: [] };
 }
 
 /** Live environments begin empty; demo/local environments retain the prototype dataset. */
 export function buildInitialState(mode: string | undefined = process.env.DATASET_MODE): AppState {
-  return mode === "live" ? { pages: [], recs: [], jobs: [], followUps: [] } : buildSeedState();
+  return mode === "live"
+    ? { pages: [], recs: [], agentIgnoreDefaults: { checks: [], groups: [] }, jobs: [], followUps: [] }
+    : buildSeedState();
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { agentCheckKey, summarizeAgentChecks, updateAgentIgnoreSettings } from "../agentScoring";
+import { ALL_AGENT_CHECKS } from "../agentChecks";
+import { agentCheckKey, isAgentCheckIgnored, summarizeAgentChecks, updateAgentIgnoreOverride, updateAgentIgnoreSettings } from "../agentScoring";
 import type { AgentCheck } from "../types";
 
 const checks: AgentCheck[] = [
@@ -10,6 +11,11 @@ const checks: AgentCheck[] = [
 ];
 
 describe("agent-readiness applicability scoring", () => {
+  it("keeps the canonical settings catalog at 20 unique checks", () => {
+    expect(ALL_AGENT_CHECKS).toHaveLength(20);
+    expect(new Set(ALL_AGENT_CHECKS.map(agentCheckKey)).size).toBe(20);
+  });
+
   it("excludes unavailable checks from the score", () => {
     expect(summarizeAgentChecks(checks)).toEqual({
       pass: 2,
@@ -67,5 +73,28 @@ describe("agent-readiness applicability scoring", () => {
 
     const restored = updateAgentIgnoreSettings(ignored, "group", "API / Auth / MCP", false);
     expect(summarizeAgentChecks(checks, restored)).toEqual(summarizeAgentChecks(checks));
+  });
+
+  it("applies global defaults and lets a page restore an individual check", () => {
+    const defaults = updateAgentIgnoreSettings(undefined, "group", "API / Auth / MCP", true);
+    const webMcpKey = agentCheckKey(checks[2]);
+    const override = updateAgentIgnoreOverride(undefined, undefined, "check", webMcpKey, "restore");
+
+    expect(isAgentCheckIgnored(checks[1], override.ignores, defaults, override.restores)).toBe(true);
+    expect(isAgentCheckIgnored(checks[2], override.ignores, defaults, override.restores)).toBe(false);
+    expect(summarizeAgentChecks(checks, override.ignores, defaults, override.restores)).toMatchObject({
+      pass: 1,
+      fail: 1,
+      ignored: 1,
+    });
+  });
+
+  it("can return a page override to the global default", () => {
+    const defaults = updateAgentIgnoreSettings(undefined, "check", agentCheckKey(checks[2]), true);
+    const restored = updateAgentIgnoreOverride(undefined, undefined, "check", agentCheckKey(checks[2]), "restore");
+    const inherited = updateAgentIgnoreOverride(restored.ignores, restored.restores, "check", agentCheckKey(checks[2]), "inherit");
+
+    expect(isAgentCheckIgnored(checks[2], restored.ignores, defaults, restored.restores)).toBe(false);
+    expect(isAgentCheckIgnored(checks[2], inherited.ignores, defaults, inherited.restores)).toBe(true);
   });
 });

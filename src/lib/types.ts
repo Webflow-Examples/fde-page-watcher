@@ -8,7 +8,7 @@
 export type CategoryKey = "perf" | "a11y" | "bp" | "seo";
 export type Strategy = "mobile" | "desktop";
 export type RangeDays = 3 | 7 | 30 | 90;
-export type Flag = "priority" | "watching";
+export type Flag = "priority" | "watching" | "paused";
 /** Baseline-relative Performance trend stored on each page. */
 export type PageStatus = "stable" | "improving" | "regressing" | "pending";
 export type CollectionJobKind = "baseline" | "run" | "nightly";
@@ -78,8 +78,9 @@ export interface AgentCheck {
 }
 
 export type AgentIgnoreScope = "check" | "group";
+export type AgentIgnoreOverrideMode = "inherit" | "ignore" | "restore";
 
-/** Page-specific applicability overrides that survive future scans. */
+/** Agent-check applicability settings that survive future scans. */
 export interface AgentIgnoreSettings {
   checks: string[];
   groups: string[];
@@ -114,7 +115,8 @@ export interface WatchPage {
   history: Night[];
   markers: ChangeMarker[];
   agent: AgentCheck[]; // latest agent-readiness scan (per-check)
-  agentIgnores?: AgentIgnoreSettings; // checks/categories that do not apply to this page
+  agentIgnores?: AgentIgnoreSettings; // page-specific ignores, applied after global defaults
+  agentIgnoreRestores?: AgentIgnoreSettings; // page-specific restores of globally ignored checks/categories
   baselineCapturedAt?: string;
   acted?: Record<string, boolean>;
   // Async collection state (REQ-054): a run is queued/executed in the
@@ -202,6 +204,7 @@ export interface WatcherNote {
 export interface AppState {
   pages: WatchPage[];
   recs: Rec[];
+  agentIgnoreDefaults?: AgentIgnoreSettings;
   jobs?: CollectionJob[];
   followUps?: FollowUp[];
   watcherNote?: WatcherNote;

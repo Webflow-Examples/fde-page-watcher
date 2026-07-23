@@ -163,4 +163,39 @@ describe("bounded nightly collection", () => {
     expect(new Set(starts.slice(0, 2))).toEqual(new Set(["priority-1", "priority-2"]));
     expect(maxActive).toBeLessThanOrEqual(2);
   });
+
+  it("skips paused pages without changing their stored data", async () => {
+    const paused = pendingPage("paused", "Paused", "https://example.com/paused", "paused");
+    paused.history = [{
+      i: 0,
+      date: "Jul 19",
+      scores: { mobile: scores(64), desktop: scores(82) },
+    }];
+    const watching = pendingPage("watching", "Watching", "https://example.com/watching", "watching");
+    const store = await dataStore([paused, watching]);
+    const scanned: string[] = [];
+
+    const nightly = await runNightly({
+      dataStore: store,
+      collectFn: async () => result(76),
+      scanFn: async (url) => {
+        scanned.push(url);
+        return [];
+      },
+      followupFn: async () => ({ sent: false }),
+    });
+    const state = await store.getState();
+
+    expect(nightly.ran).toBe(1);
+    expect(scanned).toEqual(["https://example.com/watching"]);
+    expect(state.pages.find((page) => page.id === "paused")?.history).toEqual(paused.history);
+    expect(state.pages.find((page) => page.id === "watching")?.history).toHaveLength(1);
+  });
+
+  it("rejects on-demand collection for a paused page", async () => {
+    const store = await dataStore([pendingPage("paused", "Paused", "https://example.com/paused", "paused")]);
+
+    await expect(runPage("paused", { dataStore: store })).rejects.toThrow("is paused");
+    await expect(captureBaseline("paused", { dataStore: store })).rejects.toThrow("is paused");
+  });
 });

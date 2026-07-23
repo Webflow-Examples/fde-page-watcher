@@ -5,7 +5,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useStore } from "@/components/store";
 import { CATEGORIES } from "@/lib/types";
 import type { CategoryKey, Night, RangeDays, Rec, WatchPage } from "@/lib/types";
-import { agentCheckKey, isAgentCheckIgnored, normalizeAgentIgnoreSettings, summarizeAgentChecks } from "@/lib/agentScoring";
+import { agentCheckKey, agentIgnoreOverrideMode, isAgentCheckIgnored, isAgentGroupIgnored, normalizeAgentIgnoreSettings, summarizeAgentChecks } from "@/lib/agentScoring";
 import { deltaMeta, pageHistoryForRange, pageRangeComparison, pageRangeSeries, pageRangeTrend, scoreMeta } from "@/lib/scoring";
 import { auditsFor } from "@/lib/audits";
 import { C, taskLabel } from "@/lib/ui";
@@ -36,11 +36,12 @@ export default function PageDetail() {
     );
   }
 
-  const agentSummary = summarizeAgentChecks(page.agent, page.agentIgnores);
+  const agentSummary = summarizeAgentChecks(page.agent, page.agentIgnores, store.agentIgnoreDefaults, page.agentIgnoreRestores);
   const { pass, fail, total, unavailable: unavailableCount, ignored, percent: apct } = agentSummary;
   const apm = scoreMeta(apct);
-  const failList = page.agent.filter((check) => !isAgentCheckIgnored(check, page.agentIgnores) && !check.unavailable && !check.pass);
+  const failList = page.agent.filter((check) => !isAgentCheckIgnored(check, page.agentIgnores, store.agentIgnoreDefaults, page.agentIgnoreRestores) && !check.unavailable && !check.pass);
   const isPending = !page.baseline || !page.baselineCapturedAt;
+  const collectionBlocked = page.flag === "paused" || (!!page.runState && page.runState !== "failed");
   const successfulRunAt = lastSuccessfulRunAt(page);
   const successfulRunLabel = formatSuccessfulRunAt(successfulRunAt);
   const watchedPageHref = /^[a-z][a-z\d+.-]*:\/\//i.test(page.url) ? page.url : `https://${page.url}`;
@@ -82,9 +83,9 @@ export default function PageDetail() {
         <div className="page-controls" style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, paddingBottom: 20 }}>
           <SegToggle label="Primary page device" value={strategy} onChange={setStrategy} options={[{ value: "desktop", label: "Desktop", icon: <DesktopIcon size={13} /> }, { value: "mobile", label: "Mobile", icon: <MobileIcon size={13} /> }]} />
           <SegToggle label="Page date range" value={rangeDays} onChange={setRangeDays} options={[3, 7, 30, 90].map((days) => ({ value: days as RangeDays, label: `${days}d` }))} />
-          <button disabled={!!page.runState && page.runState !== "failed"} onClick={() => store.runPage(page.id)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 15px", border: "none", borderRadius: 8, background: C.accent, color: "#fff", fontSize: 12.5, fontWeight: 550, cursor: page.runState && page.runState !== "failed" ? "wait" : "pointer", opacity: page.runState && page.runState !== "failed" ? 0.65 : 1, whiteSpace: "nowrap" }}>
+          <button disabled={collectionBlocked} title={page.flag === "paused" ? "Change this page to Watching or Priority before collecting" : undefined} onClick={() => store.runPage(page.id)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 15px", border: "none", borderRadius: 8, background: C.accent, color: "#fff", fontSize: 12.5, fontWeight: 550, cursor: collectionBlocked ? "not-allowed" : "pointer", opacity: collectionBlocked ? 0.65 : 1, whiteSpace: "nowrap" }}>
             <RefreshIcon size={15} style={{ color: "#fff" }} />
-            {page.runState === "queued" ? "Queued…" : page.runState === "dispatching" ? "Starting…" : page.runState === "running" ? "Running…" : "Run now"}
+            {page.flag === "paused" ? "Paused" : page.runState === "queued" ? "Queued…" : page.runState === "dispatching" ? "Starting…" : page.runState === "running" ? "Running…" : "Run now"}
           </button>
           <button onClick={() => store.openMarker(page.id)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 15px", border: "none", borderRadius: 8, background: C.green, color: C.bg, fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
             <PlusIcon size={15} style={{ color: C.bg }} />
@@ -119,6 +120,11 @@ export default function PageDetail() {
       </header>
 
       <div className="detail-content" style={{ padding: "28px 40px 56px" }}>
+        {page.flag === "paused" && (
+          <div style={{ marginBottom: 18, padding: "12px 15px", borderRadius: 9, border: "1px solid rgba(255,154,61,0.30)", background: "rgba(255,154,61,0.08)", color: C.muted, fontSize: 12.5 }}>
+            This page is paused. Its history and baseline are retained, but it will not collect new data until it is changed to Watching or Priority.
+          </div>
+        )}
         {page.runState && <CollectionStatus page={page} />}
         {isPending ? (
           <PendingPanel page={page} store={store} />
@@ -432,17 +438,20 @@ function HistoryTab({
 
 function PendingPanel({ page, store }: { page: WatchPage; store: ReturnType<typeof useStore> }) {
   const hasSnapshot = page.history.length > 0;
+  const collectionBlocked = page.flag === "paused" || (!!page.runState && page.runState !== "failed");
   return (
     <div style={{ padding: "56px 24px", textAlign: "center", background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13 }}>
       <div style={{ fontSize: 16, fontWeight: 600 }}>{hasSnapshot ? "Snapshot collected — baseline required" : "No collection yet"}</div>
       <div style={{ fontSize: 13, color: C.muted, marginTop: 8, maxWidth: 460, marginInline: "auto", lineHeight: 1.55 }}>
-        {hasSnapshot
+        {page.flag === "paused"
+          ? "This page is paused. Change it to Watching or Priority from the Watch List before collecting a first snapshot or baseline."
+          : hasSnapshot
           ? `The latest mobile snapshot is Performance ${page.current.mobile.perf}, Accessibility ${page.current.mobile.a11y}, Best Practices ${page.current.mobile.bp}, and SEO ${page.current.mobile.seo}. Capture an explicit baseline before deltas or health classification begin.`
           : "Run now to collect a first snapshot, or capture an explicit baseline to anchor future comparisons. This page also joins the next nightly run automatically."}
       </div>
       <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 22 }}>
-        <button disabled={!!page.runState && page.runState !== "failed"} onClick={() => store.captureBaseline(page.id)} style={{ border: "none", background: C.accent, color: "#fff", fontSize: 12.5, fontWeight: 550, padding: "9px 16px", borderRadius: 8, cursor: page.runState && page.runState !== "failed" ? "wait" : "pointer", opacity: page.runState && page.runState !== "failed" ? 0.65 : 1 }}>{page.runState && page.runState !== "failed" ? "Collection in progress…" : "Capture baseline"}</button>
-        <button disabled={!!page.runState && page.runState !== "failed"} onClick={() => store.runPage(page.id)} style={{ border: `1px solid ${C.border2}`, background: "rgba(255,255,255,0.04)", color: C.text, fontSize: 12.5, fontWeight: 500, padding: "9px 16px", borderRadius: 8, cursor: page.runState && page.runState !== "failed" ? "wait" : "pointer", opacity: page.runState && page.runState !== "failed" ? 0.65 : 1 }}>{page.runState === "queued" ? "Queued…" : page.runState === "dispatching" ? "Starting…" : page.runState === "running" ? "Running…" : "Run now"}</button>
+        <button disabled={collectionBlocked} title={page.flag === "paused" ? "Activate this page from the Watch List first" : undefined} onClick={() => store.captureBaseline(page.id)} style={{ border: "none", background: C.accent, color: "#fff", fontSize: 12.5, fontWeight: 550, padding: "9px 16px", borderRadius: 8, cursor: collectionBlocked ? "not-allowed" : "pointer", opacity: collectionBlocked ? 0.65 : 1 }}>{page.flag === "paused" ? "Paused" : page.runState && page.runState !== "failed" ? "Collection in progress…" : "Capture baseline"}</button>
+        <button disabled={collectionBlocked} title={page.flag === "paused" ? "Activate this page from the Watch List first" : undefined} onClick={() => store.runPage(page.id)} style={{ border: `1px solid ${C.border2}`, background: "rgba(255,255,255,0.04)", color: C.text, fontSize: 12.5, fontWeight: 500, padding: "9px 16px", borderRadius: 8, cursor: collectionBlocked ? "not-allowed" : "pointer", opacity: collectionBlocked ? 0.65 : 1 }}>{page.flag === "paused" ? "Paused" : page.runState === "queued" ? "Queued…" : page.runState === "dispatching" ? "Starting…" : page.runState === "running" ? "Running…" : "Run now"}</button>
       </div>
     </div>
   );
@@ -499,11 +508,13 @@ function AgentTab({
   page.agent.forEach((c) => groups.set(c.group, [...(groups.get(c.group) ?? []), c]));
   const date = page.history[page.history.length - 1]?.date ?? "—";
   const ignores = normalizeAgentIgnoreSettings(page.agentIgnores);
+  const restores = normalizeAgentIgnoreSettings(page.agentIgnoreRestores);
+  const defaults = normalizeAgentIgnoreSettings(store.agentIgnoreDefaults);
   const allApplicableUnavailable = page.agent.length > 0 && pass === 0 && fail === 0 && unavailable > 0;
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20, padding: "15px 18px", background: C.panel, border: `1px solid ${C.border}`, borderRadius: 11 }}>
-        <div style={{ fontSize: 13, color: C.faint2 }}>Recorded per check on {date}. Ignored checks are excluded from the score.</div>
+        <div style={{ fontSize: 13, color: C.faint2 }}>Recorded per check on {date}. Watch List defaults apply unless overridden here.</div>
         <div style={{ marginLeft: "auto", display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 16, fontSize: 12.5, fontWeight: 500 }}>
           <span style={{ color: C.green }}>{pass} passing</span>
           <span style={{ color: C.red }}>{fail} failing</span>
@@ -524,7 +535,8 @@ function AgentTab({
           )}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 16, alignItems: "start" }}>
             {[...groups.entries()].map(([name, checks]) => {
-              const groupIgnored = ignores.groups.includes(name);
+              const groupMode = agentIgnoreOverrideMode(ignores, restores, "group", name);
+              const groupIgnored = isAgentGroupIgnored(name, ignores, defaults, restores);
               return (
                 <div
                   key={name}
@@ -537,20 +549,32 @@ function AgentTab({
                 >
                   <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 15 }}>
                     <div style={{ minWidth: 0, fontSize: 11, fontWeight: 550, letterSpacing: "0.05em", textTransform: "uppercase", color: groupIgnored ? C.violetSoft : C.faint }}>{name}</div>
-                    <button
-                      type="button"
-                      aria-label={`${groupIgnored ? "Restore" : "Ignore"} ${name} category`}
-                      onClick={() => store.setAgentIgnore(page.id, "group", name, !groupIgnored)}
-                      style={{ marginLeft: "auto", flex: "none", border: `1px solid ${groupIgnored ? "rgba(183,156,255,0.30)" : C.border2}`, background: groupIgnored ? "rgba(138,92,246,0.14)" : "rgba(255,255,255,0.03)", color: groupIgnored ? C.violetSoft : C.faint2, fontSize: 10.5, fontWeight: 550, padding: "4px 8px", borderRadius: 6, cursor: "pointer" }}
-                    >
-                      {groupIgnored ? "Restore category" : "Ignore category"}
-                    </button>
+                    <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+                      {groupMode !== "inherit" && (
+                        <button
+                          type="button"
+                          aria-label={`Use Watch List default for ${name} category`}
+                          onClick={() => store.setAgentIgnore(page.id, "group", name, "inherit")}
+                          style={{ flex: "none", border: "none", background: "transparent", color: C.faint, fontSize: 10.5, fontWeight: 550, padding: "4px 0", cursor: "pointer" }}
+                        >
+                          Use default
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        aria-label={`${groupIgnored ? "Restore" : "Ignore"} ${name} category for this page`}
+                        onClick={() => store.setAgentIgnore(page.id, "group", name, groupIgnored ? "restore" : "ignore")}
+                        style={{ flex: "none", border: `1px solid ${groupIgnored ? "rgba(183,156,255,0.30)" : C.border2}`, background: groupIgnored ? "rgba(138,92,246,0.14)" : "rgba(255,255,255,0.03)", color: groupIgnored ? C.violetSoft : C.faint2, fontSize: 10.5, fontWeight: 550, padding: "4px 8px", borderRadius: 6, cursor: "pointer" }}
+                      >
+                        {groupIgnored ? "Restore for page" : "Ignore category"}
+                      </button>
+                    </div>
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                     {checks.map((chk) => {
                       const checkKey = agentCheckKey(chk);
-                      const individuallyIgnored = ignores.checks.includes(checkKey);
-                      const checkIgnored = groupIgnored || individuallyIgnored;
+                      const checkMode = agentIgnoreOverrideMode(ignores, restores, "check", checkKey);
+                      const checkIgnored = isAgentCheckIgnored(chk, ignores, defaults, restores);
                       // Four states: pass, fail, unavailable, and ignored.
                       const mark = checkIgnored || chk.unavailable ? "–" : chk.pass ? "✓" : "✕";
                       const markBg = checkIgnored ? "rgba(138,92,246,0.18)" : chk.unavailable ? C.border2 : chk.pass ? C.green : C.red;
@@ -560,26 +584,32 @@ function AgentTab({
                         <div key={chk.name} style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}>
                           <span style={{ flex: "none", width: 18, height: 18, borderRadius: 5, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: markColor, background: markBg }}>{mark}</span>
                           <span style={{ minWidth: 0, flex: 1, fontSize: 13, color: textColor }}>{chk.name}</span>
-                          {groupIgnored ? (
-                            <span style={{ flex: "none", fontSize: 10, fontWeight: 600, color: C.violetSoft }}>ignored</span>
-                          ) : (
-                            <>
-                              {!individuallyIgnored && chk.unavailable && (
-                                <span style={{ flex: "none", fontSize: 10, fontWeight: 600, color: C.muted, background: "rgba(255,255,255,0.06)", padding: "1px 7px", borderRadius: 4 }}>unavailable</span>
-                              )}
-                              {!individuallyIgnored && !chk.unavailable && chk.regressed && (
-                                <span style={{ flex: "none", fontSize: 10, fontWeight: 600, color: C.redSoft, background: "rgba(255,92,108,0.14)", padding: "1px 7px", borderRadius: 4 }}>regressed</span>
-                              )}
+                          {!checkIgnored && chk.unavailable && (
+                            <span style={{ flex: "none", fontSize: 10, fontWeight: 600, color: C.muted, background: "rgba(255,255,255,0.06)", padding: "1px 7px", borderRadius: 4 }}>unavailable</span>
+                          )}
+                          {!checkIgnored && !chk.unavailable && chk.regressed && (
+                            <span style={{ flex: "none", fontSize: 10, fontWeight: 600, color: C.redSoft, background: "rgba(255,92,108,0.14)", padding: "1px 7px", borderRadius: 4 }}>regressed</span>
+                          )}
+                          <div style={{ flex: "none", display: "flex", alignItems: "center", gap: 8 }}>
+                            {checkMode !== "inherit" && (
                               <button
                                 type="button"
-                                aria-label={`${individuallyIgnored ? "Restore" : "Ignore"} ${chk.name} check`}
-                                onClick={() => store.setAgentIgnore(page.id, "check", checkKey, !individuallyIgnored)}
-                                style={{ flex: "none", border: "none", background: "transparent", color: individuallyIgnored ? C.violetSoft : C.faint, fontSize: 10.5, fontWeight: 550, padding: "2px 0", cursor: "pointer" }}
+                                aria-label={`Use Watch List default for ${chk.name} check`}
+                                onClick={() => store.setAgentIgnore(page.id, "check", checkKey, "inherit")}
+                                style={{ border: "none", background: "transparent", color: C.faint, fontSize: 10.5, fontWeight: 550, padding: "2px 0", cursor: "pointer" }}
                               >
-                                {individuallyIgnored ? "Restore" : "Ignore"}
+                                Use default
                               </button>
-                            </>
-                          )}
+                            )}
+                            <button
+                              type="button"
+                              aria-label={`${checkIgnored ? "Restore" : "Ignore"} ${chk.name} check for this page`}
+                              onClick={() => store.setAgentIgnore(page.id, "check", checkKey, checkIgnored ? "restore" : "ignore")}
+                              style={{ border: "none", background: "transparent", color: checkIgnored ? C.violetSoft : C.faint, fontSize: 10.5, fontWeight: 550, padding: "2px 0", cursor: "pointer" }}
+                            >
+                              {checkIgnored ? "Restore" : "Ignore"}
+                            </button>
+                          </div>
                         </div>
                       );
                     })}

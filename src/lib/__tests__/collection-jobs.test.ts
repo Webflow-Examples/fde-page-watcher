@@ -41,6 +41,16 @@ async function store(): Promise<DataStore> {
 }
 
 describe("durable collection jobs", () => {
+  it("does not enqueue collections for paused pages", async () => {
+    const dataStore = await store();
+    await dataStore.updateState((state) => {
+      state.pages[0].flag = "paused";
+    });
+
+    await expect(enqueueCollectionJob("page", "run", { dataStore })).rejects.toThrow("is paused");
+    expect((await dataStore.getState()).jobs).toEqual([]);
+  });
+
   it("coalesces active requests and commits a baseline exactly once", async () => {
     const dataStore = await store();
     const first = await enqueueCollectionJob("page", "baseline", { dataStore, id: "job-one", now: new Date("2026-07-20T10:00:00Z") });

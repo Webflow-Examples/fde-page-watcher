@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Page Watch · Brand Studio",
-  description: "Nightly Lighthouse & agent-readiness monitoring for priority Webflow.com pages.",
+  description: "Nightly Lighthouse and agent-readiness monitoring for active pages.",
 };
 
 export default function RootLayout({

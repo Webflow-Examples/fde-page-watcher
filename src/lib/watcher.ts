@@ -1,8 +1,9 @@
-import type { RangeDays, Rec, Strategy, WatchPage } from "./types";
+import type { AgentIgnoreSettings, RangeDays, Rec, Strategy, WatchPage } from "./types";
 import { summarizeAgentChecks } from "./agentScoring";
 import { C } from "./ui";
 import { savingsValue } from "./ui";
 import { DROP_THRESHOLD, pageRangeComparison, pageRangeTrend } from "./scoring";
+import { isPageActivelyMonitored } from "./watchCapacity";
 
 /** "A" · "A and B" · "A, B and C". */
 function listJoin(names: string[]): string {
@@ -36,35 +37,41 @@ function hasSnapshot(page: WatchPage): boolean {
   return page.history.length > 0 || !!page.baseline;
 }
 
-function hasAgentGap(page: WatchPage): boolean {
-  return summarizeAgentChecks(page.agent, page.agentIgnores).fail > 0;
+function hasAgentGap(page: WatchPage, defaults?: AgentIgnoreSettings): boolean {
+  return summarizeAgentChecks(page.agent, page.agentIgnores, defaults, page.agentIgnoreRestores).fail > 0;
 }
 
 /**
  * The Watcher: an agent-authored read of current conditions, what changed over
  * the selected range, and a top recommendation (REQ-049). Derived live from stored state.
  */
-export function buildWatcher(pages: WatchPage[], recs: Rec[], strategy: Strategy, rangeDays: RangeDays = 30): WatcherSummary {
-  const trends = new Map(pages.map((page) => [page.id, pageRangeTrend(page, strategy, rangeDays)]));
-  const stable = pages.filter((p) => trends.get(p.id) === "stable").length;
-  const improving = pages.filter((p) => trends.get(p.id) === "improving").length;
-  const regressing = pages.filter((p) => trends.get(p.id) === "regressing").length;
-  const lowPerformance = pages.filter((p) => hasSnapshot(p) && p.current[strategy].perf < LOW_PERFORMANCE_THRESHOLD).length;
-  const agentGaps = pages.filter(hasAgentGap).length;
-  const qualityIssues = pages.filter((p) => hasSnapshot(p) && (["a11y", "bp", "seo"] as const).some((key) => p.current[strategy][key] < QUALITY_SCORE_THRESHOLD)).length;
+export function buildWatcher(
+  pages: WatchPage[],
+  recs: Rec[],
+  strategy: Strategy,
+  rangeDays: RangeDays = 30,
+  agentIgnoreDefaults?: AgentIgnoreSettings,
+): WatcherSummary {
+  const activePages = pages.filter(isPageActivelyMonitored);
+  const trends = new Map(activePages.map((page) => [page.id, pageRangeTrend(page, strategy, rangeDays)]));
+  const stable = activePages.filter((p) => trends.get(p.id) === "stable").length;
+  const improving = activePages.filter((p) => trends.get(p.id) === "improving").length;
+  const regressing = activePages.filter((p) => trends.get(p.id) === "regressing").length;
+  const lowPerformance = activePages.filter((p) => hasSnapshot(p) && p.current[strategy].perf < LOW_PERFORMANCE_THRESHOLD).length;
+  const agentGaps = activePages.filter((page) => hasAgentGap(page, agentIgnoreDefaults)).length;
+  const qualityIssues = activePages.filter((p) => hasSnapshot(p) && (["a11y", "bp", "seo"] as const).some((key) => p.current[strategy][key] < QUALITY_SCORE_THRESHOLD)).length;
 
-  const ranked = pages.filter((p) => trends.get(p.id) !== "pending" && p.baseline);
+  const ranked = activePages.filter((p) => trends.get(p.id) !== "pending" && p.baseline);
   const regressionPages = ranked.filter((p) => trends.get(p.id) === "regressing");
   const improvingPages = ranked.filter((p) => trends.get(p.id) === "improving");
 
   const changed: WatcherBullet[] = [];
   for (const p of regressionPages) {
     const drop = Math.abs(pageRangeComparison(p, strategy, "perf", rangeDays)?.delta ?? 0);
-    const marker = p.markers.length ? p.markers[p.markers.length - 1].text.toLowerCase() : null;
     changed.push({
       lead: p.title,
       leadColor: C.red,
-      text: `fell ${drop} points on ${strategy} Performance over the last ${rangeDays} days${marker ? ` after ${marker}` : ""}.`,
+      text: `fell ${drop} points.`,
     });
   }
   for (const p of improvingPages) {
@@ -72,7 +79,7 @@ export function buildWatcher(pages: WatchPage[], recs: Rec[], strategy: Strategy
     changed.push({
       lead: p.title,
       leadColor: C.green,
-      text: `gained ${gain} points on ${strategy} Performance over the last ${rangeDays} days.`,
+      text: `gained ${gain} points.`,
     });
   }
   const below = ranked.filter((p) => (p.current[strategy]?.perf ?? 100) < LOW_PERFORMANCE_THRESHOLD);
@@ -109,5 +116,5 @@ export function buildWatcher(pages: WatchPage[], recs: Rec[], strategy: Strategy
     if (cand) topRec = { pageTitle: focus.title, recTitle: cand.title, savings: cand.savings };
   }
 
-  return { total: pages.length, stable, improving, regressing, lowPerformance, agentGaps, qualityIssues, changed, topRec };
+  return { total: activePages.length, stable, improving, regressing, lowPerformance, agentGaps, qualityIssues, changed, topRec };
 }

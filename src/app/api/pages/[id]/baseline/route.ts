@@ -16,7 +16,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     );
   } catch (err) {
     const message = String(err);
-    const status = message.includes("not found") ? 404 : message.includes("not configured") ? 503 : 500;
+    const status = message.includes("not found") ? 404 : message.includes("is paused") ? 409 : message.includes("not configured") ? 503 : 500;
     return NextResponse.json({ error: message }, { status });
   }
 }
