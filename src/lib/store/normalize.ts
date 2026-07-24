@@ -1,11 +1,13 @@
 import type { AppState } from "../types";
 import { normalizeAgentIgnoreSettings } from "../agentScoring";
+import { normalizePerformanceThresholds } from "../performanceThresholds";
 import { pageTrend } from "../scoring";
 import { normalizeWatchCapacity } from "../watchCapacity";
 
 /** Apply compatible, idempotent upgrades when reading persisted state. */
 export function normalizeState(state: AppState): AppState {
   state.agentIgnoreDefaults = normalizeAgentIgnoreSettings(state.agentIgnoreDefaults);
+  state.performanceThresholds = normalizePerformanceThresholds(state.performanceThresholds);
   if (normalizeWatchCapacity(state.pages)) delete state.watcherNote;
   for (const page of state.pages) {
     // Older pending records carried a zero-filled placeholder baseline. The
@@ -16,7 +18,7 @@ export function normalizeState(state: AppState): AppState {
     // that legacy value described a transient drop, not improvement.
     const storedStatus = page.status as string;
     if (["healthy", "improvable", "degraded"].includes(storedStatus)) {
-      page.status = pageTrend(page, "mobile");
+      page.status = pageTrend(page, "mobile", state.performanceThresholds);
     }
     page.agentIgnores = normalizeAgentIgnoreSettings(page.agentIgnores);
     page.agentIgnoreRestores = normalizeAgentIgnoreSettings(page.agentIgnoreRestores);

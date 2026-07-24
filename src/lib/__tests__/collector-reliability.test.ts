@@ -40,7 +40,7 @@ describe("pending pages and explicit baselines", () => {
     legacy.status = "healthy" as PageStatus;
 
     const migrated = normalizeState({ pages: [legacy], recs: [] });
-    expect(migrated.pages[0].status).toBe("regressing");
+    expect(migrated.pages[0].status).toBe("pending");
   });
 
   it("stores an on-demand snapshot but remains pending before baseline capture", async () => {

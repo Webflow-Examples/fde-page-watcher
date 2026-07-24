@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { isKnownAgentIgnoreTarget } from "./agentChecks";
 import { updateAgentIgnoreOverride, updateAgentIgnoreSettings } from "./agentScoring";
+import { normalizePerformanceThresholds, performanceThresholdsAreValid } from "./performanceThresholds";
+import { pageTrend } from "./scoring";
 import { getStore } from "./store";
 import type { DataStore } from "./store";
 import { shortDate } from "./ui";
-import type { AgentIgnoreOverrideMode, AgentIgnoreScope, AppState, Flag, RecStatus, ScoreByCategory, TaskStatus, WatchPage } from "./types";
+import type { AgentIgnoreOverrideMode, AgentIgnoreScope, AppState, Flag, PerformanceThresholds, RecStatus, ScoreByCategory, TaskStatus, WatchPage } from "./types";
 import { defaultNewPageFlag, flagCapacityError } from "./watchCapacity";
 
 /**
@@ -82,6 +84,22 @@ export function setDefaultAgentIgnore(
       throw new Error(`setDefaultAgentIgnore: ${scope} does not exist`);
     }
     state.agentIgnoreDefaults = updateAgentIgnoreSettings(state.agentIgnoreDefaults, scope, value, ignored);
+  }, dataStore);
+}
+
+export function setPerformanceThresholds(
+  thresholds: PerformanceThresholds,
+  dataStore: DataStore = getStore(),
+): Promise<AppState> {
+  if (!performanceThresholdsAreValid(thresholds)) {
+    throw new Error("setPerformanceThresholds: values are outside the supported range");
+  }
+  return withState((state) => {
+    state.performanceThresholds = normalizePerformanceThresholds(thresholds);
+    for (const page of state.pages) {
+      page.status = pageTrend(page, "mobile", state.performanceThresholds);
+    }
+    delete state.watcherNote;
   }, dataStore);
 }
 

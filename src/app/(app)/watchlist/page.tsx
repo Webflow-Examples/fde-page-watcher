@@ -2,15 +2,20 @@
 
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
+import { Info } from "@phosphor-icons/react";
 import { useStore } from "@/components/store";
 import { AGENT_CHECK_GROUPS, ALL_AGENT_CHECKS } from "@/lib/agentChecks";
 import { agentCheckKey, isAgentCheckIgnored, isAgentGroupIgnored, normalizeAgentIgnoreSettings } from "@/lib/agentScoring";
+import { DEFAULT_PERFORMANCE_THRESHOLDS, normalizePerformanceThresholds, PERFORMANCE_THRESHOLD_LIMITS } from "@/lib/performanceThresholds";
+import type { DevicePolicy, PerformanceThresholds } from "@/lib/types";
 import { C } from "@/lib/ui";
 import { SegToggle } from "@/components/bits";
-import { PlusIcon, TrashIcon } from "@/components/icons";
+import { ChevronDownIcon, PlusIcon, TrashIcon } from "@/components/icons";
 import { flagCapacityError, MAX_ACTIVE_PAGES, MAX_PRIORITY_PAGES, watchCapacity } from "@/lib/watchCapacity";
 
 const GRID = "minmax(260px,2.4fr) 230px 1fr 120px";
+type NumericToleranceKey = keyof typeof PERFORMANCE_THRESHOLD_LIMITS;
+const NUMERIC_TOLERANCE_KEYS = Object.keys(PERFORMANCE_THRESHOLD_LIMITS) as NumericToleranceKey[];
 
 function EditablePageTitle({
   pageId,
@@ -109,6 +114,195 @@ function EditablePageTitle({
   );
 }
 
+function SettingTooltip({ id, label, help }: { id: string; label: string; help: string }) {
+  return (
+    <span className="setting-tooltip">
+      <button
+        type="button"
+        className="setting-tooltip-trigger"
+        aria-label={`About ${label}`}
+        aria-describedby={id}
+      >
+        <Info size={13} weight="bold" />
+      </button>
+      <span className="setting-tooltip-content" id={id} role="tooltip">
+        {help}
+      </span>
+    </span>
+  );
+}
+
+function SettingHeader({
+  id,
+  label,
+  help,
+  resetDisabled,
+  onReset,
+}: {
+  id: string;
+  label: string;
+  help: string;
+  resetDisabled: boolean;
+  onReset: () => void;
+}) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", minWidth: 0, gap: 6 }}>
+      <span id={`${id}-label`} style={{ minWidth: 0, color: C.text, fontSize: 13, fontWeight: 600 }}>
+        {label}
+      </span>
+      <SettingTooltip id={`${id}-help`} label={label} help={help} />
+      <button
+        type="button"
+        className="setting-reset-button"
+        aria-label={`Reset ${label} to its team default`}
+        disabled={resetDisabled}
+        onClick={onReset}
+      >
+        Reset
+      </button>
+    </div>
+  );
+}
+
+function NumberStepper({
+  id,
+  ariaLabel,
+  value,
+  min,
+  max,
+  suffix,
+  onChange,
+}: {
+  id: string;
+  ariaLabel: string;
+  value: string;
+  min: number;
+  max: number;
+  suffix: string;
+  onChange: (value: string) => void;
+}) {
+  const stepValue = (amount: number) => {
+    const parsed = Number(value);
+    const current = Number.isFinite(parsed) ? parsed : min;
+    onChange(String(Math.max(min, Math.min(max, current + amount))));
+  };
+
+  return (
+    <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <span className="tolerance-stepper" style={{ position: "relative", display: "inline-flex", width: 92, height: 36 }}>
+        <input
+          className="tolerance-number-input"
+          id={id}
+          type="number"
+          inputMode="numeric"
+          value={value}
+          min={min}
+          max={max}
+          step={1}
+          aria-label={ariaLabel}
+          onChange={(event) => onChange(event.target.value)}
+          style={{
+            width: "100%",
+            height: "100%",
+            padding: "0 38px 0 10px",
+            border: `1px solid ${C.border2}`,
+            borderRadius: 7,
+            background: C.bgElev,
+            color: C.text,
+            font: "inherit",
+            fontSize: 14,
+            fontWeight: 600,
+            textAlign: "right",
+          }}
+        />
+        <span
+          style={{
+            position: "absolute",
+            top: 1,
+            right: 1,
+            bottom: 1,
+            display: "grid",
+            width: 28,
+            gridTemplateRows: "1fr 1fr",
+            borderLeft: `1px solid ${C.border2}`,
+            borderRadius: "0 6px 6px 0",
+            overflow: "hidden",
+          }}
+        >
+          <button
+            className="tolerance-stepper-button"
+            type="button"
+            aria-label={`Increase ${ariaLabel}`}
+            aria-controls={id}
+            disabled={Number(value) >= max}
+            onClick={() => stepValue(1)}
+          >
+            <ChevronDownIcon size={10} style={{ transform: "rotate(180deg)" }} />
+          </button>
+          <button
+            className="tolerance-stepper-button"
+            type="button"
+            aria-label={`Decrease ${ariaLabel}`}
+            aria-controls={id}
+            disabled={Number(value) <= min}
+            onClick={() => stepValue(-1)}
+          >
+            <ChevronDownIcon size={10} />
+          </button>
+        </span>
+      </span>
+      <span style={{ minWidth: 40, color: C.faint2, fontSize: 11.5 }}>{suffix}</span>
+    </span>
+  );
+}
+
+function ToleranceField({
+  id,
+  label,
+  help,
+  value,
+  defaultValue,
+  min,
+  max,
+  suffix,
+  onChange,
+  onReset,
+  wide = false,
+}: {
+  id: string;
+  label: string;
+  help: string;
+  value: string;
+  defaultValue: number;
+  min: number;
+  max: number;
+  suffix: string;
+  onChange: (value: string) => void;
+  onReset: () => void;
+  wide?: boolean;
+}) {
+  return (
+    <div className={`watchlist-setting-card${wide ? " watchlist-setting-card--wide" : ""}`}>
+      <SettingHeader
+        id={id}
+        label={label}
+        help={help}
+        resetDisabled={value === String(defaultValue)}
+        onReset={onReset}
+      />
+      <NumberStepper
+        id={id}
+        ariaLabel={label}
+        value={value}
+        min={min}
+        max={max}
+        suffix={suffix}
+        onChange={onChange}
+      />
+    </div>
+  );
+}
+
 export default function WatchlistPage() {
   const router = useRouter();
   const {
@@ -122,10 +316,59 @@ export default function WatchlistPage() {
     pathFor,
     preferredStrategy,
     setPreferredStrategy,
+    performanceThresholds,
+    updatePerformanceThresholds,
   } = useStore();
   const defaultIgnores = normalizeAgentIgnoreSettings(agentIgnoreDefaults);
+  const thresholds = normalizePerformanceThresholds(performanceThresholds);
+  const [thresholdDrafts, setThresholdDrafts] = useState<Record<NumericToleranceKey, string>>(() =>
+    Object.fromEntries(NUMERIC_TOLERANCE_KEYS.map((key) => [key, String(thresholds[key])])) as Record<NumericToleranceKey, string>
+  );
+  const [devicePolicyDraft, setDevicePolicyDraft] = useState<DevicePolicy>(thresholds.devicePolicy);
   const ignoredByDefault = ALL_AGENT_CHECKS.filter((check) => isAgentCheckIgnored(check, undefined, defaultIgnores)).length;
   const capacity = watchCapacity(pages);
+  const thresholdValues = Object.fromEntries(
+    NUMERIC_TOLERANCE_KEYS.map((key) => [key, Number(thresholdDrafts[key])]),
+  ) as Record<NumericToleranceKey, number>;
+  const thresholdsValid = NUMERIC_TOLERANCE_KEYS.every((key) => {
+    const value = thresholdValues[key];
+    const limits = PERFORMANCE_THRESHOLD_LIMITS[key];
+    return Number.isInteger(value) && value >= limits.min && value <= limits.max;
+  });
+  const nextThresholds = {
+    ...thresholdValues,
+    devicePolicy: devicePolicyDraft,
+  } as PerformanceThresholds;
+  const thresholdsDirty = thresholdsValid && (
+    NUMERIC_TOLERANCE_KEYS.some((key) => thresholdValues[key] !== thresholds[key])
+    || devicePolicyDraft !== thresholds.devicePolicy
+  );
+  const thresholdDraftsAtDefaults = NUMERIC_TOLERANCE_KEYS.every(
+    (key) => thresholdDrafts[key] === String(DEFAULT_PERFORMANCE_THRESHOLDS[key]),
+  ) && devicePolicyDraft === DEFAULT_PERFORMANCE_THRESHOLDS.devicePolicy;
+
+  const setThresholdDraft = (key: NumericToleranceKey, value: string) => {
+    setThresholdDrafts((current) => ({ ...current, [key]: value }));
+  };
+
+  const saveThresholds = () => {
+    if (!thresholdsValid) return;
+    updatePerformanceThresholds(nextThresholds);
+  };
+
+  const resetThresholds = (keys: NumericToleranceKey[]) => {
+    setThresholdDrafts((current) => ({
+      ...current,
+      ...Object.fromEntries(keys.map((key) => [key, String(DEFAULT_PERFORMANCE_THRESHOLDS[key])])),
+    }));
+  };
+
+  const resetAllThresholds = () => {
+    setThresholdDrafts(
+      Object.fromEntries(NUMERIC_TOLERANCE_KEYS.map((key) => [key, String(DEFAULT_PERFORMANCE_THRESHOLDS[key])])) as Record<NumericToleranceKey, string>,
+    );
+    setDevicePolicyDraft(DEFAULT_PERFORMANCE_THRESHOLDS.devicePolicy);
+  };
 
   return (
     <div>
@@ -233,6 +476,174 @@ export default function WatchlistPage() {
                 { value: "mobile", label: "Mobile first" },
               ]}
             />
+          </div>
+        </section>
+
+        <section aria-labelledby="performance-tolerances-heading" style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 14, padding: "20px", marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 24, marginBottom: 16 }}>
+            <div>
+              <div id="performance-tolerances-heading" style={{ fontSize: 13.5, fontWeight: 600 }}>Monitoring tolerances</div>
+              <div style={{ maxWidth: 720, marginTop: 4, color: C.muted, fontSize: 12, lineHeight: 1.5 }}>
+                Team defaults for when pages enter dashboard cards, Watcher summaries, page statuses, and alerts. Hover or focus an info icon for details.
+              </div>
+            </div>
+            <button
+              type="button"
+              className="setting-reset-all-button"
+              disabled={thresholdDraftsAtDefaults}
+              onClick={resetAllThresholds}
+            >
+              Reset all
+            </button>
+          </div>
+
+          <div className="watchlist-tolerance-grid" style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 12 }}>
+            <ToleranceField
+              id="improvement-threshold"
+              label="Improvement threshold"
+              help="A page is improving when its Performance gain meets this minimum and also clears its normal measurement noise."
+              value={thresholdDrafts.improvement}
+              defaultValue={DEFAULT_PERFORMANCE_THRESHOLDS.improvement}
+              min={PERFORMANCE_THRESHOLD_LIMITS.improvement.min}
+              max={PERFORMANCE_THRESHOLD_LIMITS.improvement.max}
+              suffix="points"
+              onChange={(value) => setThresholdDraft("improvement", value)}
+              onReset={() => resetThresholds(["improvement"])}
+            />
+            <ToleranceField
+              id="regression-threshold"
+              label="Regression tolerance"
+              help="A Performance decline must meet or exceed this many points before it can be classified as a regression."
+              value={thresholdDrafts.regression}
+              defaultValue={DEFAULT_PERFORMANCE_THRESHOLDS.regression}
+              min={PERFORMANCE_THRESHOLD_LIMITS.regression.min}
+              max={PERFORMANCE_THRESHOLD_LIMITS.regression.max}
+              suffix="points"
+              onChange={(value) => setThresholdDraft("regression", value)}
+              onReset={() => resetThresholds(["regression"])}
+            />
+            <ToleranceField
+              id="confirmation-runs"
+              label="Confirmation runs"
+              help="Require this many consecutive qualifying scans before a regression is surfaced."
+              value={thresholdDrafts.confirmationRuns}
+              defaultValue={DEFAULT_PERFORMANCE_THRESHOLDS.confirmationRuns}
+              min={PERFORMANCE_THRESHOLD_LIMITS.confirmationRuns.min}
+              max={PERFORMANCE_THRESHOLD_LIMITS.confirmationRuns.max}
+              suffix="scans"
+              onChange={(value) => setThresholdDraft("confirmationRuns", value)}
+              onReset={() => resetThresholds(["confirmationRuns"])}
+            />
+            <ToleranceField
+              id="regression-floor"
+              label="Regression floor"
+              help="Ignore a decline when the latest Performance score remains at or above this value."
+              value={thresholdDrafts.regressionFloor}
+              defaultValue={DEFAULT_PERFORMANCE_THRESHOLDS.regressionFloor}
+              min={PERFORMANCE_THRESHOLD_LIMITS.regressionFloor.min}
+              max={PERFORMANCE_THRESHOLD_LIMITS.regressionFloor.max}
+              suffix="/ 100"
+              onChange={(value) => setThresholdDraft("regressionFloor", value)}
+              onReset={() => resetThresholds(["regressionFloor"])}
+            />
+
+            <div className="watchlist-setting-card">
+              <SettingHeader
+                id="device-policy"
+                label="Device policy"
+                help="Choose whether either device, both devices, or only the default chart device can place a page in a summary status."
+                resetDisabled={devicePolicyDraft === DEFAULT_PERFORMANCE_THRESHOLDS.devicePolicy}
+                onReset={() => setDevicePolicyDraft(DEFAULT_PERFORMANCE_THRESHOLDS.devicePolicy)}
+              />
+              <SegToggle
+                label="Device policy"
+                value={devicePolicyDraft}
+                onChange={setDevicePolicyDraft}
+                options={[
+                  { value: "either", label: "Either" },
+                  { value: "both", label: "Both" },
+                  { value: "preferred", label: "Default" },
+                ]}
+              />
+            </div>
+
+            <ToleranceField
+              id="agent-readiness-cutoff"
+              label="Agent-readiness cutoff"
+              help="Pages with an agent-readiness score below this percentage appear in Agent gaps."
+              value={thresholdDrafts.agentReadiness}
+              defaultValue={DEFAULT_PERFORMANCE_THRESHOLDS.agentReadiness}
+              min={PERFORMANCE_THRESHOLD_LIMITS.agentReadiness.min}
+              max={PERFORMANCE_THRESHOLD_LIMITS.agentReadiness.max}
+              suffix="%"
+              onChange={(value) => setThresholdDraft("agentReadiness", value)}
+              onReset={() => resetThresholds(["agentReadiness"])}
+            />
+
+            <div className="watchlist-setting-card watchlist-setting-card--wide">
+              <SettingHeader
+                id="metric-cutoffs"
+                label="Metric-specific cutoffs"
+                help="A metric is considered low when its latest score falls below the corresponding cutoff."
+                resetDisabled={(["lowPerformance", "accessibility", "bestPractices", "seo"] as NumericToleranceKey[]).every(
+                  (key) => thresholdDrafts[key] === String(DEFAULT_PERFORMANCE_THRESHOLDS[key]),
+                )}
+                onReset={() => resetThresholds(["lowPerformance", "accessibility", "bestPractices", "seo"])}
+              />
+              <div className="metric-cutoff-grid">
+                {([
+                  ["lowPerformance", "Performance"],
+                  ["accessibility", "Accessibility"],
+                  ["bestPractices", "Best practices"],
+                  ["seo", "SEO"],
+                ] as [NumericToleranceKey, string][]).map(([key, label]) => (
+                  <div key={key} className="metric-cutoff-control">
+                    <span>{label}</span>
+                    <NumberStepper
+                      id={`metric-cutoff-${key}`}
+                      ariaLabel={`${label} cutoff`}
+                      value={thresholdDrafts[key]}
+                      min={PERFORMANCE_THRESHOLD_LIMITS[key].min}
+                      max={PERFORMANCE_THRESHOLD_LIMITS[key].max}
+                      suffix="/ 100"
+                      onChange={(value) => setThresholdDraft(key, value)}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <ToleranceField
+              id="new-page-grace-runs"
+              label="New-page grace period"
+              help="Wait for this many completed post-baseline scans before showing trend statuses or sending regression alerts."
+              value={thresholdDrafts.newPageGraceRuns}
+              defaultValue={DEFAULT_PERFORMANCE_THRESHOLDS.newPageGraceRuns}
+              min={PERFORMANCE_THRESHOLD_LIMITS.newPageGraceRuns.min}
+              max={PERFORMANCE_THRESHOLD_LIMITS.newPageGraceRuns.max}
+              suffix="scans"
+              onChange={(value) => setThresholdDraft("newPageGraceRuns", value)}
+              onReset={() => resetThresholds(["newPageGraceRuns"])}
+              wide
+            />
+          </div>
+
+          <div className="watchlist-tolerance-actions" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginTop: 16 }}>
+            <div aria-live="polite" style={{ color: thresholdsValid ? C.faint : C.redSoft, fontSize: 11.5 }}>
+              {thresholdsValid
+                ? thresholdsDirty ? "Unsaved tolerance changes." : "All monitoring tolerances are saved."
+                : "One or more values are outside the supported range."}
+            </div>
+            <div style={{ display: "flex", flex: "none", alignItems: "center", gap: 8 }}>
+              <button
+                type="button"
+                onClick={saveThresholds}
+                disabled={!thresholdsDirty}
+                style={{ border: "none", background: C.accent, color: "#fff", fontSize: 12, fontWeight: 600, padding: "9px 13px", borderRadius: 7, cursor: "pointer" }}
+              >
+                Save changes
+              </button>
+            </div>
           </div>
         </section>
 

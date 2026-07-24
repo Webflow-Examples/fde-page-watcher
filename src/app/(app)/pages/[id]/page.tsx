@@ -4,9 +4,10 @@ import { useEffect } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useStore } from "@/components/store";
 import { CATEGORIES } from "@/lib/types";
-import type { CategoryKey, Night, RangeDays, Rec, WatchPage } from "@/lib/types";
+import type { AgentCheck, CategoryKey, Night, RangeDays, Rec, WatchPage } from "@/lib/types";
 import { agentCheckKey, agentIgnoreOverrideMode, isAgentCheckIgnored, isAgentGroupIgnored, normalizeAgentIgnoreSettings, summarizeAgentChecks } from "@/lib/agentScoring";
-import { deltaMeta, pageHistoryForRange, pageRangeComparison, pageRangeSeries, pageRangeTrend, scoreMeta } from "@/lib/scoring";
+import { normalizePerformanceThresholds } from "@/lib/performanceThresholds";
+import { deltaMeta, pageAgentSnapshotForRange, pageHistoryForRange, pageRangeComparison, pageRangeLatestNight, pageRangeSeries, pageRangeTrend, scoreMeta } from "@/lib/scoring";
 import { auditsFor } from "@/lib/audits";
 import { C, taskLabel } from "@/lib/ui";
 import { HistoryChart, Sparkline } from "@/components/charts";
@@ -36,17 +37,21 @@ export default function PageDetail() {
     );
   }
 
-  const agentSummary = summarizeAgentChecks(page.agent, page.agentIgnores, store.agentIgnoreDefaults, page.agentIgnoreRestores);
+  const latestRangeNight = pageRangeLatestNight(page, rangeDays);
+  const agentSnapshot = pageAgentSnapshotForRange(page, rangeDays);
+  const agentChecks = agentSnapshot?.checks ?? [];
+  const agentSummary = summarizeAgentChecks(agentChecks, page.agentIgnores, store.agentIgnoreDefaults, page.agentIgnoreRestores);
   const { pass, fail, total, unavailable: unavailableCount, ignored, percent: apct } = agentSummary;
   const apm = scoreMeta(apct);
-  const failList = page.agent.filter((check) => !isAgentCheckIgnored(check, page.agentIgnores, store.agentIgnoreDefaults, page.agentIgnoreRestores) && !check.unavailable && !check.pass);
+  const failList = agentChecks.filter((check) => !isAgentCheckIgnored(check, page.agentIgnores, store.agentIgnoreDefaults, page.agentIgnoreRestores) && !check.unavailable && !check.pass);
   const isPending = !page.baseline || !page.baselineCapturedAt;
   const collectionBlocked = page.flag === "paused" || (!!page.runState && page.runState !== "failed");
   const successfulRunAt = lastSuccessfulRunAt(page);
   const successfulRunLabel = formatSuccessfulRunAt(successfulRunAt);
   const watchedPageHref = /^[a-z][a-z\d+.-]*:\/\//i.test(page.url) ? page.url : `https://${page.url}`;
-  const mobileTrend = pageRangeTrend(page, "mobile", rangeDays);
-  const desktopTrend = pageRangeTrend(page, "desktop", rangeDays);
+  const thresholds = normalizePerformanceThresholds(store.performanceThresholds);
+  const mobileTrend = pageRangeTrend(page, "mobile", rangeDays, thresholds);
+  const desktopTrend = pageRangeTrend(page, "desktop", rangeDays, thresholds);
   const isStatusPreview = process.env.NODE_ENV === "development" && searchParams.get("statusPreview") === "compare";
   const displayedMobileTrend = isStatusPreview ? "regressing" : mobileTrend;
   const displayedDesktopTrend = isStatusPreview ? "improving" : desktopTrend;
@@ -130,10 +135,10 @@ export default function PageDetail() {
           <PendingPanel page={page} store={store} />
         ) : (
           <div role="tabpanel" id={`page-panel-${tab}`} aria-labelledby={`page-tab-${tab}`} tabIndex={0}>
-            {tab === "overview" && <OverviewTab page={page} recs={recs} strategy={strategy} rangeDays={rangeDays} apct={apct} apm={apm} pass={pass} total={total} ignored={ignored} failList={failList} store={store} />}
+            {tab === "overview" && <OverviewTab page={page} latestNight={latestRangeNight} agentChecks={agentChecks} recs={recs} strategy={strategy} rangeDays={rangeDays} apct={apct} apm={apm} pass={pass} total={total} ignored={ignored} failList={failList} store={store} />}
             {tab === "history" && <HistoryTab page={page} strategy={strategy} rangeDays={rangeDays} chartCat={chartCat} setChartCat={setChartCat} store={store} />}
-            {tab === "audits" && <OpportunitiesTab page={page} />}
-            {tab === "agent" && <AgentTab page={page} pass={pass} fail={fail} ignored={ignored} unavailable={unavailableCount} store={store} />}
+            {tab === "audits" && <OpportunitiesTab latest={latestRangeNight} />}
+            {tab === "agent" && <AgentTab page={page} checks={agentChecks} date={agentSnapshot?.date ?? null} rangeDays={rangeDays} pass={pass} fail={fail} ignored={ignored} unavailable={unavailableCount} store={store} />}
           </div>
         )}
       </div>
@@ -164,6 +169,8 @@ function CollectionStatus({ page }: { page: WatchPage }) {
 
 function OverviewTab({
   page,
+  latestNight,
+  agentChecks,
   recs,
   strategy,
   rangeDays,
@@ -176,6 +183,8 @@ function OverviewTab({
   store,
 }: {
   page: WatchPage;
+  latestNight: Night | null;
+  agentChecks: AgentCheck[];
   recs: Rec[];
   strategy: "mobile" | "desktop";
   rangeDays: RangeDays;
@@ -193,12 +202,12 @@ function OverviewTab({
     <div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 16, marginBottom: 20 }}>
         {CATEGORIES.map((c) => {
-          const v = page.current[strategy][c.key];
-          const secondary = page.current[secondaryStrategy][c.key];
+          const v = latestNight?.scores[strategy][c.key].m ?? null;
+          const secondary = latestNight?.scores[secondaryStrategy][c.key].m ?? null;
           const baseline = page.baseline![strategy][c.key].m;
           const secondaryBaseline = page.baseline![secondaryStrategy][c.key].m;
-          const sm = scoreMeta(v);
-          const secondaryMeta = scoreMeta(secondary);
+          const sm = v === null ? null : scoreMeta(v);
+          const secondaryMeta = secondary === null ? null : scoreMeta(secondary);
           const comparison = pageRangeComparison(page, strategy, c.key, rangeDays);
           const dm = comparison ? deltaMeta(comparison.to, comparison.from) : null;
           return (
@@ -208,20 +217,20 @@ function OverviewTab({
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 10, color: C.faint, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 5 }}>{strategy}</div>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <span style={{ fontSize: 32, fontWeight: 600, lineHeight: 1, color: sm.fg }}>{v}</span>
+                    <span style={{ fontSize: 32, fontWeight: 600, lineHeight: 1, color: sm?.fg ?? C.faint }}>{v ?? "—"}</span>
                     {dm && <span style={{ display: "inline-flex", alignItems: "center", gap: 3, flex: "none", whiteSpace: "nowrap", fontSize: 12, fontWeight: 600, padding: "3px 6px", borderRadius: 6, color: dm.fg, background: dm.chip }}>{dm.text}</span>}
                   </div>
                 </div>
                 <div style={{ minWidth: 0, textAlign: "right", paddingBottom: 1 }}>
                   <div style={{ fontSize: 10, color: C.faint, textTransform: "uppercase", letterSpacing: "0.04em" }}>{secondaryStrategy}</div>
-                  <div style={{ fontSize: 18, fontWeight: 600, color: secondaryMeta.fg, marginTop: 3 }}>{secondary}</div>
+                  <div style={{ fontSize: 18, fontWeight: 600, color: secondaryMeta?.fg ?? C.faint, marginTop: 3 }}>{secondary ?? "—"}</div>
                 </div>
               </div>
               <div style={{ fontSize: 11, color: C.faint, marginTop: 8 }}>Baseline {strategy === "mobile" ? "M" : "D"} {baseline} · {secondaryStrategy === "mobile" ? "M" : "D"} {secondaryBaseline}</div>
               <div style={{ height: 52, marginTop: 6 }}>
                 <Sparkline
                   series={pageRangeSeries(page, strategy, c.key, rangeDays)}
-                  color={sm.line}
+                  color={sm?.line ?? C.faint}
                   h={52}
                   sw={2}
                   w={200}
@@ -242,9 +251,9 @@ function OverviewTab({
             <div style={{ fontSize: 12.5, color: C.muted }}>
               {total
                 ? `${pass} of ${total} applicable checks passing · ${ignored} ignored`
-                : page.agent.length
+                : agentChecks.length
                   ? `No applicable checks · ${ignored} ignored`
-                  : "No scan yet"}
+                  : "No scan in this range"}
             </div>
             <div style={{ fontSize: 11.5, color: C.faint, marginTop: 2 }}>Pass rate, computed live from per-check results — not a composite score</div>
           </div>
@@ -252,7 +261,7 @@ function OverviewTab({
         <div style={{ flex: 1, minWidth: 0, borderLeft: `1px solid ${C.border}`, paddingLeft: 26 }}>
           {failList.length === 0 ? (
             <div style={{ fontSize: 13, color: total ? C.green : C.muted, fontWeight: 500 }}>
-              {total ? "All applicable checks passing." : page.agent.length ? "No applicable checks are currently scored." : "Run a scan to see per-check results."}
+              {total ? "All applicable checks passing." : agentChecks.length ? "No applicable checks are currently scored." : "No agent-readiness scan was recorded in this range."}
             </div>
           ) : (
             <div>
@@ -457,8 +466,7 @@ function PendingPanel({ page, store }: { page: WatchPage; store: ReturnType<type
   );
 }
 
-function OpportunitiesTab({ page }: { page: WatchPage }) {
-  const latest = page.history[page.history.length - 1];
+function OpportunitiesTab({ latest }: { latest: Night | null }) {
   const audits = auditsFor(latest?.opportunities);
   return (
     <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, overflow: "hidden" }}>
@@ -491,6 +499,9 @@ function OpportunitiesTab({ page }: { page: WatchPage }) {
 
 function AgentTab({
   page,
+  checks,
+  date,
+  rangeDays,
   pass,
   fail,
   ignored,
@@ -498,23 +509,25 @@ function AgentTab({
   store,
 }: {
   page: WatchPage;
+  checks: AgentCheck[];
+  date: string | null;
+  rangeDays: RangeDays;
   pass: number;
   fail: number;
   ignored: number;
   unavailable: number;
   store: ReturnType<typeof useStore>;
 }) {
-  const groups = new Map<string, WatchPage["agent"]>();
-  page.agent.forEach((c) => groups.set(c.group, [...(groups.get(c.group) ?? []), c]));
-  const date = page.history[page.history.length - 1]?.date ?? "—";
+  const groups = new Map<string, AgentCheck[]>();
+  checks.forEach((c) => groups.set(c.group, [...(groups.get(c.group) ?? []), c]));
   const ignores = normalizeAgentIgnoreSettings(page.agentIgnores);
   const restores = normalizeAgentIgnoreSettings(page.agentIgnoreRestores);
   const defaults = normalizeAgentIgnoreSettings(store.agentIgnoreDefaults);
-  const allApplicableUnavailable = page.agent.length > 0 && pass === 0 && fail === 0 && unavailable > 0;
+  const allApplicableUnavailable = checks.length > 0 && pass === 0 && fail === 0 && unavailable > 0;
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20, padding: "15px 18px", background: C.panel, border: `1px solid ${C.border}`, borderRadius: 11 }}>
-        <div style={{ fontSize: 13, color: C.faint2 }}>Recorded per check on {date}. Watch List defaults apply unless overridden here.</div>
+        <div style={{ fontSize: 13, color: C.faint2 }}>{date ? `Recorded per check on ${date}.` : `No scan recorded in the selected ${rangeDays}-day range.`} Watch List defaults apply unless overridden here.</div>
         <div style={{ marginLeft: "auto", display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 16, fontSize: 12.5, fontWeight: 500 }}>
           <span style={{ color: C.green }}>{pass} passing</span>
           <span style={{ color: C.red }}>{fail} failing</span>
@@ -522,9 +535,9 @@ function AgentTab({
           {unavailable > 0 && <span style={{ color: C.muted }}>{unavailable} unavailable</span>}
         </div>
       </div>
-      {page.agent.length === 0 ? (
+      {checks.length === 0 ? (
         <div style={{ padding: "40px 22px", textAlign: "center", background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, color: C.muted, fontSize: 13 }}>
-          No agent-readiness scan yet. Run one from the header.
+          No agent-readiness scan in this range. Choose a longer range or run a new scan.
         </div>
       ) : (
         <div>
