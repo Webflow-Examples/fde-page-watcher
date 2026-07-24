@@ -1,11 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
 import type { CategoryKey, ChangeMarker, Night, Strategy } from "@/lib/types";
-import { plottedSparklineSeries } from "@/lib/charting";
+import type { PreviousPeriodMedian } from "@/lib/scoring";
+import { formatHistoryTooltipDate, plottedSparklineSeries, snappedHistoryIndex } from "@/lib/charting";
 import { C } from "@/lib/ui";
 
 const HISTORY_CHART_DEFAULT_WIDTH = 900;
+const HISTORY_CATEGORY_LABELS: Record<CategoryKey, string> = {
+  perf: "Performance",
+  a11y: "Accessibility",
+  bp: "Best practices",
+  seo: "SEO",
+};
 
 function useResponsiveChartWidth(defaultWidth: number) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -83,15 +90,18 @@ export function HistoryChart({
   strategy,
   catKey,
   baseline,
+  previousPeriod,
   markers,
 }: {
   history: Night[];
   strategy: Strategy;
   catKey: CategoryKey;
   baseline: number;
+  previousPeriod: PreviousPeriodMedian | null;
   markers: ChangeMarker[];
 }) {
   const { containerRef, width: W } = useResponsiveChartWidth(HISTORY_CHART_DEFAULT_WIDTH);
+  const [hoveredPoint, setHoveredPoint] = useState<{ index: number; pointerY: number } | null>(null);
   const h = history;
   const n = h.length;
   if (n < 2) return null;
@@ -102,6 +112,7 @@ export function HistoryChart({
   const padB = 30;
   const at = (d: Night, which: "m" | "lo" | "hi") => d.scores[strategy][catKey][which];
   const vals: number[] = [baseline];
+  if (previousPeriod) vals.push(previousPeriod.value);
   h.forEach((d) => vals.push(at(d, "lo"), at(d, "hi")));
   let lo = Math.floor(Math.min(...vals) / 5) * 5 - 3;
   let hi = Math.ceil(Math.max(...vals) / 5) * 5 + 3;
@@ -120,9 +131,37 @@ export function HistoryChart({
   const ticks = [lo, Math.round((lo + hi) / 2), hi];
   const xLabels = [...new Set([0, Math.round((n - 1) / 2), n - 1])];
   const ld = h[n - 1];
+  const baselineLabelY = y(baseline) - 6;
+  const previousPeriodLabelY = previousPeriod
+    ? Math.abs(y(previousPeriod.value) - y(baseline)) < 18
+      ? y(previousPeriod.value) + 14
+      : y(previousPeriod.value) - 6
+    : 0;
+  const hoveredNight = hoveredPoint ? h[hoveredPoint.index] : null;
+  const hoveredMedian = hoveredNight ? at(hoveredNight, "m") : null;
+  const hoveredX = hoveredPoint ? x(hoveredPoint.index) : null;
+  const tooltipOnLeft = hoveredX !== null && hoveredX > W - 190;
+  const tooltipAbove = hoveredPoint ? hoveredPoint.pointerY > H - 125 : false;
+  const handleMouseMove = (event: MouseEvent<HTMLDivElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const pointerX = ((event.clientX - rect.left) / rect.width) * W;
+    const pointerY = ((event.clientY - rect.top) / rect.height) * H;
+    setHoveredPoint({
+      index: snappedHistoryIndex(pointerX, W, n, padL, padR),
+      pointerY: Math.min(H - padB, Math.max(padT, pointerY)),
+    });
+  };
 
   return (
-    <div ref={containerRef} data-history-chart style={{ position: "relative", width: "100%", height: H }}>
+    <div
+      ref={containerRef}
+      data-history-chart
+      onMouseMove={handleMouseMove}
+      onMouseLeave={() => setHoveredPoint(null)}
+      onWheel={() => setHoveredPoint(null)}
+      style={{ position: "relative", width: "100%", height: H, cursor: "crosshair" }}
+    >
       <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} style={{ display: "block" }}>
         {ticks.map((t, k) => (
           <g key={`g${k}`}>
@@ -139,9 +178,25 @@ export function HistoryChart({
         ))}
         <polygon points={`${bandTop} ${bandBot}`} fill={band} />
         <line x1={padL} x2={W - padR} y1={y(baseline)} y2={y(baseline)} stroke="#5A5A62" strokeWidth={1.2} strokeDasharray="5 4" />
-        <text x={W - padR} y={y(baseline) - 6} textAnchor="end" fontSize={10} fill={C.muted}>
-          baseline {baseline}
+        <text x={W - padR} y={baselineLabelY} textAnchor="end" fontSize={10} fill={C.muted}>
+          original benchmark {baseline}
         </text>
+        {previousPeriod && (
+          <>
+            <line
+              x1={padL}
+              x2={W - padR}
+              y1={y(previousPeriod.value)}
+              y2={y(previousPeriod.value)}
+              stroke={C.faint2}
+              strokeWidth={1.2}
+              strokeDasharray="2 4"
+            />
+            <text x={W - padR} y={previousPeriodLabelY} textAnchor="end" fontSize={10} fill={C.faint2}>
+              previous {previousPeriod.days}-day period {previousPeriod.value}
+            </text>
+          </>
+        )}
         <polyline points={medPts} fill="none" stroke={line} strokeWidth={2.4} strokeLinejoin="round" strokeLinecap="round" />
         {(markers || []).map((mk, k) => {
           const markerIndex = h.findIndex((night) => night.i === mk.i);
@@ -155,6 +210,12 @@ export function HistoryChart({
             </g>
           );
         })}
+        {hoveredNight && hoveredMedian !== null && hoveredX !== null && (
+          <g aria-hidden="true">
+            <line x1={hoveredX} x2={hoveredX} y1={padT} y2={H - padB} stroke={C.text} strokeWidth={1} opacity={0.55} />
+            <circle cx={hoveredX} cy={y(hoveredMedian)} r={4.5} fill={line} stroke={C.panel} strokeWidth={2} />
+          </g>
+        )}
       </svg>
       <FixedChartDot kind="history-line" x={x(n - 1)} y={y(at(ld, "m"))} viewWidth={W} viewHeight={H} radius={4} color={line} borderColor={C.panel} borderWidth={2} />
       {(markers || []).map((mk) => {
@@ -162,6 +223,36 @@ export function HistoryChart({
         if (markerIndex < 0) return null;
         return <FixedChartDot key={mk.id} kind="history-marker" x={x(markerIndex)} y={padT - 4} viewWidth={W} viewHeight={H} radius={3.5} color="#9564FF" />;
       })}
+      {hoveredNight && hoveredMedian !== null && hoveredX !== null && (
+        <div
+          role="tooltip"
+          style={{
+            position: "absolute",
+            zIndex: 3,
+            left: `${(hoveredX / W) * 100}%`,
+            top: hoveredPoint?.pointerY ?? padT,
+            width: 154,
+            padding: "10px 12px",
+            borderRadius: 8,
+            border: `1px solid ${C.border2}`,
+            background: "rgba(24,24,28,0.97)",
+            boxShadow: "0 10px 28px rgba(0,0,0,0.38)",
+            color: C.text,
+            pointerEvents: "none",
+            transform: `translate(${tooltipOnLeft ? "calc(-100% - 10px)" : "10px"}, ${tooltipAbove ? "calc(-100% - 10px)" : "10px"})`,
+          }}
+        >
+          <div style={{ fontSize: 11.5, fontWeight: 650 }}>{HISTORY_CATEGORY_LABELS[catKey]}</div>
+          <div style={{ marginTop: 2, fontSize: 10.5, color: C.faint }}>{formatHistoryTooltipDate(hoveredNight.date, hoveredNight.iso)}</div>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginTop: 9 }}>
+            <span style={{ fontSize: 10.5, color: C.muted }}>Median</span>
+            <span style={{ fontSize: 22, lineHeight: 1, fontWeight: 650, color: line }}>{hoveredMedian}</span>
+          </div>
+          <div style={{ marginTop: 6, paddingTop: 6, borderTop: `1px solid ${C.rowBorder}`, fontSize: 10.5, color: C.muted }}>
+            Range <span style={{ color: C.dim, fontWeight: 600 }}>{at(hoveredNight, "lo")}–{at(hoveredNight, "hi")}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

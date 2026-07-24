@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { median, range, noiseBand, classifyStatus, categoryTrendSeries, hasPersistentRegression, historyForRange, pageRangeTrend, rangeComparison, DROP_THRESHOLD } from "../scoring";
+import { median, range, noiseBand, classifyStatus, categoryTrendSeries, hasPersistentRegression, historyForPreviousRange, historyForRange, pagePreviousPeriodMedian, pageRangeTrend, previousPeriodMedian, rangeComparison, DROP_THRESHOLD } from "../scoring";
 import type { CategoryScore, Night, NightScores, ScoreByCategory, StrategyScores, WatchPage } from "../types";
 
 const cat = (m: number): CategoryScore => ({ m, lo: m - 2, hi: m + 2 });
@@ -104,6 +104,66 @@ describe("selected range comparisons", () => {
     };
     expect(pageRangeTrend(page, "mobile", 3)).toBe("stable");
     expect(pageRangeTrend(page, "desktop", 3)).toBe("regressing");
+  });
+});
+
+describe("previous period medians", () => {
+  it("uses the immediately preceding non-overlapping live range", () => {
+    const history = Array.from({ length: 7 }, (_, index) => ({
+      ...night(index, 60 + index),
+      iso: `2026-07-${String(14 + index).padStart(2, "0")}T00:00:00.000Z`,
+    }));
+    const now = Date.parse("2026-07-21T00:00:00.000Z");
+
+    expect(historyForPreviousRange(history, 3, now).map((item) => item.i)).toEqual([1, 2, 3]);
+    expect(previousPeriodMedian(history, "mobile", "perf", 3, now)).toEqual({
+      value: 62,
+      sampleCount: 3,
+      days: 3,
+    });
+  });
+
+  it("requires at least one successful scan for every day in the selected range", () => {
+    const history = [
+      { ...night(0, 70), iso: "2026-07-15T00:00:00.000Z" },
+      { ...night(1, 72), iso: "2026-07-16T00:00:00.000Z" },
+      { ...night(2, 80), iso: "2026-07-19T00:00:00.000Z" },
+    ];
+
+    expect(previousPeriodMedian(history, "mobile", "perf", 3, Date.parse("2026-07-21T00:00:00.000Z"))).toBeNull();
+  });
+
+  it("uses preceding scans for undated demo history", () => {
+    const history = Array.from({ length: 8 }, (_, index) => night(index, 50 + index));
+    expect(previousPeriodMedian(history, "mobile", "perf", 3)).toEqual({
+      value: 53,
+      sampleCount: 3,
+      days: 3,
+    });
+  });
+
+  it("calculates mobile and desktop references independently", () => {
+    const history: Night[] = Array.from({ length: 6 }, (_, index) => ({
+      i: index,
+      date: `d${index}`,
+      scores: dualStrat(50 + index, 80 + index),
+    }));
+    const page: WatchPage = {
+      id: "devices",
+      title: "Devices",
+      url: "https://example.com",
+      flag: "watching",
+      status: "stable",
+      baseline: dualStrat(50, 80),
+      baselineCapturedAt: "Jun 17",
+      current: { mobile: { perf: 55, a11y: 95, bp: 95, seo: 95 }, desktop: { perf: 85, a11y: 95, bp: 95, seo: 95 } },
+      history,
+      markers: [],
+      agent: [],
+    };
+
+    expect(pagePreviousPeriodMedian(page, "mobile", "perf", 3)?.value).toBe(51);
+    expect(pagePreviousPeriodMedian(page, "desktop", "perf", 3)?.value).toBe(81);
   });
 });
 
