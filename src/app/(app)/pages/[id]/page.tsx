@@ -7,7 +7,7 @@ import { CATEGORIES } from "@/lib/types";
 import type { AgentCheck, CategoryKey, Night, RangeDays, Rec, WatchPage } from "@/lib/types";
 import { agentCheckKey, agentIgnoreOverrideMode, isAgentCheckIgnored, isAgentGroupIgnored, normalizeAgentIgnoreSettings, summarizeAgentChecks } from "@/lib/agentScoring";
 import { normalizePerformanceThresholds } from "@/lib/performanceThresholds";
-import { deltaMeta, pageAgentSnapshotForRange, pageHistoryForRange, pageRangeComparison, pageRangeLatestNight, pageRangeSeries, pageRangeTrend, scoreMeta } from "@/lib/scoring";
+import { deltaMeta, pageAgentSnapshotForRange, pageHistoryForRange, pagePreviousPeriodMedian, pageRangeComparison, pageRangeLatestNight, pageRangeSeries, pageRangeTrend, scoreMeta } from "@/lib/scoring";
 import { auditsFor } from "@/lib/audits";
 import { C, taskLabel } from "@/lib/ui";
 import { HistoryChart, Sparkline } from "@/components/charts";
@@ -391,7 +391,7 @@ function HistoryTab({
           <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>Score over time · last {rangeDays} days</h3>
           <SegToggle label="History category" value={chartCat} onChange={setChartCat} options={CATEGORIES.map((c) => ({ value: c.key, label: c.short }))} />
         </div>
-        <div style={{ fontSize: 12, color: C.faint, marginBottom: 18 }}>Desktop and Mobile are stacked for comparison. Each median line includes its run-to-run range; the dashed line is that device&apos;s original baseline.</div>
+        <div style={{ fontSize: 12, color: C.faint, marginBottom: 18 }}>Desktop and Mobile are stacked for comparison. Each median line includes its run-to-run range; reference lines show that device&apos;s original benchmark and, when enough scans exist, the previous {rangeDays}-day period median.</div>
         {rangeHistory.length < 2 ? (
           <div style={{ padding: "42px 16px", textAlign: "center", color: C.muted, fontSize: 13 }}>At least two collections inside this range are required to chart change.</div>
         ) : (
@@ -402,7 +402,14 @@ function HistoryTab({
                   <span style={{ fontSize: 12, fontWeight: 600, textTransform: "capitalize", color: device === "desktop" ? C.violetSoft : C.accentSoft }}>{device}</span>
                   <span style={{ fontSize: 11, color: C.faint }}>Latest {page.current[device][chartCat]}</span>
                 </div>
-                <HistoryChart history={rangeHistory} strategy={device} catKey={chartCat} baseline={page.baseline![device][chartCat].m} markers={page.markers} />
+                <HistoryChart
+                  history={rangeHistory}
+                  strategy={device}
+                  catKey={chartCat}
+                  baseline={page.baseline![device][chartCat].m}
+                  previousPeriod={pagePreviousPeriodMedian(page, device, chartCat, rangeDays)}
+                  markers={page.markers}
+                />
               </div>
             ))}
           </div>
@@ -410,7 +417,9 @@ function HistoryTab({
       </div>
 
       <div className="table-scroll" style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13 }}>
-        <div style={{ padding: "13px 22px", borderBottom: `1px solid ${C.border}`, fontSize: 12, color: C.muted }}>Nightly detail · <span style={{ color: C.text, textTransform: "capitalize", fontWeight: 600 }}>{strategy}</span> primary</div>
+        <div style={{ padding: "13px 22px", borderBottom: `1px solid ${C.border}`, fontSize: 12, color: C.muted }}>
+          Nightly detail · <span style={{ color: C.text, textTransform: "capitalize", fontWeight: 600 }}>{strategy}</span> primary · median with range below
+        </div>
         <div className="narrow-table" style={{ display: "grid", gridTemplateColumns: GRID, padding: "14px 22px", borderBottom: `1px solid ${C.border}`, fontSize: 11, fontWeight: 550, letterSpacing: "0.05em", textTransform: "uppercase", color: C.faint }}>
           <div>Night</div>
           <div>Marker</div>
@@ -423,8 +432,17 @@ function HistoryTab({
         {runs.map((d) => {
           const mk = page.markers.find((m) => m.i === d.i);
           const cell = (k: CategoryKey) => {
-            const v = d.scores[strategy][k].m;
-            return <div style={{ textAlign: "center", fontWeight: 600, color: scoreMeta(v).fg }}>{v}</div>;
+            const score = d.scores[strategy][k];
+            const categoryLabel = CATEGORIES.find((category) => category.key === k)?.label ?? k;
+            return (
+              <div
+                aria-label={`${categoryLabel} median ${score.m}, range ${score.lo} to ${score.hi}`}
+                style={{ textAlign: "center" }}
+              >
+                <div style={{ fontSize: 14, lineHeight: 1.1, fontWeight: 650, color: scoreMeta(score.m).fg }}>{score.m}</div>
+                <div style={{ marginTop: 3, fontSize: 10, lineHeight: 1, color: C.faint }}>{score.lo}–{score.hi}</div>
+              </div>
+            );
           };
           return (
             <div key={d.i} className="narrow-table" style={{ display: "grid", gridTemplateColumns: GRID, alignItems: "center", padding: "12px 22px", borderBottom: `1px solid ${C.rowBorder}`, fontSize: 13 }}>
