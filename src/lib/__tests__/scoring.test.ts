@@ -117,9 +117,39 @@ describe("classifyStatus", () => {
     const hist = [night(0, 80), night(1, 80), night(2, 80), night(3, 87)];
     expect(classifyStatus(base, hist, "mobile")).toBe("improving");
   });
-  it("is regressing when the latest night falls beyond the noise band", () => {
-    const hist = [night(0, 80), night(1, 80), night(2, 80), night(3, 75)];
+  it("uses the default point tolerance for regressions", () => {
+    const hist = [night(0, 80), night(1, 80), night(2, 80), night(3, 71)];
     expect(classifyStatus(base, hist, "mobile")).toBe("regressing");
+    expect(classifyStatus(base, [night(0, 80), night(1, 75)], "mobile")).toBe("stable");
+  });
+  it("accepts a custom regression tolerance", () => {
+    const hist = [night(0, 80), night(1, 75)];
+    expect(classifyStatus(base, hist, "mobile", "perf", 5)).toBe("regressing");
+  });
+  it("requires the configured improvement threshold in addition to clearing noise", () => {
+    const hist = [night(0, 80), night(1, 80), night(2, 87)];
+    expect(classifyStatus(base, hist, "mobile", "perf", { improvement: 10 })).toBe("stable");
+    expect(classifyStatus(base, hist, "mobile", "perf", { improvement: 7 })).toBe("improving");
+  });
+  it("requires consecutive regression confirmations", () => {
+    const oneDrop = [night(0, 80), night(1, 70)];
+    const twoDrops = [night(0, 80), night(1, 70), night(2, 69)];
+    const tolerances = { regression: 8, confirmationRuns: 2 };
+    expect(classifyStatus(base, oneDrop, "mobile", "perf", tolerances)).toBe("stable");
+    expect(classifyStatus(base, twoDrops, "mobile", "perf", tolerances)).toBe("regressing");
+  });
+  it("suppresses regressions above the configured floor", () => {
+    const highBase = { ...base, perf: 100 };
+    const hist = [night(0, 100), night(1, 94)];
+    expect(classifyStatus(highBase, hist, "mobile", "perf", { regression: 5, regressionFloor: 90 })).toBe("stable");
+    expect(classifyStatus(highBase, hist, "mobile", "perf", { regression: 5, regressionFloor: 100 })).toBe("regressing");
+  });
+  it("keeps new pages pending during their grace period", () => {
+    const oneDrop = [night(0, 70)];
+    const twoDrops = [night(0, 70), night(1, 69)];
+    const tolerances = { regression: 8, newPageGraceRuns: 2 };
+    expect(classifyStatus(base, oneDrop, "mobile", "perf", tolerances)).toBe("pending");
+    expect(classifyStatus(base, twoDrops, "mobile", "perf", tolerances)).toBe("regressing");
   });
   it("is stable with no history", () => {
     expect(classifyStatus(base, [], "mobile")).toBe("stable");

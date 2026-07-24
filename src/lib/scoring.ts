@@ -1,4 +1,4 @@
-import type { CategoryKey, Night, PageStatus, RangeDays, ScoreByCategory, Strategy, WatchPage } from "./types";
+import type { AgentCheck, CategoryKey, Night, PageStatus, PerformanceThresholds, RangeDays, ScoreByCategory, Strategy, WatchPage } from "./types";
 
 // ── Colors (dark-theme Lighthouse bands) ──────────────────────────────────
 
@@ -158,6 +158,43 @@ export function rangeNoiseBand(history: Night[], strategy: Strategy, key: Catego
 /** Points below baseline that count as a real drop rather than noise. */
 export const DROP_THRESHOLD = 8;
 
+export type TrendTolerances = Pick<
+  PerformanceThresholds,
+  "regression" | "improvement" | "confirmationRuns" | "regressionFloor" | "newPageGraceRuns"
+>;
+
+const DEFAULT_TREND_TOLERANCES: TrendTolerances = {
+  regression: DROP_THRESHOLD,
+  improvement: 1,
+  confirmationRuns: 1,
+  regressionFloor: 100,
+  newPageGraceRuns: 0,
+};
+
+function trendTolerances(
+  value: number | Partial<TrendTolerances> | undefined,
+  confirmationRuns = DEFAULT_TREND_TOLERANCES.confirmationRuns,
+): TrendTolerances {
+  if (typeof value === "number") {
+    return { ...DEFAULT_TREND_TOLERANCES, regression: value, confirmationRuns };
+  }
+  return { ...DEFAULT_TREND_TOLERANCES, ...value };
+}
+
+function hasConfirmedDrop(
+  history: Night[],
+  strategy: Strategy,
+  key: CategoryKey,
+  reference: number,
+  tolerances: TrendTolerances,
+): boolean {
+  if (history.length < tolerances.confirmationRuns) return false;
+  return history.slice(-tolerances.confirmationRuns).every((night) => {
+    const score = night.scores[strategy][key].m;
+    return reference - score >= tolerances.regression && score < tolerances.regressionFloor;
+  });
+}
+
 /**
  * Classify the latest Performance result relative to its stored baseline.
  * This is deliberately a trend, not an overall health score: absolute quality
@@ -171,15 +208,18 @@ export function classifyStatus(
   history: Night[],
   strategy: Strategy,
   key: CategoryKey = "perf",
+  toleranceInput: number | Partial<TrendTolerances> = DROP_THRESHOLD,
 ): PageStatus {
   if (history.length === 0) return "stable";
+  const tolerances = trendTolerances(toleranceInput);
+  if (history.length < tolerances.newPageGraceRuns) return "pending";
   const base = baselineMedian[key];
   // The point being classified cannot also teach us what "normal" noise is;
   // otherwise a new jump inflates its own tolerance and hides the change.
   const band = noiseBand(history.slice(0, -1), strategy, key);
   const last = history[history.length - 1].scores[strategy][key].m;
-  if (last - base > band) return "improving";
-  if (base - last > band) return "regressing";
+  if (last - base >= tolerances.improvement && last - base > band) return "improving";
+  if (hasConfirmedDrop(history, strategy, key, base, tolerances)) return "regressing";
   return "stable";
 }
 
@@ -189,12 +229,12 @@ export function hasPersistentRegression(
   history: Night[],
   strategy: Strategy,
   key: CategoryKey = "perf",
+  toleranceInput: number | Partial<TrendTolerances> = DROP_THRESHOLD,
 ): boolean {
-  if (history.length < 2) return false;
+  const tolerances = trendTolerances(toleranceInput, 2);
+  if (history.length < Math.max(tolerances.newPageGraceRuns, tolerances.confirmationRuns)) return false;
   const base = baselineMedian[key];
-  const last = history[history.length - 1].scores[strategy][key].m;
-  const prev = history[history.length - 2].scores[strategy][key].m;
-  return base - last >= DROP_THRESHOLD && base - prev >= DROP_THRESHOLD;
+  return hasConfirmedDrop(history, strategy, key, base, tolerances);
 }
 
 function postBaselineHistory(page: WatchPage): Night[] {
@@ -215,6 +255,52 @@ function postBaselineHistory(page: WatchPage): Night[] {
 export function pageHistoryForRange(page: WatchPage, days: RangeDays, now = Date.now()): Night[] {
   if (!page.baseline || !page.baselineCapturedAt) return [];
   return historyForRange(postBaselineHistory(page), days, now);
+}
+
+/** Latest recorded collection inside the selected range. */
+export function pageRangeLatestNight(page: WatchPage, days: RangeDays, now = Date.now()): Night | null {
+  return pageHistoryForRange(page, days, now).at(-1) ?? null;
+}
+
+/** Latest median for one category inside the selected range. */
+export function pageRangeLatestScore(
+  page: WatchPage,
+  strategy: Strategy,
+  key: CategoryKey,
+  days: RangeDays,
+  now = Date.now(),
+): number | null {
+  return pageRangeLatestNight(page, days, now)?.scores[strategy][key].m ?? null;
+}
+
+export interface PageAgentSnapshot {
+  checks: AgentCheck[];
+  date: string;
+}
+
+/**
+ * Latest agent-readiness scan inside the selected range.
+ *
+ * Older imported/demo histories did not retain checks per night. For those
+ * pages only, fall back to the page-level snapshot so the legacy data remains
+ * useful. Once per-night agent history exists, an empty range stays empty.
+ */
+export function pageAgentSnapshotForRange(
+  page: WatchPage,
+  days: RangeDays,
+  now = Date.now(),
+): PageAgentSnapshot | null {
+  const rangeHistory = pageHistoryForRange(page, days, now);
+  const night = [...rangeHistory].reverse().find((entry) => Array.isArray(entry.agent));
+  if (night) return { checks: night.agent ?? [], date: night.date };
+
+  const hasRecordedAgentHistory = page.history.some((entry) => Array.isArray(entry.agent));
+  if (hasRecordedAgentHistory || page.agent.length === 0) return null;
+
+  return {
+    checks: page.agent,
+    date: page.history.at(-1)?.date ?? "latest collection",
+  };
 }
 
 export function pageRangeComparison(
@@ -238,26 +324,42 @@ export function pageRangeSeries(
 }
 
 /** Display trend across the selected range, independent of the original baseline score. */
-export function pageRangeTrend(page: WatchPage, strategy: Strategy, days: RangeDays, now = Date.now()): PageStatus {
+export function pageRangeTrend(
+  page: WatchPage,
+  strategy: Strategy,
+  days: RangeDays,
+  toleranceInput: number | Partial<TrendTolerances> = DROP_THRESHOLD,
+  now = Date.now(),
+): PageStatus {
+  const tolerances = trendTolerances(toleranceInput);
+  if (postBaselineHistory(page).length < tolerances.newPageGraceRuns) return "pending";
   const history = pageHistoryForRange(page, days, now);
   const comparison = rangeComparison(history, strategy, "perf");
   if (!comparison) return "pending";
   const band = rangeNoiseBand(history, strategy, "perf");
-  if (comparison.delta > band) return "improving";
-  if (comparison.delta < -band) return "regressing";
+  if (comparison.delta >= tolerances.improvement && comparison.delta > band) return "improving";
+  if (hasConfirmedDrop(history, strategy, "perf", comparison.from, tolerances)) return "regressing";
   return "stable";
 }
 
 /** Derive the display trend for the currently selected strategy. */
-export function pageTrend(page: WatchPage, strategy: Strategy): PageStatus {
+export function pageTrend(
+  page: WatchPage,
+  strategy: Strategy,
+  toleranceInput: number | Partial<TrendTolerances> = DROP_THRESHOLD,
+): PageStatus {
   if (!page.baseline || !page.baselineCapturedAt) return "pending";
-  return classifyStatus(mediansOf(page.baseline[strategy]), postBaselineHistory(page), strategy);
+  return classifyStatus(mediansOf(page.baseline[strategy]), postBaselineHistory(page), strategy, "perf", toleranceInput);
 }
 
 /** Apply the alert threshold only to collections recorded after the baseline. */
-export function pageHasPersistentRegression(page: WatchPage, strategy: Strategy): boolean {
+export function pageHasPersistentRegression(
+  page: WatchPage,
+  strategy: Strategy,
+  toleranceInput: number | Partial<TrendTolerances> = DROP_THRESHOLD,
+): boolean {
   if (!page.baseline || !page.baselineCapturedAt) return false;
-  return hasPersistentRegression(mediansOf(page.baseline[strategy]), postBaselineHistory(page), strategy);
+  return hasPersistentRegression(mediansOf(page.baseline[strategy]), postBaselineHistory(page), strategy, "perf", toleranceInput);
 }
 
 /** Deltas per category, latest snapshot vs baseline (both already single-strategy medians). */

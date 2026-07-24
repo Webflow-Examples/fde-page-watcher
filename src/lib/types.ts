@@ -8,6 +8,7 @@
 export type CategoryKey = "perf" | "a11y" | "bp" | "seo";
 export type Strategy = "mobile" | "desktop";
 export type RangeDays = 3 | 7 | 30 | 90;
+export const DEFAULT_RANGE_DAYS: RangeDays = 7;
 export type Flag = "priority" | "watching" | "paused";
 /** Baseline-relative Performance trend stored on each page. */
 export type PageStatus = "stable" | "improving" | "regressing" | "pending";
@@ -84,6 +85,32 @@ export type AgentIgnoreOverrideMode = "inherit" | "ignore" | "restore";
 export interface AgentIgnoreSettings {
   checks: string[];
   groups: string[];
+}
+
+export type DevicePolicy = "either" | "both" | "preferred";
+
+/** Team-wide tolerances used to classify page-performance conditions. */
+export interface PerformanceThresholds {
+  /** Scores below this value are considered low Performance. */
+  lowPerformance: number;
+  /** Point decline required before a change is considered a regression. */
+  regression: number;
+  /** Point increase required before a change is considered an improvement. */
+  improvement: number;
+  /** Consecutive qualifying scans required before surfacing a regression. */
+  confirmationRuns: number;
+  /** Which device results can make a page enter a summary status. */
+  devicePolicy: DevicePolicy;
+  /** Scores below these values are considered low for each Lighthouse metric. */
+  accessibility: number;
+  bestPractices: number;
+  seo: number;
+  /** Ignore regressions whose latest score remains at or above this value. */
+  regressionFloor: number;
+  /** Agent-readiness percentages below this value are considered gaps. */
+  agentReadiness: number;
+  /** Completed post-baseline scans required before status classification begins. */
+  newPageGraceRuns: number;
 }
 
 /** A scheduled follow-up comparison after a change marker (REQ-044). */
@@ -205,6 +232,7 @@ export interface AppState {
   pages: WatchPage[];
   recs: Rec[];
   agentIgnoreDefaults?: AgentIgnoreSettings;
+  performanceThresholds?: PerformanceThresholds;
   jobs?: CollectionJob[];
   followUps?: FollowUp[];
   watcherNote?: WatcherNote;

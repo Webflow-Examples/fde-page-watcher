@@ -1,9 +1,11 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import type { AgentIgnoreOverrideMode, AgentIgnoreScope, AppState, CategoryKey, Flag, RangeDays, ScoreByCategory, Strategy } from "@/lib/types";
+import { DEFAULT_RANGE_DAYS } from "@/lib/types";
+import type { AgentIgnoreOverrideMode, AgentIgnoreScope, AppState, CategoryKey, Flag, PerformanceThresholds, RangeDays, ScoreByCategory, Strategy } from "@/lib/types";
 import { updateAgentIgnoreOverride, updateAgentIgnoreSettings } from "@/lib/agentScoring";
 import { collectionSettlementMessage, hasActiveCollections, startCollectionPolling } from "@/lib/collectionPolling";
+import { normalizePerformanceThresholds } from "@/lib/performanceThresholds";
 import { isoDate } from "@/lib/ui";
 import { withBasePath } from "@/lib/paths";
 import { defaultNewPageFlag, flagCapacityError } from "@/lib/watchCapacity";
@@ -79,6 +81,7 @@ interface StoreValue extends AppState {
   renamePage: (id: string, title: string) => void;
   setAgentIgnore: (id: string, scope: AgentIgnoreScope, value: string, mode: AgentIgnoreOverrideMode) => void;
   setDefaultAgentIgnore: (scope: AgentIgnoreScope, value: string, ignored: boolean) => void;
+  updatePerformanceThresholds: (thresholds: PerformanceThresholds) => void;
   removePage: (id: string) => void;
   saveTask: (key: string) => void;
   ignoreRec: (key: string) => void;
@@ -91,8 +94,6 @@ interface StoreValue extends AppState {
 
 const Ctx = createContext<StoreValue | null>(null);
 const STRATEGY_PREFERENCE_KEY = "page-watcher:preferred-strategy";
-const RANGE_PREFERENCE_KEY = "page-watcher:range-days";
-const RANGE_DAYS = new Set<RangeDays>([3, 7, 30, 90]);
 
 export function useStore(): StoreValue {
   const v = useContext(Ctx);
@@ -138,7 +139,9 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
 
   const [strategy, setStrategy] = useState<Strategy>("desktop");
   const [preferredStrategy, setPreferredStrategyState] = useState<Strategy>("desktop");
-  const [rangeDays, setRangeDaysState] = useState<RangeDays>(30);
+  // Range is shared by every route under this provider, but intentionally
+  // starts fresh at seven days after a full app reload.
+  const [rangeDays, setRangeDaysState] = useState<RangeDays>(DEFAULT_RANGE_DAYS);
   const [dashSort, setDashSort] = useState<SortState>({ col: null, dir: "desc" });
   const [inboxGroup, setInboxGroup] = useState<"none" | "page" | "rec">("page");
   const [inboxSort, setInboxSort] = useState<SortState>({ col: null, dir: "desc" });
@@ -164,10 +167,8 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
           setPreferredStrategyState(savedStrategy);
           setStrategy(savedStrategy);
         }
-        const savedRange = Number(window.localStorage.getItem(RANGE_PREFERENCE_KEY)) as RangeDays;
-        if (RANGE_DAYS.has(savedRange)) setRangeDaysState(savedRange);
       } catch {
-        // Browser storage can be disabled; desktop + 30 days remain safe defaults.
+        // Browser storage can be disabled; desktop remains a safe default.
       }
     }, 0);
     return () => window.clearTimeout(timer);
@@ -183,14 +184,7 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
     }
   }, []);
 
-  const setRangeDays = useCallback((next: RangeDays) => {
-    setRangeDaysState(next);
-    try {
-      window.localStorage.setItem(RANGE_PREFERENCE_KEY, String(next));
-    } catch {
-      // The filter still applies for the current session.
-    }
-  }, []);
+  const setRangeDays = useCallback((next: RangeDays) => setRangeDaysState(next), []);
 
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flash = useCallback((msg: string) => {
@@ -340,6 +334,26 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
         {
           success: `${scope === "group" ? "Category" : "Check"} ${ignored ? "ignored" : "restored"} by default`,
           failure: `Couldn't update the default ${scope} — try again`,
+        },
+      );
+    },
+    [mutate],
+  );
+
+  const updatePerformanceThresholds = useCallback(
+    (thresholds: PerformanceThresholds) => {
+      const cur = dataRef.current;
+      const next = normalizePerformanceThresholds(thresholds);
+      mutate(
+        {
+          ...cur,
+          performanceThresholds: next,
+          watcherNote: undefined,
+        },
+        { url: "/api/settings/performance-thresholds", body: next },
+        {
+          success: "Performance tolerances updated",
+          failure: "Couldn't update the performance tolerances — try again",
         },
       );
     },
@@ -570,6 +584,7 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
     renamePage,
     setAgentIgnore,
     setDefaultAgentIgnore,
+    updatePerformanceThresholds,
     removePage,
     saveTask,
     ignoreRec,

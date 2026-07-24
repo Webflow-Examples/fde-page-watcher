@@ -3,7 +3,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createFsStore, type DataStore } from "../store/fsStore";
-import { addPage, advanceTask, pendingPage, setAgentIgnore, setDefaultAgentIgnore, setPageFlag, setPageTitle } from "../mutations";
+import { addPage, advanceTask, pendingPage, setAgentIgnore, setDefaultAgentIgnore, setPageFlag, setPageTitle, setPerformanceThresholds } from "../mutations";
+import { DEFAULT_PERFORMANCE_THRESHOLDS } from "../performanceThresholds";
 import { agentCheckKey } from "../agentScoring";
 import { captureBaseline, runPage } from "../collector";
 import type { AppState, CategoryScore, NightScores, Rec } from "../types";
@@ -165,6 +166,29 @@ describe("atomic tenant updates", () => {
     expect(state.agentIgnoreDefaults?.checks).toEqual([checkKey]);
     expect(state.pages[0].agentIgnores?.checks).toEqual([]);
     expect(state.pages[0].agentIgnoreRestores?.checks).toEqual([checkKey]);
+  });
+
+  it("persists team-wide performance tolerances", async () => {
+    const dataStore = await storeWithState();
+
+    const state = await setPerformanceThresholds(
+      {
+        ...DEFAULT_PERFORMANCE_THRESHOLDS,
+        lowPerformance: 72,
+        regression: 5,
+        confirmationRuns: 2,
+        devicePolicy: "both",
+      },
+      dataStore,
+    );
+
+    expect(state.performanceThresholds).toEqual({
+      ...DEFAULT_PERFORMANCE_THRESHOLDS,
+      lowPerformance: 72,
+      regression: 5,
+      confirmationRuns: 2,
+      devicePolicy: "both",
+    });
   });
 
   it("defaults newly added pages to Watching", async () => {

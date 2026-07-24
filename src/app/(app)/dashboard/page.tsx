@@ -1,12 +1,14 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useStore } from "@/components/store";
 import { CATEGORIES } from "@/lib/types";
 import type { AgentIgnoreSettings, CategoryKey, Night } from "@/lib/types";
 import { summarizeAgentChecks } from "@/lib/agentScoring";
-import { deltaMeta, historyForRange, pageRangeComparison, pageRangeSeries, pageRangeTrend, scoreMeta } from "@/lib/scoring";
-import { buildWatcher } from "@/lib/watcher";
+import { normalizePerformanceThresholds } from "@/lib/performanceThresholds";
+import { deltaMeta, historyForRange, pageAgentSnapshotForRange, pageRangeComparison, pageRangeLatestNight, pageRangeSeries, pageRangeTrend, scoreMeta } from "@/lib/scoring";
+import { buildWatcher, buildWatcherCards } from "@/lib/watcher";
 import { C, flagChip } from "@/lib/ui";
 import { Sparkline } from "@/components/charts";
 import { DeviceChangeLabels, SegToggle, SortHeader } from "@/components/bits";
@@ -22,7 +24,7 @@ function agentSeries(
   defaults?: AgentIgnoreSettings,
   restores?: AgentIgnoreSettings,
 ): number[] {
-  return history.slice(-7).flatMap((night) => {
+  return history.flatMap((night) => {
     const summary = summarizeAgentChecks(night.agent ?? [], ignores, defaults, restores);
     return summary.total ? [summary.percent] : [];
   });
@@ -30,14 +32,17 @@ function agentSeries(
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { pages, recs, agentIgnoreDefaults, strategy, setStrategy, rangeDays, setRangeDays, dashSort, sortDash, watcherNote, pathFor } = useStore();
-  const mobileWatcher = buildWatcher(pages, recs, "mobile", rangeDays, agentIgnoreDefaults);
-  const desktopWatcher = buildWatcher(pages, recs, "desktop", rangeDays, agentIgnoreDefaults);
+  const { pages, recs, agentIgnoreDefaults, performanceThresholds, strategy, setStrategy, preferredStrategy, rangeDays, setRangeDays, dashSort, sortDash, watcherNote, pathFor } = useStore();
+  const thresholds = normalizePerformanceThresholds(performanceThresholds);
+  const mobileWatcher = buildWatcher(pages, recs, "mobile", rangeDays, agentIgnoreDefaults, thresholds);
+  const desktopWatcher = buildWatcher(pages, recs, "desktop", rangeDays, agentIgnoreDefaults, thresholds);
   const w = strategy === "mobile" ? mobileWatcher : desktopWatcher;
   const activePages = pages.filter(isPageActivelyMonitored);
+  const watcherCards = buildWatcherCards(activePages, rangeDays, agentIgnoreDefaults, preferredStrategy, thresholds);
   const currentWatcherNote = watcherNote?.modelVersion === 3 && strategy === "desktop" && rangeDays === 30 ? watcherNote : undefined;
-  const regressingPages = activePages.filter((page) => ["mobile", "desktop"].some((device) => pageRangeTrend(page, device as "mobile" | "desktop", rangeDays) === "regressing")).length;
-  const lowPerformancePages = activePages.filter((page) => page.history.length > 0 && (page.current.mobile.perf < 60 || page.current.desktop.perf < 60)).length;
+  const regressingPages = watcherCards.regressions.length;
+  const lowPerformancePages = watcherCards.lowPerformance.length;
+  const agentGapPages = watcherCards.agentGaps.length;
   const latestSuccessAt = latestSuccessfulRunAt(activePages);
   const lastRunLabel = formatSuccessfulRunAt(latestSuccessAt);
   const watcherTimestamp = currentWatcherNote
@@ -45,23 +50,25 @@ export default function DashboardPage() {
     : lastRunLabel;
 
   const rows = pages.map((p) => {
-    const mobileTrend = pageRangeTrend(p, "mobile", rangeDays);
-    const desktopTrend = pageRangeTrend(p, "desktop", rangeDays);
+    const mobileTrend = pageRangeTrend(p, "mobile", rangeDays, thresholds);
+    const desktopTrend = pageRangeTrend(p, "desktop", rangeDays, thresholds);
     const trend = strategy === "mobile" ? mobileTrend : desktopTrend;
     const secondaryStrategy = strategy === "mobile" ? "desktop" : "mobile";
-    const agentSummary = summarizeAgentChecks(p.agent, p.agentIgnores, agentIgnoreDefaults, p.agentIgnoreRestores);
-    const { pass, total, ignored, percent: pct } = agentSummary;
+    const rangeAgentSnapshot = pageAgentSnapshotForRange(p, rangeDays);
+    const rangeAgentSummary = summarizeAgentChecks(rangeAgentSnapshot?.checks ?? [], p.agentIgnores, agentIgnoreDefaults, p.agentIgnoreRestores);
+    const { pass, total, ignored, percent: pct } = rangeAgentSummary;
     const am = scoreMeta(pct);
-    const hasSnapshot = p.history.length > 0 || !!p.baseline;
+    const latestRangeNight = pageRangeLatestNight(p, rangeDays);
+    const hasSnapshot = !!latestRangeNight;
     const hasBaseline = !!p.baseline && !!p.baselineCapturedAt;
     const cats = CATEGORIES.map((c) => {
       if (!hasSnapshot) {
         return { key: c.key, score: null as number | null, fg: C.faint, delta: "", deltaFg: C.faint, series: [] as number[], line: C.faint, secondary: null as number | null, secondaryFg: C.faint, secondaryLabel: strategy === "mobile" ? "D" : "M" };
       }
-      const v = p.current[strategy][c.key];
+      const v = latestRangeNight.scores[strategy][c.key].m;
       const sm = scoreMeta(v);
       const series = pageRangeSeries(p, strategy, c.key, rangeDays);
-      const secondary = p.current[secondaryStrategy][c.key];
+      const secondary = latestRangeNight.scores[secondaryStrategy][c.key].m;
       const secondaryMeta = scoreMeta(secondary);
       if (!hasBaseline) {
         return { key: c.key, score: v as number | null, fg: sm.fg, delta: "", deltaFg: C.faint, series, line: sm.line, secondary, secondaryFg: secondaryMeta.fg, secondaryLabel: secondaryStrategy === "mobile" ? "M" : "D" };
@@ -71,7 +78,7 @@ export default function DashboardPage() {
       return { key: c.key, score: v as number | null, fg: sm.fg, delta: dm?.text ?? "", deltaFg: dm?.fg ?? C.faint, series, line: sm.line, secondary, secondaryFg: secondaryMeta.fg, secondaryLabel: secondaryStrategy === "mobile" ? "M" : "D" };
     });
     const sortVals: Record<string, string | number> = { title: p.title.toLowerCase(), status: trend, agent: pct };
-    CATEGORIES.forEach((c) => (sortVals[c.key] = p.current[strategy][c.key]));
+    CATEGORIES.forEach((c) => (sortVals[c.key] = latestRangeNight?.scores[strategy][c.key].m ?? -1));
     return {
       id: p.id,
       title: p.title,
@@ -84,7 +91,7 @@ export default function DashboardPage() {
       cats,
       agentPct: total ? `${pct}%` : "—",
       agentFg: am.fg,
-      agentSub: total ? `${pass}/${total}${ignored ? ` · ${ignored} ignored` : ""}` : ignored ? `${ignored} ignored` : "no scan",
+      agentSub: total ? `${pass}/${total}${ignored ? ` · ${ignored} ignored` : ""}` : ignored ? `${ignored} ignored` : "no scan in range",
       agentSeries: total ? agentSeries(historyForRange(p.history, rangeDays), p.agentIgnores, agentIgnoreDefaults, p.agentIgnoreRestores) : ([] as number[]),
       agentLine: am.line,
       sortVals,
@@ -113,11 +120,44 @@ export default function DashboardPage() {
   ];
 
   const tiles = [
-    { label: "Monitored pages", value: w.total, color: C.accentSoft, tint: "rgba(20,110,245,0.09)", border: "rgba(59,137,255,0.22)", sub: `Last ${rangeDays} days` },
-    { label: "Regressions", value: regressingPages, color: C.red, tint: "rgba(255,92,108,0.08)", border: "rgba(255,92,108,0.20)", sub: `M ${mobileWatcher.regressing} · D ${desktopWatcher.regressing}` },
-    { label: "Low performance", value: lowPerformancePages, color: C.amber, tint: "rgba(255,154,61,0.08)", border: "rgba(255,154,61,0.20)", sub: `M ${mobileWatcher.lowPerformance} · D ${desktopWatcher.lowPerformance}` },
-    { label: "Agent gaps", value: w.agentGaps, color: C.violetSoft, tint: "rgba(138,92,246,0.09)", border: "rgba(138,92,246,0.22)", sub: "Pages with failed checks" },
+    {
+      label: "Improvements",
+      value: watcherCards.improvements.length,
+      color: C.green,
+      tint: "rgba(53,208,127,0.08)",
+      border: "rgba(53,208,127,0.22)",
+      items: watcherCards.improvements,
+    },
+    {
+      label: "Regressions",
+      value: regressingPages,
+      color: C.red,
+      tint: "rgba(255,92,108,0.08)",
+      border: "rgba(255,92,108,0.20)",
+      items: watcherCards.regressions,
+    },
+    {
+      label: "Low performance",
+      value: lowPerformancePages,
+      color: C.amber,
+      tint: "rgba(255,154,61,0.08)",
+      border: "rgba(255,154,61,0.20)",
+      items: watcherCards.lowPerformance,
+    },
+    {
+      label: "Agent gaps",
+      value: agentGapPages,
+      color: C.violetSoft,
+      tint: "rgba(138,92,246,0.09)",
+      border: "rgba(138,92,246,0.22)",
+      items: watcherCards.agentGaps,
+    },
   ];
+  const devicePolicySummary = thresholds.devicePolicy === "both"
+    ? "on both devices"
+    : thresholds.devicePolicy === "preferred"
+      ? `on the default ${preferredStrategy} device`
+      : "on at least one device";
 
   return (
     <div>
@@ -130,7 +170,7 @@ export default function DashboardPage() {
 
       <div style={{ padding: "0 40px 48px" }}>
         {/* summary */}
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(320px,1fr) minmax(0,1.15fr)", gap: 14, marginBottom: 40, alignItems: "stretch" }}>
+        <div className="dashboard-summary" style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 40 }}>
           <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 12, padding: "20px 22px", display: "flex", flexDirection: "column" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
               <div style={{ flex: "none", width: 34, height: 34, borderRadius: 9, background: "linear-gradient(135deg,#146EF5,#8A5CF6)", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -148,43 +188,66 @@ export default function DashboardPage() {
               </span>
             </div>
             <div style={{ marginTop: 16, fontSize: 13, lineHeight: 1.6, color: C.dim }}>
-              {currentWatcherNote ? (
-                <p style={{ margin: 0 }}>{currentWatcherNote.text}</p>
-              ) : (
+              <p style={{ margin: "0 0 12px" }}>
+                Over the last <strong style={{ color: C.text }}>{rangeDays} days</strong>, <strong style={{ color: C.green }}>{watcherCards.improvements.length}</strong> {watcherCards.improvements.length === 1 ? "page is" : "pages are"} improving, <strong style={{ color: C.red }}>{regressingPages}</strong> {regressingPages === 1 ? "page is" : "pages are"} regressing, and <strong style={{ color: C.amber }}>{lowPerformancePages}</strong> {lowPerformancePages === 1 ? "page has" : "pages have"} low Performance {devicePolicySummary}. {agentGapPages} {agentGapPages === 1 ? "page has" : "pages have"} agent-readiness gaps. Charts and score detail follow the selected {strategy} view.
+              </p>
+              {w.changed.length > 0 && (
                 <>
-                  <p style={{ margin: "0 0 12px" }}>
-                    Over the last <strong style={{ color: C.text }}>{rangeDays} days</strong>, <strong style={{ color: C.red }}>{regressingPages}</strong> {regressingPages === 1 ? "page is" : "pages are"} regressing on at least one device and <strong style={{ color: C.amber }}>{lowPerformancePages}</strong> {lowPerformancePages === 1 ? "has" : "have"} low Performance. {w.agentGaps} {w.agentGaps === 1 ? "has" : "have"} agent-readiness gaps. The detail below follows the selected {strategy} charts.
-                  </p>
                   <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.05em", textTransform: "uppercase", color: C.faint, marginBottom: 6 }}>What changed</div>
-                  {w.changed.length ? (
-                    <ul style={{ margin: "0 0 14px", paddingLeft: 18 }}>
-                      {w.changed.map((b, i) => (
-                        <li key={i} style={{ marginBottom: 4 }}>
-                          {b.lead && <strong style={{ color: b.leadColor }}>{b.lead}</strong>} {b.text}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p style={{ margin: "0 0 14px", color: C.muted }}>Not enough collections in this range to calculate change.</p>
-                  )}
-                  {w.topRec && (
-                    <>
-                      <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.05em", textTransform: "uppercase", color: C.faint, marginBottom: 6 }}>Top recommendation</div>
-                      <p style={{ margin: 0, padding: "11px 13px", background: "rgba(20,110,245,0.08)", border: "1px solid rgba(20,110,245,0.22)", borderRadius: 8 }}>
-                        Prioritize <strong style={{ color: C.text }}>{w.topRec.pageTitle}</strong> — acting on “{w.topRec.recTitle}” recovers an estimated <strong style={{ color: C.text }}>{w.topRec.savings}</strong> of load time.
-                      </p>
-                    </>
-                  )}
+                  <ul style={{ margin: "0 0 14px", paddingLeft: 18 }}>
+                    {w.changed.map((b, i) => (
+                      <li key={i} style={{ marginBottom: 4 }}>
+                        {b.lead && <strong style={{ color: b.leadColor }}>{b.lead}</strong>} {b.text}
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+              {w.winning && (
+                <>
+                  <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.05em", textTransform: "uppercase", color: C.faint, marginBottom: 6 }}>Winning</div>
+                  <p style={{ margin: "0 0 14px", padding: "11px 13px", color: C.dim, background: "rgba(53,208,127,0.08)", border: "1px solid rgba(53,208,127,0.24)", borderRadius: 8 }}>
+                    <strong style={{ color: C.green }}>{w.winning}</strong>
+                  </p>
+                </>
+              )}
+              {w.topRec && (
+                <>
+                  <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.05em", textTransform: "uppercase", color: C.faint, marginBottom: 6 }}>Top recommendation</div>
+                  <p style={{ margin: 0, padding: "11px 13px", background: "rgba(20,110,245,0.08)", border: "1px solid rgba(20,110,245,0.22)", borderRadius: 8 }}>
+                    Prioritize{" "}
+                    <Link href={pathFor(`/pages/${w.topRec.pageId}`)} style={{ color: C.text, fontWeight: 650, textUnderlineOffset: 3 }}>
+                      {w.topRec.pageTitle}
+                    </Link>{" "}
+                    — acting on “{w.topRec.recTitle}” recovers an estimated <strong style={{ color: C.text }}>{w.topRec.savings}</strong> of load time.
+                  </p>
                 </>
               )}
             </div>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gridAutoRows: "1fr", gap: 14 }}>
+          <div className="dashboard-summary-cards" style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gridAutoRows: "auto", gap: 14 }}>
             {tiles.map((t) => (
-              <div key={t.label} style={{ background: `linear-gradient(${t.tint}, ${t.tint}), ${C.panel}`, border: `1px solid ${t.border}`, borderRadius: 12, padding: "17px 19px" }}>
+              <div key={t.label} style={{ minWidth: 0, background: `linear-gradient(${t.tint}, ${t.tint}), ${C.panel}`, border: `1px solid ${t.border}`, borderRadius: 12, padding: "17px 19px" }}>
                 <div style={{ fontSize: 12, color: C.muted }}>{t.label}</div>
                 <div style={{ fontSize: 29, fontWeight: 600, marginTop: 5, color: t.color }}>{t.value}</div>
-                <div style={{ fontSize: 11, color: C.faint, marginTop: 3 }}>{t.sub}</div>
+                {t.items.length > 0 ? (
+                  <ul aria-label={`${t.label} pages`} style={{ listStyle: "none", padding: 0, margin: "12px 0 0", display: "flex", flexDirection: "column", gap: 3 }}>
+                    {t.items.map((item) => (
+                      <li key={item.pageId}>
+                        <Link
+                          className="watcher-card-link"
+                          href={pathFor(`/pages/${item.pageId}`)}
+                          aria-label={`Open ${item.pageTitle} details`}
+                        >
+                          <span>{item.pageTitle}</span>
+                          <span>{item.meta}</span>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div style={{ marginTop: 12, fontSize: 11.5, color: C.faint }}>No pages in this range.</div>
+                )}
               </div>
             ))}
           </div>

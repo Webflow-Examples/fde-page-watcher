@@ -8,10 +8,11 @@ import type { SlackDelivery } from "./slack";
 import { generateText } from "./anthropic";
 import { buildWatcher } from "./watcher";
 import { getEnv } from "./env";
-import { mediansOf, pageHasPersistentRegression, pageRangeComparison, pageRangeTrend, DROP_THRESHOLD } from "./scoring";
+import { mediansOf, pageHasPersistentRegression, pageRangeComparison, pageRangeTrend } from "./scoring";
+import { normalizePerformanceThresholds } from "./performanceThresholds";
 import { parseMarkerDate, shortDate } from "./ui";
 import { CATEGORIES, STRATEGIES } from "./types";
-import type { AppState, FollowUp, Night, Rec, Strategy, StrategyScores, WatchPage } from "./types";
+import type { AppState, FollowUp, Night, PerformanceThresholds, Rec, Strategy, StrategyScores, WatchPage } from "./types";
 import { markRunFinished, requestPageRun } from "./mutations";
 import { isPageActivelyMonitored } from "./watchCapacity";
 
@@ -86,7 +87,10 @@ export async function executePageRun(pageId: string, runId: string, options: Col
   // after a crash is safe because keys/titles are deduplicated authoritatively.
   const next = await insertRecommendations(d.dataStore, pageId, opportunities, completedAt);
   const finalPage = next.pages.find((item) => item.id === pageId);
-  if (finalPage) await maybeAlert(finalPage, d.alertFn);
+  if (finalPage) {
+    const thresholds = normalizePerformanceThresholds(next.performanceThresholds);
+    await maybeAlert(finalPage, d.alertFn, thresholds);
+  }
   return next;
 }
 
@@ -151,10 +155,35 @@ export async function insertRecommendations(
   });
 }
 
-async function maybeAlert(page: WatchPage, alertFn: typeof postAlert): Promise<void> {
-  if (!page.baseline || !pageHasPersistentRegression(page, "mobile")) return;
-  const base = mediansOf(page.baseline.mobile);
-  const affected = CATEGORIES.filter((category) => base[category.key] - page.current.mobile[category.key] >= DROP_THRESHOLD).map((category) => category.label);
+function alertStrategies(page: WatchPage, thresholds: PerformanceThresholds): Strategy[] {
+  const candidates: Strategy[] = thresholds.devicePolicy === "preferred"
+    ? ["mobile"]
+    : ["mobile", "desktop"];
+  const regressing = candidates.filter((strategy) => pageHasPersistentRegression(page, strategy, thresholds));
+  if (thresholds.devicePolicy === "both") return regressing.length === candidates.length ? candidates : [];
+  return regressing;
+}
+
+function affectedAlertCategories(
+  page: WatchPage,
+  strategies: Strategy[],
+  thresholds: PerformanceThresholds,
+): string[] {
+  if (!page.baseline) return [];
+  return CATEGORIES.flatMap((category) => {
+    const affected = strategies.some((strategy) => {
+      const base = mediansOf(page.baseline![strategy]);
+      const current = page.current[strategy][category.key];
+      return base[category.key] - current >= thresholds.regression
+        && current < thresholds.regressionFloor;
+    });
+    return affected ? [category.label] : [];
+  });
+}
+
+async function maybeAlert(page: WatchPage, alertFn: typeof postAlert, thresholds: PerformanceThresholds): Promise<void> {
+  if (!page.baseline) return;
+  const affected = affectedAlertCategories(page, alertStrategies(page, thresholds), thresholds);
   if (affected.length) await alertFn(page.title, page.url, affected);
 }
 
@@ -175,10 +204,11 @@ Explain what this recommendation means and why it's worth doing, in plain terms.
 /** The Watcher's dashboard narrative: a short, factual read of current conditions, refreshed once per nightly run. */
 export async function generateWatcherNote(dataStore: DataStore, now: Date): Promise<void> {
   const state = await dataStore.getState();
-  const w = buildWatcher(state.pages, state.recs, "desktop", 30, state.agentIgnoreDefaults);
+  const thresholds = normalizePerformanceThresholds(state.performanceThresholds);
+  const w = buildWatcher(state.pages, state.recs, "desktop", 30, state.agentIgnoreDefaults, thresholds);
   const regressionDetail = state.pages.flatMap((p) => {
     if (!isPageActivelyMonitored(p)) return [];
-    if (pageRangeTrend(p, "desktop", 30) !== "regressing" || !p.baseline) return [];
+    if (pageRangeTrend(p, "desktop", 30, thresholds) !== "regressing" || !p.baseline) return [];
     const drop = Math.abs(pageRangeComparison(p, "desktop", "perf", 30)?.delta ?? 0);
     const marker = p.markers.length ? p.markers[p.markers.length - 1].text : null;
     return [`${p.title}: dropped ${drop} performance points${marker ? ` after "${marker}"` : ""}`];
@@ -218,16 +248,14 @@ export async function enrichRecommendations(dataStore: DataStore, pageId: string
 /** Send the current run's drop alert at most once at the job-model level. */
 export async function notifyCollectionJob(dataStore: DataStore, jobId: string): Promise<void> {
   const snapshot = await dataStore.getState();
+  const thresholds = normalizePerformanceThresholds(snapshot.performanceThresholds);
   const job = (snapshot.jobs ?? []).find((item) => item.id === jobId);
   if (!job || job.state !== "succeeded" || job.notifiedAt) return;
   const page = snapshot.pages.find((item) => item.id === job.pageId);
   if (!page) return;
   let delivery: SlackDelivery = { sent: true };
-  if (page.baseline && pageHasPersistentRegression(page, "mobile")) {
-    const baseline = mediansOf(page.baseline.mobile);
-    const affected = CATEGORIES
-      .filter((category) => baseline[category.key] - page.current.mobile[category.key] >= DROP_THRESHOLD)
-      .map((category) => category.label);
+  if (page.baseline) {
+    const affected = affectedAlertCategories(page, alertStrategies(page, thresholds), thresholds);
     if (affected.length) delivery = await postAlert(page.title, page.url, affected);
   }
   if (!delivery.sent && getEnv("SLACK_WEBHOOK_URL")) throw new Error(delivery.error ?? "Slack delivery failed");

@@ -1,4 +1,5 @@
 import type { AgentCheck, AppState, CategoryKey, Night, NightScores, PageStatus, Rec, StrategyScores, WatchPage } from "./types";
+import { DEFAULT_PERFORMANCE_THRESHOLDS } from "./performanceThresholds";
 import { AGENT_CHECK_GROUPS } from "./agentChecks";
 
 // Faithful port of the source design's seed generator so the freshly-seeded
@@ -174,12 +175,26 @@ export function buildSeedState(): AppState {
   setSt("hosting:r1", "task", "done", "Jul 9");
   setSt("ai:r3", "ignored");
 
-  return { pages, recs, agentIgnoreDefaults: { checks: [], groups: [] }, jobs: [], followUps: [] };
+  return {
+    pages,
+    recs,
+    agentIgnoreDefaults: { checks: [], groups: [] },
+    performanceThresholds: { ...DEFAULT_PERFORMANCE_THRESHOLDS },
+    jobs: [],
+    followUps: [],
+  };
 }
 
 /** Live environments begin empty; demo/local environments retain the prototype dataset. */
 export function buildInitialState(mode: string | undefined = process.env.DATASET_MODE): AppState {
   return mode === "live"
-    ? { pages: [], recs: [], agentIgnoreDefaults: { checks: [], groups: [] }, jobs: [], followUps: [] }
+    ? {
+      pages: [],
+      recs: [],
+      agentIgnoreDefaults: { checks: [], groups: [] },
+      performanceThresholds: { ...DEFAULT_PERFORMANCE_THRESHOLDS },
+      jobs: [],
+      followUps: [],
+    }
     : buildSeedState();
 }
