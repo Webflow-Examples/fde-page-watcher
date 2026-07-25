@@ -51,12 +51,17 @@ Put these in `.env.local`.
 
 - **Collection** — baseline, on-demand, and nightly actions reserve a durable
   job in FDE D1 and return `202`. A Cloudflare Workflow performs up to five PSI
-  samples per strategy, stores the raw JSON in FDE R2, scans agent readiness,
-  and commits the completed result directly into FDE storage. The SSO-protected
-  Webflow app only makes authenticated outbound requests; the Worker never has
-  to call into the Webflow Access tenant. Retries are durable, duplicates
-  coalesce, stale jobs become visible failures, and a run ID can append history
-  only once.
+  samples per strategy and stores every successful raw response, Lighthouse
+  warning, and normalized failing audit in FDE R2. Warned runs remain available
+  for diagnosis but are excluded from trusted medians. A normal five-run
+  collection needs at least three warning-free runs before it can commit.
+  Recommendations require a strict-majority Lighthouse finding across those
+  eligible runs. The Workflow also scans agent readiness and commits the
+  completed result directly into FDE storage. The SSO-protected Webflow app
+  only makes authenticated outbound requests; the Worker never has to call
+  into the Webflow Access tenant. Retries are durable, duplicates coalesce,
+  stale jobs become visible failures, and a run ID can append history only
+  once.
 - **Baselines** — ordinary on-demand/nightly runs may store snapshots, history,
   recommendations, and scan results, but a page stays Pending until the user
   explicitly captures a baseline. Zero placeholders are never treated or shown
@@ -65,6 +70,12 @@ Put these in `.env.local`.
   03:00 UTC, priority-sorts it, and dispatches Workflows directly. `POST
   /nightly` provides the same operation for authenticated manual tests. There
   is no Webflow callback and no Cloudflare Access service token.
+- **Weekly data audit** — each Monday at 05:30 UTC, the Worker reconciles the
+  prior seven days of stored scores against their raw PSI responses. It checks
+  raw-report coverage, usable sample counts, Lighthouse warnings/runtime
+  errors, score medians/ranges, and finding quorum. The saved health report has
+  hashed page references and no customer names, URLs, raw payloads, or raw
+  errors. See [audits/README.md](audits/README.md).
 - **Storage** — the production source of truth is the FDE-owned
   `page-watcher-fde` D1 database plus the `page-watcher-reports` R2 bucket. The
   Webflow app uses a tenant-scoped remote `DataStore`; D1 state updates use
@@ -91,7 +102,8 @@ and collector result endpoints remain protected by `CRON_SECRET`.
 1. Apply `migrations/` to the FDE-owned `page-watcher-fde` database, then deploy
    `collector-worker/wrangler.jsonc`. The Worker needs only the existing
    `PAGESPEED_API_KEY` and `CRON_SECRET` secrets. Its D1, R2, Workflow, and
-   03:00 UTC Cron bindings are declared in that config.
+   03:00 UTC nightly plus Monday 05:30 UTC audit Cron bindings are declared in
+   that config.
 2. Deploy the Webflow app code with `STORAGE_DRIVER` still unset. The app keeps
    reading and writing its existing Webflow-provisioned D1/R2 bindings at this
    stage.
@@ -118,7 +130,10 @@ and collector result endpoints remain protected by `CRON_SECRET`.
    already points to the same Worker and ends in `/jobs`.
 5. Call `/api/health`; `storage.driver` should be `remote`. Run one page or send
    an authenticated `POST /nightly` to the FDE Worker, then verify the new
-   history entry before relying on the next scheduled run.
+   history entry before relying on the next scheduled run. After the first
+   weekly audit, an authenticated `GET /audits/weekly/latest` on the collector
+   returns its privacy-safe health summary; the public collector `/health`
+   response exposes only its status, audit ID, and update time.
 
 Rollback is just as deliberate: remove `STORAGE_DRIVER=remote` and redeploy to
 return to the preserved Webflow bindings. Do not write to both stores after

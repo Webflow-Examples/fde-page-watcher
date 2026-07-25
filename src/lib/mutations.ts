@@ -8,6 +8,7 @@ import type { DataStore } from "./store";
 import { shortDate } from "./ui";
 import type { AgentIgnoreOverrideMode, AgentIgnoreScope, AppState, Flag, PerformanceThresholds, RecStatus, ScoreByCategory, TaskStatus, WatchPage } from "./types";
 import { defaultNewPageFlag, flagCapacityError } from "./watchCapacity";
+import { applyWatchlistPageOrder, changePageFlagOrder, sortWatchlistPages } from "./watchlistOrder";
 
 /**
  * Server-side domain mutations. Each executes inside the store's atomic
@@ -30,7 +31,14 @@ export function setPageFlag(id: string, flag: Flag, dataStore: DataStore = getSt
     }
     const capacityError = flagCapacityError(state.pages, id, flag);
     if (capacityError) throw new Error(`setPageFlag: ${capacityError}`);
-    page.flag = flag;
+    state.pages = changePageFlagOrder(state.pages, id, flag);
+    delete state.watcherNote;
+  }, dataStore);
+}
+
+export function setPageOrder(pageIds: ReadonlyArray<string>, dataStore: DataStore = getStore()): Promise<AppState> {
+  return withState((state) => {
+    state.pages = applyWatchlistPageOrder(state.pages, pageIds);
     delete state.watcherNote;
   }, dataStore);
 }
@@ -255,7 +263,10 @@ export function addPage(input: NewPageInput, dataStore: DataStore = getStore()):
     if (capacityError) throw new Error(`addPage: ${capacityError}`);
     // No fabricated provenance (audit): the page begins pending and gets a
     // real baseline/history once a baseline is captured or a run completes.
-    state.pages.push(pendingPage(`p-${randomUUID()}`, title, url, flag));
+    state.pages = sortWatchlistPages([
+      ...state.pages,
+      pendingPage(`p-${randomUUID()}`, title, url, flag),
+    ]);
     delete state.watcherNote;
   }, dataStore);
 }

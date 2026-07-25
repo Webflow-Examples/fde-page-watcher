@@ -1,6 +1,7 @@
 import type { PageStatus } from "@/lib/types";
 import { statusMeta } from "@/lib/scoring";
 import { C } from "@/lib/ui";
+import { SegmentedControl } from "@/components/segmented-control";
 
 /** Status pill with its accessibility shape (circle / triangle / square) — REQ-009. */
 export function StatusBadge({ status, size = 12.5 }: { status: PageStatus; size?: number }) {
@@ -39,7 +40,16 @@ export function DeviceChangeLabels({ mobile, desktop, size = 11.5, direction = "
 /** Prominent mobile + desktop Performance status tiles for page headers. */
 export function DeviceStatusCards({ mobile, desktop }: { mobile: PageStatus; desktop: PageStatus }) {
   return (
-    <div className="page-status-cards" style={{ display: "flex", alignItems: "flex-start", justifyContent: "flex-end", gap: 8 }}>
+    <div
+      className="page-status-cards"
+      style={{
+        display: "inline-grid",
+        gridTemplateColumns: "max-content",
+        alignItems: "stretch",
+        justifyItems: "stretch",
+        gap: 4,
+      }}
+    >
       <DeviceStatusCard name="Desktop" status={desktop} />
       <DeviceStatusCard name="Mobile" status={mobile} />
     </div>
@@ -54,11 +64,9 @@ function DeviceStatusCard({ name, status }: { name: "Mobile" | "Desktop"; status
       aria-label={`${name} Performance change: ${sm.label}`}
       title={`${name} Performance change: ${sm.label}`}
       style={{
-        width: 101,
-        height: 101,
         display: "flex",
         flexDirection: "column",
-        justifyContent: "space-between",
+        gap: 14,
         padding: 11,
         border: `1px solid ${sm.fg}`,
         borderRadius: 10,
@@ -104,44 +112,13 @@ export interface SegOption<T extends string | number> {
   icon?: React.ReactNode;
   disabled?: boolean;
   title?: string;
+  tone?: string;
+  selectedBackground?: string;
 }
 
 /** Segmented pill toggle (strategy, group-by, view switches). */
 export function SegToggle<T extends string | number>({ options, value, onChange, label }: { options: SegOption<T>[]; value: T; onChange: (v: T) => void; label?: string }) {
-  return (
-    <div role="group" aria-label={label} style={{ display: "inline-flex", padding: 3, background: "rgba(255,255,255,0.05)", border: `1px solid ${C.border2}`, borderRadius: 8 }}>
-      {options.map((o) => {
-        const active = o.value === value;
-        return (
-          <button
-            key={o.value}
-            type="button"
-            aria-pressed={active}
-            disabled={o.disabled}
-            title={o.title}
-            onClick={() => onChange(o.value)}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              border: "none",
-              fontSize: 11.5,
-              fontWeight: 550,
-              padding: o.icon ? "6px 11px" : "5px 12px",
-              borderRadius: 6,
-              cursor: o.disabled ? "not-allowed" : "pointer",
-              color: active ? "#FFFFFF" : o.disabled ? C.faint : C.faint2,
-              background: active ? "rgba(255,255,255,0.10)" : "transparent",
-              opacity: o.disabled ? 0.45 : 1,
-            }}
-          >
-            {o.icon}
-            {o.label}
-          </button>
-        );
-      })}
-    </div>
-  );
+  return <SegmentedControl ariaLabel={label ?? "Options"} value={value} onChange={onChange} options={options} />;
 }
 
 /** A sortable column header button with an ↑/↓ indicator. */

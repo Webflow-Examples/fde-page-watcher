@@ -1,43 +1,51 @@
 import { CATEGORIES } from "./types";
-import type { CategoryKey, LighthouseOpportunity, NightScores, ScoreByCategory, Strategy } from "./types";
+import type {
+  AggregatedLighthouseFinding,
+  CategoryKey,
+  LighthouseCollectionQuality,
+  LighthouseOpportunity,
+  LighthouseRunEvidence,
+  NightScores,
+  ScoreByCategory,
+  Strategy,
+} from "./types";
+import {
+  aggregateLighthouseRunEvidence,
+  extractLighthouseRunEvidence,
+  lighthouseRuntimeError,
+  lighthouseScores,
+} from "./lighthouseEvidence";
 import { median, range } from "./scoring";
 
 const PSI_ENDPOINT = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed";
 
 export interface RunResult {
   scores: ScoreByCategory;
-  opportunities: LighthouseOpportunity[];
+  evidence: LighthouseRunEvidence;
   raw: unknown;
 }
 
 export interface CollectResult {
+  schemaVersion: 2;
   scores: NightScores;
   opportunities: LighthouseOpportunity[];
+  findings: AggregatedLighthouseFinding[];
+  runEvidence: LighthouseRunEvidence[];
+  quality: LighthouseCollectionQuality;
   sampleSize: number;
   raws: unknown[];
 }
 
 interface PsiResponse {
-  lighthouseResult?: {
-    categories?: Record<string, { score: number | null }>;
-    audits?: Record<
-      string,
-      {
-        title?: string;
-        description?: string;
-        score?: number | null;
-        details?: { type?: string; overallSavingsMs?: number };
-      }
-    >;
-  };
+  error?: { code?: number; message?: string };
 }
 
 export function normalizeUrl(url: string): string {
   return /^https?:\/\//i.test(url) ? url : `https://${url}`;
 }
 
-function toScore(value: number | null | undefined): number {
-  return value == null ? 0 : Math.round(value * 100);
+function safeProviderDetail(value: string): string {
+  return value.replace(/https?:\/\/\S+/gi, "[url]").slice(0, 200);
 }
 
 /** Provider-neutral single PSI request, used by both Next and the Workflow worker. */
@@ -52,30 +60,16 @@ export async function runPsiOnce(
 
   const response = await fetch(`${PSI_ENDPOINT}?${params.toString()}`, { signal: options.signal });
   if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(`PSI ${response.status}: ${body.slice(0, 200)}`);
+    throw new Error(`PSI request failed with HTTP ${response.status}`);
   }
 
   const json = (await response.json()) as PsiResponse;
-  const categories = json.lighthouseResult?.categories ?? {};
-  const scores: ScoreByCategory = {
-    perf: toScore(categories.performance?.score),
-    a11y: toScore(categories.accessibility?.score),
-    bp: toScore(categories["best-practices"]?.score),
-    seo: toScore(categories.seo?.score),
-  };
-  const audits = json.lighthouseResult?.audits ?? {};
-  const opportunities = Object.entries(audits)
-    .filter(([, audit]) => audit.details?.type === "opportunity" && (audit.details.overallSavingsMs ?? 0) > 0 && (audit.score ?? 1) < 1)
-    .map(([id, audit]): LighthouseOpportunity => ({
-      id,
-      title: audit.title ?? id,
-      description: audit.description,
-      category: "Performance",
-      savingsMs: Math.round(audit.details?.overallSavingsMs ?? 0),
-    }))
-    .sort((a, b) => b.savingsMs - a.savingsMs);
-  return { scores, opportunities, raw: json };
+  if (json.error) throw new Error(`PSI provider error ${json.error.code ?? "unknown"}`);
+  const runtimeError = lighthouseRuntimeError(json);
+  if (runtimeError) throw new Error(`Lighthouse runtime error: ${safeProviderDetail(runtimeError)}`);
+  const scores = lighthouseScores(json);
+  if (!scores) throw new Error("PSI response is missing one or more requested Lighthouse category scores");
+  return { scores, evidence: extractLighthouseRunEvidence(json, 0), raw: json };
 }
 
 async function withRetry(url: string, strategy: Strategy, apiKey: string | undefined, attempts = 2): Promise<RunResult> {
@@ -105,23 +99,36 @@ export async function collectPsi(
     Array.from({ length: runsRequested }, () => withRetry(url, strategy, options.apiKey)),
   );
   const runs = settled
-    .filter((result): result is PromiseFulfilledResult<RunResult> => result.status === "fulfilled")
-    .map((result) => result.value);
-  if (runs.length === 0) throw new Error(`PSI collection failed for ${url} (${strategy})`);
+    .flatMap((result, index): RunResult[] =>
+      result.status === "fulfilled"
+        ? [{ ...result.value, evidence: { ...result.value.evidence, run: index + 1 } }]
+        : []);
+  if (runs.length === 0) throw new Error(`PSI collection failed for ${strategy}`);
+
+  const aggregated = aggregateLighthouseRunEvidence(
+    runs.map((run) => run.evidence),
+    runsRequested,
+  );
+  // Warning-free runs are the only trusted scoring inputs. A provisional score
+  // is still staged when all successful runs warn so the failed collection can
+  // be audited, but callers must not commit a non-reliable result.
+  const scoreRuns = runs.filter((run) => run.evidence.warnings.length === 0);
+  const scoringRuns = scoreRuns.length > 0 ? scoreRuns : runs;
 
   const scores = {} as NightScores;
   for (const category of CATEGORIES as { key: CategoryKey }[]) {
-    const values = runs.map((run) => run.scores[category.key]);
+    const values = scoringRuns.map((run) => run.scores[category.key]);
     const bounds = range(values);
     scores[category.key] = { m: median(values), lo: bounds.lo, hi: bounds.hi };
   }
-  const representative = runs
-    .slice()
-    .sort((a, b) => Math.abs(a.scores.perf - scores.perf.m) - Math.abs(b.scores.perf - scores.perf.m))[0];
   return {
+    schemaVersion: 2,
     scores,
-    opportunities: representative.opportunities,
-    sampleSize: runs.length,
+    opportunities: aggregated.opportunities,
+    findings: aggregated.findings,
+    runEvidence: runs.map((run) => run.evidence),
+    quality: aggregated.quality,
+    sampleSize: scoreRuns.length,
     raws: runs.map((run) => run.raw),
   };
 }

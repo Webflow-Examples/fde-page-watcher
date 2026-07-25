@@ -2,7 +2,7 @@
   "$schema": "../node_modules/wrangler/config-schema.json",
   "name": "fde-page-collector",
   "main": "index.ts",
-  "compatibility_date": "2026-07-21",
+  "compatibility_date": "2026-07-24",
   "compatibility_flags": ["nodejs_compat"],
   "secrets": {
     "required": ["PAGESPEED_API_KEY", "CRON_SECRET"]
@@ -12,7 +12,8 @@
   },
   "triggers": {
     "crons": [
-      "0 3 * * *"
+      "0 3 * * *",
+      "30 5 * * 1"
     ]
   },
   "workflows": [

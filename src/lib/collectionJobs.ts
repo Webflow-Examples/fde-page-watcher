@@ -183,6 +183,7 @@ export async function commitCollectionResult(
       sampleSize: Math.min(result.samples.mobile, result.samples.desktop),
       agent: result.agent,
       opportunities: result.opportunities,
+      collectionQuality: result.collectionQuality,
     },
     rawReport,
   );
@@ -232,17 +233,36 @@ export async function executeLocalCollectionJob(jobId: string, dataStore: DataSt
     ]);
     const scores = {} as StrategyScores;
     const samples = {} as Record<Strategy, number>;
+    const collectionQuality: CollectionResult["collectionQuality"] = {};
     const strategies: Record<string, unknown> = {};
     let opportunities: LighthouseOpportunity[] = [];
     for (const item of strategyResults) {
+      if (item.result.quality?.status && item.result.quality.status !== "reliable") {
+        throw new Error(
+          `${item.strategy} PSI evidence is ${item.result.quality.status}: `
+          + `${item.result.quality.eligibleRuns}/${item.result.quality.requestedRuns} warning-free runs`,
+        );
+      }
       scores[item.strategy] = item.result.scores;
       samples[item.strategy] = item.result.sampleSize;
-      strategies[item.strategy] = { ...item.result, opportunities: undefined, raws: item.result.raws };
+      if (item.result.quality) collectionQuality[item.strategy] = item.result.quality;
+      strategies[item.strategy] = item.result;
       if (item.strategy === "mobile") opportunities = item.result.opportunities;
     }
     const capturedAt = new Date().toISOString();
     return await commitCollectionResult(
-      { schemaVersion: 1, jobId, runId: job.runId, pageId: job.pageId, capturedAt, scores, samples, agent, opportunities },
+      {
+        schemaVersion: 1,
+        jobId,
+        runId: job.runId,
+        pageId: job.pageId,
+        capturedAt,
+        scores,
+        samples,
+        agent,
+        opportunities,
+        collectionQuality,
+      },
       { strategies },
       dataStore,
     );

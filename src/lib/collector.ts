@@ -12,7 +12,17 @@ import { mediansOf, pageHasPersistentRegression, pageRangeComparison, pageRangeT
 import { normalizePerformanceThresholds } from "./performanceThresholds";
 import { parseMarkerDate, shortDate } from "./ui";
 import { CATEGORIES, STRATEGIES } from "./types";
-import type { AppState, FollowUp, Night, PerformanceThresholds, Rec, Strategy, StrategyScores, WatchPage } from "./types";
+import type {
+  AppState,
+  FollowUp,
+  LighthouseCollectionQuality,
+  Night,
+  PerformanceThresholds,
+  Rec,
+  Strategy,
+  StrategyScores,
+  WatchPage,
+} from "./types";
 import { markRunFinished, requestPageRun } from "./mutations";
 import { isPageActivelyMonitored } from "./watchCapacity";
 
@@ -60,12 +70,20 @@ export async function executePageRun(pageId: string, runId: string, options: Col
 
   const scores = {} as StrategyScores;
   const samples: Partial<Record<Strategy, number>> = {};
+  const collectionQuality: Partial<Record<Strategy, LighthouseCollectionQuality>> = {};
   const reportStrategies: Record<string, unknown> = {};
   let opportunities: { id: string; title: string; savingsMs: number }[] = [];
   for (const { strategy, result } of stratResults) {
+    if (result.quality?.status && result.quality.status !== "reliable") {
+      throw new Error(
+        `${strategy} PSI evidence is ${result.quality.status}: `
+        + `${result.quality.eligibleRuns}/${result.quality.requestedRuns} warning-free runs`,
+      );
+    }
     scores[strategy] = result.scores;
     samples[strategy] = result.sampleSize;
-    reportStrategies[strategy] = { sampleSize: result.sampleSize, scores: result.scores, runs: result.raws };
+    if (result.quality) collectionQuality[strategy] = result.quality;
+    reportStrategies[strategy] = result;
     if (strategy === "mobile") opportunities = result.opportunities;
   }
   const sampleSize = Math.min(...STRATEGIES.map((strategy) => samples[strategy] ?? 0));
@@ -77,6 +95,7 @@ export async function executePageRun(pageId: string, runId: string, options: Col
     samples,
     sampleSize,
     agent: freshAgent,
+    collectionQuality,
   };
 
   const appended = await d.dataStore.appendNight(pageId, runId, input, { strategies: reportStrategies });

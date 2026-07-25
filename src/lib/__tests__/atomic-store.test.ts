@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createFsStore, type DataStore } from "../store/fsStore";
-import { addPage, advanceTask, pendingPage, setAgentIgnore, setDefaultAgentIgnore, setPageFlag, setPageTitle, setPerformanceThresholds } from "../mutations";
+import { addPage, advanceTask, pendingPage, setAgentIgnore, setDefaultAgentIgnore, setPageFlag, setPageOrder, setPageTitle, setPerformanceThresholds } from "../mutations";
 import { DEFAULT_PERFORMANCE_THRESHOLDS } from "../performanceThresholds";
 import { agentCheckKey } from "../agentScoring";
 import { captureBaseline, runPage } from "../collector";
@@ -168,6 +168,36 @@ describe("atomic tenant updates", () => {
     expect(state.pages[0].agentIgnoreRestores?.checks).toEqual([checkKey]);
   });
 
+  it("freezes readiness and ignored checks with every successful collection", async () => {
+    const dataStore = await storeWithState();
+    const passing = { group: "API / Auth / MCP", name: "API Catalog", pass: true };
+    const failing = { group: "API / Auth / MCP", name: "WebMCP", pass: false };
+    const failingKey = agentCheckKey(failing);
+    await setAgentIgnore("page", "check", failingKey, true, dataStore);
+
+    const collected = await runPage("page", {
+      dataStore,
+      collectFn: async () => collection(),
+      scanFn: async () => [passing, failing],
+      runIdFactory: () => "run-readiness-history",
+      now: () => new Date("2026-07-20T12:00:00.000Z"),
+    });
+
+    expect(collected.pages[0].history[0].agentReadiness).toEqual({
+      pass: 1,
+      fail: 0,
+      total: 1,
+      unavailable: 0,
+      ignored: 1,
+      percent: 100,
+      ignoredCheckKeys: [failingKey],
+    });
+
+    const afterSettingChange = await setAgentIgnore("page", "check", failingKey, false, dataStore);
+    expect(afterSettingChange.pages[0].history[0].agentReadiness?.percent).toBe(100);
+    expect(afterSettingChange.pages[0].history[0].agentReadiness?.ignoredCheckKeys).toEqual([failingKey]);
+  });
+
   it("persists team-wide performance tolerances", async () => {
     const dataStore = await storeWithState();
 
@@ -197,6 +227,54 @@ describe("atomic tenant updates", () => {
     const state = await addPage({ title: "New page", url: "https://example.com/new" }, dataStore);
 
     expect(state.pages.find((page) => page.title === "New page")?.flag).toBe("watching");
+  });
+
+  it("persists manual order within flag tiers", async () => {
+    const dataStore = await storeWithState();
+    await dataStore.updateState((state) => {
+      state.pages = [
+        pendingPage("priority-a", "Priority A", "https://example.com/p-a", "priority"),
+        pendingPage("priority-b", "Priority B", "https://example.com/p-b", "priority"),
+        pendingPage("watching-a", "Watching A", "https://example.com/w-a", "watching"),
+        pendingPage("watching-b", "Watching B", "https://example.com/w-b", "watching"),
+        pendingPage("paused-a", "Paused A", "https://example.com/x-a", "paused"),
+      ];
+    });
+
+    const state = await setPageOrder([
+      "priority-b",
+      "priority-a",
+      "watching-b",
+      "watching-a",
+      "paused-a",
+    ], dataStore);
+
+    expect(state.pages.map((page) => page.id)).toEqual([
+      "priority-b",
+      "priority-a",
+      "watching-b",
+      "watching-a",
+      "paused-a",
+    ]);
+  });
+
+  it("places a changed flag at the end of its new tier", async () => {
+    const dataStore = await storeWithState();
+    await dataStore.updateState((state) => {
+      state.pages = [
+        pendingPage("priority-a", "Priority A", "https://example.com/p-a", "priority"),
+        pendingPage("priority-b", "Priority B", "https://example.com/p-b", "priority"),
+        pendingPage("watching-a", "Watching A", "https://example.com/w-a", "watching"),
+      ];
+    });
+
+    const state = await setPageFlag("priority-a", "watching", dataStore);
+
+    expect(state.pages.map((page) => page.id)).toEqual([
+      "priority-b",
+      "watching-a",
+      "priority-a",
+    ]);
   });
 
   it("adds new pages as Paused when all active monitoring slots are in use", async () => {

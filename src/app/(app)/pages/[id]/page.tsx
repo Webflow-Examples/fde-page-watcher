@@ -2,18 +2,29 @@
 
 import { useEffect } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { ArrowUpRightIcon, CircleIcon } from "@phosphor-icons/react";
 import { useStore } from "@/components/store";
 import { CATEGORIES } from "@/lib/types";
-import type { AgentCheck, CategoryKey, Night, RangeDays, Rec, WatchPage } from "@/lib/types";
+import type { AgentCheck, CategoryKey, Night, PageStatus, RangeDays, Rec, WatchPage } from "@/lib/types";
 import { agentCheckKey, agentIgnoreOverrideMode, isAgentCheckIgnored, isAgentGroupIgnored, normalizeAgentIgnoreSettings, summarizeAgentChecks } from "@/lib/agentScoring";
+import { agentReadinessHistoryPoints } from "@/lib/agentHistory";
 import { normalizePerformanceThresholds } from "@/lib/performanceThresholds";
-import { deltaMeta, pageAgentSnapshotForRange, pageHistoryForRange, pagePreviousPeriodMedian, pageRangeComparison, pageRangeLatestNight, pageRangeSeries, pageRangeTrend, scoreMeta } from "@/lib/scoring";
+import { deltaMeta, pageAgentSnapshotForRange, pageHistoryForRange, pagePreviousPeriodMedian, pageRangeComparison, pageRangeLatestNight, pageRangeSeries, pageRangeTrend, scoreMeta, statusMeta } from "@/lib/scoring";
 import { auditsFor } from "@/lib/audits";
 import { C, taskLabel } from "@/lib/ui";
-import { HistoryChart, Sparkline } from "@/components/charts";
-import { DeviceStatusCards, SegToggle } from "@/components/bits";
-import { ChevronLeftIcon, DesktopIcon, MobileIcon, PlusIcon, RefreshIcon } from "@/components/icons";
+import { AgentReadinessChart, HistoryChart, Sparkline } from "@/components/charts";
+import { SegToggle } from "@/components/bits";
+import { SelectMenu } from "@/components/select-menu";
+import type { SelectMenuOption } from "@/components/select-menu";
+import { DesktopIcon, MobileIcon, PlusIcon, RefreshIcon } from "@/components/icons";
 import { formatSuccessfulRunAt, lastSuccessfulRunAt } from "@/lib/collectionStatus";
+
+const PAGE_RANGE_OPTIONS: ReadonlyArray<SelectMenuOption<RangeDays>> = [
+  { value: 3, label: "Last 3 days" },
+  { value: 7, label: "Last 7 days" },
+  { value: 30, label: "Last 30 days" },
+  { value: 90, label: "Last 90 days" },
+];
 
 export default function PageDetail() {
   const router = useRouter();
@@ -65,29 +76,41 @@ export default function PageDetail() {
 
   return (
     <div>
-      <header className="page-header" style={{ padding: "22px 40px 0" }}>
-        <button onClick={() => router.push(store.pathFor("/dashboard"))} style={{ display: "inline-flex", alignItems: "center", gap: 6, border: "none", background: "none", fontSize: 12.5, color: C.muted, cursor: "pointer", padding: "0 0 14px" }}>
-          <ChevronLeftIcon size={14} />
-          Dashboard
-        </button>
-        <div className="detail-heading" style={{ display: "grid", gridTemplateColumns: isPending ? "minmax(0, 1fr)" : "auto minmax(0, 1fr)", alignItems: "start", gap: 24 }}>
-          {!isPending && <DeviceStatusCards mobile={displayedMobileTrend} desktop={displayedDesktopTrend} />}
-          <div className="page-summary">
-            <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-              <h1 style={{ margin: 0, fontSize: 25, fontWeight: 600, letterSpacing: "-0.01em" }}>{page.title}</h1>
-              {isStatusPreview && <span style={{ padding: "3px 7px", borderRadius: 5, color: C.violetSoft, background: "rgba(138,92,246,0.15)", fontSize: 10, fontWeight: 650, letterSpacing: "0.03em", textTransform: "uppercase" }}>Status preview</span>}
-            </div>
-            <a className="watched-page-link" href={watchedPageHref} target="_blank" rel="noreferrer" style={{ display: "inline-block", fontSize: 13, color: C.muted, marginTop: 7, whiteSpace: "nowrap" }}>{page.url}</a>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: C.faint, marginTop: 7, whiteSpace: "nowrap" }}>
-              <span aria-hidden="true" style={{ width: 6, height: 6, borderRadius: "50%", background: successfulRunAt ? C.green : C.faint, flex: "none" }} />
+      <header className="page-header detail-page-header" style={{ padding: "22px 40px 0" }}>
+        <nav className="detail-breadcrumb" aria-label="Breadcrumb">
+          <button type="button" onClick={() => router.push(store.pathFor("/dashboard"))}>Pages</button>
+          <span className="detail-breadcrumb__divider" aria-hidden="true">/</span>
+          <span aria-current="page">{page.title}</span>
+        </nav>
+        <div className="detail-hero">
+          <div className="detail-title-row">
+            <h1 className="detail-page-title">{page.title}</h1>
+            {isStatusPreview && <span style={{ padding: "3px 7px", borderRadius: 5, color: C.violetSoft, background: "rgba(138,92,246,0.15)", fontSize: 10, fontWeight: 650, letterSpacing: "0.03em", textTransform: "uppercase" }}>Status preview</span>}
+            <a className="detail-page-link" href={watchedPageHref} target="_blank" rel="noreferrer">
+              <span>{page.url}</span>
+              <ArrowUpRightIcon size={14} weight="regular" aria-hidden="true" />
+            </a>
+          </div>
+          <div className="detail-status-line">
+            <DetailDeviceStatus name="Desktop" status={displayedDesktopTrend} />
+            <span className="detail-status-divider" aria-hidden="true" />
+            <DetailDeviceStatus name="Mobile" status={displayedMobileTrend} />
+            <span className="detail-status-divider detail-status-divider--run" aria-hidden="true" />
+            <span className="detail-run-copy">
               {successfulRunAt ? `Last successful PSI run · ${successfulRunLabel}` : successfulRunLabel}
-            </div>
+            </span>
           </div>
         </div>
-        <hr aria-hidden="true" style={{ margin: "20px 0", border: 0, borderTop: `1px solid ${C.border}` }} />
         <div className="page-controls" style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, paddingBottom: 20 }}>
           <SegToggle label="Primary page device" value={strategy} onChange={setStrategy} options={[{ value: "desktop", label: "Desktop", icon: <DesktopIcon size={13} /> }, { value: "mobile", label: "Mobile", icon: <MobileIcon size={13} /> }]} />
-          <SegToggle label="Page date range" value={rangeDays} onChange={setRangeDays} options={[3, 7, 30, 90].map((days) => ({ value: days as RangeDays, label: `${days}d` }))} />
+          <SelectMenu
+            ariaLabel="Page date range"
+            value={rangeDays}
+            options={PAGE_RANGE_OPTIONS}
+            onChange={setRangeDays}
+            triggerWidth={160}
+            menuWidth={160}
+          />
           <button disabled={collectionBlocked} title={page.flag === "paused" ? "Change this page to Watching or Priority before collecting" : undefined} onClick={() => store.runPage(page.id)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 15px", border: "none", borderRadius: 8, background: C.accent, color: "#fff", fontSize: 12.5, fontWeight: 550, cursor: collectionBlocked ? "not-allowed" : "pointer", opacity: collectionBlocked ? 0.65 : 1, whiteSpace: "nowrap" }}>
             <RefreshIcon size={15} style={{ color: "#fff" }} />
             {page.flag === "paused" ? "Paused" : page.runState === "queued" ? "Queued…" : page.runState === "dispatching" ? "Starting…" : page.runState === "running" ? "Running…" : "Run now"}
@@ -143,6 +166,21 @@ export default function PageDetail() {
         )}
       </div>
     </div>
+  );
+}
+
+function DetailDeviceStatus({ name, status }: { name: "Desktop" | "Mobile"; status: PageStatus }) {
+  const meta = statusMeta(status);
+  return (
+    <span
+      className="detail-device-status"
+      aria-label={`${name} Performance change: ${meta.label}`}
+      title={`${name} Performance change: ${meta.label}`}
+    >
+      <CircleIcon className="detail-status-dot" size={7} weight="fill" style={{ color: status === "stable" ? C.accent : meta.fg }} aria-hidden="true" />
+      <span className="detail-device-name">{name}</span>
+      <strong className="detail-device-value">{meta.label.toLowerCase()}</strong>
+    </span>
   );
 }
 
@@ -336,6 +374,14 @@ function HistoryTab({
 }) {
   const rangeHistory = pageHistoryForRange(page, rangeDays);
   const runs = [...rangeHistory].reverse().slice(0, 12);
+  const thresholds = normalizePerformanceThresholds(store.performanceThresholds);
+  const readinessHistory = agentReadinessHistoryPoints(
+    rangeHistory,
+    page.agentIgnores,
+    store.agentIgnoreDefaults,
+    page.agentIgnoreRestores,
+  );
+  const latestReadiness = readinessHistory.at(-1)?.snapshot ?? null;
   const GRID = "120px 1fr 84px 84px 84px 84px 100px";
   const openReport = async (d: Night) => {
     const cats = CATEGORIES.map((c) => {
@@ -378,6 +424,7 @@ function HistoryTab({
           seo: { median: d.scores[strategy].seo.m, range: [d.scores[strategy].seo.lo, d.scores[strategy].seo.hi] },
         },
         agentChecksRecorded: d.agent?.length ?? 0,
+        agentReadiness: d.agentReadiness ?? null,
       },
       null,
       2,
@@ -414,6 +461,48 @@ function HistoryTab({
             ))}
           </div>
         )}
+        <div style={{ marginTop: 22, paddingTop: 20, borderTop: `1px solid ${C.border}` }}>
+          <div style={{ display: "flex", alignItems: "start", justifyContent: "space-between", gap: 20, marginBottom: 4 }}>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: C.violetSoft }}>Agent readiness</div>
+              <div style={{ fontSize: 11.5, color: C.faint, marginTop: 4 }}>
+                Each point freezes the score and ignored checks that were effective when that PSI collection completed.
+              </div>
+            </div>
+            {latestReadiness && (
+              <div style={{ flex: "0 0 auto", textAlign: "right" }}>
+                <div style={{ color: scoreMeta(latestReadiness.percent).fg, fontSize: 13, fontWeight: 650 }}>{latestReadiness.percent}%</div>
+                <div style={{ color: C.faint, fontSize: 10.5, marginTop: 2 }}>
+                  {latestReadiness.pass}/{latestReadiness.total}{latestReadiness.ignored ? ` · ${latestReadiness.ignored} ignored` : ""}
+                </div>
+              </div>
+            )}
+          </div>
+          {readinessHistory.length === 0 ? (
+            <div style={{ padding: "34px 16px 18px", textAlign: "center", color: C.muted, fontSize: 13 }}>
+              Readiness history starts with the next successful agent scan in this range.
+            </div>
+          ) : (
+            <>
+              <div style={{ display: "flex", gap: 16, alignItems: "center", marginTop: 12, color: C.faint, fontSize: 10.5 }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: "50%", background: C.green }} />Fixed since prior run</span>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: "50%", background: C.accentSoft }} />Newly ignored</span>
+              </div>
+              <AgentReadinessChart
+                history={rangeHistory}
+                threshold={thresholds.agentReadiness}
+                ignores={page.agentIgnores}
+                defaults={store.agentIgnoreDefaults}
+                restores={page.agentIgnoreRestores}
+              />
+              {readinessHistory.length === 1 && (
+                <div style={{ color: C.faint, fontSize: 11, marginTop: -4 }}>
+                  One retained snapshot is shown; direction appears after the next successful scan.
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </div>
 
       <div className="table-scroll" style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13 }}>

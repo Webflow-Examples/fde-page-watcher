@@ -4,18 +4,28 @@ import { scan } from "../src/lib/agentReadiness";
 import { costBand } from "../src/lib/cost";
 import { mediansOf } from "../src/lib/scoring";
 import { shortDate } from "../src/lib/ui";
-import type { CollectionResult, LighthouseOpportunity, Rec, Strategy, StrategyScores } from "../src/lib/types";
+import type {
+  CollectionResult,
+  LighthouseCollectionQuality,
+  LighthouseOpportunity,
+  Rec,
+  Strategy,
+  StrategyScores,
+} from "../src/lib/types";
 import { createFdeStore } from "./dataStore";
 import { handleDataPlaneRequest } from "./dataPlane";
 import { dispatchFdeNightly, type DispatchPayload } from "./nightly";
+import { runWeeklyDataAudit, WEEKLY_AUDIT_CRON, WEEKLY_AUDIT_LATEST_KEY } from "./weeklyAudit";
 
-const SCHEDULER_STATUS_KEY = "scheduler/latest.json";
+const NIGHTLY_SCHEDULER_STATUS_KEY = "scheduler/latest.json";
+const AUDIT_SCHEDULER_STATUS_KEY = "scheduler/audit-latest.json";
 
 interface StrategySummary {
   strategy: Strategy;
   scores: CollectionResult["scores"][Strategy];
   sampleSize: number;
   opportunities: LighthouseOpportunity[];
+  quality: LighthouseCollectionQuality;
 }
 
 function reportKey(jobId: string, strategy: Strategy): string {
@@ -85,6 +95,7 @@ async function commitWorkflowResult(env: Env, payload: DispatchPayload, result: 
     sampleSize: Math.min(result.samples.mobile, result.samples.desktop),
     agent: result.agent,
     opportunities: result.opportunities,
+    collectionQuality: result.collectionQuality,
   }, { strategies: { mobile, desktop } });
   if (!appended.night) throw new Error("Collection result was superseded before FDE commit");
 
@@ -172,11 +183,18 @@ export class CollectorWorkflow extends WorkflowEntrypoint<Env, DispatchPayload> 
           httpMetadata: { contentType: "application/json" },
           customMetadata: { jobId: payload.jobId, runId: payload.runId, pageId: payload.pageId, strategy },
         });
+        if (result.quality.status !== "reliable") {
+          throw new Error(
+            `${strategy} PSI evidence is ${result.quality.status}: `
+            + `${result.quality.eligibleRuns}/${result.quality.requestedRuns} warning-free runs`,
+          );
+        }
         return {
           strategy,
           scores: result.scores,
           sampleSize: result.sampleSize,
           opportunities: result.opportunities,
+          quality: result.quality,
         } satisfies StrategySummary;
       },
     );
@@ -200,6 +218,7 @@ export class CollectorWorkflow extends WorkflowEntrypoint<Env, DispatchPayload> 
       samples: { mobile: mobile.sampleSize, desktop: desktop.sampleSize },
       agent,
       opportunities: mobile.opportunities,
+      collectionQuality: { mobile: mobile.quality, desktop: desktop.quality },
     } satisfies CollectionResult;
       await step.do(
         "commit result to FDE storage",
@@ -249,13 +268,28 @@ function noStore(response: Response): Response {
 async function handleRequest(request: Request, env: Env): Promise<Response> {
     const pathname = new URL(request.url).pathname;
     if (request.method === "GET" && pathname === "/health") {
-      return noStore(Response.json({ ok: true, service: "fde-page-collector", workflow: "fde-page-collection", storage: { d1: true, r2: true }, resultTransport: "direct-fde-commit" }));
+      const latestAudit = await env.REPORTS.head(WEEKLY_AUDIT_LATEST_KEY).catch(() => null);
+      return noStore(Response.json({
+        ok: true,
+        service: "fde-page-collector",
+        workflow: "fde-page-collection",
+        storage: { d1: true, r2: true },
+        resultTransport: "direct-fde-commit",
+        dataAudit: latestAudit
+          ? {
+              status: latestAudit.customMetadata?.health ?? "unknown",
+              auditId: latestAudit.customMetadata?.auditId,
+              updatedAt: latestAudit.uploaded.toISOString(),
+            }
+          : { status: "pending" },
+      }));
     }
     const route = jobRoute(pathname);
     const isDispatch = request.method === "POST" && (pathname === "/jobs" || pathname === "/jobs/batch");
     const isNightly = request.method === "POST" && pathname === "/nightly";
+    const isAuditLatest = request.method === "GET" && pathname === "/audits/weekly/latest";
     const isDataPlane = pathname.startsWith("/data/");
-    if (!isDispatch && !route && !isNightly && !isDataPlane) {
+    if (!isDispatch && !route && !isNightly && !isAuditLatest && !isDataPlane) {
       return Response.json({ error: "not found" }, { status: 404 });
     }
     if (!(await sameValue(request.headers.get("authorization") ?? "", `Bearer ${env.CRON_SECRET}`))) {
@@ -263,6 +297,14 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     }
 
     if (isNightly) return noStore(Response.json(await dispatchFdeNightly(env), { status: 202 }));
+    if (isAuditLatest) {
+      const audit = await env.REPORTS.get(WEEKLY_AUDIT_LATEST_KEY);
+      if (!audit) return Response.json({ error: "audit not found" }, { status: 404 });
+      const headers = new Headers({ "content-type": "application/json", "cache-control": "no-store" });
+      audit.writeHttpMetadata(headers);
+      headers.set("etag", audit.httpEtag);
+      return new Response(audit.body, { headers });
+    }
     if (isDataPlane) {
       return await handleDataPlaneRequest(request, env) ?? Response.json({ error: "not found" }, { status: 404 });
     }
@@ -337,38 +379,50 @@ const worker = {
   },
   async scheduled(controller: ScheduledController, env: Env): Promise<void> {
     const observedAt = new Date().toISOString();
+    const isWeeklyAudit = controller.cron === WEEKLY_AUDIT_CRON;
+    const scheduler = isWeeklyAudit ? "weekly data audit" : "nightly collection";
+    const statusKey = isWeeklyAudit ? AUDIT_SCHEDULER_STATUS_KEY : NIGHTLY_SCHEDULER_STATUS_KEY;
     try {
-      const result = await dispatchFdeNightly(env);
+      let response: unknown;
+      if (isWeeklyAudit) {
+        const audit = await runWeeklyDataAudit(env, new Date(controller.scheduledTime));
+        response = { auditId: audit.auditId, health: audit.health, totals: audit.totals };
+      } else {
+        response = await dispatchFdeNightly(env);
+      }
       const record = {
         status: "succeeded",
         cron: controller.cron,
         scheduledAt: new Date(controller.scheduledTime).toISOString(),
         observedAt,
-        response: result,
+        response,
       };
-      await env.REPORTS.put(SCHEDULER_STATUS_KEY, JSON.stringify(record), {
+      await env.REPORTS.put(statusKey, JSON.stringify(record), {
         httpMetadata: { contentType: "application/json" },
       });
-      console.log(JSON.stringify({ message: "nightly scheduler completed", ...record }));
+      console.log(JSON.stringify({ message: `${scheduler} scheduler completed`, ...record }));
     } catch (error) {
+      const errorMessage = isWeeklyAudit
+        ? "Weekly data audit execution failed"
+        : error instanceof Error ? error.message : String(error);
       const record = {
         status: "failed",
         cron: controller.cron,
         scheduledAt: new Date(controller.scheduledTime).toISOString(),
         observedAt,
-        message: error instanceof Error ? error.message : String(error),
+        message: errorMessage,
       };
       try {
-        await env.REPORTS.put(SCHEDULER_STATUS_KEY, JSON.stringify(record), {
+        await env.REPORTS.put(statusKey, JSON.stringify(record), {
           httpMetadata: { contentType: "application/json" },
         });
       } catch (statusError) {
         console.error(JSON.stringify({
-          message: "nightly scheduler status write failed",
+          message: `${scheduler} scheduler status write failed`,
           error: statusError instanceof Error ? statusError.message : String(statusError),
         }));
       }
-      console.error(JSON.stringify({ event: "nightly scheduler failed", ...record }));
+      console.error(JSON.stringify({ event: `${scheduler} scheduler failed`, ...record }));
       throw error;
     }
   },
