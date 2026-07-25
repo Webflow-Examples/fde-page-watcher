@@ -1,14 +1,16 @@
 import type { AppState } from "../types";
-import { normalizeAgentIgnoreSettings } from "../agentScoring";
+import { captureAgentReadiness, normalizeAgentIgnoreSettings } from "../agentScoring";
 import { normalizePerformanceThresholds } from "../performanceThresholds";
 import { pageTrend } from "../scoring";
 import { normalizeWatchCapacity } from "../watchCapacity";
+import { sortWatchlistPages } from "../watchlistOrder";
 
 /** Apply compatible, idempotent upgrades when reading persisted state. */
 export function normalizeState(state: AppState): AppState {
   state.agentIgnoreDefaults = normalizeAgentIgnoreSettings(state.agentIgnoreDefaults);
   state.performanceThresholds = normalizePerformanceThresholds(state.performanceThresholds);
   if (normalizeWatchCapacity(state.pages)) delete state.watcherNote;
+  state.pages = sortWatchlistPages(state.pages);
   for (const page of state.pages) {
     // Older pending records carried a zero-filled placeholder baseline. The
     // timestamp is the authoritative proof that baseline capture occurred.
@@ -22,6 +24,18 @@ export function normalizeState(state: AppState): AppState {
     }
     page.agentIgnores = normalizeAgentIgnoreSettings(page.agentIgnores);
     page.agentIgnoreRestores = normalizeAgentIgnoreSettings(page.agentIgnoreRestores);
+    for (const night of page.history) {
+      if (!night.agentReadiness && Array.isArray(night.agent)) {
+        night.agentReadiness = captureAgentReadiness(
+          night.agent,
+          page.agentIgnores,
+          state.agentIgnoreDefaults,
+          page.agentIgnoreRestores,
+        );
+      } else if (night.agentReadiness && !Array.isArray(night.agentReadiness.ignoredCheckKeys)) {
+        night.agentReadiness.ignoredCheckKeys = [];
+      }
+    }
   }
   state.followUps = (state.followUps ?? []).map((followUp) => ({
     ...followUp,

@@ -1,4 +1,5 @@
 import { buildInitialState } from "../src/lib/seed";
+import { captureAgentReadiness } from "../src/lib/agentScoring";
 import { resolveMarkerIndex } from "../src/lib/followups";
 import { mediansOf, pageTrend } from "../src/lib/scoring";
 import { normalizeState } from "../src/lib/store/normalize";
@@ -151,7 +152,9 @@ export class FdeDataStore {
         const before = page.agent.find((prior) => prior.name === check.name);
         return { ...check, regressed: !!before && before.pass && !check.pass };
       });
-      const night: Night = { ...input, i, runId, rawReportKey, agent };
+      const agentReadiness = input.agentReadiness
+        ?? (agent ? captureAgentReadiness(agent, page.agentIgnores, draft.agentIgnoreDefaults, page.agentIgnoreRestores) : undefined);
+      const night: Night = { ...input, i, runId, rawReportKey, agent, agentReadiness };
 
       page.history.push(night);
       if (page.history.length > 180) page.history = page.history.slice(-180);
@@ -177,6 +180,7 @@ export class FdeDataStore {
         date: commit.night.date,
         iso: commit.night.iso,
         agent: commit.night.agent,
+        agentReadiness: commit.night.agentReadiness,
       });
     }
     return { state, night: commit.night, inserted: commit.inserted };

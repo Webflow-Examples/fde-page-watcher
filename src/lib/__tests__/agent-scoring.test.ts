@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ALL_AGENT_CHECKS } from "../agentChecks";
-import { agentCheckKey, isAgentCheckIgnored, summarizeAgentChecks, updateAgentIgnoreOverride, updateAgentIgnoreSettings } from "../agentScoring";
+import { agentCheckKey, agentReadinessForNight, captureAgentReadiness, isAgentCheckIgnored, summarizeAgentChecks, updateAgentIgnoreOverride, updateAgentIgnoreSettings } from "../agentScoring";
 import type { AgentCheck } from "../types";
 
 const checks: AgentCheck[] = [
@@ -96,5 +96,27 @@ describe("agent-readiness applicability scoring", () => {
 
     expect(isAgentCheckIgnored(checks[2], restored.ignores, defaults, restored.restores)).toBe(false);
     expect(isAgentCheckIgnored(checks[2], inherited.ignores, defaults, inherited.restores)).toBe(true);
+  });
+
+  it("captures the exact ignored checks used for a historical score", () => {
+    const settings = updateAgentIgnoreSettings(undefined, "check", agentCheckKey(checks[2]), true);
+
+    expect(captureAgentReadiness(checks, settings)).toEqual({
+      pass: 2,
+      fail: 0,
+      total: 2,
+      unavailable: 1,
+      ignored: 1,
+      percent: 100,
+      ignoredCheckKeys: [agentCheckKey(checks[2])],
+    });
+  });
+
+  it("does not rescore a stored historical snapshot with newer ignore settings", () => {
+    const captured = captureAgentReadiness(checks);
+    const laterSettings = updateAgentIgnoreSettings(undefined, "check", agentCheckKey(checks[2]), true);
+
+    expect(agentReadinessForNight({ agent: checks, agentReadiness: captured }, laterSettings)).toEqual(captured);
+    expect(agentReadinessForNight({ agent: checks }, laterSettings)?.percent).toBe(100);
   });
 });

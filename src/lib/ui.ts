@@ -57,6 +57,25 @@ export function shortDate(d: Date = new Date()): string {
   return `${MONTHS[d.getMonth()]} ${d.getDate()}`;
 }
 
+/** Human-readable date for prose UI such as "Captured yesterday" or "4 days ago". */
+export function naturalDate(value: string, now: Date = new Date()): string {
+  const parsed = parseMarkerDate(value, now.getUTCFullYear());
+  if (!parsed) return value;
+
+  const todayUTC = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const parsedUTC = Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate());
+  const daysAgo = Math.floor((todayUTC - parsedUTC) / 86_400_000);
+
+  if (daysAgo === 0) return "today";
+  if (daysAgo === 1) return "yesterday";
+  if (daysAgo > 1 && daysAgo < 7) return `${daysAgo} days ago`;
+
+  const date = `${MONTHS[parsed.getUTCMonth()]} ${parsed.getUTCDate()}`;
+  return parsed.getUTCFullYear() === now.getUTCFullYear()
+    ? date
+    : `${date}, ${parsed.getUTCFullYear()}`;
+}
+
 /** Calendar date for form values and persisted marker dates (always UTC ISO). */
 export function isoDate(d: Date = new Date()): string {
   return d.toISOString().slice(0, 10);

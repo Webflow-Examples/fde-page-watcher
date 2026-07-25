@@ -9,6 +9,7 @@ import { normalizePerformanceThresholds } from "@/lib/performanceThresholds";
 import { isoDate } from "@/lib/ui";
 import { withBasePath } from "@/lib/paths";
 import { defaultNewPageFlag, flagCapacityError } from "@/lib/watchCapacity";
+import { applyWatchlistPageOrder, changePageFlagOrder } from "@/lib/watchlistOrder";
 
 type SortDir = "asc" | "desc";
 interface SortState {
@@ -78,6 +79,7 @@ interface StoreValue extends AppState {
   setMarkerDate: (d: string) => void;
   // actions
   setFlag: (id: string, flag: Flag) => void;
+  reorderPages: (pageIds: string[]) => void;
   renamePage: (id: string, title: string) => void;
   setAgentIgnore: (id: string, scope: AgentIgnoreScope, value: string, mode: AgentIgnoreOverrideMode) => void;
   setDefaultAgentIgnore: (scope: AgentIgnoreScope, value: string, ignored: boolean) => void;
@@ -267,9 +269,32 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
         return;
       }
       mutate(
-        { ...cur, watcherNote: undefined, pages: cur.pages.map((p) => (p.id === id ? { ...p, flag } : p)) },
+        { ...cur, watcherNote: undefined, pages: changePageFlagOrder(cur.pages, id, flag) },
         { url: `/api/pages/${id}/flag`, body: { flag } },
         { failure: "Couldn't update the monitoring status — check the limits and try again" },
+      );
+    },
+    [flash, mutate],
+  );
+
+  const reorderPages = useCallback(
+    (pageIds: string[]) => {
+      const cur = dataRef.current;
+      let pages: AppState["pages"];
+      try {
+        pages = applyWatchlistPageOrder(cur.pages, pageIds);
+      } catch {
+        flash("Couldn't reorder the pages — refresh and try again");
+        return;
+      }
+      if (pages.every((page, index) => page.id === cur.pages[index]?.id)) return;
+      mutate(
+        { ...cur, watcherNote: undefined, pages },
+        { url: "/api/pages/order", body: { pageIds: pages.map((page) => page.id) } },
+        {
+          success: "Page order updated",
+          failure: "Couldn't save the page order — refresh and try again",
+        },
       );
     },
     [flash, mutate],
@@ -581,6 +606,7 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
     setMarkerText,
     setMarkerDate,
     setFlag,
+    reorderPages,
     renamePage,
     setAgentIgnore,
     setDefaultAgentIgnore,

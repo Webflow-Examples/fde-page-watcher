@@ -1,20 +1,24 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
-import { Info } from "@phosphor-icons/react";
+import { useMemo, useRef, useState } from "react";
+import { DotsSixVerticalIcon, Info } from "@phosphor-icons/react";
 import { useStore } from "@/components/store";
 import { AGENT_CHECK_GROUPS, ALL_AGENT_CHECKS } from "@/lib/agentChecks";
 import { agentCheckKey, isAgentCheckIgnored, isAgentGroupIgnored, normalizeAgentIgnoreSettings } from "@/lib/agentScoring";
 import { DEFAULT_PERFORMANCE_THRESHOLDS, normalizePerformanceThresholds, PERFORMANCE_THRESHOLD_LIMITS } from "@/lib/performanceThresholds";
 import type { DevicePolicy, PerformanceThresholds } from "@/lib/types";
-import { C } from "@/lib/ui";
+import { C, flagChip, naturalDate } from "@/lib/ui";
 import { SegToggle } from "@/components/bits";
 import { ChevronDownIcon, PlusIcon, TrashIcon } from "@/components/icons";
 import { flagCapacityError, MAX_ACTIVE_PAGES, MAX_PRIORITY_PAGES, watchCapacity } from "@/lib/watchCapacity";
+import { movePageWithinFlag, reorderPageWithinFlag, sortWatchlistPages } from "@/lib/watchlistOrder";
 
-const GRID = "minmax(260px,2.4fr) 230px 1fr 120px";
+const GRID = "32px minmax(228px,2.4fr) 230px 1fr 120px";
+const PRIORITY_CHIP = flagChip("priority");
+const PAUSED_CHIP = flagChip("paused");
 type NumericToleranceKey = keyof typeof PERFORMANCE_THRESHOLD_LIMITS;
+type WatchlistDropTarget = { pageId: string; position: "before" | "after" };
 const NUMERIC_TOLERANCE_KEYS = Object.keys(PERFORMANCE_THRESHOLD_LIMITS) as NumericToleranceKey[];
 
 function EditablePageTitle({
@@ -309,6 +313,7 @@ export default function WatchlistPage() {
     pages,
     agentIgnoreDefaults,
     setFlag,
+    reorderPages,
     renamePage,
     setDefaultAgentIgnore,
     removePage,
@@ -319,12 +324,17 @@ export default function WatchlistPage() {
     performanceThresholds,
     updatePerformanceThresholds,
   } = useStore();
+  const orderedPages = useMemo(() => sortWatchlistPages(pages), [pages]);
   const defaultIgnores = normalizeAgentIgnoreSettings(agentIgnoreDefaults);
   const thresholds = normalizePerformanceThresholds(performanceThresholds);
   const [thresholdDrafts, setThresholdDrafts] = useState<Record<NumericToleranceKey, string>>(() =>
     Object.fromEntries(NUMERIC_TOLERANCE_KEYS.map((key) => [key, String(thresholds[key])])) as Record<NumericToleranceKey, string>
   );
   const [devicePolicyDraft, setDevicePolicyDraft] = useState<DevicePolicy>(thresholds.devicePolicy);
+  const [draggedPageId, setDraggedPageId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<WatchlistDropTarget | null>(null);
+  const [keyboardDragPageId, setKeyboardDragPageId] = useState<string | null>(null);
+  const [reorderAnnouncement, setReorderAnnouncement] = useState("");
   const ignoredByDefault = ALL_AGENT_CHECKS.filter((check) => isAgentCheckIgnored(check, undefined, defaultIgnores)).length;
   const capacity = watchCapacity(pages);
   const thresholdValues = Object.fromEntries(
@@ -370,6 +380,51 @@ export default function WatchlistPage() {
     setDevicePolicyDraft(DEFAULT_PERFORMANCE_THRESHOLDS.devicePolicy);
   };
 
+  const persistReorder = (
+    pageId: string,
+    targetId: string,
+    position: WatchlistDropTarget["position"],
+  ) => {
+    const next = reorderPageWithinFlag(orderedPages, pageId, targetId, position);
+    if (next.every((page, index) => page.id === orderedPages[index]?.id)) return false;
+    reorderPages(next.map((page) => page.id));
+    const movedPage = next.find((page) => page.id === pageId);
+    const tier = next.filter((page) => page.flag === movedPage?.flag);
+    const tierIndex = tier.findIndex((page) => page.id === pageId);
+    setReorderAnnouncement(
+      `${movedPage?.title ?? "Page"} moved to position ${tierIndex + 1} of ${tier.length} in ${movedPage?.flag ?? "its group"}.`,
+    );
+    return true;
+  };
+
+  const moveKeyboardPage = (pageId: string, direction: -1 | 1) => {
+    const next = movePageWithinFlag(orderedPages, pageId, direction);
+    const movedPage = next.find((page) => page.id === pageId);
+    const changed = next.some((page, index) => page.id !== orderedPages[index]?.id);
+    if (!changed || !movedPage) {
+      setReorderAnnouncement(`This page is already at the ${direction < 0 ? "start" : "end"} of its ${movedPage?.flag ?? "current"} group.`);
+      return;
+    }
+    reorderPages(next.map((page) => page.id));
+    const tier = next.filter((page) => page.flag === movedPage.flag);
+    const tierIndex = tier.findIndex((page) => page.id === pageId);
+    setReorderAnnouncement(`${movedPage.title} moved to position ${tierIndex + 1} of ${tier.length} in ${movedPage.flag}.`);
+  };
+
+  const dropTargetAtPoint = (pageId: string, x: number, y: number): WatchlistDropTarget | null => {
+    const targetRow = document.elementFromPoint(x, y)?.closest<HTMLElement>("[data-watchlist-page]");
+    const targetId = targetRow?.dataset.watchlistPage;
+    if (!targetRow || !targetId || targetId === pageId) return null;
+    const page = orderedPages.find((item) => item.id === pageId);
+    const target = orderedPages.find((item) => item.id === targetId);
+    if (!page || !target || page.flag !== target.flag) return null;
+    const bounds = targetRow.getBoundingClientRect();
+    return {
+      pageId: targetId,
+      position: y < bounds.top + (bounds.height / 2) ? "before" : "after",
+    };
+  };
+
   return (
     <div>
       <header style={{ padding: "30px 40px 24px", display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 24 }}>
@@ -387,24 +442,97 @@ export default function WatchlistPage() {
       </header>
 
       <div style={{ padding: "0 40px 48px" }}>
-        <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden", marginBottom: 16 }}>
+        <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 18, padding: "12px 24px", borderBottom: `1px solid ${C.border}`, fontSize: 11.5, color: C.muted }}>
             <span><strong style={{ color: C.text, fontWeight: 600 }}>{capacity.active}/{MAX_ACTIVE_PAGES}</strong> active</span>
             <span><strong style={{ color: C.accentSoft, fontWeight: 600 }}>{capacity.priority}/{MAX_PRIORITY_PAGES}</strong> Priority</span>
             <span><strong style={{ color: C.faint2, fontWeight: 600 }}>{capacity.paused}</strong> Paused</span>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: GRID, alignItems: "center", padding: "14px 24px", borderBottom: `1px solid ${C.border}`, fontSize: 11, fontWeight: 550, letterSpacing: "0.05em", textTransform: "uppercase", color: C.faint }}>
+            <div aria-hidden="true" />
             <div>Page</div>
             <div>Flag</div>
             <div>Baseline</div>
             <div style={{ textAlign: "right" }}>Actions</div>
           </div>
-          {pages.map((p) => {
+          <p id="watchlist-reorder-instructions" className="visually-hidden">
+            Drag a page handle to reorder it within its current monitoring group. With the handle focused, press Space or Enter to pick up the page, use the Up and Down arrow keys to move it, then press Space or Enter again to drop it. Press Escape to cancel.
+          </p>
+          <div className="visually-hidden" aria-live="polite" aria-atomic="true">
+            {reorderAnnouncement}
+          </div>
+          {orderedPages.map((p) => {
             const priorityError = flagCapacityError(pages, p.id, "priority");
             const watchingError = flagCapacityError(pages, p.id, "watching");
             const pauseBlocked = !!p.runState && p.runState !== "failed";
+            const keyboardDragging = keyboardDragPageId === p.id;
+            const isDropTarget = dropTarget?.pageId === p.id;
             return (
-            <div key={p.id} style={{ display: "grid", gridTemplateColumns: GRID, alignItems: "center", padding: "15px 24px", borderBottom: `1px solid ${C.rowBorder}` }}>
+            <div
+              key={p.id}
+              data-watchlist-page={p.id}
+              className={`watchlist-page-row${draggedPageId === p.id ? " is-dragging" : ""}${keyboardDragging ? " is-keyboard-dragging" : ""}${isDropTarget ? ` is-drop-${dropTarget.position}` : ""}`}
+              style={{ display: "grid", gridTemplateColumns: GRID, alignItems: "center", padding: "15px 24px", borderBottom: `1px solid ${C.rowBorder}` }}
+            >
+              <button
+                type="button"
+                className={`watchlist-drag-handle${keyboardDragging ? " is-grabbed" : ""}`}
+                aria-label={`Drag ${p.title} to reorder within ${p.flag}`}
+                aria-describedby="watchlist-reorder-instructions"
+                aria-pressed={keyboardDragging}
+                title={`Drag to reorder within ${p.flag}`}
+                onMouseDown={(event) => {
+                  if (event.button !== 0) return;
+                  event.preventDefault();
+                  event.currentTarget.focus();
+                  setKeyboardDragPageId(null);
+                  setDraggedPageId(p.id);
+                  setDropTarget(null);
+                  setReorderAnnouncement(`Dragging ${p.title}. Drop it on another ${p.flag} page.`);
+                  const handleMouseMove = (moveEvent: MouseEvent) => {
+                    const nextTarget = dropTargetAtPoint(p.id, moveEvent.clientX, moveEvent.clientY);
+                    setDropTarget((current) => (
+                      current?.pageId === nextTarget?.pageId && current?.position === nextTarget?.position
+                        ? current
+                        : nextTarget
+                    ));
+                  };
+                  const handleMouseUp = (upEvent: MouseEvent) => {
+                    window.removeEventListener("mousemove", handleMouseMove);
+                    window.removeEventListener("mouseup", handleMouseUp);
+                    const nextTarget = dropTargetAtPoint(p.id, upEvent.clientX, upEvent.clientY);
+                    if (nextTarget) persistReorder(p.id, nextTarget.pageId, nextTarget.position);
+                    setDraggedPageId(null);
+                    setDropTarget(null);
+                  };
+                  window.addEventListener("mousemove", handleMouseMove);
+                  window.addEventListener("mouseup", handleMouseUp);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === " " || event.key === "Enter") {
+                    event.preventDefault();
+                    if (keyboardDragging) {
+                      setKeyboardDragPageId(null);
+                      setReorderAnnouncement(`${p.title} dropped.`);
+                    } else {
+                      setKeyboardDragPageId(p.id);
+                      setReorderAnnouncement(`${p.title} picked up. Use the Up and Down arrow keys to move it within ${p.flag}.`);
+                    }
+                    return;
+                  }
+                  if (!keyboardDragging) return;
+                  if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+                    event.preventDefault();
+                    moveKeyboardPage(p.id, event.key === "ArrowUp" ? -1 : 1);
+                  } else if (event.key === "Escape") {
+                    event.preventDefault();
+                    setKeyboardDragPageId(null);
+                    setReorderAnnouncement(`Reordering ${p.title} cancelled.`);
+                  }
+                }}
+              >
+                <DotsSixVerticalIcon size={17} weight="bold" aria-hidden="true" />
+              </button>
               <div style={{ minWidth: 0, paddingRight: 16 }}>
                 <EditablePageTitle pageId={p.id} title={p.title} onSave={renamePage} />
                 <div
@@ -421,9 +549,9 @@ export default function WatchlistPage() {
                   value={p.flag}
                   onChange={(f) => setFlag(p.id, f)}
                   options={[
-                    { value: "priority", label: "Priority", disabled: p.flag !== "priority" && !!priorityError, title: p.flag !== "priority" ? priorityError ?? undefined : undefined },
+                    { value: "priority", label: "Priority", tone: PRIORITY_CHIP.fg, selectedBackground: PRIORITY_CHIP.bg, disabled: p.flag !== "priority" && !!priorityError, title: p.flag !== "priority" ? priorityError ?? undefined : undefined },
                     { value: "watching", label: "Watching", disabled: p.flag !== "watching" && !!watchingError, title: p.flag !== "watching" ? watchingError ?? undefined : undefined },
-                    { value: "paused", label: "Paused", disabled: p.flag !== "paused" && pauseBlocked, title: pauseBlocked ? "Wait for the current collection to finish before pausing" : undefined },
+                    { value: "paused", label: "Paused", tone: PAUSED_CHIP.fg, selectedBackground: PAUSED_CHIP.bg, disabled: p.flag !== "paused" && pauseBlocked, title: pauseBlocked ? "Wait for the current collection to finish before pausing" : undefined },
                   ]}
                 />
               </div>
@@ -439,7 +567,7 @@ export default function WatchlistPage() {
                       : p.runState === "failed"
                         ? `Failed: ${p.lastError ?? "retry from page"}`
                         : p.baselineCapturedAt
-                          ? `Captured ${p.baselineCapturedAt}`
+                          ? `Captured ${naturalDate(p.baselineCapturedAt)}`
                           : "No baseline yet"}
               </div>
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
@@ -459,6 +587,13 @@ export default function WatchlistPage() {
               </div>
             </div>
           );})}
+        </div>
+
+        <div className="watchlist-settings-intro" style={{ margin: "30px 0 16px" }}>
+          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600, letterSpacing: "-0.01em" }}>Settings</h2>
+          <p style={{ maxWidth: 760, margin: "6px 0 0", color: C.muted, fontSize: 13, lineHeight: 1.5 }}>
+            Configure how Page Watch displays performance, evaluates changes, and calculates agent-readiness across your watchlist.
+          </p>
         </div>
 
         <section aria-labelledby="default-chart-device-heading" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 24, background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, padding: "17px 20px", marginBottom: 16 }}>

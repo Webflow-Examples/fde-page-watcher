@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { AppState, ChangeMarker, Night, WatchPage } from "../types";
 import { buildInitialState } from "../seed";
+import { captureAgentReadiness } from "../agentScoring";
 import { normalizePerformanceThresholds } from "../performanceThresholds";
 import { mediansOf, pageTrend } from "../scoring";
 import { resolveMarkerIndex } from "../followups";
@@ -206,7 +207,9 @@ class FsDataStore implements DataStore {
         const before = page.agent.find((prior) => prior.name === check.name);
         return { ...check, regressed: !!before && before.pass && !check.pass };
       });
-      const night: Night = { ...input, i, runId, rawReportKey, agent };
+      const agentReadiness = input.agentReadiness
+        ?? (agent ? captureAgentReadiness(agent, page.agentIgnores, draft.agentIgnoreDefaults, page.agentIgnoreRestores) : undefined);
+      const night: Night = { ...input, i, runId, rawReportKey, agent, agentReadiness };
 
       // Keep the filesystem adapter's sequential/object fan-out inside the
       // same per-tenant serialization boundary as the state commit.
@@ -220,6 +223,7 @@ class FsDataStore implements DataStore {
           date: night.date,
           iso: night.iso,
           agent,
+          agentReadiness,
         });
       }
 

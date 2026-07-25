@@ -1,6 +1,8 @@
-import type { LighthouseOpportunity, NightScores, Strategy } from "./types";
+import type { LighthouseRunEvidence, NightScores, Strategy } from "./types";
 import { getEnv } from "./env";
+import { aggregateLighthouseRunEvidence } from "./lighthouseEvidence";
 import { collectPsi, runPsiOnce } from "./psiCore";
+import type { CollectResult as CoreCollectResult } from "./psiCore";
 
 export { normalizeUrl } from "./psiCore";
 
@@ -8,12 +10,7 @@ export { normalizeUrl } from "./psiCore";
 // PAGESPEED_API_KEY in .env.local for higher quota. Retries on failure and
 // records the reduced sample when some of the five runs fail (REQ-032).
 
-export interface CollectResult {
-  scores: NightScores;
-  opportunities: LighthouseOpportunity[];
-  sampleSize: number;
-  raws: unknown[]; // every successful run's raw payload — the full audit trail (REQ-006), not one representative
-}
+export type CollectResult = CoreCollectResult;
 
 /** Runs per strategy — 5 per the spec, overridable via PSI_RUNS for quick checks. */
 export function defaultRuns(): number {
@@ -46,11 +43,25 @@ function mockCollect(url: string, strategy: Strategy, n: number): CollectResult 
   const perf = Math.min(100, 52 + (h % 20) + bonus);
   const mk = (v: number, spread: number) => ({ m: Math.min(100, v), lo: Math.max(0, v - spread), hi: Math.min(100, v + spread) });
   const scores: NightScores = { perf: mk(perf, 3), a11y: mk(90, 1), bp: mk(95, 1), seo: mk(98, 1) };
-  const opportunities: LighthouseOpportunity[] = [
-    { id: "unused-javascript", title: "Reduce unused JavaScript", category: "Performance", savingsMs: 1800 },
-    { id: "modern-image-formats", title: "Serve images in next-gen formats", category: "Performance", savingsMs: 1200 },
-    { id: "render-blocking-resources", title: "Eliminate render-blocking resources", category: "Performance", savingsMs: 600 },
-  ];
+  const runEvidence: LighthouseRunEvidence[] = Array.from({ length: n }, (_, index) => ({
+    run: index + 1,
+    warnings: [],
+    findings: [
+      { id: "unused-javascript", title: "Reduce unused JavaScript", category: "Performance", savingsMs: 1800, savingsBytes: 0, actionable: true },
+      { id: "modern-image-formats", title: "Serve images in next-gen formats", category: "Performance", savingsMs: 1200, savingsBytes: 0, actionable: true },
+      { id: "render-blocking-resources", title: "Eliminate render-blocking resources", category: "Performance", savingsMs: 600, savingsBytes: 0, actionable: true },
+    ],
+  }));
+  const aggregated = aggregateLighthouseRunEvidence(runEvidence, n);
   const raws = Array.from({ length: n }, (_, k) => ({ mock: true, url, strategy, run: k + 1, note: "PSI_MOCK synthetic report" }));
-  return { scores, opportunities, sampleSize: n, raws };
+  return {
+    schemaVersion: 2,
+    scores,
+    opportunities: aggregated.opportunities,
+    findings: aggregated.findings,
+    runEvidence,
+    quality: aggregated.quality,
+    sampleSize: n,
+    raws,
+  };
 }

@@ -1,4 +1,11 @@
-import type { AgentCheck, AgentIgnoreOverrideMode, AgentIgnoreScope, AgentIgnoreSettings } from "./types";
+import type {
+  AgentCheck,
+  AgentIgnoreOverrideMode,
+  AgentIgnoreScope,
+  AgentIgnoreSettings,
+  AgentReadinessSnapshot,
+  Night,
+} from "./types";
 
 const CHECK_KEY_SEPARATOR = "\u001f";
 
@@ -123,4 +130,40 @@ export function summarizeAgentChecks(
     ignored,
     percent: total ? Math.round((pass / total) * 100) : 0,
   };
+}
+
+/** Freeze one run's score together with the exact checks ignored for that run. */
+export function captureAgentReadiness(
+  checks: AgentCheck[],
+  ignores?: AgentIgnoreSettings,
+  defaults?: AgentIgnoreSettings,
+  restores?: AgentIgnoreSettings,
+): AgentReadinessSnapshot {
+  const summary = summarizeAgentChecks(checks, ignores, defaults, restores);
+  const ignoredCheckKeys = checks
+    .filter((check) => isAgentCheckIgnored(check, ignores, defaults, restores))
+    .map(agentCheckKey)
+    .sort();
+  return { ...summary, ignoredCheckKeys };
+}
+
+/**
+ * Read a historical score without reinterpreting it through today's settings.
+ * Older records fall back to their raw checks until state normalization freezes
+ * them into the new snapshot shape.
+ */
+export function agentReadinessForNight(
+  night: Pick<Night, "agent" | "agentReadiness">,
+  ignores?: AgentIgnoreSettings,
+  defaults?: AgentIgnoreSettings,
+  restores?: AgentIgnoreSettings,
+): AgentReadinessSnapshot | null {
+  if (night.agentReadiness) {
+    return {
+      ...night.agentReadiness,
+      ignoredCheckKeys: [...(night.agentReadiness.ignoredCheckKeys ?? [])],
+    };
+  }
+  if (!Array.isArray(night.agent)) return null;
+  return captureAgentReadiness(night.agent, ignores, defaults, restores);
 }

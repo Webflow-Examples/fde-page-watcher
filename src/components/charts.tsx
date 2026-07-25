@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { CategoryKey, ChangeMarker, Night, Strategy } from "@/lib/types";
+import type { AgentIgnoreSettings, CategoryKey, ChangeMarker, Night, Strategy } from "@/lib/types";
+import { agentReadinessHistoryPoints } from "@/lib/agentHistory";
 import { plottedSparklineSeries } from "@/lib/charting";
 import { C } from "@/lib/ui";
 
@@ -162,6 +163,181 @@ export function HistoryChart({
         if (markerIndex < 0) return null;
         return <FixedChartDot key={mk.id} kind="history-marker" x={x(markerIndex)} y={padT - 4} viewWidth={W} viewHeight={H} radius={3.5} color="#9564FF" />;
       })}
+    </div>
+  );
+}
+
+/** Agent-readiness history using the immutable score captured with each run. */
+export function AgentReadinessChart({
+  history,
+  threshold,
+  ignores,
+  defaults,
+  restores,
+}: {
+  history: Night[];
+  threshold: number;
+  ignores?: AgentIgnoreSettings;
+  defaults?: AgentIgnoreSettings;
+  restores?: AgentIgnoreSettings;
+}) {
+  const { containerRef, width: W } = useResponsiveChartWidth(HISTORY_CHART_DEFAULT_WIDTH);
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const points = agentReadinessHistoryPoints(history, ignores, defaults, restores);
+
+  if (points.length === 0) return null;
+
+  const H = 220;
+  const padL = 38;
+  const padR = 20;
+  const padT = 22;
+  const padB = 30;
+  const n = points.length;
+  const clampedThreshold = Math.max(0, Math.min(100, threshold));
+  const lowestValue = Math.min(clampedThreshold, ...points.map((point) => point.snapshot.percent));
+  const lo = Math.max(0, Math.min(90, Math.floor(lowestValue / 10) * 10 - 5));
+  const hi = 100;
+  const x = (index: number) => n === 1
+    ? W - padR
+    : padL + (index / (n - 1)) * (W - padL - padR);
+  const y = (value: number) => padT + (1 - (value - lo) / (hi - lo)) * (H - padT - padB);
+  const linePoints = points.map((point, index) => `${x(index)},${y(point.snapshot.percent)}`).join(" ");
+  const ticks = [...new Set([lo, Math.round((lo + hi) / 2), hi])];
+  const xLabels = [...new Set([0, Math.round((n - 1) / 2), n - 1])];
+  const active = activeIndex === null ? null : points[activeIndex];
+  const activeX = activeIndex === null ? 0 : x(activeIndex);
+  const activeY = active ? y(active.snapshot.percent) : 0;
+  const tooltipTransform = activeIndex === n - 1
+    ? "translate(-100%, calc(-100% - 10px))"
+    : activeIndex === 0
+      ? "translate(0, calc(-100% - 10px))"
+      : "translate(-50%, calc(-100% - 10px))";
+
+  const pointLabel = (point: (typeof points)[number]) => {
+    const parts = [
+      `${point.night.date}: ${point.snapshot.percent}% agent readiness`,
+      `${point.snapshot.pass} of ${point.snapshot.total} passing`,
+    ];
+    if (point.snapshot.ignored) parts.push(`${point.snapshot.ignored} ignored`);
+    if (point.snapshot.unavailable) parts.push(`${point.snapshot.unavailable} unavailable`);
+    if (point.fixedNames.length) parts.push(`fixed since prior run: ${point.fixedNames.join(", ")}`);
+    if (point.ignoredNames.length) parts.push(`newly ignored: ${point.ignoredNames.join(", ")}`);
+    return parts.join(". ");
+  };
+
+  return (
+    <div ref={containerRef} data-agent-readiness-chart style={{ position: "relative", width: "100%", height: H }}>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} role="img" aria-label="Agent readiness percentage over time" style={{ display: "block", overflow: "visible" }}>
+        {ticks.map((tick) => (
+          <g key={tick}>
+            <line x1={padL} x2={W - padR} y1={y(tick)} y2={y(tick)} stroke="#24242A" strokeWidth={1} />
+            <text x={padL - 8} y={y(tick) + 3.5} textAnchor="end" fontSize={10} fill={C.faint}>
+              {tick}%
+            </text>
+          </g>
+        ))}
+        {xLabels.map((index) => (
+          <text key={index} x={x(index)} y={H - 10} textAnchor={n === 1 ? "end" : "middle"} fontSize={10} fill={C.faint}>
+            {points[index].night.date}
+          </text>
+        ))}
+        <line
+          x1={padL}
+          x2={W - padR}
+          y1={y(clampedThreshold)}
+          y2={y(clampedThreshold)}
+          stroke="#5A5A62"
+          strokeWidth={1.2}
+          strokeDasharray="5 4"
+        />
+        <text x={W - padR} y={y(clampedThreshold) - 6} textAnchor="end" fontSize={10} fill={C.muted}>
+          threshold {clampedThreshold}%
+        </text>
+        {n > 1 && (
+          <polyline points={linePoints} fill="none" stroke={C.violetSoft} strokeWidth={2.4} strokeLinejoin="round" strokeLinecap="round" />
+        )}
+        {points.map((point, index) => {
+          const eventColor = point.fixedNames.length
+            ? C.green
+            : point.ignoredNames.length
+              ? C.accentSoft
+              : C.violetSoft;
+          return (
+            <circle
+              key={point.night.runId ?? point.night.i}
+              cx={x(index)}
+              cy={y(point.snapshot.percent)}
+              r={activeIndex === index ? 4.5 : 3.5}
+              fill={eventColor}
+              stroke={C.panel}
+              strokeWidth={2}
+            />
+          );
+        })}
+      </svg>
+      {points.map((point, index) => (
+        <button
+          key={`target-${point.night.runId ?? point.night.i}`}
+          type="button"
+          aria-label={`Inspect ${pointLabel(point)}`}
+          onClick={() => setActiveIndex(index)}
+          onFocus={() => setActiveIndex(index)}
+          onBlur={() => setActiveIndex(null)}
+          onMouseEnter={() => setActiveIndex(index)}
+          onMouseLeave={() => setActiveIndex(null)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              setActiveIndex(null);
+              event.currentTarget.blur();
+            }
+          }}
+          style={{
+            position: "absolute",
+            left: `${(x(index) / W) * 100}%`,
+            top: `${(y(point.snapshot.percent) / H) * 100}%`,
+            width: 22,
+            height: 22,
+            padding: 0,
+            border: 0,
+            borderRadius: "50%",
+            background: "transparent",
+            transform: "translate(-50%, -50%)",
+            cursor: "default",
+            outline: "none",
+            boxShadow: activeIndex === index ? "0 0 0 3px rgba(59,137,255,0.25)" : "none",
+          }}
+        />
+      ))}
+      {active && (
+        <div
+          role="tooltip"
+          style={{
+            position: "absolute",
+            left: `${(activeX / W) * 100}%`,
+            top: `${(activeY / H) * 100}%`,
+            transform: tooltipTransform,
+            zIndex: 2,
+            width: 218,
+            padding: "9px 10px",
+            borderRadius: 8,
+            border: `1px solid ${C.border2}`,
+            background: "#19191F",
+            boxShadow: "0 12px 28px rgba(0,0,0,0.42)",
+            color: C.dim,
+            fontSize: 11.5,
+            lineHeight: 1.45,
+            pointerEvents: "none",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, color: C.text, fontWeight: 600 }}>
+            <span>{active.night.date}</span>
+            <span>{active.snapshot.percent}%</span>
+          </div>
+          <div style={{ marginTop: 3 }}>{active.snapshot.pass}/{active.snapshot.total} passing{active.snapshot.ignored ? ` · ${active.snapshot.ignored} ignored` : ""}</div>
+          {active.fixedNames.length > 0 && <div style={{ color: C.green, marginTop: 3 }}>Fixed: {active.fixedNames.join(", ")}</div>}
+          {active.ignoredNames.length > 0 && <div style={{ color: C.accentSoft, marginTop: 3 }}>Ignored: {active.ignoredNames.join(", ")}</div>}
+        </div>
+      )}
     </div>
   );
 }

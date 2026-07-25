@@ -37,13 +37,85 @@ export type NightScores = Record<CategoryKey, CategoryScore>;
 /** Median+range per category, split by strategy. */
 export type StrategyScores = Record<Strategy, NightScores>;
 
-/** A normalized Lighthouse opportunity retained with the run that produced it. */
+export type LighthouseFindingConfidence = "high" | "medium" | "intermittent" | "insufficient";
+
+/** One failing Lighthouse audit normalized from a single PSI response. */
+export interface LighthouseRunFinding {
+  id: string;
+  title: string;
+  description?: string;
+  category: string;
+  score?: number;
+  scoreDisplayMode?: string;
+  savingsMs: number;
+  savingsBytes: number;
+  actionable: boolean;
+}
+
+/** Warnings and findings retained for one successful Lighthouse run. */
+export interface LighthouseRunEvidence {
+  run: number;
+  warnings: string[];
+  findings: LighthouseRunFinding[];
+}
+
+/** A finding aggregated across the warning-free runs for one strategy. */
+export interface AggregatedLighthouseFinding extends LighthouseRunFinding {
+  observedRuns: number;
+  totalObservedRuns: number;
+  eligibleRuns: number;
+  successfulRuns: number;
+  quorum: number;
+  frequency: number;
+  promoted: boolean;
+  confidence: LighthouseFindingConfidence;
+  savingsLowMs: number;
+  savingsHighMs: number;
+  savingsLowBytes: number;
+  savingsHighBytes: number;
+}
+
+export type LighthouseCollectionQualityStatus = "reliable" | "low-confidence" | "unusable";
+
+/** Compact quality metadata safe to keep in the page history read model. */
+export interface LighthouseCollectionQuality {
+  requestedRuns: number;
+  successfulRuns: number;
+  eligibleRuns: number;
+  warnedRuns: number;
+  failedRuns: number;
+  findingsObserved: number;
+  findingsPromoted: number;
+  status: LighthouseCollectionQualityStatus;
+}
+
+/** A normalized, repeatable Lighthouse opportunity promoted from multiple runs. */
 export interface LighthouseOpportunity {
   id: string;
   title: string;
   description?: string;
   category: string;
   savingsMs: number;
+  observedRuns?: number;
+  eligibleRuns?: number;
+  confidence?: Extract<LighthouseFindingConfidence, "high" | "medium">;
+  savingsLowMs?: number;
+  savingsHighMs?: number;
+}
+
+/**
+ * Immutable agent-readiness result captured with the ignore configuration
+ * effective for one collection. Keeping this alongside the raw checks prevents
+ * later settings changes from rewriting historical readiness percentages.
+ */
+export interface AgentReadinessSnapshot {
+  pass: number;
+  fail: number;
+  total: number;
+  unavailable: number;
+  ignored: number;
+  percent: number;
+  ignoredCheckKeys: string[];
 }
 
 /** One night's append-only history entry (sequential storage). */
@@ -57,7 +129,9 @@ export interface Night {
   sampleSize?: number; // min across strategies; kept for older records / quick display
   rawReportKey?: string; // object-storage key for the full PSI payload (REQ-006)
   agent?: AgentCheck[]; // agent-readiness scan recorded for this night, so history is retained (REQ-008)
+  agentReadiness?: AgentReadinessSnapshot; // immutable score using the ignore settings effective for this run
   opportunities?: LighthouseOpportunity[]; // real Lighthouse opportunities for this capture
+  collectionQuality?: Partial<Record<Strategy, LighthouseCollectionQuality>>;
 }
 
 /** A user-logged (or acted-upon) change marker on a page's timeline. */
@@ -187,6 +261,7 @@ export interface CollectionResult {
   samples: Record<Strategy, number>;
   agent: AgentCheck[];
   opportunities: LighthouseOpportunity[];
+  collectionQuality?: Partial<Record<Strategy, LighthouseCollectionQuality>>;
 }
 
 export type RecStatus = "inbox" | "task" | "ignored";
