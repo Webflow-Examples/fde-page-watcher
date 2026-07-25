@@ -88,6 +88,47 @@ export function historyForRange(history: Night[], days: RangeDays, now = Date.no
   });
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Successful collections in the non-overlapping range immediately before the selected range. */
+export function historyForPreviousRange(history: Night[], days: RangeDays, now = Date.now()): Night[] {
+  const hasLiveHistory = history.some((night) => night.iso && Number.isFinite(Date.parse(night.iso)));
+  if (!hasLiveHistory) return history.slice(-(days * 2), -days);
+
+  const currentRangeStartsAt = now - days * DAY_MS;
+  const previousRangeStartsAt = now - days * 2 * DAY_MS;
+  return history.filter((night) => {
+    const recordedAt = night.iso ? Date.parse(night.iso) : Number.NaN;
+    return Number.isFinite(recordedAt) && recordedAt >= previousRangeStartsAt && recordedAt < currentRangeStartsAt;
+  });
+}
+
+export interface PreviousPeriodMedian {
+  value: number;
+  sampleCount: number;
+  days: RangeDays;
+}
+
+/**
+ * Median for the immediately preceding range. The reference stays hidden until
+ * that range contains at least one successful collection per selected day.
+ */
+export function previousPeriodMedian(
+  history: Night[],
+  strategy: Strategy,
+  key: CategoryKey,
+  days: RangeDays,
+  now = Date.now(),
+): PreviousPeriodMedian | null {
+  const previousHistory = historyForPreviousRange(history, days, now);
+  if (previousHistory.length < days) return null;
+  return {
+    value: median(previousHistory.map((night) => night.scores[strategy][key].m)),
+    sampleCount: previousHistory.length,
+    days,
+  };
+}
+
 export interface RangeComparison {
   from: number;
   to: number;
@@ -255,6 +296,18 @@ function postBaselineHistory(page: WatchPage): Night[] {
 export function pageHistoryForRange(page: WatchPage, days: RangeDays, now = Date.now()): Night[] {
   if (!page.baseline || !page.baselineCapturedAt) return [];
   return historyForRange(postBaselineHistory(page), days, now);
+}
+
+/** Previous-period chart reference for one device and metric. */
+export function pagePreviousPeriodMedian(
+  page: WatchPage,
+  strategy: Strategy,
+  key: CategoryKey,
+  days: RangeDays,
+  now = Date.now(),
+): PreviousPeriodMedian | null {
+  if (!page.baseline || !page.baselineCapturedAt) return null;
+  return previousPeriodMedian(postBaselineHistory(page), strategy, key, days, now);
 }
 
 /** Latest recorded collection inside the selected range. */
