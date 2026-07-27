@@ -166,6 +166,7 @@ export class FdeDataStore {
       page.status = pageTrend(page, "mobile");
       page.runState = undefined;
       page.lastRunAt = night.iso ?? new Date().toISOString();
+      page.lastCollectionStatus = "trusted";
       delete page.lastError;
       commit.night = night;
       commit.inserted = true;

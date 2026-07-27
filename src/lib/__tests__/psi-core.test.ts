@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { collectPsi, runPsiOnce } from "../psiCore";
 
-function psiResponse(warnings: string[] = [], perf = 0.8) {
+function psiResponse(warnings: string[] = [], perf = 0.8, fetchTime?: string) {
   return {
     lighthouseResult: {
+      fetchTime,
       runWarnings: warnings,
       categories: {
         performance: { score: perf, auditRefs: [{ id: "unused-javascript", weight: 1 }] },
@@ -70,6 +71,25 @@ describe("PSI collection quality", () => {
       observedRuns: 2,
       promoted: false,
       confidence: "insufficient",
+    });
+  });
+
+  it("retains duplicate provider responses without counting them as independent samples", async () => {
+    const duplicate = psiResponse([], 0.42, "2026-07-27T03:00:00.000Z");
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json(duplicate)));
+
+    const result = await collectPsi("https://example.com", "mobile", { runs: 5 });
+
+    expect(result.raws).toHaveLength(5);
+    expect(result.runEvidence).toHaveLength(1);
+    expect(result.sampleSize).toBe(1);
+    expect(result.quality).toMatchObject({
+      attemptRuns: 5,
+      successfulRuns: 1,
+      uniqueRuns: 1,
+      duplicateRuns: 4,
+      eligibleRuns: 1,
+      status: "low-confidence",
     });
   });
 });

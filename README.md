@@ -50,11 +50,14 @@ Put these in `.env.local`.
 ## How it works
 
 - **Collection** — baseline, on-demand, and nightly actions reserve a durable
-  job in FDE D1 and return `202`. A Cloudflare Workflow performs up to five PSI
-  samples per strategy and stores every successful raw response, Lighthouse
-  warning, and normalized failing audit in FDE R2. Warned runs remain available
-  for diagnosis but are excluded from trusted medians. A normal five-run
-  collection needs at least three warning-free runs before it can commit.
+  job in FDE D1 and return `202`. A Cloudflare Workflow performs up to five
+  staggered PSI samples per strategy and stores every successful raw response,
+  Lighthouse warning, and normalized failing audit in FDE R2. Cached/replayed
+  responses are retained for diagnosis but do not count as independent
+  samples. Warned runs are also excluded from trusted medians. A collection
+  needs at least three unique, warning-free measurements before it can commit;
+  otherwise the Workflow sleeps durably and retries up to twice at one-hour
+  intervals.
   Recommendations require a strict-majority Lighthouse finding across those
   eligible runs. The Workflow also scans agent readiness and commits the
   completed result directly into FDE storage. The SSO-protected Webflow app
@@ -66,10 +69,12 @@ Put these in `.env.local`.
   recommendations, and scan results, but a page stays Pending until the user
   explicitly captures a baseline. Zero placeholders are never treated or shown
   as real baselines.
-- **Nightly job** — the FDE Worker reads the live watchlist from its own D1 at
-  03:00 UTC, priority-sorts it, and dispatches Workflows directly. `POST
-  /nightly` provides the same operation for authenticated manual tests. There
-  is no Webflow callback and no Cloudflare Access service token.
+- **Scheduled collection** — every 15 minutes, the FDE Worker reads the live
+  watchlist from its own D1 and dispatches only pages due in the workspace's
+  saved local-time/timezone window. Active pages receive stable 15-minute
+  offsets, and individual PSI samples are spaced one minute apart. `POST
+  /nightly` still provides a force-all operation for authenticated manual
+  tests. There is no Webflow callback and no Cloudflare Access service token.
 - **Weekly data audit** — each Monday at 05:30 UTC, the Worker reconciles the
   prior seven days of stored scores against their raw PSI responses. It checks
   raw-report coverage, usable sample counts, Lighthouse warnings/runtime
@@ -102,7 +107,7 @@ and collector result endpoints remain protected by `CRON_SECRET`.
 1. Apply `migrations/` to the FDE-owned `page-watcher-fde` database, then deploy
    `collector-worker/wrangler.jsonc`. The Worker needs only the existing
    `PAGESPEED_API_KEY` and `CRON_SECRET` secrets. Its D1, R2, Workflow, and
-   03:00 UTC nightly plus Monday 05:30 UTC audit Cron bindings are declared in
+   15-minute due-page scheduler plus Monday 05:30 UTC audit Cron bindings are declared in
    that config.
 2. Deploy the Webflow app code with `STORAGE_DRIVER` still unset. The app keeps
    reading and writing its existing Webflow-provisioned D1/R2 bindings at this

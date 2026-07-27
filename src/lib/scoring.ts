@@ -284,12 +284,13 @@ function postBaselineHistory(page: WatchPage): Night[] {
     ? Date.parse(baselineCapturedAt)
     : Number.NaN;
   const hasLiveHistory = page.history.some((night) => night.iso && Number.isFinite(Date.parse(night.iso)));
+  const trustedHistory = page.history.filter((night) => night.evidenceStatus !== "provider-anomaly");
   return Number.isFinite(capturedAt) && hasLiveHistory
-    ? page.history.filter((night) => {
+    ? trustedHistory.filter((night) => {
       const recordedAt = night.iso ? Date.parse(night.iso) : Number.NaN;
       return Number.isFinite(recordedAt) && recordedAt > capturedAt;
     })
-    : page.history;
+    : trustedHistory;
 }
 
 /** Range-limited monitoring history, excluding exploratory runs before baseline. */

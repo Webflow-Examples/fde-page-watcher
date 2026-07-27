@@ -20,6 +20,7 @@ import { formatSuccessfulRunAt, lastSuccessfulRunAt } from "@/lib/collectionStat
 import { isPageActivelyMonitored } from "@/lib/watchCapacity";
 import { sortDashboardRows } from "@/lib/dashboardSort";
 import { combinedDashboardSignals } from "@/lib/dashboardVerdict";
+import { normalizeCollectionSchedule } from "@/lib/collectionSchedule";
 
 const GRID = "minmax(170px,1fr) 142px 126px 126px 126px 126px 120px";
 type DashboardFilter = "all" | "lowPerformance" | "agentGaps" | "regressions" | "improvements";
@@ -108,6 +109,8 @@ export default function DashboardPage() {
     recs,
     agentIgnoreDefaults,
     performanceThresholds,
+    collectionSchedule,
+    measurementIncident,
     strategy,
     setStrategy,
     rangeDays,
@@ -120,6 +123,7 @@ export default function DashboardPage() {
   const [activeFilter, setActiveFilter] = useState<DashboardFilter>("all");
   const tableRef = useRef<HTMLDivElement>(null);
   const thresholds = normalizePerformanceThresholds(performanceThresholds);
+  const schedule = normalizeCollectionSchedule(collectionSchedule);
   const activePages = pages.filter(isPageActivelyMonitored);
   const inboxCount = recs.filter((rec) => rec.status === "inbox").length;
   const topRibbonRec = recs
@@ -363,7 +367,7 @@ export default function DashboardPage() {
               <strong>{topRibbonRec.savings}</strong> of load time.
             </>
           ) : (
-            <>No open recommendations. Next run tonight · 10:00 PM CDT</>
+            <>No open recommendations. Next collection window · {schedule.localTime} {schedule.timeZone}</>
           )}
         </p>
         <div className="watcher-ribbon__actions">
@@ -381,6 +385,55 @@ export default function DashboardPage() {
           </Link>
         </div>
       </section>
+
+      {measurementIncident && (
+        <section
+          role="status"
+          aria-live="polite"
+          style={{
+            margin: "18px 40px 0",
+            padding: "14px 16px",
+            borderRadius: 10,
+            border: `1px solid ${
+              measurementIncident.status === "verified"
+                ? "rgba(255,82,99,0.35)"
+                : measurementIncident.status === "recovered"
+                  ? "rgba(48,201,132,0.32)"
+                  : "rgba(255,165,72,0.34)"
+            }`,
+            background:
+              measurementIncident.status === "verified"
+                ? "rgba(255,82,99,0.08)"
+                : measurementIncident.status === "recovered"
+                  ? "rgba(48,201,132,0.08)"
+                  : "rgba(255,165,72,0.08)",
+            color: C.text,
+          }}
+        >
+          <div style={{ fontSize: 13, fontWeight: 650 }}>
+            {measurementIncident.status === "suspected"
+              ? measurementIncident.confirmationAttempts
+                ? "PSI measurement anomaly persists"
+                : "Possible PSI measurement anomaly"
+              : measurementIncident.status === "confirming"
+                ? "Collecting independent confirmation"
+                : measurementIncident.status === "recovered"
+                  ? "Performance recovered"
+                  : "Sitewide regression verified"}
+          </div>
+          <div style={{ maxWidth: 900, marginTop: 4, color: C.muted, fontSize: 12, lineHeight: 1.5 }}>
+            {measurementIncident.status === "suspected"
+              ? measurementIncident.confirmationAttempts
+                ? `Independent confirmation showed the same PSI environment pattern across ${measurementIncident.affectedPages} pages. The suspect measurements remain excluded, no action is recommended, and the next scheduled cohort will continue monitoring.`
+                : `${measurementIncident.affectedPages} of ${measurementIncident.eligiblePages} pages moved together while the PSI test environment also changed. No action is recommended until the automatic confirmation finishes.`
+              : measurementIncident.status === "confirming"
+                ? "Page Watch is re-testing the affected cohort with independent, staggered samples. Earlier measurements are excluded from regression statuses while confirmation is running."
+                : measurementIncident.status === "recovered"
+                  ? "Follow-up measurements returned to the expected range. The earlier movement was treated as temporary PSI test-environment variability; no action is needed."
+                  : "Independent follow-up measurements confirmed the synchronized slowdown without the earlier PSI environment anomaly. Review the affected pages and shared site dependencies."}
+          </div>
+        </section>
+      )}
 
       <header className="dashboard-verdict">
         <h1 className={`dashboard-verdict__headline${isAllClear ? " dashboard-verdict__headline--all-clear" : ""}`}>

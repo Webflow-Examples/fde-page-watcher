@@ -9,6 +9,7 @@ interface Body {
   title?: string;
   url?: string;
   flag?: Flag;
+  timeZone?: string;
 }
 
 /** Add a watched page (server-side domain mutation; replaces whole-state PUT). */
@@ -21,7 +22,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "flag must be 'priority', 'watching', or 'paused'" }, { status: 400 });
   }
   try {
-    const state = await addPage({ title: body.title, url: body.url, flag: body.flag });
+    const state = await addPage({
+      title: body.title,
+      url: body.url,
+      flag: body.flag,
+      timeZone: body.timeZone,
+    });
     return NextResponse.json({ state });
   } catch (err) {
     const message = String(err);

@@ -239,6 +239,7 @@ class FsDataStore implements DataStore {
       page.status = pageTrend(page, "mobile", normalizePerformanceThresholds(draft.performanceThresholds));
       page.runState = undefined;
       page.lastRunAt = night.iso ?? new Date().toISOString();
+      page.lastCollectionStatus = "trusted";
       delete page.lastError;
       committed = night;
       inserted = true;

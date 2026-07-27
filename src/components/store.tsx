@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { DEFAULT_RANGE_DAYS } from "@/lib/types";
-import type { AgentIgnoreOverrideMode, AgentIgnoreScope, AppState, CategoryKey, Flag, PerformanceThresholds, RangeDays, ScoreByCategory, Strategy } from "@/lib/types";
+import type { AgentIgnoreOverrideMode, AgentIgnoreScope, AppState, CategoryKey, CollectionSchedule, Flag, PerformanceThresholds, RangeDays, ScoreByCategory, Strategy } from "@/lib/types";
 import { updateAgentIgnoreOverride, updateAgentIgnoreSettings } from "@/lib/agentScoring";
 import { collectionSettlementMessage, hasActiveCollections, startCollectionPolling } from "@/lib/collectionPolling";
 import { normalizePerformanceThresholds } from "@/lib/performanceThresholds";
@@ -84,6 +84,7 @@ interface StoreValue extends AppState {
   setAgentIgnore: (id: string, scope: AgentIgnoreScope, value: string, mode: AgentIgnoreOverrideMode) => void;
   setDefaultAgentIgnore: (scope: AgentIgnoreScope, value: string, ignored: boolean) => void;
   updatePerformanceThresholds: (thresholds: PerformanceThresholds) => void;
+  updateCollectionSchedule: (schedule: CollectionSchedule) => void;
   removePage: (id: string) => void;
   saveTask: (key: string) => void;
   ignoreRec: (key: string) => void;
@@ -385,6 +386,25 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
     [mutate],
   );
 
+  const updateCollectionSchedule = useCallback(
+    (schedule: CollectionSchedule) => {
+      const cur = dataRef.current;
+      mutate(
+        {
+          ...cur,
+          collectionSchedule: schedule,
+          pages: cur.pages.map((page) => ({ ...page, lastScheduledAt: new Date().toISOString() })),
+        },
+        { url: "/api/settings/collection-schedule", body: schedule },
+        {
+          success: "Default collection time updated",
+          failure: "Couldn't update the collection schedule — try again",
+        },
+      );
+    },
+    [mutate],
+  );
+
   const removePage = useCallback(
     (id: string) => {
       const cur = dataRef.current;
@@ -472,6 +492,12 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
     }
     const cur = dataRef.current;
     const flag = defaultNewPageFlag(cur.pages);
+    let timeZone = "UTC";
+    try {
+      timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    } catch {
+      // UTC remains a valid fallback if the browser cannot resolve its zone.
+    }
     // Optimistic pending page (temp id) — the server generates the real id and
     // returns the authoritative state, which replaces this on success.
     const optimistic: AppState = {
@@ -484,7 +510,10 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
       optimistic,
       // Let the server derive the status inside its atomic update so a racing
       // add becomes Paused instead of failing or exceeding the active limit.
-      { url: `/api/pages`, body: { title: f.title.trim(), url: f.url.trim() } },
+      {
+        url: `/api/pages`,
+        body: { title: f.title.trim(), url: f.url.trim(), timeZone },
+      },
       {
         success: flag === "paused"
           ? `Added ${f.title.trim()} — paused with no collections scheduled`
@@ -611,6 +640,7 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
     setAgentIgnore,
     setDefaultAgentIgnore,
     updatePerformanceThresholds,
+    updateCollectionSchedule,
     removePage,
     saveTask,
     ignoreRec,

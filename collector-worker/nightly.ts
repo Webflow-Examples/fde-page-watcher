@@ -1,9 +1,11 @@
 import { createFdeStore, type FdeStoreBindings } from "./dataStore";
 import type { CollectionJob, CollectionJobState } from "../src/lib/types";
 import { isPageActivelyMonitored } from "../src/lib/watchCapacity";
+import { ensureCollectionOffsets, PAGE_COLLECTION_SPACING_MINUTES, pageScheduleDue } from "../src/lib/collectionSchedule";
 
-const ACTIVE = new Set<CollectionJobState>(["queued", "dispatching", "running"]);
+const ACTIVE = new Set<CollectionJobState>(["queued", "dispatching", "running", "waiting_for_evidence"]);
 const STALE_AFTER_MS = 30 * 60 * 1000;
+const WAITING_STALE_AFTER_MS = 4 * 60 * 60 * 1000;
 
 export interface NightlyEnvironment extends FdeStoreBindings {
   COLLECTION_WORKFLOW: Workflow<DispatchPayload>;
@@ -18,6 +20,8 @@ export interface DispatchPayload {
   url: string;
   runs: number;
   tenant?: string;
+  cohortId?: string;
+  startDelayMinutes?: number;
 }
 
 export interface NightlyResult {
@@ -35,7 +39,10 @@ function trimJobs(jobs: CollectionJob[]): CollectionJob[] {
 }
 
 /** Reserve and dispatch the watchlist entirely inside the FDE account. */
-export async function dispatchFdeNightly(env: NightlyEnvironment): Promise<NightlyResult> {
+export async function dispatchFdeNightly(
+  env: NightlyEnvironment,
+  options: { dueOnly?: boolean; confirmationOnly?: boolean } = {},
+): Promise<NightlyResult> {
   const tenant = env.NIGHTLY_TENANT || "brand-studio:live";
   const store = createFdeStore(tenant, env);
   const now = new Date();
@@ -43,14 +50,42 @@ export async function dispatchFdeNightly(env: NightlyEnvironment): Promise<Night
   let coalesced = 0;
   const state = await store.updateState((draft) => {
     draft.jobs = draft.jobs ?? [];
+    ensureCollectionOffsets(draft.pages);
+    const incident = draft.measurementIncident;
+    const confirmationReady = !!(
+      options.confirmationOnly
+      && incident?.status === "suspected"
+      && incident.retryAt
+      && Date.parse(incident.retryAt) <= now.getTime()
+    );
+    const confirmationIds = new Set(
+      confirmationReady ? incident?.affectedPageIds ?? [] : [],
+    );
+    const confirmationCohortId = confirmationReady
+      ? `confirmation:${incident!.id}:${now.toISOString()}`
+      : undefined;
+    const dueByPage = new Map(draft.pages.map((page) => [
+      page.id,
+      pageScheduleDue(page, draft.pages, draft.collectionSchedule, now),
+    ]));
     const pages = draft.pages
-      .filter(isPageActivelyMonitored)
+      .filter((page) =>
+        isPageActivelyMonitored(page)
+        && (
+          options.confirmationOnly
+            ? confirmationIds.has(page.id)
+            : !options.dueOnly || dueByPage.get(page.id)?.due
+        ))
       .sort((a, b) => (a.flag === "priority" ? 0 : 1) - (b.flag === "priority" ? 0 : 1));
     for (const page of pages) {
       const active = draft.jobs.find((job) => job.pageId === page.id && ACTIVE.has(job.state));
       if (active) {
         const age = now.getTime() - Date.parse(active.updatedAt);
-        if (Number.isFinite(age) && age <= STALE_AFTER_MS) {
+        const staleAfter = active.state === "waiting_for_evidence"
+          || active.cohortId?.startsWith("confirmation:")
+          ? WAITING_STALE_AFTER_MS
+          : STALE_AFTER_MS;
+        if (Number.isFinite(age) && age <= staleAfter) {
           coalesced += 1;
           continue;
         }
@@ -60,6 +95,7 @@ export async function dispatchFdeNightly(env: NightlyEnvironment): Promise<Night
         active.completedAt = now.toISOString();
       }
       const id = crypto.randomUUID();
+      const schedule = dueByPage.get(page.id);
       const job: CollectionJob = {
         id,
         runId: id,
@@ -69,23 +105,43 @@ export async function dispatchFdeNightly(env: NightlyEnvironment): Promise<Night
         attempts: 0,
         createdAt: now.toISOString(),
         updatedAt: now.toISOString(),
+        cohortId: options.confirmationOnly
+          ? confirmationCohortId
+          : options.dueOnly ? schedule?.cohortId : `manual:${now.toISOString()}`,
       };
       draft.jobs.push(job);
       page.runId = id;
       page.runState = "dispatching";
       page.startedAt = now.toISOString();
+      if (options.dueOnly && schedule) page.lastScheduledAt = schedule.scheduledAt;
       delete page.lastError;
       queued.push(structuredClone(job));
+    }
+    if (confirmationCohortId && queued.length > 0 && draft.measurementIncident) {
+      draft.measurementIncident.status = "confirming";
+      draft.measurementIncident.confirmationCohortId = confirmationCohortId;
+      delete draft.measurementIncident.retryAt;
     }
     draft.jobs = trimJobs(draft.jobs);
   });
 
   if (queued.length === 0) return { ok: true, tenant, queued: 0, coalesced, failed: [] };
   const runs = Math.max(1, Math.min(5, Number(env.PSI_RUNS) || 5));
-  const payloads: DispatchPayload[] = queued.map((job) => {
+  const payloads: DispatchPayload[] = queued.map((job, index) => {
     const page = state.pages.find((item) => item.id === job.pageId);
     if (!page) throw new Error(`Nightly page ${job.pageId} disappeared during reservation`);
-    return { jobId: job.id, runId: job.runId, pageId: page.id, url: page.url, runs, tenant };
+    return {
+      jobId: job.id,
+      runId: job.runId,
+      pageId: page.id,
+      url: page.url,
+      runs,
+      tenant,
+      cohortId: job.cohortId,
+      startDelayMinutes: options.confirmationOnly
+        ? index * PAGE_COLLECTION_SPACING_MINUTES
+        : undefined,
+    };
   });
 
   try {
@@ -126,6 +182,7 @@ export async function dispatchFdeNightly(env: NightlyEnvironment): Promise<Night
           page.runState = "failed";
           page.lastError = message;
           page.lastRunAt = failedAt;
+          if (options.dueOnly) delete page.lastScheduledAt;
         }
       }
     });
