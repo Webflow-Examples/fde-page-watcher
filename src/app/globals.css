@@ -668,10 +668,19 @@ button:disabled {
 }
 
 .watcher-ribbon__inbox {
-  color: #8a8a96;
+  padding: 7px 14px;
+  border: 1px solid var(--border-2);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-dim);
   font-size: 13px;
+  font-weight: 600;
   text-decoration: none;
   white-space: nowrap;
+}
+
+.watcher-ribbon__inbox:hover {
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .watcher-ribbon__running {

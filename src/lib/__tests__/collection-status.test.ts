@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildSeedState } from "../seed";
-import { lastSuccessfulRunAt, latestSuccessfulRunAt } from "../collectionStatus";
+import { failedRunDetailMessage, failedRunLabel, lastSuccessfulRunAt, latestSuccessfulRunAt } from "../collectionStatus";
 
 describe("successful collection timestamps", () => {
   it("uses the latest committed live history entry rather than a failed lastRunAt", () => {
@@ -24,5 +24,34 @@ describe("successful collection timestamps", () => {
   it("does not present undated demo history as a live success", () => {
     const page = buildSeedState().pages[0];
     expect(lastSuccessfulRunAt(page)).toBeNull();
+  });
+
+  it("summarizes a failed run using the last successful capture", () => {
+    const page = buildSeedState().pages[0];
+    page.history[page.history.length - 1].iso = "2026-07-21T03:04:00.000Z";
+    page.lastRunAt = "2026-07-27T05:00:00.000Z";
+    page.lastError = "Run exceeded the 30 minute stale limit";
+    page.runState = "failed";
+
+    expect(failedRunLabel(page, new Date("2026-07-27T18:00:00.000Z"))).toBe(
+      "Failed run; last captured 6 days ago",
+    );
+  });
+
+  it("uses a plain fallback when no successful capture exists", () => {
+    const page = buildSeedState().pages[0];
+    page.runState = "failed";
+
+    expect(failedRunLabel(page)).toBe("Failed run; no successful capture yet");
+  });
+
+  it("hides the run ID from stale-run detail messages", () => {
+    expect(
+      failedRunDetailMessage(
+        "Run ef6641a9-781d-44cb-98e2-2632f721a370 exceeded the 30 minute stale limit",
+      ),
+    ).toBe(
+      "Run exceeded the 30-minute stale limit. Run a scan now manually or wait for the next nightly run.",
+    );
   });
 });

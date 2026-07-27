@@ -14,6 +14,7 @@ import { SegToggle } from "@/components/bits";
 import { ChevronDownIcon, PlusIcon, TrashIcon } from "@/components/icons";
 import { flagCapacityError, MAX_ACTIVE_PAGES, MAX_PRIORITY_PAGES, watchCapacity } from "@/lib/watchCapacity";
 import { movePageWithinFlag, reorderPageWithinFlag, sortWatchlistPages } from "@/lib/watchlistOrder";
+import { failedRunLabel } from "@/lib/collectionStatus";
 
 const GRID = "32px minmax(228px,2.4fr) 230px 1fr 120px";
 const PRIORITY_CHIP = flagChip("priority");
@@ -606,7 +607,7 @@ function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
                       : p.runState === "waiting_for_evidence"
                         ? "Waiting for independent PSI evidence"
                       : p.runState === "failed"
-                        ? `Failed: ${p.lastError ?? "retry from page"}`
+                        ? failedRunLabel(p)
                         : p.lastCollectionStatus === "inconclusive"
                           ? "Measurement inconclusive · previous trusted score retained"
                         : p.baselineCapturedAt

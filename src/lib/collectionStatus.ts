@@ -1,4 +1,5 @@
 import type { WatchPage } from "./types";
+import { naturalDate } from "./ui";
 
 /**
  * A committed history entry is the authoritative proof of a successful PSI
@@ -36,4 +37,18 @@ export function formatSuccessfulRunAt(iso: string | null): string {
     minute: "2-digit",
     timeZoneName: "short",
   });
+}
+
+export function failedRunLabel(page: WatchPage, now: Date = new Date()): string {
+  const capturedAt = lastSuccessfulRunAt(page);
+  return capturedAt
+    ? `Failed run; last captured ${naturalDate(capturedAt, now)}`
+    : "Failed run; no successful capture yet";
+}
+
+export function failedRunDetailMessage(error?: string): string {
+  if (error && /exceeded the 30 minute stale limit/i.test(error)) {
+    return "Run exceeded the 30-minute stale limit. Run a scan now manually or wait for the next nightly run.";
+  }
+  return error ?? "The collector stopped before a result could be committed. Start a new run to retry.";
 }
