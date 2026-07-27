@@ -30,11 +30,12 @@ flat history still tolerates normal PSI jitter.
 
 - Where: `noiseBand(...)` in `src/lib/scoring.ts`.
 
-## 4. Nightly run time is 03:00 UTC
+## 4. Collection starts at the workspace's saved local time
 
-The nightly collection is anchored to **03:00 UTC** (a fixed absolute moment),
-then rendered in each viewer's local timezone. Confirmed with product: store in
-UTC, display in local.
+The first watched page initializes the workspace to **midnight in that user's
+browser timezone**. The Watchlist setting can override both time and IANA
+timezone. Active pages receive stable offsets after the chosen start so the
+workspace does not burst every page or PSI sample simultaneously.
 
-- Where: `NIGHTLY_RUN_UTC_HOUR = 3` in `src/lib/schedule.ts`. Wire the scheduled
-  job that calls `POST /api/cron/nightly` to the same hour.
+- Where: `src/lib/collectionSchedule.ts`, the Watchlist settings panel, and the
+  collector's 15-minute due-page cron.

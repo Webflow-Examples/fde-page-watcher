@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useRef } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useStore } from "@/components/store";
 import type { Rec, TaskStatus } from "@/lib/types";
 import { C, costValue, savingsValue, taskAccent, taskLabel } from "@/lib/ui";
@@ -36,10 +36,16 @@ function ActionButtons({ t, advance }: { t: Rec; advance: (key: string, to: Task
 
 export default function TasksPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { recs, taskGroup, setTaskGroup, taskView, setTaskView, taskSort, sortTask, advanceTask, pathFor } = useStore();
   const dragKey = useRef<string | null>(null);
 
   const tasks = recs.filter((r) => r.status === "task");
+  const linkedTaskKey = searchParams.get("task");
+  useEffect(() => {
+    if (!linkedTaskKey) return;
+    document.getElementById(`task-${linkedTaskKey}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [linkedTaskKey, taskView]);
 
   let sorted = tasks;
   if (taskSort.col) {
@@ -124,7 +130,7 @@ export default function TasksPage() {
                   </div>
                 )}
                 {g.items.map((t) => (
-                  <div key={t.key} style={{ display: "grid", gridTemplateColumns: LIST_GRID, gap: 16, alignItems: "center", padding: "15px 22px", borderBottom: `1px solid ${C.rowBorder}` }}>
+                  <div id={`task-${t.key}`} key={t.key} style={{ display: "grid", gridTemplateColumns: LIST_GRID, gap: 16, alignItems: "center", padding: "15px 22px", borderBottom: `1px solid ${C.rowBorder}`, background: linkedTaskKey === t.key ? "rgba(59,137,255,0.10)" : undefined }}>
                     <span style={{ justifySelf: "center", width: 9, height: 9, borderRadius: "50%", background: taskAccent(t.taskStatus) }} />
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontSize: 14, fontWeight: 600 }}>{t.title}</div>

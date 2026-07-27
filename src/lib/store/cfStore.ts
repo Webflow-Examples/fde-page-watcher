@@ -90,6 +90,12 @@ class CfDataStore implements DataStore {
         .run();
       if ((result.meta.rows_written ?? 0) > 0) {
         await this.syncJobs(jobsBefore, state.jobs ?? []);
+        const { DB } = getLocalCloudflareBindings();
+        const markerStatements = state.pages.flatMap((page) => page.markers.map((marker) =>
+          DB.prepare("INSERT OR REPLACE INTO markers (tenant, page_id, id, marker_json) VALUES (?, ?, ?, ?)")
+            .bind(this.tenant, page.id, marker.id, JSON.stringify(marker)),
+        ));
+        for (const statement of markerStatements) await statement.run();
         return structuredClone(state);
       }
     }
@@ -135,6 +141,7 @@ class CfDataStore implements DataStore {
       page.status = pageTrend(page, "mobile", normalizePerformanceThresholds(draft.performanceThresholds));
       page.runState = undefined;
       page.lastRunAt = night.iso ?? new Date().toISOString();
+      page.lastCollectionStatus = "trusted";
       delete page.lastError;
       commit.night = night;
       commit.inserted = true;

@@ -57,6 +57,14 @@ describe("backdated marker comparisons", () => {
     expect(beforeMarkerNight(history, "2026-07-17")).toEqual({ night: history[2], substituted: false });
   });
 
+  it("places a marker on a collection later on the same calendar day", () => {
+    const sameDayHistory = [
+      { ...history[0], i: 0, date: "Jul 25", iso: "2026-07-26T02:15:00.000Z" },
+      { ...history[1], i: 1, date: "Jul 26", iso: "2026-07-27T02:15:00.000Z" },
+    ];
+    expect(resolveMarkerIndex(sameDayHistory, "2026-07-26")).toBe(1);
+  });
+
   it("uses the nearest earlier night without skipping an additional record", () => {
     expect(beforeMarkerNight(history, "2026-07-16")).toEqual({ night: history[1], substituted: true });
     expect(resolveMarkerIndex(history, "2026-07-15")).toBe(1);

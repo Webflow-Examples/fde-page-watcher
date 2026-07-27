@@ -13,7 +13,14 @@ export type Flag = "priority" | "watching" | "paused";
 /** Baseline-relative Performance trend stored on each page. */
 export type PageStatus = "stable" | "improving" | "regressing" | "pending";
 export type CollectionJobKind = "baseline" | "run" | "nightly";
-export type CollectionJobState = "queued" | "dispatching" | "running" | "succeeded" | "failed";
+export type CollectionJobState =
+  | "queued"
+  | "dispatching"
+  | "running"
+  | "waiting_for_evidence"
+  | "succeeded"
+  | "inconclusive"
+  | "failed";
 
 export const STRATEGIES: Strategy[] = ["mobile", "desktop"];
 
@@ -80,7 +87,12 @@ export type LighthouseCollectionQualityStatus = "reliable" | "low-confidence" | 
 /** Compact quality metadata safe to keep in the page history read model. */
 export interface LighthouseCollectionQuality {
   requestedRuns: number;
+  /** All successful provider responses, including cached/replayed duplicates. */
+  attemptRuns?: number;
   successfulRuns: number;
+  /** Provider responses representing distinct Lighthouse measurements. */
+  uniqueRuns?: number;
+  duplicateRuns?: number;
   eligibleRuns: number;
   warnedRuns: number;
   failedRuns: number;
@@ -132,6 +144,41 @@ export interface Night {
   agentReadiness?: AgentReadinessSnapshot; // immutable score using the ignore settings effective for this run
   opportunities?: LighthouseOpportunity[]; // real Lighthouse opportunities for this capture
   collectionQuality?: Partial<Record<Strategy, LighthouseCollectionQuality>>;
+  cohortId?: string;
+  evidenceStatus?: "trusted" | "provider-anomaly";
+  measurementContext?: Partial<Record<Strategy, PsiMeasurementContext>>;
+}
+
+export interface PsiMeasurementContext {
+  lighthouseVersion?: string;
+  medianBenchmarkIndex?: number;
+  medianTotalBlockingTime?: number;
+  medianLargestContentfulPaint?: number;
+  medianSpeedIndex?: number;
+  medianServerResponseTime?: number;
+}
+
+export interface CollectionSchedule {
+  /** IANA timezone, such as America/Chicago. */
+  timeZone: string;
+  /** Local 24-hour time marking the start of the daily collection window. */
+  localTime: string;
+  /** False only for the midnight default captured from the first user's browser. */
+  overridden: boolean;
+}
+
+export interface MeasurementIncident {
+  id: string;
+  cohortId: string;
+  status: "suspected" | "confirming" | "recovered" | "verified";
+  detectedAt: string;
+  affectedPageIds: string[];
+  affectedPages: number;
+  eligiblePages: number;
+  retryAt?: string;
+  confirmationCohortId?: string;
+  confirmationAttempts?: number;
+  recoveredAt?: string;
 }
 
 /** A user-logged (or acted-upon) change marker on a page's timeline. */
@@ -140,6 +187,8 @@ export interface ChangeMarker {
   i: number; // history index the marker sits at — resolved from `date`, not the latest night
   date: string;
   text: string;
+  source?: "custom" | "task";
+  recKey?: string;
 }
 
 /** A single agent-readiness check outcome — recorded per check, never composited (REQ-008). */
@@ -222,10 +271,13 @@ export interface WatchPage {
   acted?: Record<string, boolean>;
   // Async collection state (REQ-054): a run is queued/executed in the
   // background; the client polls until it settles. Undefined == idle.
-  runState?: "queued" | "dispatching" | "running" | "failed";
+  runState?: "queued" | "dispatching" | "running" | "waiting_for_evidence" | "failed";
   runId?: string; // active or most-recent on-demand/nightly collection id
   startedAt?: string;
   lastRunAt?: string;
+  lastScheduledAt?: string;
+  collectionOffsetMinutes?: number;
+  lastCollectionStatus?: "trusted" | "inconclusive";
   lastError?: string;
 }
 
@@ -242,6 +294,7 @@ export interface CollectionJob {
   startedAt?: string;
   completedAt?: string;
   workflowId?: string;
+  cohortId?: string;
   error?: string;
   enrichedAt?: string;
   enrichmentError?: string;
@@ -252,7 +305,7 @@ export interface CollectionJob {
 
 /** Versioned, provider-neutral result committed by a collector job. */
 export interface CollectionResult {
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
   jobId: string;
   runId: string;
   pageId: string;
@@ -262,6 +315,8 @@ export interface CollectionResult {
   agent: AgentCheck[];
   opportunities: LighthouseOpportunity[];
   collectionQuality?: Partial<Record<Strategy, LighthouseCollectionQuality>>;
+  cohortId?: string;
+  measurementContext?: Partial<Record<Strategy, PsiMeasurementContext>>;
 }
 
 export type RecStatus = "inbox" | "task" | "ignored";
@@ -274,6 +329,7 @@ export interface Rec {
   pageTitle: string;
   url: string;
   id: string; // recommendation id (stable per audit)
+  sourceRunId?: string;
   title: string;
   category: string;
   savings: string; // Lighthouse load-time estimate, e.g. "1.8 s"
@@ -308,6 +364,8 @@ export interface AppState {
   recs: Rec[];
   agentIgnoreDefaults?: AgentIgnoreSettings;
   performanceThresholds?: PerformanceThresholds;
+  collectionSchedule?: CollectionSchedule;
+  measurementIncident?: MeasurementIncident;
   jobs?: CollectionJob[];
   followUps?: FollowUp[];
   watcherNote?: WatcherNote;

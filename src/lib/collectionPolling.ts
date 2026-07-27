@@ -1,6 +1,6 @@
 import type { AppState, CollectionJob, WatchPage } from "./types";
 
-const ACTIVE_STATES = new Set(["queued", "dispatching", "running"]);
+const ACTIVE_STATES = new Set(["queued", "dispatching", "running", "waiting_for_evidence"]);
 
 function pageIsActive(page: WatchPage): boolean {
   return !!page.runState && ACTIVE_STATES.has(page.runState);

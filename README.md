@@ -1,10 +1,11 @@
 # Page Watch · Brand Studio
 
-Nightly Lighthouse (PageSpeed Insights) and agent-readiness monitoring for a
-watchlist of priority Webflow.com pages. For each page it tracks per-strategy
-(mobile + desktop) scores over time, classifies status, surfaces
-recommendations, lets you triage them into tasks, log change markers, and posts
-drop alerts and 2/7/30-day follow-up comparisons to Slack.
+Nightly Lighthouse (PageSpeed Insights), weekly Chrome UX Report field
+evidence, and agent-readiness monitoring for a watchlist of priority
+Webflow.com pages. For each page it tracks per-strategy (mobile + desktop)
+scores over time, classifies status, surfaces recommendations, lets you triage
+them into tasks, log change markers, and posts drop alerts and 2/7/30-day
+follow-up comparisons to Slack.
 
 Built with Next.js (App Router) + React. TypeScript throughout.
 
@@ -33,6 +34,7 @@ All are optional for local development — the app runs without them.
 | Variable                     | Purpose                                                                                                       |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------- |
 | `PAGESPEED_API_KEY`          | PSI credential. Configure it on the collector Worker; it is also used by the local runner.                     |
+| `CRUX_API_KEY`               | Google Cloud key with the Chrome UX Report API enabled; required by the collector Worker.                     |
 | `CRON_SECRET`                | Existing shared bearer secret for FDE state/report access, Workflow dispatch, and manual nightly requests.    |
 | `COLLECTOR_URL`              | Production Workflow endpoint, ending in `/jobs`.                                                              |
 | `FDE_DATA_URL`               | Optional FDE Worker base URL. If omitted, it is derived from `COLLECTOR_URL`.                                  |
@@ -50,11 +52,14 @@ Put these in `.env.local`.
 ## How it works
 
 - **Collection** — baseline, on-demand, and nightly actions reserve a durable
-  job in FDE D1 and return `202`. A Cloudflare Workflow performs up to five PSI
-  samples per strategy and stores every successful raw response, Lighthouse
-  warning, and normalized failing audit in FDE R2. Warned runs remain available
-  for diagnosis but are excluded from trusted medians. A normal five-run
-  collection needs at least three warning-free runs before it can commit.
+  job in FDE D1 and return `202`. A Cloudflare Workflow performs up to five
+  staggered PSI samples per strategy and stores every successful raw response,
+  Lighthouse warning, and normalized failing audit in FDE R2. Cached/replayed
+  responses are retained for diagnosis but do not count as independent
+  samples. Warned runs are also excluded from trusted medians. A collection
+  needs at least three unique, warning-free measurements before it can commit;
+  otherwise the Workflow sleeps durably and retries up to twice at one-hour
+  intervals.
   Recommendations require a strict-majority Lighthouse finding across those
   eligible runs. The Workflow also scans agent readiness and commits the
   completed result directly into FDE storage. The SSO-protected Webflow app
@@ -66,16 +71,24 @@ Put these in `.env.local`.
   recommendations, and scan results, but a page stays Pending until the user
   explicitly captures a baseline. Zero placeholders are never treated or shown
   as real baselines.
-- **Nightly job** — the FDE Worker reads the live watchlist from its own D1 at
-  03:00 UTC, priority-sorts it, and dispatches Workflows directly. `POST
-  /nightly` provides the same operation for authenticated manual tests. There
-  is no Webflow callback and no Cloudflare Access service token.
+- **Scheduled collection** — every 15 minutes, the FDE Worker reads the live
+  watchlist from its own D1 and dispatches only pages due in the workspace's
+  saved local-time/timezone window. Active pages receive stable 15-minute
+  offsets, and individual PSI samples are spaced one minute apart. `POST
+  /nightly` still provides a force-all operation for authenticated manual
+  tests. There is no Webflow callback and no Cloudflare Access service token.
 - **Weekly data audit** — each Monday at 05:30 UTC, the Worker reconciles the
   prior seven days of stored scores against their raw PSI responses. It checks
   raw-report coverage, usable sample counts, Lighthouse warnings/runtime
   errors, score medians/ranges, and finding quorum. The saved health report has
   hashed page references and no customer names, URLs, raw payloads, or raw
   errors. See [audits/README.md](audits/README.md).
+- **Weekly field evidence** — each Tuesday at 06:15 UTC, the Worker queries the
+  CrUX History API for phone and desktop evidence on every active page. It
+  prefers exact-URL data, falls back to origin data only when URL evidence is
+  unavailable, stores rolling 28-day p75 metrics and histograms in dedicated
+  D1 tables, and retains the complete provider response in R2. An authenticated
+  `POST /crux/collect` runs the same collection manually.
 - **Storage** — the production source of truth is the FDE-owned
   `page-watcher-fde` D1 database plus the `page-watcher-reports` R2 bucket. The
   Webflow app uses a tenant-scoped remote `DataStore`; D1 state updates use
@@ -100,10 +113,10 @@ HTTP Basic layer and no `FDE_ACCESS_*` configuration. Non-interactive nightly
 and collector result endpoints remain protected by `CRON_SECRET`.
 
 1. Apply `migrations/` to the FDE-owned `page-watcher-fde` database, then deploy
-   `collector-worker/wrangler.jsonc`. The Worker needs only the existing
-   `PAGESPEED_API_KEY` and `CRON_SECRET` secrets. Its D1, R2, Workflow, and
-   03:00 UTC nightly plus Monday 05:30 UTC audit Cron bindings are declared in
-   that config.
+   `collector-worker/wrangler.jsonc`. The Worker needs `PAGESPEED_API_KEY`,
+   `CRUX_API_KEY`, and `CRON_SECRET`. Its D1, R2, Workflow, 15-minute due-page
+   scheduler, Monday 05:30 UTC audit, and Tuesday 06:15 UTC CrUX Cron bindings
+   are declared in that config.
 2. Deploy the Webflow app code with `STORAGE_DRIVER` still unset. The app keeps
    reading and writing its existing Webflow-provisioned D1/R2 bindings at this
    stage.
@@ -133,7 +146,9 @@ and collector result endpoints remain protected by `CRON_SECRET`.
    history entry before relying on the next scheduled run. After the first
    weekly audit, an authenticated `GET /audits/weekly/latest` on the collector
    returns its privacy-safe health summary; the public collector `/health`
-   response exposes only its status, audit ID, and update time.
+   response exposes only its status, audit ID, and update time. Before relying
+   on the CrUX Cron, send one authenticated `POST /crux/collect` and verify the
+   `crux_snapshots` and `crux_status` rows plus the public `/health` summary.
 
 Rollback is just as deliberate: remove `STORAGE_DRIVER=remote` and redeploy to
 return to the preserved Webflow bindings. Do not write to both stores after

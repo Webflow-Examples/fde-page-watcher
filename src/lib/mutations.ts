@@ -2,11 +2,12 @@ import { randomUUID } from "node:crypto";
 import { isKnownAgentIgnoreTarget } from "./agentChecks";
 import { updateAgentIgnoreOverride, updateAgentIgnoreSettings } from "./agentScoring";
 import { normalizePerformanceThresholds, performanceThresholdsAreValid } from "./performanceThresholds";
+import { collectionScheduleIsValid, ensureCollectionOffsets } from "./collectionSchedule";
 import { pageTrend } from "./scoring";
 import { getStore } from "./store";
 import type { DataStore } from "./store";
 import { shortDate } from "./ui";
-import type { AgentIgnoreOverrideMode, AgentIgnoreScope, AppState, Flag, PerformanceThresholds, RecStatus, ScoreByCategory, TaskStatus, WatchPage } from "./types";
+import type { AgentIgnoreOverrideMode, AgentIgnoreScope, AppState, CollectionSchedule, Flag, PerformanceThresholds, RecStatus, ScoreByCategory, TaskStatus, WatchPage } from "./types";
 import { defaultNewPageFlag, flagCapacityError } from "./watchCapacity";
 import { applyWatchlistPageOrder, changePageFlagOrder, sortWatchlistPages } from "./watchlistOrder";
 
@@ -32,6 +33,7 @@ export function setPageFlag(id: string, flag: Flag, dataStore: DataStore = getSt
     const capacityError = flagCapacityError(state.pages, id, flag);
     if (capacityError) throw new Error(`setPageFlag: ${capacityError}`);
     state.pages = changePageFlagOrder(state.pages, id, flag);
+    ensureCollectionOffsets(state.pages);
     delete state.watcherNote;
   }, dataStore);
 }
@@ -108,6 +110,21 @@ export function setPerformanceThresholds(
       page.status = pageTrend(page, "mobile", state.performanceThresholds);
     }
     delete state.watcherNote;
+  }, dataStore);
+}
+
+export function setCollectionSchedule(
+  schedule: CollectionSchedule,
+  dataStore: DataStore = getStore(),
+): Promise<AppState> {
+  if (!collectionScheduleIsValid(schedule)) {
+    throw new Error("setCollectionSchedule: enter a valid local time and IANA timezone");
+  }
+  return withState((state) => {
+    state.collectionSchedule = schedule;
+    ensureCollectionOffsets(state.pages);
+    const changedAt = new Date().toISOString();
+    for (const page of state.pages) page.lastScheduledAt = changedAt;
   }, dataStore);
 }
 
@@ -229,6 +246,7 @@ export interface NewPageInput {
   title: string;
   url: string;
   flag?: Flag;
+  timeZone?: string;
 }
 
 /** A brand-new page starts pending: no baseline, no history, no scan. */
@@ -255,6 +273,17 @@ export function addPage(input: NewPageInput, dataStore: DataStore = getStore()):
     const title = input.title.trim();
     const url = input.url.trim();
     if (!title || !url) throw new Error("addPage: title and url are required");
+    if (!state.collectionSchedule && input.timeZone) {
+      const initialSchedule: CollectionSchedule = {
+        localTime: "00:00",
+        timeZone: input.timeZone,
+        overridden: false,
+      };
+      if (!collectionScheduleIsValid(initialSchedule)) {
+        throw new Error("addPage: browser timezone is invalid");
+      }
+      state.collectionSchedule = initialSchedule;
+    }
     // Explicit flags remain supported for API compatibility. The normal add
     // flow omits one so capacity is decided atomically with the persisted
     // state, including when two clients add at the same time.
@@ -267,6 +296,7 @@ export function addPage(input: NewPageInput, dataStore: DataStore = getStore()):
       ...state.pages,
       pendingPage(`p-${randomUUID()}`, title, url, flag),
     ]);
+    ensureCollectionOffsets(state.pages);
     delete state.watcherNote;
   }, dataStore);
 }

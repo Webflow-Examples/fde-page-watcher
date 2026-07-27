@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ArrowUpRightIcon, CircleIcon } from "@phosphor-icons/react";
 import { useStore } from "@/components/store";
 import { CATEGORIES } from "@/lib/types";
@@ -28,16 +28,16 @@ const PAGE_RANGE_OPTIONS: ReadonlyArray<SelectMenuOption<RangeDays>> = [
 
 export default function PageDetail() {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const { id } = useParams<{ id: string }>();
   const store = useStore();
-  const { pages, recs, strategy, setStrategy, rangeDays, setRangeDays, tab, setTab, chartCat, setChartCat } = store;
+  const { pages, recs, strategy, setStrategy, rangeDays, setRangeDays, chartCat, setChartCat } = store;
   const page = pages.find((p) => p.id === id);
 
   useEffect(() => {
-    setTab("overview");
     setChartCat("perf");
-  }, [id, setTab, setChartCat]);
+  }, [id, setChartCat]);
 
   if (!page) {
     return (
@@ -73,6 +73,20 @@ export default function PageDetail() {
     { key: "audits", label: "Opportunities" },
     { key: "agent", label: "Agent-readiness" },
   ];
+  const tabFromUrl = {
+    history: "history",
+    opportunities: "audits",
+    "agent-readiness": "agent",
+  }[searchParams.get("tab") ?? ""] as "history" | "audits" | "agent" | undefined;
+  const tab = tabFromUrl ?? "overview";
+  const navigateToTab = (nextTab: typeof tab) => {
+    const nextParams = new URLSearchParams(searchParams.toString());
+    const slug = nextTab === "audits" ? "opportunities" : nextTab === "agent" ? "agent-readiness" : nextTab;
+    if (nextTab === "overview") nextParams.delete("tab");
+    else nextParams.set("tab", slug);
+    const query = nextParams.toString();
+    router.push(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  };
 
   return (
     <div>
@@ -113,7 +127,7 @@ export default function PageDetail() {
           />
           <button disabled={collectionBlocked} title={page.flag === "paused" ? "Change this page to Watching or Priority before collecting" : undefined} onClick={() => store.runPage(page.id)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 15px", border: "none", borderRadius: 8, background: C.accent, color: "#fff", fontSize: 12.5, fontWeight: 550, cursor: collectionBlocked ? "not-allowed" : "pointer", opacity: collectionBlocked ? 0.65 : 1, whiteSpace: "nowrap" }}>
             <RefreshIcon size={15} style={{ color: "#fff" }} />
-            {page.flag === "paused" ? "Paused" : page.runState === "queued" ? "Queued…" : page.runState === "dispatching" ? "Starting…" : page.runState === "running" ? "Running…" : "Run now"}
+            {page.flag === "paused" ? "Paused" : page.runState === "queued" ? "Queued…" : page.runState === "dispatching" ? "Starting…" : page.runState === "waiting_for_evidence" ? "Waiting for evidence…" : page.runState === "running" ? "Running…" : "Run now"}
           </button>
           <button onClick={() => store.openMarker(page.id)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 15px", border: "none", borderRadius: 8, background: C.green, color: C.bg, fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
             <PlusIcon size={15} style={{ color: C.bg }} />
@@ -129,14 +143,14 @@ export default function PageDetail() {
               aria-selected={tab === t.key}
               aria-controls={`page-panel-${t.key}`}
               tabIndex={tab === t.key ? 0 : -1}
-              onClick={() => setTab(t.key)}
+              onClick={() => navigateToTab(t.key)}
               onKeyDown={(event) => {
                 if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
                 event.preventDefault();
                 const index = tabs.findIndex((item) => item.key === t.key);
                 const offset = event.key === "ArrowRight" ? 1 : -1;
                 const next = tabs[(index + offset + tabs.length) % tabs.length];
-                setTab(next.key);
+                navigateToTab(next.key);
                 document.getElementById(`page-tab-${next.key}`)?.focus();
               }}
               style={{ border: "none", background: "none", fontSize: 13.5, fontWeight: 500, padding: "11px 4px", marginRight: 24, cursor: "pointer", color: tab === t.key ? "#FFFFFF" : C.muted, borderBottom: `2px solid ${tab === t.key ? C.accentBright : "transparent"}` }}
@@ -190,9 +204,11 @@ function CollectionStatus({ page }: { page: WatchPage }) {
     ? "Collection queued"
     : page.runState === "dispatching"
       ? "Starting durable collector"
-      : page.runState === "running"
-        ? "Collecting mobile and desktop PSI data"
-        : "Last collection failed";
+      : page.runState === "waiting_for_evidence"
+        ? "Waiting for independent PSI evidence"
+        : page.runState === "running"
+          ? "Collecting mobile and desktop PSI data"
+          : "Last collection failed";
   return (
     <div style={{ marginBottom: 18, padding: "12px 15px", borderRadius: 9, border: `1px solid ${failed ? "rgba(255,92,108,0.35)" : "rgba(59,137,255,0.35)"}`, background: failed ? "rgba(255,92,108,0.09)" : "rgba(59,137,255,0.09)" }}>
       <div style={{ fontSize: 12.5, fontWeight: 600, color: failed ? C.redSoft : C.accentSoft }}>{title}</div>
@@ -372,6 +388,7 @@ function HistoryTab({
   setChartCat: (c: CategoryKey) => void;
   store: ReturnType<typeof useStore>;
 }) {
+  const router = useRouter();
   const rangeHistory = pageHistoryForRange(page, rangeDays);
   const runs = [...rangeHistory].reverse().slice(0, 12);
   const thresholds = normalizePerformanceThresholds(store.performanceThresholds);
@@ -519,7 +536,7 @@ function HistoryTab({
           <div />
         </div>
         {runs.map((d) => {
-          const mk = page.markers.find((m) => m.i === d.i);
+          const markers = page.markers.filter((m) => m.i === d.i);
           const cell = (k: CategoryKey) => {
             const score = d.scores[strategy][k];
             const categoryLabel = CATEGORIES.find((category) => category.key === k)?.label ?? k;
@@ -536,7 +553,39 @@ function HistoryTab({
           return (
             <div key={d.i} className="narrow-table" style={{ display: "grid", gridTemplateColumns: GRID, alignItems: "center", padding: "12px 22px", borderBottom: `1px solid ${C.rowBorder}`, fontSize: 13 }}>
               <div style={{ fontWeight: 500 }}>{d.date}</div>
-              <div style={{ fontSize: 12, color: mk ? C.violetSoft : "#4A4A50", display: "flex", alignItems: "center", gap: 6 }}>{mk ? `◆ ${mk.text}` : "—"}</div>
+              <div style={{ fontSize: 12, display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 5 }}>
+                {markers.length === 0 ? <span style={{ color: "#4A4A50" }}>—</span> : markers.map((marker) => {
+                  const legacyRecKey = marker.text.startsWith("Acted:")
+                    ? store.recs.find((rec) => rec.pageId === page.id && `Acted: ${rec.title}` === marker.text)?.key
+                    : undefined;
+                  const recKey = marker.recKey ?? legacyRecKey;
+                  const custom = marker.source !== "task" && !recKey && !marker.text.startsWith("Acted:");
+                  const color = custom ? C.green : C.violetSoft;
+                  if (recKey) {
+                    return (
+                      <button
+                        key={marker.id}
+                        type="button"
+                        onClick={() => router.push(`${store.pathFor("/tasks")}?task=${encodeURIComponent(recKey)}`)}
+                        style={{ border: 0, padding: 0, background: "transparent", color, font: "inherit", cursor: "pointer", textAlign: "left" }}
+                      >
+                        ◆ {marker.text} ↗
+                      </button>
+                    );
+                  }
+                  return (
+                    <button
+                      key={marker.id}
+                      type="button"
+                      onClick={() => store.editMarker(page.id, marker.id)}
+                      title="Edit marker"
+                      style={{ border: 0, padding: 0, background: "transparent", color, font: "inherit", cursor: "pointer", textAlign: "left" }}
+                    >
+                      ◆ {marker.text}
+                    </button>
+                  );
+                })}
+              </div>
               {cell("perf")}
               {cell("a11y")}
               {cell("bp")}
@@ -567,7 +616,7 @@ function PendingPanel({ page, store }: { page: WatchPage; store: ReturnType<type
       </div>
       <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 22 }}>
         <button disabled={collectionBlocked} title={page.flag === "paused" ? "Activate this page from the Watch List first" : undefined} onClick={() => store.captureBaseline(page.id)} style={{ border: "none", background: C.accent, color: "#fff", fontSize: 12.5, fontWeight: 550, padding: "9px 16px", borderRadius: 8, cursor: collectionBlocked ? "not-allowed" : "pointer", opacity: collectionBlocked ? 0.65 : 1 }}>{page.flag === "paused" ? "Paused" : page.runState && page.runState !== "failed" ? "Collection in progress…" : "Capture baseline"}</button>
-        <button disabled={collectionBlocked} title={page.flag === "paused" ? "Activate this page from the Watch List first" : undefined} onClick={() => store.runPage(page.id)} style={{ border: `1px solid ${C.border2}`, background: "rgba(255,255,255,0.04)", color: C.text, fontSize: 12.5, fontWeight: 500, padding: "9px 16px", borderRadius: 8, cursor: collectionBlocked ? "not-allowed" : "pointer", opacity: collectionBlocked ? 0.65 : 1 }}>{page.flag === "paused" ? "Paused" : page.runState === "queued" ? "Queued…" : page.runState === "dispatching" ? "Starting…" : page.runState === "running" ? "Running…" : "Run now"}</button>
+        <button disabled={collectionBlocked} title={page.flag === "paused" ? "Activate this page from the Watch List first" : undefined} onClick={() => store.runPage(page.id)} style={{ border: `1px solid ${C.border2}`, background: "rgba(255,255,255,0.04)", color: C.text, fontSize: 12.5, fontWeight: 500, padding: "9px 16px", borderRadius: 8, cursor: collectionBlocked ? "not-allowed" : "pointer", opacity: collectionBlocked ? 0.65 : 1 }}>{page.flag === "paused" ? "Paused" : page.runState === "queued" ? "Queued…" : page.runState === "dispatching" ? "Starting…" : page.runState === "waiting_for_evidence" ? "Waiting…" : page.runState === "running" ? "Running…" : "Run now"}</button>
       </div>
     </div>
   );

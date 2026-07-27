@@ -1,5 +1,10 @@
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
-import { collectPsi } from "../src/lib/psiCore";
+import {
+  aggregatePsiRuns,
+  runPsiOnce,
+  summarizePsiMeasurements,
+} from "../src/lib/psiCore";
+import type { CompactRunResult } from "../src/lib/psiCore";
 import { scan } from "../src/lib/agentReadiness";
 import { costBand } from "../src/lib/cost";
 import { mediansOf } from "../src/lib/scoring";
@@ -11,12 +16,21 @@ import type {
   Rec,
   Strategy,
   StrategyScores,
+  PsiMeasurementContext,
 } from "../src/lib/types";
 import { createFdeStore } from "./dataStore";
 import { handleDataPlaneRequest } from "./dataPlane";
 import { dispatchFdeNightly, type DispatchPayload } from "./nightly";
 import { runWeeklyDataAudit, WEEKLY_AUDIT_CRON, WEEKLY_AUDIT_LATEST_KEY } from "./weeklyAudit";
+import { evaluateCohortAnomaly } from "../src/lib/cohortAnomaly";
+import {
+  collectCruxEvidence,
+  CRUX_COLLECTION_CRON,
+  CRUX_SCHEDULER_STATUS_KEY,
+  type CruxCollectionResult,
+} from "./crux";
 
+const NIGHTLY_COLLECTION_CRON = "*/15 * * * *";
 const NIGHTLY_SCHEDULER_STATUS_KEY = "scheduler/latest.json";
 const AUDIT_SCHEDULER_STATUS_KEY = "scheduler/audit-latest.json";
 
@@ -26,10 +40,15 @@ interface StrategySummary {
   sampleSize: number;
   opportunities: LighthouseOpportunity[];
   quality: LighthouseCollectionQuality;
+  measurementContext: PsiMeasurementContext;
 }
 
 function reportKey(jobId: string, strategy: Strategy): string {
   return `collector-jobs/${jobId}/${strategy}.json`;
+}
+
+function attemptReportKey(jobId: string, strategy: Strategy, attempt: number): string {
+  return `collector-jobs/${jobId}/${strategy}-attempt-${attempt}.json`;
 }
 
 async function sameValue(left: string, right: string): Promise<boolean> {
@@ -67,6 +86,19 @@ async function markWorkflowRunning(env: Env, payload: DispatchPayload): Promise<
   });
 }
 
+async function markWorkflowEvidenceWait(env: Env, payload: DispatchPayload, waiting: boolean): Promise<void> {
+  if (!payload.tenant) return;
+  const store = createFdeStore(payload.tenant, env);
+  await store.updateState((draft) => {
+    const job = (draft.jobs ?? []).find((item) => item.id === payload.jobId);
+    const page = draft.pages.find((item) => item.id === payload.pageId);
+    if (!job || !page || job.state === "succeeded" || job.state === "inconclusive") return;
+    job.state = waiting ? "waiting_for_evidence" : "running";
+    job.updatedAt = new Date().toISOString();
+    if (page.runId === payload.runId) page.runState = waiting ? "waiting_for_evidence" : "running";
+  });
+}
+
 async function stagedReport(env: Env, jobId: string, strategy: Strategy): Promise<unknown> {
   const report = await env.REPORTS.get(reportKey(jobId, strategy));
   if (!report) throw new Error(`Staged ${strategy} report is missing`);
@@ -96,6 +128,8 @@ async function commitWorkflowResult(env: Env, payload: DispatchPayload, result: 
     agent: result.agent,
     opportunities: result.opportunities,
     collectionQuality: result.collectionQuality,
+    cohortId: result.cohortId,
+    measurementContext: result.measurementContext,
   }, { strategies: { mobile, desktop } });
   if (!appended.night) throw new Error("Collection result was superseded before FDE commit");
 
@@ -122,6 +156,7 @@ async function commitWorkflowResult(env: Env, payload: DispatchPayload, result: 
         pageTitle: page.title,
         url: page.url,
         id: opportunity.id,
+        sourceRunId: currentJob.runId,
         title: opportunity.title,
         category: opportunity.category ?? "Performance",
         savings: `${(opportunity.savingsMs / 1000).toFixed(1)} s`,
@@ -140,9 +175,55 @@ async function commitWorkflowResult(env: Env, payload: DispatchPayload, result: 
     if (page.runId === currentJob.runId) {
       page.runState = undefined;
       page.lastRunAt = completedAt.toISOString();
+      page.lastCollectionStatus = "trusted";
       delete page.lastError;
     }
+    if (result.cohortId) evaluateCohortAnomaly(draft, result.cohortId, completedAt);
   });
+}
+
+async function markWorkflowInconclusive(env: Env, payload: DispatchPayload, error: unknown): Promise<void> {
+  if (!payload.tenant) return;
+  const store = createFdeStore(payload.tenant, env);
+  const message = (error instanceof Error ? error.message : String(error)).slice(0, 500);
+  await store.updateState((draft) => {
+    const job = (draft.jobs ?? []).find((item) => item.id === payload.jobId);
+    const page = draft.pages.find((item) => item.id === payload.pageId);
+    if (!job || job.state === "succeeded") return;
+    const completedAt = new Date().toISOString();
+    job.state = "inconclusive";
+    job.error = message;
+    job.updatedAt = completedAt;
+    job.completedAt = completedAt;
+    if (page?.runId === payload.runId) {
+      page.runState = undefined;
+      page.lastRunAt = completedAt;
+      page.lastCollectionStatus = "inconclusive";
+      page.lastError = message;
+    }
+    if (payload.cohortId) evaluateCohortAnomaly(draft, payload.cohortId, new Date(completedAt));
+  });
+}
+
+class InconclusiveEvidenceError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InconclusiveEvidenceError";
+  }
+}
+
+async function stagedAttemptRaws(
+  env: Env,
+  jobId: string,
+  strategy: Strategy,
+  attempts: number,
+): Promise<unknown[]> {
+  const raws: unknown[] = [];
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const object = await env.REPORTS.get(attemptReportKey(jobId, strategy, attempt));
+    if (object) raws.push(await object.json());
+  }
+  return raws;
 }
 
 async function failWorkflowJob(env: Env, payload: DispatchPayload, error: unknown): Promise<void> {
@@ -163,6 +244,7 @@ async function failWorkflowJob(env: Env, payload: DispatchPayload, error: unknow
       page.lastError = message;
       page.lastRunAt = completedAt;
     }
+    if (payload.cohortId) evaluateCohortAnomaly(draft, payload.cohortId, new Date(completedAt));
   });
 }
 
@@ -170,34 +252,100 @@ export class CollectorWorkflow extends WorkflowEntrypoint<Env, DispatchPayload> 
   async run(event: Readonly<WorkflowEvent<DispatchPayload>>, step: WorkflowStep): Promise<CollectionResult> {
     const payload = event.payload;
     try {
+      if (payload.startDelayMinutes && payload.startDelayMinutes > 0) {
+        await step.sleep("stagger collection start", `${payload.startDelayMinutes} minutes`);
+      }
       await step.do("mark FDE job running", async () => markWorkflowRunning(this.env, payload));
-    const collectStrategy = (strategy: Strategy) => step.do(
-      `collect and stage ${strategy}`,
-      { retries: { limit: 3, delay: "15 seconds", backoff: "exponential" }, timeout: "10 minutes" },
-      async () => {
-        const result = await collectPsi(payload.url, strategy, {
-          apiKey: this.env.PAGESPEED_API_KEY,
-          runs: payload.runs,
-        });
-        await this.env.REPORTS.put(reportKey(payload.jobId, strategy), JSON.stringify(result), {
-          httpMetadata: { contentType: "application/json" },
-          customMetadata: { jobId: payload.jobId, runId: payload.runId, pageId: payload.pageId, strategy },
-        });
-        if (result.quality.status !== "reliable") {
-          throw new Error(
-            `${strategy} PSI evidence is ${result.quality.status}: `
-            + `${result.quality.eligibleRuns}/${result.quality.requestedRuns} warning-free runs`,
+    const collectStrategy = async (strategy: Strategy): Promise<StrategySummary> => {
+      const compactRuns: CompactRunResult[] = [];
+      let attempts = 0;
+      const maxCycles = 3;
+
+      for (let cycle = 0; cycle < maxCycles; cycle += 1) {
+        for (let slot = 0; slot < payload.runs; slot += 1) {
+          if (
+            cycle > 0
+            && compactRuns.length > 0
+            && aggregatePsiRuns(compactRuns, payload.runs).quality.status === "reliable"
+          ) break;
+          if (attempts > 0 && !(cycle > 0 && slot === 0)) {
+            await step.sleep(`space ${strategy} attempt ${attempts + 1}`, "1 minute");
+          }
+          attempts += 1;
+          const attempt = attempts;
+          const compact = await step.do(
+            `collect ${strategy} attempt ${attempt}`,
+            { retries: { limit: 2, delay: "15 seconds", backoff: "exponential" }, timeout: "2 minutes" },
+            async (): Promise<CompactRunResult> => {
+              const result = await runPsiOnce(payload.url, strategy, {
+                apiKey: this.env.PAGESPEED_API_KEY,
+              });
+              await this.env.REPORTS.put(
+                attemptReportKey(payload.jobId, strategy, attempt),
+                JSON.stringify(result.raw),
+                {
+                  httpMetadata: { contentType: "application/json" },
+                  customMetadata: {
+                    jobId: payload.jobId,
+                    runId: payload.runId,
+                    pageId: payload.pageId,
+                    strategy,
+                    attempt: String(attempt),
+                  },
+                },
+              );
+              return {
+                scores: result.scores,
+                evidence: { ...result.evidence, run: attempt },
+                sampleKey: result.sampleKey,
+              };
+            },
           );
+          compactRuns.push(compact);
         }
-        return {
-          strategy,
-          scores: result.scores,
-          sampleSize: result.sampleSize,
-          opportunities: result.opportunities,
-          quality: result.quality,
-        } satisfies StrategySummary;
-      },
-    );
+
+        const current = aggregatePsiRuns(compactRuns, payload.runs);
+        if (current.quality.status === "reliable") break;
+        if (cycle < maxCycles - 1) {
+          await step.do(`mark ${strategy} evidence wait ${cycle + 1}`, async () =>
+            markWorkflowEvidenceWait(this.env, payload, true));
+          await step.sleep(`wait one hour for ${strategy} evidence ${cycle + 1}`, "1 hour");
+          await step.do(`resume ${strategy} evidence ${cycle + 1}`, async () =>
+            markWorkflowEvidenceWait(this.env, payload, false));
+        }
+      }
+
+      const summary = await step.do(
+        `aggregate and stage ${strategy}`,
+        { retries: { limit: 3, delay: "5 seconds", backoff: "exponential" }, timeout: "2 minutes" },
+        async () => {
+          const raws = await stagedAttemptRaws(this.env, payload.jobId, strategy, attempts);
+          const result = aggregatePsiRuns(compactRuns, payload.runs, raws);
+          await this.env.REPORTS.put(reportKey(payload.jobId, strategy), JSON.stringify(result), {
+            httpMetadata: { contentType: "application/json" },
+            customMetadata: { jobId: payload.jobId, runId: payload.runId, pageId: payload.pageId, strategy },
+          });
+          return {
+            strategy,
+            scores: result.scores,
+            sampleSize: result.sampleSize,
+            opportunities: result.opportunities,
+            quality: result.quality,
+            measurementContext: summarizePsiMeasurements(
+              result.raws.filter((_, index) =>
+                compactRuns.findIndex((candidate) => candidate.sampleKey === compactRuns[index]?.sampleKey) === index),
+            ),
+          } satisfies StrategySummary;
+        },
+      );
+      if (summary.quality.status !== "reliable") {
+        throw new InconclusiveEvidenceError(
+          `${strategy} measurement inconclusive after ${attempts} attempts: `
+          + `${summary.quality.eligibleRuns} unique warning-free measurements`,
+        );
+      }
+      return summary;
+    };
 
     // Only compact summaries cross the Workflow persistence boundary. Full
     // Lighthouse payloads are staged in R2 and streamed to the app on demand.
@@ -209,7 +357,7 @@ export class CollectorWorkflow extends WorkflowEntrypoint<Env, DispatchPayload> 
     );
     const scores = { mobile: mobile.scores, desktop: desktop.scores } satisfies StrategyScores;
     const result = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       jobId: payload.jobId,
       runId: payload.runId,
       pageId: payload.pageId,
@@ -219,6 +367,11 @@ export class CollectorWorkflow extends WorkflowEntrypoint<Env, DispatchPayload> 
       agent,
       opportunities: mobile.opportunities,
       collectionQuality: { mobile: mobile.quality, desktop: desktop.quality },
+      cohortId: payload.cohortId,
+      measurementContext: {
+        mobile: mobile.measurementContext,
+        desktop: desktop.measurementContext,
+      },
     } satisfies CollectionResult;
       await step.do(
         "commit result to FDE storage",
@@ -227,7 +380,12 @@ export class CollectorWorkflow extends WorkflowEntrypoint<Env, DispatchPayload> 
       );
       return result;
     } catch (error) {
-      await step.do("record FDE job failure", async () => failWorkflowJob(this.env, payload, error));
+      if (error instanceof InconclusiveEvidenceError) {
+        await step.do("record FDE job inconclusive", async () =>
+          markWorkflowInconclusive(this.env, payload, error));
+      } else {
+        await step.do("record FDE job failure", async () => failWorkflowJob(this.env, payload, error));
+      }
       throw error;
     }
   }
@@ -238,6 +396,10 @@ function validPayload(value: unknown): value is DispatchPayload {
   const item = value as Partial<DispatchPayload>;
   if (!item.jobId || !item.runId || !item.pageId || !item.url) return false;
   if (!Number.isInteger(item.runs) || item.runs! < 1 || item.runs! > 5) return false;
+  if (
+    item.startDelayMinutes !== undefined
+    && (!Number.isInteger(item.startDelayMinutes) || item.startDelayMinutes < 0 || item.startDelayMinutes > 240)
+  ) return false;
   if (item.tenant !== undefined && (item.tenant.length > 160 || !/^[A-Za-z0-9:._-]+$/.test(item.tenant))) return false;
   try {
     const pageUrl = new URL(/^https?:\/\//i.test(item.url) ? item.url : `https://${item.url}`);
@@ -268,7 +430,10 @@ function noStore(response: Response): Response {
 async function handleRequest(request: Request, env: Env): Promise<Response> {
     const pathname = new URL(request.url).pathname;
     if (request.method === "GET" && pathname === "/health") {
-      const latestAudit = await env.REPORTS.head(WEEKLY_AUDIT_LATEST_KEY).catch(() => null);
+      const [latestAudit, latestCrux] = await Promise.all([
+        env.REPORTS.head(WEEKLY_AUDIT_LATEST_KEY).catch(() => null),
+        env.REPORTS.head(CRUX_SCHEDULER_STATUS_KEY).catch(() => null),
+      ]);
       return noStore(Response.json({
         ok: true,
         service: "fde-page-collector",
@@ -282,14 +447,25 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
               updatedAt: latestAudit.uploaded.toISOString(),
             }
           : { status: "pending" },
+        crux: latestCrux
+          ? {
+              status: latestCrux.customMetadata?.status ?? "unknown",
+              updatedAt: latestCrux.uploaded.toISOString(),
+              available: Number(latestCrux.customMetadata?.available ?? 0),
+              partial: Number(latestCrux.customMetadata?.partial ?? 0),
+              insufficient: Number(latestCrux.customMetadata?.insufficient ?? 0),
+              errors: Number(latestCrux.customMetadata?.errors ?? 0),
+            }
+          : { status: "pending" },
       }));
     }
     const route = jobRoute(pathname);
     const isDispatch = request.method === "POST" && (pathname === "/jobs" || pathname === "/jobs/batch");
     const isNightly = request.method === "POST" && pathname === "/nightly";
+    const isCruxCollection = request.method === "POST" && pathname === "/crux/collect";
     const isAuditLatest = request.method === "GET" && pathname === "/audits/weekly/latest";
     const isDataPlane = pathname.startsWith("/data/");
-    if (!isDispatch && !route && !isNightly && !isAuditLatest && !isDataPlane) {
+    if (!isDispatch && !route && !isNightly && !isCruxCollection && !isAuditLatest && !isDataPlane) {
       return Response.json({ error: "not found" }, { status: 404 });
     }
     if (!(await sameValue(request.headers.get("authorization") ?? "", `Bearer ${env.CRON_SECRET}`))) {
@@ -297,6 +473,27 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     }
 
     if (isNightly) return noStore(Response.json(await dispatchFdeNightly(env), { status: 202 }));
+    if (isCruxCollection) {
+      const observedAt = new Date().toISOString();
+      const result = await collectCruxEvidence(env);
+      const status = result.ok ? "succeeded" : "partial";
+      await env.REPORTS.put(CRUX_SCHEDULER_STATUS_KEY, JSON.stringify({
+        status,
+        trigger: "manual",
+        observedAt,
+        response: result,
+      }), {
+        httpMetadata: { contentType: "application/json" },
+        customMetadata: {
+          status,
+          available: String(result.available),
+          partial: String(result.partial),
+          insufficient: String(result.insufficient),
+          errors: String(result.errors),
+        },
+      });
+      return noStore(Response.json(result));
+    }
     if (isAuditLatest) {
       const audit = await env.REPORTS.get(WEEKLY_AUDIT_LATEST_KEY);
       if (!audit) return Response.json({ error: "audit not found" }, { status: 404 });
@@ -379,19 +576,35 @@ const worker = {
   },
   async scheduled(controller: ScheduledController, env: Env): Promise<void> {
     const observedAt = new Date().toISOString();
-    const isWeeklyAudit = controller.cron === WEEKLY_AUDIT_CRON;
-    const scheduler = isWeeklyAudit ? "weekly data audit" : "nightly collection";
-    const statusKey = isWeeklyAudit ? AUDIT_SCHEDULER_STATUS_KEY : NIGHTLY_SCHEDULER_STATUS_KEY;
+    const kind = controller.cron === WEEKLY_AUDIT_CRON
+      ? "audit"
+      : controller.cron === CRUX_COLLECTION_CRON
+        ? "crux"
+        : controller.cron === NIGHTLY_COLLECTION_CRON
+          ? "nightly"
+          : null;
+    if (!kind) throw new Error(`Unsupported scheduler cron: ${controller.cron}`);
+    const scheduler = kind === "audit"
+      ? "weekly data audit"
+      : kind === "crux" ? "weekly CrUX collection" : "nightly collection";
+    const statusKey = kind === "audit"
+      ? AUDIT_SCHEDULER_STATUS_KEY
+      : kind === "crux" ? CRUX_SCHEDULER_STATUS_KEY : NIGHTLY_SCHEDULER_STATUS_KEY;
     try {
       let response: unknown;
-      if (isWeeklyAudit) {
+      if (kind === "audit") {
         const audit = await runWeeklyDataAudit(env, new Date(controller.scheduledTime));
         response = { auditId: audit.auditId, health: audit.health, totals: audit.totals };
+      } else if (kind === "crux") {
+        response = await collectCruxEvidence(env);
       } else {
-        response = await dispatchFdeNightly(env);
+        const confirmation = await dispatchFdeNightly(env, { confirmationOnly: true });
+        const nightly = await dispatchFdeNightly(env, { dueOnly: true });
+        response = { confirmation, nightly };
       }
+      const cruxResponse = kind === "crux" ? response as CruxCollectionResult : null;
       const record = {
-        status: "succeeded",
+        status: cruxResponse && !cruxResponse.ok ? "partial" : "succeeded",
         cron: controller.cron,
         scheduledAt: new Date(controller.scheduledTime).toISOString(),
         observedAt,
@@ -399,11 +612,22 @@ const worker = {
       };
       await env.REPORTS.put(statusKey, JSON.stringify(record), {
         httpMetadata: { contentType: "application/json" },
+        ...(cruxResponse ? {
+          customMetadata: {
+            status: record.status,
+            available: String(cruxResponse.available),
+            partial: String(cruxResponse.partial),
+            insufficient: String(cruxResponse.insufficient),
+            errors: String(cruxResponse.errors),
+          },
+        } : {}),
       });
       console.log(JSON.stringify({ message: `${scheduler} scheduler completed`, ...record }));
     } catch (error) {
-      const errorMessage = isWeeklyAudit
+      const errorMessage = kind === "audit"
         ? "Weekly data audit execution failed"
+        : kind === "crux"
+          ? "Weekly CrUX collection failed"
         : error instanceof Error ? error.message : String(error);
       const record = {
         status: "failed",
@@ -415,6 +639,15 @@ const worker = {
       try {
         await env.REPORTS.put(statusKey, JSON.stringify(record), {
           httpMetadata: { contentType: "application/json" },
+          ...(kind === "crux" ? {
+            customMetadata: {
+              status: "failed",
+              available: "0",
+              partial: "0",
+              insufficient: "0",
+              errors: "1",
+            },
+          } : {}),
         });
       } catch (statusError) {
         console.error(JSON.stringify({

@@ -26,7 +26,7 @@ The weekly Worker follows the same policy. It inspects raw reports in memory one
 
 The collector Worker has two schedules:
 
-- `0 3 * * *` — normal nightly collection.
+- `*/15 * * * *` — dispatch pages due in their saved local collection window.
 - `30 5 * * 1` — weekly PSI data-accuracy audit, Monday at 05:30 UTC.
 
 Weekly reports are written to:
@@ -47,9 +47,10 @@ The weekly health result fails closed:
 
 Every successful PSI response keeps its full raw Lighthouse payload and normalized run evidence. Customer-facing recommendations use warning-free runs only and are aggregated separately for mobile and desktop.
 
-For a normal five-run collection:
+For a normal collection:
 
-1. At least three warning-free runs are required.
+1. At least three unique, warning-free measurements are required; duplicate
+   provider responses remain raw audit evidence but do not count toward quorum.
 2. A finding needs a strict majority: 2-of-3, 3-of-4, or 3-of-5.
 3. A repeatable finding is `high` confidence at 80% or more support with at least four eligible runs; another strict-majority finding is `medium`.
 4. A minority finding is retained as `intermittent` evidence but is not promoted to a recommendation.

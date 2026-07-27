@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatHistoryTooltipDate, plottedSparklineSeries, snappedHistoryIndex } from "../charting";
+import { formatHistoryTooltipDate, placeMarkerLabelRows, plottedSparklineSeries, snappedHistoryIndex } from "../charting";
 
 describe("plottedSparklineSeries", () => {
   it("turns one unchanged observation into a flat two-point line", () => {
@@ -32,5 +32,19 @@ describe("formatHistoryTooltipDate", () => {
 
   it("uses an ISO timestamp when the display label is not parseable", () => {
     expect(formatHistoryTooltipDate("collection 24", "2026-07-24T03:00:00.000Z")).toBe("July 24th");
+  });
+});
+
+describe("placeMarkerLabelRows", () => {
+  it("keeps marker labels in bounds and away from reference-label rows", () => {
+    const rows = placeMarkerLabelRows(3, [29, 57], 29, 113);
+
+    expect(rows).toHaveLength(3);
+    expect(rows.every((row) => row >= 29 && row <= 113)).toBe(true);
+    expect(new Set(rows).size).toBe(3);
+    for (const row of rows) {
+      expect(Math.abs(row - 29)).toBeGreaterThanOrEqual(14);
+      expect(Math.abs(row - 57)).toBeGreaterThanOrEqual(14);
+    }
   });
 });

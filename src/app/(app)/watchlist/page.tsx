@@ -1,13 +1,14 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { DotsSixVerticalIcon, Info } from "@phosphor-icons/react";
 import { useStore } from "@/components/store";
 import { AGENT_CHECK_GROUPS, ALL_AGENT_CHECKS } from "@/lib/agentChecks";
 import { agentCheckKey, isAgentCheckIgnored, isAgentGroupIgnored, normalizeAgentIgnoreSettings } from "@/lib/agentScoring";
 import { DEFAULT_PERFORMANCE_THRESHOLDS, normalizePerformanceThresholds, PERFORMANCE_THRESHOLD_LIMITS } from "@/lib/performanceThresholds";
 import type { DevicePolicy, PerformanceThresholds } from "@/lib/types";
+import { normalizeCollectionSchedule } from "@/lib/collectionSchedule";
 import { C, flagChip, naturalDate } from "@/lib/ui";
 import { SegToggle } from "@/components/bits";
 import { ChevronDownIcon, PlusIcon, TrashIcon } from "@/components/icons";
@@ -323,10 +324,16 @@ export default function WatchlistPage() {
     setPreferredStrategy,
     performanceThresholds,
     updatePerformanceThresholds,
+    collectionSchedule,
+    updateCollectionSchedule,
   } = useStore();
   const orderedPages = useMemo(() => sortWatchlistPages(pages), [pages]);
   const defaultIgnores = normalizeAgentIgnoreSettings(agentIgnoreDefaults);
   const thresholds = normalizePerformanceThresholds(performanceThresholds);
+  const normalizedSchedule = normalizeCollectionSchedule(collectionSchedule);
+  const [collectionTimeDraft, setCollectionTimeDraft] = useState(normalizedSchedule.localTime);
+  const [collectionTimeZoneDraft, setCollectionTimeZoneDraft] = useState(normalizedSchedule.timeZone);
+  const [timeZones, setTimeZones] = useState<string[]>([]);
   const [thresholdDrafts, setThresholdDrafts] = useState<Record<NumericToleranceKey, string>>(() =>
     Object.fromEntries(NUMERIC_TOLERANCE_KEYS.map((key) => [key, String(thresholds[key])])) as Record<NumericToleranceKey, string>
   );
@@ -335,6 +342,19 @@ export default function WatchlistPage() {
   const [dropTarget, setDropTarget] = useState<WatchlistDropTarget | null>(null);
   const [keyboardDragPageId, setKeyboardDragPageId] = useState<string | null>(null);
   const [reorderAnnouncement, setReorderAnnouncement] = useState("");
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      if (!collectionSchedule) {
+        const browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (browserTimeZone) setCollectionTimeZoneDraft(browserTimeZone);
+      }
+      const supportedValuesOf = (
+        Intl as typeof Intl & { supportedValuesOf?: (key: "timeZone") => string[] }
+      ).supportedValuesOf;
+      if (supportedValuesOf) setTimeZones(supportedValuesOf("timeZone"));
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [collectionSchedule]);
   const ignoredByDefault = ALL_AGENT_CHECKS.filter((check) => isAgentCheckIgnored(check, undefined, defaultIgnores)).length;
   const capacity = watchCapacity(pages);
   const thresholdValues = Object.fromEntries(
@@ -364,6 +384,17 @@ export default function WatchlistPage() {
   const saveThresholds = () => {
     if (!thresholdsValid) return;
     updatePerformanceThresholds(nextThresholds);
+  };
+  const collectionScheduleDirty =
+    collectionTimeDraft !== normalizedSchedule.localTime
+    || collectionTimeZoneDraft !== normalizedSchedule.timeZone
+    || !normalizedSchedule.overridden;
+  const saveCollectionSchedule = () => {
+    updateCollectionSchedule({
+      localTime: collectionTimeDraft,
+      timeZone: collectionTimeZoneDraft,
+      overridden: true,
+    });
   };
 
   const resetThresholds = (keys: NumericToleranceKey[]) => {
@@ -564,8 +595,12 @@ export default function WatchlistPage() {
                     ? "Collector starting"
                     : p.runState === "running"
                       ? "Collection running"
+                      : p.runState === "waiting_for_evidence"
+                        ? "Waiting for independent PSI evidence"
                       : p.runState === "failed"
                         ? `Failed: ${p.lastError ?? "retry from page"}`
+                        : p.lastCollectionStatus === "inconclusive"
+                          ? "Measurement inconclusive · previous trusted score retained"
                         : p.baselineCapturedAt
                           ? `Captured ${naturalDate(p.baselineCapturedAt)}`
                           : "No baseline yet"}
@@ -611,6 +646,54 @@ export default function WatchlistPage() {
                 { value: "mobile", label: "Mobile first" },
               ]}
             />
+          </div>
+        </section>
+
+        <section aria-labelledby="collection-schedule-heading" style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 14, padding: "20px", marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 24 }}>
+            <div>
+              <div id="collection-schedule-heading" style={{ fontSize: 13.5, fontWeight: 600 }}>Default collection time</div>
+              <div style={{ maxWidth: 720, marginTop: 4, color: C.muted, fontSize: 12, lineHeight: 1.5 }}>
+                This starts the workspace&apos;s daily collection window. Active pages are spread out after this time, and each page&apos;s PSI samples are staggered.
+              </div>
+              <div style={{ marginTop: 7, color: C.faint, fontSize: 11.5 }}>
+                {normalizedSchedule.overridden
+                  ? "Using your saved override."
+                  : "Defaults to midnight in the timezone captured when the first page is added."}
+              </div>
+            </div>
+            <button
+              type="button"
+              disabled={!collectionScheduleDirty}
+              onClick={saveCollectionSchedule}
+              style={{ border: "none", background: C.accent, color: "#fff", fontSize: 12, fontWeight: 600, padding: "9px 13px", borderRadius: 7, cursor: "pointer" }}
+            >
+              Save schedule
+            </button>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(150px,220px) minmax(260px,1fr)", gap: 12, marginTop: 16 }}>
+            <label style={{ display: "grid", gap: 7, color: C.muted, fontSize: 11.5 }}>
+              Local time
+              <input
+                type="time"
+                value={collectionTimeDraft}
+                onChange={(event) => setCollectionTimeDraft(event.target.value)}
+                style={{ background: C.bgElev, color: C.text, border: `1px solid ${C.border2}`, borderRadius: 7, padding: "9px 10px", fontSize: 13 }}
+              />
+            </label>
+            <label style={{ display: "grid", gap: 7, color: C.muted, fontSize: 11.5 }}>
+              Timezone
+              <input
+                list="collection-timezones"
+                value={collectionTimeZoneDraft}
+                onChange={(event) => setCollectionTimeZoneDraft(event.target.value)}
+                placeholder="America/Chicago"
+                style={{ background: C.bgElev, color: C.text, border: `1px solid ${C.border2}`, borderRadius: 7, padding: "9px 10px", fontSize: 13 }}
+              />
+              <datalist id="collection-timezones">
+                {timeZones.map((timeZone) => <option key={timeZone} value={timeZone} />)}
+              </datalist>
+            </label>
           </div>
         </section>
 

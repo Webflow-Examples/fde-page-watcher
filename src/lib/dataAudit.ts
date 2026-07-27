@@ -257,13 +257,19 @@ function auditStrategy(
     }
     const evidence = extractLighthouseRunEvidence(raw, index + 1);
     if (evidence.warnings.length > 0) metrics.warningRuns += 1;
-    return [{ scores, evidence }];
+    const sampleKey = typeof lighthouse?.fetchTime === "string"
+      ? `fetch:${lighthouse.fetchTime}`
+      : `payload:${JSON.stringify(raw)}`;
+    return [{ scores, evidence, sampleKey }];
   });
+  const uniqueValidRuns = validRuns.filter((item, index) =>
+    validRuns.findIndex((candidate) => candidate.sampleKey === item.sampleKey) === index);
 
   const isEvidenceSchema = report.schemaVersion === 2;
+  const independentRuns = isEvidenceSchema ? uniqueValidRuns : validRuns;
   const scoringRuns = isEvidenceSchema
-    ? validRuns.filter((item) => item.evidence.warnings.length === 0)
-    : validRuns;
+    ? independentRuns.filter((item) => item.evidence.warnings.length === 0)
+    : independentRuns;
   if (scoringRuns.length < 3) metrics.lowSampleStrategies += 1;
   const reportedSamples = numeric(report.sampleSize) ?? numeric(night.samples?.[strategy]);
   if (reportedSamples !== null && reportedSamples !== scoringRuns.length) metrics.sampleCountMismatches += 1;
@@ -281,7 +287,7 @@ function auditStrategy(
   }
 
   const aggregated = aggregateLighthouseRunEvidence(
-    validRuns.map((item) => item.evidence),
+    independentRuns.map((item) => item.evidence),
     Math.max(1, numeric(record(report.quality)?.requestedRuns) ?? raws.length),
   );
   metrics.findingsObserved += aggregated.findings.length;

@@ -81,6 +81,14 @@ export function isoDate(d: Date = new Date()): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** Calendar date in the user's local timezone (for browser-created records). */
+export function localISODate(d: Date = new Date()): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 export function normalizeISODate(value: string, ref = new Date()): string | null {
   const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
   if (iso) {

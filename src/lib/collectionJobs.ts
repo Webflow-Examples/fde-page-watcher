@@ -25,7 +25,12 @@ import type {
 import { isPageActivelyMonitored } from "./watchCapacity";
 
 export const JOB_STALE_AFTER_MS = 30 * 60 * 1000;
-const ACTIVE_STATES = new Set<CollectionJobState>(["queued", "dispatching", "running"]);
+const ACTIVE_STATES = new Set<CollectionJobState>([
+  "queued",
+  "dispatching",
+  "running",
+  "waiting_for_evidence",
+]);
 
 export interface EnqueueResult {
   state: AppState;
@@ -184,6 +189,8 @@ export async function commitCollectionResult(
       agent: result.agent,
       opportunities: result.opportunities,
       collectionQuality: result.collectionQuality,
+      cohortId: result.cohortId,
+      measurementContext: result.measurementContext,
     },
     rawReport,
   );

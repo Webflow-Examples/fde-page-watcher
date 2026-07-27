@@ -17,6 +17,31 @@ export function snappedHistoryIndex(
   return Math.round(((clampedX - padLeft) / plotWidth) * (pointCount - 1));
 }
 
+/** Assign marker labels to in-chart rows without colliding with reference labels. */
+export function placeMarkerLabelRows(
+  count: number,
+  blockedYs: number[],
+  minY: number,
+  maxY: number,
+  gap = 14,
+): number[] {
+  const rows: number[] = [];
+  for (let y = minY; y <= maxY; y += gap) rows.push(y);
+  const occupied = blockedYs.filter((value) => Number.isFinite(value));
+  const placed: number[] = [];
+
+  for (let index = 0; index < count; index += 1) {
+    const preferred = minY + index * gap;
+    const available = rows
+      .filter((row) => occupied.every((value) => Math.abs(row - value) >= gap))
+      .sort((a, b) => Math.abs(a - preferred) - Math.abs(b - preferred) || a - b);
+    const row = available[0] ?? Math.min(maxY, minY + index * gap);
+    placed.push(row);
+    occupied.push(row);
+  }
+  return placed;
+}
+
 const LONG_MONTHS: Record<string, string> = {
   Jan: "January",
   Feb: "February",

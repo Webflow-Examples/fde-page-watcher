@@ -5,15 +5,16 @@
   "compatibility_date": "2026-07-24",
   "compatibility_flags": ["nodejs_compat"],
   "secrets": {
-    "required": ["PAGESPEED_API_KEY", "CRON_SECRET"]
+    "required": ["PAGESPEED_API_KEY", "CRUX_API_KEY", "CRON_SECRET"]
   },
   "vars": {
     "NIGHTLY_TENANT": "brand-studio:live"
   },
   "triggers": {
     "crons": [
-      "0 3 * * *",
-      "30 5 * * 1"
+      "*/15 * * * *",
+      "30 5 * * 1",
+      "15 6 * * 2"
     ]
   },
   "workflows": [
