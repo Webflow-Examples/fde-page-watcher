@@ -1310,6 +1310,12 @@ textarea:focus-visible,
     grid-template-columns: 1fr !important;
   }
 
+  .webflow-connection-summary,
+  .webflow-connection-detail-grid,
+  .webflow-connection-form {
+    grid-template-columns: 1fr !important;
+  }
+
   .watchlist-tolerance-actions {
     align-items: flex-start !important;
     flex-direction: column;

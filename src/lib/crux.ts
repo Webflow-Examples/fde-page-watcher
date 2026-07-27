@@ -42,6 +42,119 @@ export interface CruxSnapshot {
   };
 }
 
+export type CruxAvailability = "available" | "partial" | "insufficient" | "error";
+
+export interface CruxEvidenceStatus {
+  pageId: string;
+  formFactor: CruxFormFactor;
+  status: CruxAvailability;
+  effectiveScope: CruxScope | null;
+  latestCollectionEnd: string | null;
+  lastAttemptedAt: string;
+  lastSucceededAt: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+}
+
+export interface CruxPageEvidence {
+  pageId: string;
+  formFactor: CruxFormFactor;
+  status: CruxEvidenceStatus | null;
+  snapshots: CruxSnapshot[];
+}
+
+export interface CruxSnapshotRow {
+  page_id: string;
+  form_factor: CruxFormFactor;
+  scope: CruxScope;
+  requested_url: string;
+  effective_url: string;
+  collection_start: string;
+  collection_end: string;
+  fetched_at: string;
+  lcp_p75_ms: number | null;
+  inp_p75_ms: number | null;
+  cls_p75: number | null;
+  ttfb_p75_ms: number | null;
+  metrics_json: string;
+}
+
+export interface CruxStatusRow {
+  page_id: string;
+  form_factor: CruxFormFactor;
+  status: CruxAvailability;
+  effective_scope: CruxScope | null;
+  latest_collection_end: string | null;
+  last_attempted_at: string;
+  last_succeeded_at: string | null;
+  error_code: string | null;
+  error_message: string | null;
+}
+
+/** Convert storage rows into the tenant-safe read model consumed by the UI. */
+export function cruxEvidenceFromRows(
+  snapshotRows: CruxSnapshotRow[],
+  statusRows: CruxStatusRow[],
+  maxSnapshots = 12,
+): CruxPageEvidence[] {
+  const evidence = new Map<string, CruxPageEvidence>();
+  const keyFor = (pageId: string, formFactor: CruxFormFactor) => `${pageId}:${formFactor}`;
+  for (const row of statusRows) {
+    evidence.set(keyFor(row.page_id, row.form_factor), {
+      pageId: row.page_id,
+      formFactor: row.form_factor,
+      status: {
+        pageId: row.page_id,
+        formFactor: row.form_factor,
+        status: row.status,
+        effectiveScope: row.effective_scope,
+        latestCollectionEnd: row.latest_collection_end,
+        lastAttemptedAt: row.last_attempted_at,
+        lastSucceededAt: row.last_succeeded_at,
+        errorCode: row.error_code,
+        errorMessage: row.error_message,
+      },
+      snapshots: [],
+    });
+  }
+  for (const row of snapshotRows) {
+    const key = keyFor(row.page_id, row.form_factor);
+    const item = evidence.get(key) ?? {
+      pageId: row.page_id,
+      formFactor: row.form_factor,
+      status: null,
+      snapshots: [],
+    };
+    if (item.snapshots.length < maxSnapshots) {
+      let metrics: CruxSnapshot["metrics"] = {};
+      try {
+        metrics = JSON.parse(row.metrics_json) as CruxSnapshot["metrics"];
+      } catch {
+        // Individual p75 columns remain usable when legacy metrics JSON is corrupt.
+      }
+      item.snapshots.push({
+        formFactor: row.form_factor,
+        scope: row.scope,
+        requestedUrl: row.requested_url,
+        effectiveUrl: row.effective_url,
+        collectionStart: row.collection_start,
+        collectionEnd: row.collection_end,
+        fetchedAt: row.fetched_at,
+        lcpP75Ms: row.lcp_p75_ms,
+        inpP75Ms: row.inp_p75_ms,
+        clsP75: row.cls_p75,
+        ttfbP75Ms: row.ttfb_p75_ms,
+        metrics,
+      });
+    }
+    evidence.set(key, item);
+  }
+  return [...evidence.values()].map((item) => ({
+    ...item,
+    snapshots: [...item.snapshots].sort((a, b) => a.collectionEnd.localeCompare(b.collectionEnd)),
+  }));
+}
+
 export interface CruxHistoryQuery {
   scope: CruxScope;
   target: string;

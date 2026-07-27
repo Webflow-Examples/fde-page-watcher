@@ -20,6 +20,7 @@ import { isPageActivelyMonitored } from "@/lib/watchCapacity";
 import { sortDashboardRows } from "@/lib/dashboardSort";
 import { combinedDashboardSignals } from "@/lib/dashboardVerdict";
 import { normalizeCollectionSchedule } from "@/lib/collectionSchedule";
+import { evidenceForPage, visitorExperienceTrend } from "@/lib/visitorExperience";
 
 const GRID = "minmax(170px,1fr) 142px 126px 126px 126px 126px 120px";
 type DashboardFilter = "all" | "lowPerformance" | "agentGaps" | "regressions" | "improvements";
@@ -118,6 +119,8 @@ export default function DashboardPage() {
     sortDash,
     saveTask,
     pathFor,
+    visitorExperienceVisible,
+    visitorExperience,
   } = useStore();
   const [activeFilter, setActiveFilter] = useState<DashboardFilter>("all");
   const tableRef = useRef<HTMLDivElement>(null);
@@ -132,6 +135,7 @@ export default function DashboardPage() {
   const rows = pages.map((p, watchlistOrder) => {
     const mobileTrend = pageRangeTrend(p, "mobile", rangeDays, thresholds);
     const desktopTrend = pageRangeTrend(p, "desktop", rangeDays, thresholds);
+    const experienceTrend = visitorExperienceTrend(evidenceForPage(visitorExperience, p.id, strategy));
     const trend = strategy === "mobile" ? mobileTrend : desktopTrend;
     const secondaryStrategy = strategy === "mobile" ? "desktop" : "mobile";
     const rangeAgentSnapshot = pageAgentSnapshotForRange(p, rangeDays);
@@ -187,6 +191,7 @@ export default function DashboardPage() {
       url: p.url,
       mobileTrend,
       desktopTrend,
+      experienceTrend,
       monitoringFlag: p.flag,
       watchlistOrder,
       flag: flagChip(p.flag),
@@ -602,7 +607,11 @@ export default function DashboardPage() {
                 <div style={{ fontSize: 12, color: C.faint, marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{row.url}</div>
               </div>
               <div>
-                <DeviceChangeLabels mobile={row.mobileTrend} desktop={row.desktopTrend} />
+                <DeviceChangeLabels
+                  mobile={row.mobileTrend}
+                  desktop={row.desktopTrend}
+                  visitorExperience={visitorExperienceVisible ? row.experienceTrend : undefined}
+                />
               </div>
               {row.cats.map((c: { key: CategoryKey; score: number | null; fg: string; delta: string; deltaFg: string; series: number[]; line: string; secondary: number | null; secondaryFg: string; secondaryLabel: string }) => (
                 <div key={c.key} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>

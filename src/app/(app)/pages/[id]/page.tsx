@@ -19,6 +19,8 @@ import type { SelectMenuOption } from "@/components/select-menu";
 import { DesktopIcon, MobileIcon, PlusIcon, RefreshIcon } from "@/components/icons";
 import { failedRunDetailMessage, formatSuccessfulRunAt, lastSuccessfulRunAt } from "@/lib/collectionStatus";
 import { isTaskMarker, taskMarkerText } from "@/lib/taskMarkers";
+import { VisitorExperiencePanel } from "@/components/visitor-experience";
+import { evidenceForPage } from "@/lib/visitorExperience";
 
 const PAGE_RANGE_OPTIONS: ReadonlyArray<SelectMenuOption<RangeDays>> = [
   { value: 3, label: "Last 3 days" },
@@ -296,6 +298,15 @@ function OverviewTab({
         })}
       </div>
 
+      {store.visitorExperienceVisible && (
+        <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, padding: 22, marginBottom: 20 }}>
+          <VisitorExperiencePanel
+            evidence={evidenceForPage(store.visitorExperience, page.id, strategy)}
+            labTrend={pageRangeTrend(page, strategy, rangeDays, normalizePerformanceThresholds(store.performanceThresholds))}
+          />
+        </div>
+      )}
+
       <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, padding: 22, marginBottom: 20, display: "flex", alignItems: "center", gap: 28 }}>
         <div style={{ flex: "none", display: "flex", alignItems: "center", gap: 16 }}>
           <div style={{ width: 64, height: 64, borderRadius: "50%", border: `4px solid ${total ? apm.ring : C.border2}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, fontWeight: 600, color: total ? apm.fg : C.muted }}>
@@ -478,6 +489,13 @@ function HistoryTab({
               </div>
             ))}
           </div>
+        )}
+        {store.visitorExperienceVisible && (
+          <VisitorExperiencePanel
+            evidence={evidenceForPage(store.visitorExperience, page.id, strategy)}
+            labTrend={pageRangeTrend(page, strategy, rangeDays, thresholds)}
+            compact
+          />
         )}
         <div style={{ marginTop: 22, paddingTop: 20, borderTop: `1px solid ${C.border}` }}>
           <div style={{ display: "flex", alignItems: "start", justifyContent: "space-between", gap: 20, marginBottom: 4 }}>

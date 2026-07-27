@@ -12,10 +12,14 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const state = await getStore().getState();
+  const dataStore = getStore();
+  const [state, visitorExperience] = await Promise.all([
+    dataStore.getState(),
+    dataStore.getCruxEvidence().catch(() => []),
+  ]);
   const basePath = normalizeBasePath(getEnv("BASE_URL"));
   return (
-    <StoreProvider initial={state} basePath={basePath}>
+    <StoreProvider initial={state} initialVisitorExperience={visitorExperience} basePath={basePath}>
       <div className="app-shell" style={{ display: "flex", minHeight: "100vh" }}>
         <Sidebar />
         <main className="app-main" style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>{children}</main>

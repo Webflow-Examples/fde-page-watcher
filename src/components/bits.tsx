@@ -2,6 +2,7 @@ import type { PageStatus } from "@/lib/types";
 import { statusMeta } from "@/lib/scoring";
 import { C } from "@/lib/ui";
 import { SegmentedControl } from "@/components/segmented-control";
+import type { VisitorExperienceTrend } from "@/lib/visitorExperience";
 
 /** Status pill with its accessibility shape (circle / triangle / square) — REQ-009. */
 export function StatusBadge({ status, size = 12.5 }: { status: PageStatus; size?: number }) {
@@ -28,12 +29,37 @@ export function StatusBadge({ status, size = 12.5 }: { status: PageStatus; size?
 }
 
 /** Compact always-visible mobile + desktop Performance trends. */
-export function DeviceChangeLabels({ mobile, desktop, size = 11.5, direction = "column" }: { mobile: PageStatus; desktop: PageStatus; size?: number; direction?: "row" | "column" }) {
+export function DeviceChangeLabels({
+  mobile,
+  desktop,
+  visitorExperience,
+  size = 11.5,
+  direction = "column",
+}: {
+  mobile: PageStatus;
+  desktop: PageStatus;
+  visitorExperience?: VisitorExperienceTrend;
+  size?: number;
+  direction?: "row" | "column";
+}) {
   return (
     <div style={{ display: "flex", flexDirection: direction, alignItems: "flex-start", gap: direction === "row" ? 14 : 5 }}>
       <DeviceChangeLine device="M" name="Mobile" status={mobile} size={size} />
       <DeviceChangeLine device="D" name="Desktop" status={desktop} size={size} />
+      {visitorExperience && <VisitorExperienceLine status={visitorExperience} size={size} />}
     </div>
+  );
+}
+
+function VisitorExperienceLine({ status, size }: { status: VisitorExperienceTrend; size: number }) {
+  const label = status === "insufficient" ? "Unavailable" : status;
+  const color = status === "worsening" ? C.redSoft : status === "improving" ? C.green : status === "stable" ? C.accentSoft : C.muted;
+  return (
+    <span aria-label={`Visitor experience: ${label}`} title={`Visitor experience: ${label}`} style={{ display: "inline-flex", alignItems: "center", gap: 5, color, fontSize: size, fontWeight: 550, whiteSpace: "nowrap" }}>
+      <span style={{ width: 20, color: C.faint2, fontSize: size - 1, fontWeight: 650 }}>XP</span>
+      <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: "50%", background: color }} />
+      <span style={{ textTransform: "capitalize" }}>{label}</span>
+    </span>
   );
 }
 

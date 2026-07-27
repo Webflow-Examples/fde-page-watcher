@@ -129,6 +129,15 @@ export function setCollectionSchedule(
   }, dataStore);
 }
 
+export function setVisitorExperienceVisible(
+  visible: boolean,
+  dataStore: DataStore = getStore(),
+): Promise<AppState> {
+  return withState((state) => {
+    state.visitorExperienceVisible = visible;
+  }, dataStore);
+}
+
 export function removePage(id: string, dataStore: DataStore = getStore()): Promise<AppState> {
   return withState((state) => {
     state.pages = state.pages.filter((p) => p.id !== id);

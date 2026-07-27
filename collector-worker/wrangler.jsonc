@@ -5,7 +5,12 @@
   "compatibility_date": "2026-07-24",
   "compatibility_flags": ["nodejs_compat"],
   "secrets": {
-    "required": ["PAGESPEED_API_KEY", "CRUX_API_KEY", "CRON_SECRET"]
+    "required": [
+      "PAGESPEED_API_KEY",
+      "CRUX_API_KEY",
+      "CRON_SECRET",
+      "WEBFLOW_TOKEN_ENCRYPTION_KEY"
+    ]
   },
   "vars": {
     "NIGHTLY_TENANT": "brand-studio:live"
