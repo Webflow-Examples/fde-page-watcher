@@ -259,7 +259,7 @@ export class FdeDataStore {
     }
 
     const beforeHistory = new Set(before.pages.flatMap((page) => page.history.map((night) => `${page.id}:${night.runId ?? night.i}`)));
-    const beforeMarkers = new Set(before.pages.flatMap((page) => page.markers.map((marker) => `${page.id}:${marker.id}`)));
+    const beforeMarkers = new Map(before.pages.flatMap((page) => page.markers.map((marker) => [`${page.id}:${marker.id}`, JSON.stringify(marker)])));
     for (const page of after.pages) {
       for (const night of page.history) {
         if (beforeHistory.has(`${page.id}:${night.runId ?? night.i}`)) continue;
@@ -268,7 +268,7 @@ export class FdeDataStore {
         ).bind(this.tenant, page.id, night.i, JSON.stringify(night)));
       }
       for (const marker of page.markers) {
-        if (beforeMarkers.has(`${page.id}:${marker.id}`)) continue;
+        if (beforeMarkers.get(`${page.id}:${marker.id}`) === JSON.stringify(marker)) continue;
         statements.push(this.bindings.DB.prepare(
           "INSERT OR REPLACE INTO markers (tenant, page_id, id, marker_json) VALUES (?, ?, ?, ?)",
         ).bind(this.tenant, page.id, marker.id, JSON.stringify(marker)));

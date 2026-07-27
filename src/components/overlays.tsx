@@ -244,11 +244,11 @@ function AddModal() {
 }
 
 function MarkerModal() {
-  const { markerText, markerDate, setMarkerText, setMarkerDate, submitMarker, closeModal } = useStore();
+  const { markerText, markerDate, markerEditingId, setMarkerText, setMarkerDate, submitMarker, closeModal } = useStore();
   return (
     <ModalShell onClose={closeModal} label="Log a change marker">
       <div style={{ padding: "22px 24px 0" }}>
-        <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>Log a change marker</h3>
+        <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>{markerEditingId ? "Edit change marker" : "Log a change marker"}</h3>
         <p style={{ margin: "7px 0 0", fontSize: 13, color: C.muted }}>Marks the timeline and schedules 2, 7 &amp; 30-day follow-up reports to Slack.</p>
       </div>
       <div style={{ padding: "20px 24px" }}>
@@ -259,7 +259,7 @@ function MarkerModal() {
       </div>
       <div style={{ padding: "0 24px 22px", display: "flex", justifyContent: "flex-end", gap: 10 }}>
         <button onClick={closeModal} style={cancelBtn}>Cancel</button>
-        <button onClick={submitMarker} style={primaryBtn}>Log marker</button>
+        <button onClick={submitMarker} style={{ ...primaryBtn, background: C.green, color: C.bg }}>{markerEditingId ? "Save marker" : "Log marker"}</button>
       </div>
     </ModalShell>
   );

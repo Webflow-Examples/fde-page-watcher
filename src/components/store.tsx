@@ -6,7 +6,7 @@ import type { AgentIgnoreOverrideMode, AgentIgnoreScope, AppState, CategoryKey, 
 import { updateAgentIgnoreOverride, updateAgentIgnoreSettings } from "@/lib/agentScoring";
 import { collectionSettlementMessage, hasActiveCollections, startCollectionPolling } from "@/lib/collectionPolling";
 import { normalizePerformanceThresholds } from "@/lib/performanceThresholds";
-import { isoDate } from "@/lib/ui";
+import { localISODate } from "@/lib/ui";
 import { withBasePath } from "@/lib/paths";
 import { defaultNewPageFlag, flagCapacityError } from "@/lib/watchCapacity";
 import { applyWatchlistPageOrder, changePageFlagOrder } from "@/lib/watchlistOrder";
@@ -62,8 +62,10 @@ interface StoreValue extends AppState {
   // modals / toast / report
   modal: "add" | "marker" | "report" | null;
   markerPageId: string | null;
+  markerEditingId: string | null;
   openAdd: () => void;
   openMarker: (pageId: string) => void;
+  editMarker: (pageId: string, markerId: string) => void;
   closeModal: () => void;
   report: ReportData | null;
   openReport: (r: ReportData) => void;
@@ -155,6 +157,7 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
   const [chartCat, setChartCat] = useState<CategoryKey>("perf");
   const [modal, setModal] = useState<"add" | "marker" | "report" | null>(null);
   const [markerPageId, setMarkerPageId] = useState<string | null>(null);
+  const [markerEditingId, setMarkerEditingId] = useState<string | null>(null);
   const [report, setReport] = useState<ReportData | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [form, setFormState] = useState<AddForm>({ title: "", url: "" });
@@ -456,7 +459,7 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
       // Idempotent: re-dropping an already-done card onto Done must not log a
       // second change marker or a duplicate set of follow-ups (audit).
       if (to === rec.taskStatus) return;
-      const date = isoDate();
+      const date = localISODate();
       if (to === "done") {
         // Completing a task logs a change marker + schedules follow-ups, so it
         // goes through the marker route (sequential storage, REQ-043/044).
@@ -465,7 +468,7 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
             ...cur,
             recs: cur.recs.map((r) => (r.key === key ? { ...r, taskStatus: "done", doneDate: date } : r)),
             pages: cur.pages.map((p) =>
-              p.id === rec.pageId ? { ...p, markers: [...(p.markers || []), { id: crypto.randomUUID(), i: p.history.length - 1, date, text: `Acted: ${rec.title}` }] } : p,
+              p.id === rec.pageId ? { ...p, markers: [...(p.markers || []), { id: crypto.randomUUID(), i: p.history.length - 1, date, text: `Acted: ${rec.title}`, source: "task", recKey: key }] } : p,
             ),
           },
           { url: `/api/pages/${rec.pageId}/markers`, body: { text: `Acted: ${rec.title}`, date, recKey: key, taskStatus: "done" } },
@@ -530,18 +533,31 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
     }
     const id = markerPageId;
     if (!id) return;
-    const date = markerDate.trim() || isoDate();
+    const date = markerDate.trim() || localISODate();
     const cur = dataRef.current;
     setModal(null);
+    if (markerEditingId) {
+      mutate(
+        {
+          ...cur,
+          pages: cur.pages.map((p) => p.id === id
+            ? { ...p, markers: p.markers.map((marker) => marker.id === markerEditingId ? { ...marker, text: markerText.trim(), date } : marker) }
+            : p),
+        },
+        { url: `/api/pages/${id}/markers`, method: "PATCH", body: { markerId: markerEditingId, text: markerText.trim(), date } },
+        { success: "Marker updated", failure: "Couldn't update the marker — try again" },
+      );
+      return;
+    }
     mutate(
       {
         ...cur,
-        pages: cur.pages.map((p) => (p.id === id ? { ...p, markers: [...(p.markers || []), { id: crypto.randomUUID(), i: p.history.length - 1, date, text: markerText.trim() }] } : p)),
+        pages: cur.pages.map((p) => (p.id === id ? { ...p, markers: [...(p.markers || []), { id: crypto.randomUUID(), i: p.history.length - 1, date, text: markerText.trim(), source: "custom" }] } : p)),
       },
       { url: `/api/pages/${id}/markers`, body: { text: markerText.trim(), date } },
       { success: "Marker logged — 2, 7 & 30-day Slack reports scheduled", failure: "Couldn't log the marker — try again" },
     );
-  }, [markerText, markerDate, markerPageId, mutate, flash]);
+  }, [markerText, markerDate, markerPageId, markerEditingId, mutate, flash]);
 
   const runPage = useCallback(
     (id: string) => {
@@ -583,8 +599,18 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
   }, []);
   const openMarker = useCallback((pageId: string) => {
     setMarkerPageId(pageId);
+    setMarkerEditingId(null);
     setMarkerText("");
-    setMarkerDate(isoDate());
+    setMarkerDate(localISODate());
+    setModal("marker");
+  }, []);
+  const editMarker = useCallback((pageId: string, markerId: string) => {
+    const marker = dataRef.current.pages.find((page) => page.id === pageId)?.markers.find((item) => item.id === markerId);
+    if (!marker || marker.source === "task" || marker.recKey || marker.text.startsWith("Acted:")) return;
+    setMarkerPageId(pageId);
+    setMarkerEditingId(markerId);
+    setMarkerText(marker.text);
+    setMarkerDate(marker.date);
     setModal("marker");
   }, []);
   const closeModal = useCallback(() => setModal(null), []);
@@ -621,8 +647,10 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
     setChartCat,
     modal,
     markerPageId,
+    markerEditingId,
     openAdd,
     openMarker,
+    editMarker,
     closeModal,
     report,
     openReport,

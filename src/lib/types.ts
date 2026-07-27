@@ -187,6 +187,8 @@ export interface ChangeMarker {
   i: number; // history index the marker sits at — resolved from `date`, not the latest night
   date: string;
   text: string;
+  source?: "custom" | "task";
+  recKey?: string;
 }
 
 /** A single agent-readiness check outcome — recorded per check, never composited (REQ-008). */

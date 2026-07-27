@@ -33,14 +33,21 @@ export function scheduleFollowUps(pageId: string, marker: ChangeMarker): FollowU
 export function resolveMarkerIndex(history: Night[], markerDate: string): number {
   const target = parseMarkerDate(markerDate);
   if (!target || history.length === 0) return Math.max(0, history.length - 1);
+  const targetDay = target.toISOString().slice(0, 10);
   let bestIndex = -1;
-  let bestTime = Number.NEGATIVE_INFINITY;
+  let bestDay = "";
   for (const night of history) {
-    const date = parseMarkerDate(night.iso ?? night.date, target.getUTCFullYear());
+    // `night.date` is the product's displayed collection day. Comparing full
+    // timestamps made a run later on the selected day appear to be "after"
+    // midnight and incorrectly placed its marker on the previous run.
+    const displayDate = /^[A-Z][a-z]{2}\s+\d{1,2}$/.test(night.date)
+      ? night.date
+      : night.iso ?? night.date;
+    const date = parseMarkerDate(displayDate, target.getUTCFullYear());
     if (!date) continue;
-    const time = date.getTime();
-    if (time <= target.getTime() && (time > bestTime || (time === bestTime && night.i > bestIndex))) {
-      bestTime = time;
+    const day = date.toISOString().slice(0, 10);
+    if (day <= targetDay && (day > bestDay || (day === bestDay && night.i > bestIndex))) {
+      bestDay = day;
       bestIndex = night.i;
     }
   }

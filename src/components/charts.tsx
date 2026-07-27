@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type MouseEvent } from "react";
 import type { AgentIgnoreSettings, CategoryKey, ChangeMarker, Night, Strategy } from "@/lib/types";
 import { agentReadinessHistoryPoints } from "@/lib/agentHistory";
 import type { PreviousPeriodMedian } from "@/lib/scoring";
-import { formatHistoryTooltipDate, plottedSparklineSeries, snappedHistoryIndex } from "@/lib/charting";
+import { formatHistoryTooltipDate, placeMarkerLabelRows, plottedSparklineSeries, snappedHistoryIndex } from "@/lib/charting";
 import { C } from "@/lib/ui";
 
 const HISTORY_CHART_DEFAULT_WIDTH = 900;
@@ -106,6 +106,9 @@ export function HistoryChart({
   const h = history;
   const n = h.length;
   if (n < 2) return null;
+  const visibleMarkers = (markers || [])
+    .map((marker) => ({ marker, markerIndex: h.findIndex((night) => night.i === marker.i) }))
+    .filter(({ markerIndex }) => markerIndex >= 0);
   const H = 264;
   const padL = 38;
   const padR = 20;
@@ -132,12 +135,21 @@ export function HistoryChart({
   const ticks = [lo, Math.round((lo + hi) / 2), hi];
   const xLabels = [...new Set([0, Math.round((n - 1) / 2), n - 1])];
   const ld = h[n - 1];
-  const baselineLabelY = y(baseline) - 6;
+  const clampLabelY = (value: number) => Math.min(H - padB - 7, Math.max(padT + 7, value));
+  const baselineLabelY = clampLabelY(y(baseline) - 6);
   const previousPeriodLabelY = previousPeriod
-    ? Math.abs(y(previousPeriod.value) - y(baseline)) < 18
-      ? y(previousPeriod.value) + 14
-      : y(previousPeriod.value) - 6
+    ? clampLabelY(
+        Math.abs(y(previousPeriod.value) - y(baseline)) < 18
+          ? y(previousPeriod.value) + 14
+          : y(previousPeriod.value) - 6,
+      )
     : 0;
+  const markerLabelYs = placeMarkerLabelRows(
+    visibleMarkers.length,
+    [baselineLabelY, ...(previousPeriod ? [previousPeriodLabelY] : [])],
+    padT + 7,
+    H - padB - 7,
+  );
   const hoveredNight = hoveredPoint ? h[hoveredPoint.index] : null;
   const hoveredMedian = hoveredNight ? at(hoveredNight, "m") : null;
   const hoveredX = hoveredPoint ? x(hoveredPoint.index) : null;
@@ -199,13 +211,23 @@ export function HistoryChart({
           </>
         )}
         <polyline points={medPts} fill="none" stroke={line} strokeWidth={2.4} strokeLinejoin="round" strokeLinecap="round" />
-        {(markers || []).map((mk, k) => {
-          const markerIndex = h.findIndex((night) => night.i === mk.i);
-          if (markerIndex < 0) return null;
+        {visibleMarkers.map(({ marker: mk, markerIndex }, k) => {
+          const markerX = x(markerIndex);
+          const plotWidth = W - padL - padR;
+          const nearRightEdge = markerX >= padL + plotWidth * 0.75;
+          const custom = mk.source !== "task" && !mk.recKey && !mk.text.startsWith("Acted:");
+          const markerColor = custom ? C.green : "#9564FF";
           return (
             <g key={`mk${k}`}>
-              <line x1={x(markerIndex)} x2={x(markerIndex)} y1={padT - 4} y2={H - padB} stroke="#9564FF" strokeWidth={1.4} strokeDasharray="4 3" />
-              <text x={x(markerIndex) + 7} y={padT + 7} fontSize={10.5} fontWeight={600} fill={C.violetSoft}>
+              <line x1={markerX} x2={markerX} y1={padT - 4} y2={H - padB} stroke={markerColor} strokeWidth={1.4} strokeDasharray="4 3" />
+              <text
+                x={markerX + (nearRightEdge ? -7 : 7)}
+                y={markerLabelYs[k]}
+                textAnchor={nearRightEdge ? "end" : "start"}
+                fontSize={10.5}
+                fontWeight={600}
+                fill={custom ? C.green : C.violetSoft}
+              >
                 {mk.text}
               </text>
             </g>
@@ -222,7 +244,8 @@ export function HistoryChart({
       {(markers || []).map((mk) => {
         const markerIndex = h.findIndex((night) => night.i === mk.i);
         if (markerIndex < 0) return null;
-        return <FixedChartDot key={mk.id} kind="history-marker" x={x(markerIndex)} y={padT - 4} viewWidth={W} viewHeight={H} radius={3.5} color="#9564FF" />;
+        const custom = mk.source !== "task" && !mk.recKey && !mk.text.startsWith("Acted:");
+        return <FixedChartDot key={mk.id} kind="history-marker" x={x(markerIndex)} y={padT - 4} viewWidth={W} viewHeight={H} radius={3.5} color={custom ? C.green : "#9564FF"} />;
       })}
       {hoveredNight && hoveredMedian !== null && hoveredX !== null && (
         <div
