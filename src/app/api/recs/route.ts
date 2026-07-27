@@ -16,9 +16,8 @@ interface Body {
  * contain a colon so it travels in the body, not the path):
  *   - save    -> move Inbox rec to Tasks (taskStatus resets to "todo")
  *   - ignore  -> mark Inbox rec ignored
- *   - advance -> move a task between todo / in-progress (NOT done — completing
- *                a task goes through the marker route so a change marker and
- *                follow-ups are scheduled)
+ *   - advance -> move a task between todo / in-progress. Reopening a completed
+ *                task also removes its conditional marker and follow-ups.
  */
 export async function POST(req: Request) {
   const body = (await req.json().catch(() => ({}))) as Body;

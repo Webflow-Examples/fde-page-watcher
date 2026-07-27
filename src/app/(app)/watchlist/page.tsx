@@ -308,7 +308,7 @@ function ToleranceField({
   );
 }
 
-export default function WatchlistPage() {
+function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
   const router = useRouter();
   const {
     pages,
@@ -460,19 +460,27 @@ export default function WatchlistPage() {
     <div>
       <header style={{ padding: "30px 40px 24px", display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 24 }}>
         <div>
-          <h1 style={{ margin: 0, fontSize: 27, fontWeight: 600, letterSpacing: "-0.01em" }}>Watchlist</h1>
-          <p style={{ margin: "8px 0 0", fontSize: 13.5, color: C.muted }}>Priority and Watching pages are monitored nightly. Paused pages keep their history without collecting new data.</p>
+          <h1 style={{ margin: 0, fontSize: 27, fontWeight: 600, letterSpacing: "-0.01em" }}>{mode === "watchlist" ? "Watchlist" : "Settings"}</h1>
+          <p style={{ margin: "8px 0 0", fontSize: 13.5, color: C.muted }}>
+            {mode === "watchlist"
+              ? "Priority and Watching pages are monitored nightly. Paused pages keep their history without collecting new data."
+              : "Configure how Page Watch displays performance, evaluates changes, schedules collections, and calculates agent-readiness."}
+          </p>
         </div>
-        <button
-          onClick={openAdd}
-          style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", border: "none", borderRadius: 8, background: C.accent, color: "#fff", fontSize: 13, fontWeight: 550, cursor: "pointer" }}
-        >
-          <PlusIcon size={15} style={{ color: "#fff" }} />
-          Add page
-        </button>
+        {mode === "watchlist" && (
+          <button
+            onClick={openAdd}
+            style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", border: "none", borderRadius: 8, background: C.accent, color: "#fff", fontSize: 13, fontWeight: 550, cursor: "pointer" }}
+          >
+            <PlusIcon size={15} style={{ color: "#fff" }} />
+            Add page
+          </button>
+        )}
       </header>
 
       <div style={{ padding: "0 40px 48px" }}>
+        {mode === "watchlist" ? (
+          <>
         <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 18, padding: "12px 24px", borderBottom: `1px solid ${C.border}`, fontSize: 11.5, color: C.muted }}>
             <span><strong style={{ color: C.text, fontWeight: 600 }}>{capacity.active}/{MAX_ACTIVE_PAGES}</strong> active</span>
@@ -623,13 +631,9 @@ export default function WatchlistPage() {
             </div>
           );})}
         </div>
-
-        <div className="watchlist-settings-intro" style={{ margin: "30px 0 16px" }}>
-          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600, letterSpacing: "-0.01em" }}>Settings</h2>
-          <p style={{ maxWidth: 760, margin: "6px 0 0", color: C.muted, fontSize: 13, lineHeight: 1.5 }}>
-            Configure how Page Watch displays performance, evaluates changes, and calculates agent-readiness across your watchlist.
-          </p>
-        </div>
+          </>
+        ) : (
+          <>
 
         <section aria-labelledby="default-chart-device-heading" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 24, background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, padding: "17px 20px", marginBottom: 16 }}>
           <div>
@@ -938,7 +942,17 @@ export default function WatchlistPage() {
             })}
           </div>
         </section>
+          </>
+        )}
       </div>
     </div>
   );
+}
+
+export default function WatchlistPage() {
+  return <WatchlistContent mode="watchlist" />;
+}
+
+export function SettingsPageContent() {
+  return <WatchlistContent mode="settings" />;
 }

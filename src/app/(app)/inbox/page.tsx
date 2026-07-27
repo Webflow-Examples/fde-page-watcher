@@ -17,7 +17,10 @@ interface Group {
 
 export default function InboxPage() {
   const router = useRouter();
-  const { recs, inboxGroup, setInboxGroup, inboxSort, sortInbox, saveTask, ignoreRec, pathFor } = useStore();
+  const { recs, inboxGroup, setInboxGroup, inboxDescriptions, setInboxDescriptions, inboxSort, sortInbox, saveTask, ignoreRec, pathFor } = useStore();
+  const categoryChip = (category: string) => (
+    <span style={{ fontSize: 11, fontWeight: 500, color: C.faint2, background: "rgba(255,255,255,0.04)", padding: "2px 8px", borderRadius: 5 }}>{category}</span>
+  );
 
   let items = recs.filter((r) => r.status === "inbox");
   if (inboxSort.col) {
@@ -58,18 +61,32 @@ export default function InboxPage() {
           <h1 style={{ margin: 0, fontSize: 27, fontWeight: 600, letterSpacing: "-0.01em" }}>Inbox</h1>
           <p style={{ margin: "8px 0 0", fontSize: 13.5, color: C.muted }}>New recommendations from the latest nightly runs. Save the ones you&apos;ll act on as tasks, or ignore the rest.</p>
         </div>
-        <div className="page-controls" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 12, color: C.faint }}>Group by</span>
-          <SegToggle
-            label="Group inbox by"
-            value={inboxGroup}
-            onChange={setInboxGroup}
-            options={[
-              { value: "none", label: "None" },
-              { value: "page", label: "Page" },
-              { value: "rec", label: "Recommendation" },
-            ]}
-          />
+        <div className="page-controls" style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 12, color: C.faint }}>Descriptions</span>
+            <SegToggle
+              label="Inbox descriptions"
+              value={inboxDescriptions}
+              onChange={setInboxDescriptions}
+              options={[
+                { value: "show", label: "Show" },
+                { value: "hide", label: "Hide" },
+              ]}
+            />
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 12, color: C.faint }}>Group by</span>
+            <SegToggle
+              label="Group inbox by"
+              value={inboxGroup}
+              onChange={setInboxGroup}
+              options={[
+                { value: "none", label: "None" },
+                { value: "page", label: "Page" },
+                { value: "rec", label: "Recommendation" },
+              ]}
+            />
+          </div>
         </div>
       </header>
 
@@ -96,7 +113,9 @@ export default function InboxPage() {
                 {g.label && (
                   <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "13px 22px", borderBottom: `1px solid ${C.border}`, background: C.panel2 }}>
                     <span style={{ fontSize: 13, fontWeight: 600 }}>{g.label}</span>
-                    <span style={{ fontSize: 11.5, color: C.faint }}>{g.sub}</span>
+                    {inboxGroup === "rec"
+                      ? categoryChip(g.sub ?? "")
+                      : <span style={{ fontSize: 11.5, color: C.faint }}>{g.sub}</span>}
                     <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 600, color: C.accentSoft, background: "rgba(59,137,255,0.14)", padding: "1px 8px", borderRadius: 20 }}>{g.items.length}</span>
                   </div>
                 )}
@@ -104,12 +123,16 @@ export default function InboxPage() {
                   <div key={it.key} style={{ display: "grid", gridTemplateColumns: GRID, gap: 16, alignItems: "center", padding: "16px 22px", borderBottom: `1px solid ${C.rowBorder}` }}>
                     <span style={{ justifySelf: "start", fontSize: 10, fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase", color: C.accentSoft, background: "rgba(59,137,255,0.14)", padding: "3px 8px", borderRadius: 5 }}>New</span>
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 14, fontWeight: 600 }}>{it.title}</div>
-                      {it.aiSummary && <div style={{ fontSize: 12, color: C.muted, marginTop: 4, lineHeight: 1.45 }}>{it.aiSummary}</div>}
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 14, fontWeight: 600 }}>{inboxGroup === "rec" ? it.pageTitle : it.title}</span>
+                        {inboxGroup !== "rec" && categoryChip(it.category)}
+                      </div>
+                      {inboxDescriptions === "show" && it.aiSummary && <div style={{ fontSize: 12, color: C.muted, marginTop: 4, lineHeight: 1.45 }}>{it.aiSummary}</div>}
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
-                        <span style={{ fontSize: 11, fontWeight: 550, color: C.dim, background: "rgba(255,255,255,0.06)", border: `1px solid #2E2E34`, padding: "2px 8px", borderRadius: 5 }}>{it.pageTitle}</span>
+                        {inboxGroup === "none" && (
+                          <span style={{ fontSize: 11, fontWeight: 550, color: C.dim, background: "rgba(255,255,255,0.06)", border: `1px solid #2E2E34`, padding: "2px 8px", borderRadius: 5 }}>{it.pageTitle}</span>
+                        )}
                         <span style={{ fontSize: 11.5, color: C.faint }}>{it.url}</span>
-                        <span style={{ fontSize: 11, color: C.faint2, background: "rgba(255,255,255,0.04)", padding: "2px 8px", borderRadius: 5 }}>{it.category}</span>
                       </div>
                     </div>
                     <div style={{ textAlign: "right", fontSize: 14, fontWeight: 600, color: C.amber }}>{it.savings}</div>

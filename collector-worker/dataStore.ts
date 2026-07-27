@@ -195,8 +195,14 @@ export class FdeDataStore {
     return this.updateState((draft) => {
       const page = draft.pages.find((item) => item.id === pageId);
       if (!page) throw new Error(`addMarker: page ${pageId} not found`);
-      const existing = page.markers.find((item) => item.id === input.id);
-      if (existing) return;
+      const existing = page.markers.find((item) =>
+        item.id === input.id || (!!input.recKey && item.recKey === input.recKey),
+      );
+      if (existing) {
+        Object.assign(existing, input, { id: existing.id, i: resolveMarkerIndex(page.history, input.date) });
+        mutate?.(draft, existing);
+        return;
+      }
       const marker: ChangeMarker = { ...input, i: resolveMarkerIndex(page.history, input.date) };
       page.markers = [...(page.markers ?? []), marker];
       mutate?.(draft, marker);
@@ -260,6 +266,7 @@ export class FdeDataStore {
 
     const beforeHistory = new Set(before.pages.flatMap((page) => page.history.map((night) => `${page.id}:${night.runId ?? night.i}`)));
     const beforeMarkers = new Map(before.pages.flatMap((page) => page.markers.map((marker) => [`${page.id}:${marker.id}`, JSON.stringify(marker)])));
+    const afterMarkerKeys = new Set(after.pages.flatMap((page) => page.markers.map((marker) => `${page.id}:${marker.id}`)));
     for (const page of after.pages) {
       for (const night of page.history) {
         if (beforeHistory.has(`${page.id}:${night.runId ?? night.i}`)) continue;
@@ -273,6 +280,13 @@ export class FdeDataStore {
           "INSERT OR REPLACE INTO markers (tenant, page_id, id, marker_json) VALUES (?, ?, ?, ?)",
         ).bind(this.tenant, page.id, marker.id, JSON.stringify(marker)));
       }
+    }
+    for (const key of beforeMarkers.keys()) {
+      if (afterMarkerKeys.has(key)) continue;
+      const separator = key.indexOf(":");
+      statements.push(this.bindings.DB.prepare(
+        "DELETE FROM markers WHERE tenant = ? AND page_id = ? AND id = ?",
+      ).bind(this.tenant, key.slice(0, separator), key.slice(separator + 1)));
     }
     await this.runStatements(statements);
   }

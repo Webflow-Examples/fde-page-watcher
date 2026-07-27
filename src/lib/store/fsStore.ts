@@ -255,7 +255,14 @@ class FsDataStore implements DataStore {
     return this.updateState(async (state) => {
       const page = state.pages.find((p) => p.id === pageId);
       if (!page) throw new Error(`addMarker: page ${pageId} not found`);
-      if (page.markers.some((item) => item.id === input.id)) return;
+      const existing = page.markers.find((item) =>
+        item.id === input.id || (!!input.recKey && item.recKey === input.recKey),
+      );
+      if (existing) {
+        Object.assign(existing, input, { id: existing.id, i: resolveMarkerIndex(page.history, input.date) });
+        mutate?.(state, existing);
+        return;
+      }
       const marker: ChangeMarker = { ...input, i: resolveMarkerIndex(page.history, input.date) };
       await this.appendLine(path.join(this.root, "markers", `${pageId}.jsonl`), marker);
       page.markers = [...(page.markers || []), marker];

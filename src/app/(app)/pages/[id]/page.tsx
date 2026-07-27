@@ -18,6 +18,7 @@ import { SelectMenu } from "@/components/select-menu";
 import type { SelectMenuOption } from "@/components/select-menu";
 import { DesktopIcon, MobileIcon, PlusIcon, RefreshIcon } from "@/components/icons";
 import { formatSuccessfulRunAt, lastSuccessfulRunAt } from "@/lib/collectionStatus";
+import { isTaskMarker, taskMarkerText } from "@/lib/taskMarkers";
 
 const PAGE_RANGE_OPTIONS: ReadonlyArray<SelectMenuOption<RangeDays>> = [
   { value: 3, label: "Last 3 days" },
@@ -555,11 +556,14 @@ function HistoryTab({
               <div style={{ fontWeight: 500 }}>{d.date}</div>
               <div style={{ fontSize: 12, display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 5 }}>
                 {markers.length === 0 ? <span style={{ color: "#4A4A50" }}>—</span> : markers.map((marker) => {
-                  const legacyRecKey = marker.text.startsWith("Acted:")
-                    ? store.recs.find((rec) => rec.pageId === page.id && `Acted: ${rec.title}` === marker.text)?.key
+                  const legacyRecKey = isTaskMarker(marker)
+                    ? store.recs.find((rec) =>
+                      rec.pageId === page.id
+                      && (`Acted: ${rec.title}` === marker.text || taskMarkerText(rec.title) === marker.text)
+                    )?.key
                     : undefined;
                   const recKey = marker.recKey ?? legacyRecKey;
-                  const custom = marker.source !== "task" && !recKey && !marker.text.startsWith("Acted:");
+                  const custom = !isTaskMarker(marker) && !recKey;
                   const color = custom ? C.green : C.violetSoft;
                   if (recKey) {
                     return (

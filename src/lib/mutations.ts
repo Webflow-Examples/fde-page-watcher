@@ -10,6 +10,7 @@ import { shortDate } from "./ui";
 import type { AgentIgnoreOverrideMode, AgentIgnoreScope, AppState, CollectionSchedule, Flag, PerformanceThresholds, RecStatus, ScoreByCategory, TaskStatus, WatchPage } from "./types";
 import { defaultNewPageFlag, flagCapacityError } from "./watchCapacity";
 import { applyWatchlistPageOrder, changePageFlagOrder, sortWatchlistPages } from "./watchlistOrder";
+import { removeTaskMarker } from "./taskMarkers";
 
 /**
  * Server-side domain mutations. Each executes inside the store's atomic
@@ -153,7 +154,10 @@ export function advanceTask(key: string, to: TaskStatus, dataStore: DataStore = 
     if (!rec) throw new Error(`advanceTask: rec ${key} not found`);
     rec.taskStatus = to;
     if (to === "done") rec.doneDate = rec.doneDate ?? shortDate();
-    if (to !== "done") rec.doneDate = null;
+    if (to !== "done") {
+      rec.doneDate = null;
+      removeTaskMarker(state, rec);
+    }
   }, dataStore);
 }
 

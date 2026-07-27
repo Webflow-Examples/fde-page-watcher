@@ -37,7 +37,7 @@ function ActionButtons({ t, advance }: { t: Rec; advance: (key: string, to: Task
 export default function TasksPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { recs, taskGroup, setTaskGroup, taskView, setTaskView, taskSort, sortTask, advanceTask, pathFor } = useStore();
+  const { recs, taskGroup, setTaskGroup, taskDescriptions, setTaskDescriptions, taskView, setTaskView, taskSort, sortTask, advanceTask, pathFor } = useStore();
   const dragKey = useRef<string | null>(null);
 
   const tasks = recs.filter((r) => r.status === "task");
@@ -103,6 +103,18 @@ export default function TasksPage() {
           <p style={{ margin: "8px 0 0", fontSize: 13.5, color: C.muted }}>Recommendations you&apos;ve committed to. Completing a task logs a change marker on its page and schedules the follow-up reports.</p>
         </div>
         <div className="page-controls" style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 12, color: C.faint }}>Descriptions</span>
+            <SegToggle
+              label="Task descriptions"
+              value={taskDescriptions}
+              onChange={setTaskDescriptions}
+              options={[
+                { value: "show", label: "Show" },
+                { value: "hide", label: "Hide" },
+              ]}
+            />
+          </div>
           <SegToggle label="Task view" value={taskView} onChange={setTaskView} options={[{ value: "kanban", label: "Columns" }, { value: "list", label: "List" }]} />
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: 12, color: C.faint, whiteSpace: "nowrap" }}>Group by</span>
@@ -133,8 +145,8 @@ export default function TasksPage() {
                   <div id={`task-${t.key}`} key={t.key} style={{ display: "grid", gridTemplateColumns: LIST_GRID, gap: 16, alignItems: "center", padding: "15px 22px", borderBottom: `1px solid ${C.rowBorder}`, background: linkedTaskKey === t.key ? "rgba(59,137,255,0.10)" : undefined }}>
                     <span style={{ justifySelf: "center", width: 9, height: 9, borderRadius: "50%", background: taskAccent(t.taskStatus) }} />
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 14, fontWeight: 600 }}>{t.title}</div>
-                      {t.aiSummary && <div style={{ fontSize: 12, color: C.muted, marginTop: 4, lineHeight: 1.45 }}>{t.aiSummary}</div>}
+                      <div style={{ fontSize: 14, fontWeight: 600 }}>{taskGroup === "rec" ? t.pageTitle : t.title}</div>
+                      {taskDescriptions === "show" && t.aiSummary && <div style={{ fontSize: 12, color: C.muted, marginTop: 4, lineHeight: 1.45 }}>{t.aiSummary}</div>}
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
                         {pageChip(t)}
                         <span style={{ fontSize: 11.5, fontWeight: 550, color: taskAccent(t.taskStatus) }}>{taskLabel(t.taskStatus)}</span>
@@ -191,8 +203,8 @@ export default function TasksPage() {
                               style={{ background: C.panel2, border: `1px solid ${C.border2}`, borderRadius: 11, padding: 14, cursor: "grab" }}
                             >
                               <div style={{ marginBottom: 9 }}>{pageChip(t)}</div>
-                              <div style={{ fontSize: 13.5, fontWeight: 600, lineHeight: 1.35 }}>{t.title}</div>
-                              {t.aiSummary && <div style={{ fontSize: 12, color: C.muted, marginTop: 6, lineHeight: 1.45 }}>{t.aiSummary}</div>}
+                              <div style={{ fontSize: 13.5, fontWeight: 600, lineHeight: 1.35 }}>{taskGroup === "rec" ? t.pageTitle : t.title}</div>
+                              {taskDescriptions === "show" && t.aiSummary && <div style={{ fontSize: 12, color: C.muted, marginTop: 6, lineHeight: 1.45 }}>{t.aiSummary}</div>}
                               <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 11 }}>
                                 <span style={{ fontSize: 11, fontWeight: 600, color: C.amber, background: "rgba(255,154,61,0.13)", padding: "2px 8px", borderRadius: 5 }}>{t.savings} saved</span>
                                 <span style={{ fontSize: 11, fontWeight: 600, color: C.dim, background: "rgba(255,255,255,0.06)", padding: "2px 8px", borderRadius: 5 }}>{t.estTime}</span>

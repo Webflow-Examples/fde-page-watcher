@@ -138,6 +138,54 @@ describe("atomic tenant updates", () => {
     expect(state.pages[0].baselineCapturedAt).toBe("2026-07-20T12:00:00.000Z");
   });
 
+  it("removes a completed task marker and its follow-ups when the task is reopened", async () => {
+    const dataStore = await storeWithState();
+    await dataStore.updateState((state) => {
+      state.recs[0].taskStatus = "done";
+      state.recs[0].doneDate = "2026-07-20";
+      state.pages[0].markers = [
+        { id: "task-marker", i: -1, date: "2026-07-20", text: "Completed: Fix it", source: "task", recKey: "page:rec" },
+        { id: "manual-marker", i: -1, date: "2026-07-19", text: "Manual deployment", source: "custom" },
+      ];
+      state.followUps = [{
+        id: "follow-up",
+        pageId: "page",
+        markerId: "task-marker",
+        markerText: "Completed: Fix it",
+        markerDate: "2026-07-20",
+        interval: "2d",
+        dueISO: "2026-07-22T00:00:00.000Z",
+        sent: false,
+        attempts: 0,
+      }];
+    });
+
+    const state = await advanceTask("page:rec", "in-progress", dataStore);
+
+    expect(state.recs[0].taskStatus).toBe("in-progress");
+    expect(state.recs[0].doneDate).toBeNull();
+    expect(state.pages[0].markers.map((marker) => marker.id)).toEqual(["manual-marker"]);
+    expect(state.followUps).toEqual([]);
+  });
+
+  it("keeps one task marker per task when completion is retried", async () => {
+    const dataStore = await storeWithState();
+    const first = { id: "first", date: "2026-07-20", text: "Completed: Fix it", source: "task" as const, recKey: "page:rec" };
+    const retry = { id: "retry", date: "2026-07-21", text: "Completed: Fix it", source: "task" as const, recKey: "page:rec" };
+
+    await dataStore.addMarker("page", first, (state) => {
+      state.recs[0].taskStatus = "done";
+      state.recs[0].doneDate = first.date;
+    });
+    await dataStore.addMarker("page", retry, (state) => {
+      state.recs[0].doneDate = retry.date;
+    });
+    const state = await dataStore.getState();
+
+    expect(state.pages[0].markers).toHaveLength(1);
+    expect(state.pages[0].markers[0]).toMatchObject({ id: "first", date: "2026-07-21", text: "Completed: Fix it" });
+  });
+
   it("persists page-specific agent-readiness ignores", async () => {
     const dataStore = await storeWithState();
     const check = { group: "API / Auth / MCP", name: "WebMCP", pass: false };
