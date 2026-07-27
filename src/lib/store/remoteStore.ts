@@ -6,6 +6,7 @@ import { resolveMarkerIndex } from "../followups";
 import { getEnv } from "../env";
 import type { DataStore } from "./fsStore";
 import { normalizeState } from "./normalize";
+import type { CruxPageEvidence } from "../crux";
 
 interface VersionedStateResponse {
   state: AppState;
@@ -58,6 +59,12 @@ export class RemoteDataStore implements DataStore {
 
   async getState(): Promise<AppState> {
     return structuredClone((await this.versionedState()).state);
+  }
+
+  async getCruxEvidence(): Promise<CruxPageEvidence[]> {
+    const response = await this.request(`/data/${segment(this.tenant)}/crux`);
+    if (!response.ok) throw new Error(`FDE CrUX read ${response.status}: ${(await response.text()).slice(0, 300)}`);
+    return (await response.json() as { evidence: CruxPageEvidence[] }).evidence;
   }
 
   async updateState(mutate: (state: AppState) => void | Promise<void>): Promise<AppState> {

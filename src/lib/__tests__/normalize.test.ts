@@ -18,6 +18,7 @@ describe("state normalization", () => {
 
     expect(normalized.agentIgnoreDefaults).toEqual({ checks: [], groups: [] });
     expect(normalized.performanceThresholds).toEqual(DEFAULT_PERFORMANCE_THRESHOLDS);
+    expect(normalized.visitorExperienceVisible).toBe(false);
     expect(normalized.pages[0].agentIgnores).toEqual({ checks: [checkKey], groups: [] });
     expect(normalized.pages[0].agentIgnoreRestores).toEqual({ checks: [], groups: [] });
   });

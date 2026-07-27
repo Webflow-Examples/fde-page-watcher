@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { AppState, ChangeMarker, Night, WatchPage } from "../types";
+import type { CruxPageEvidence } from "../crux";
 import { buildInitialState } from "../seed";
 import { captureAgentReadiness } from "../agentScoring";
 import { normalizePerformanceThresholds } from "../performanceThresholds";
@@ -27,6 +28,8 @@ export { normalizeState } from "./normalize";
 export interface DataStore {
   readonly tenant: string;
   getState(): Promise<AppState>;
+  /** Weekly rolling visitor-experience evidence, stored separately from PSI history. */
+  getCruxEvidence(): Promise<CruxPageEvidence[]>;
   /**
    * Atomically re-read, mutate, and commit the tenant state. Filesystem
    * adapters serialize this callback; durable adapters can map it to a
@@ -165,6 +168,10 @@ class FsDataStore implements DataStore {
 
   async getState(): Promise<AppState> {
     return this.readState();
+  }
+
+  async getCruxEvidence(): Promise<CruxPageEvidence[]> {
+    return [];
   }
 
   async updateState(mutate: (state: AppState) => void | Promise<void>): Promise<AppState> {

@@ -178,6 +178,7 @@ export function buildSeedState(): AppState {
   return {
     pages,
     recs,
+    visitorExperienceVisible: false,
     agentIgnoreDefaults: { checks: [], groups: [] },
     performanceThresholds: { ...DEFAULT_PERFORMANCE_THRESHOLDS },
     jobs: [],
@@ -191,6 +192,7 @@ export function buildInitialState(mode: string | undefined = process.env.DATASET
     ? {
       pages: [],
       recs: [],
+      visitorExperienceVisible: false,
       agentIgnoreDefaults: { checks: [], groups: [] },
       performanceThresholds: { ...DEFAULT_PERFORMANCE_THRESHOLDS },
       jobs: [],

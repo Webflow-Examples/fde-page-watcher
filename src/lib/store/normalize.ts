@@ -8,6 +8,7 @@ import { reconcileTaskMarkers } from "../taskMarkers";
 
 /** Apply compatible, idempotent upgrades when reading persisted state. */
 export function normalizeState(state: AppState): AppState {
+  state.visitorExperienceVisible = state.visitorExperienceVisible === true;
   state.agentIgnoreDefaults = normalizeAgentIgnoreSettings(state.agentIgnoreDefaults);
   state.performanceThresholds = normalizePerformanceThresholds(state.performanceThresholds);
   if (normalizeWatchCapacity(state.pages)) delete state.watcherNote;

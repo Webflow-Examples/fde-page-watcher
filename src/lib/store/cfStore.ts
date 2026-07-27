@@ -8,6 +8,12 @@ import { resolveMarkerIndex } from "../followups";
 import type { DataStore } from "./fsStore";
 import { normalizeState } from "./normalize";
 import { getEnv } from "../env";
+import {
+  cruxEvidenceFromRows,
+  type CruxPageEvidence,
+  type CruxSnapshotRow,
+  type CruxStatusRow,
+} from "../crux";
 
 export interface CfEnv {
   DB: D1Database;
@@ -53,6 +59,23 @@ class CfDataStore implements DataStore {
       return this.getState();
     }
     return normalizeState(JSON.parse(row.json) as AppState);
+  }
+
+  async getCruxEvidence(): Promise<CruxPageEvidence[]> {
+    const { DB } = getLocalCloudflareBindings();
+    const [snapshots, statuses] = await Promise.all([
+      DB.prepare(
+        "SELECT page_id, form_factor, scope, requested_url, effective_url, collection_start, collection_end, " +
+          "fetched_at, lcp_p75_ms, inp_p75_ms, cls_p75, ttfb_p75_ms, metrics_json " +
+          "FROM crux_snapshots WHERE tenant = ? ORDER BY page_id, form_factor, collection_end DESC",
+      ).bind(this.tenant).all<CruxSnapshotRow>(),
+      DB.prepare(
+        "SELECT page_id, form_factor, status, effective_scope, latest_collection_end, last_attempted_at, " +
+          "last_succeeded_at, error_code, error_message FROM crux_status WHERE tenant = ? " +
+          "ORDER BY page_id, form_factor",
+      ).bind(this.tenant).all<CruxStatusRow>(),
+    ]);
+    return cruxEvidenceFromRows(snapshots.results, statuses.results);
   }
 
   /**

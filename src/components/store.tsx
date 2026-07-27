@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { DEFAULT_RANGE_DAYS } from "@/lib/types";
 import type { AgentIgnoreOverrideMode, AgentIgnoreScope, AppState, CategoryKey, CollectionSchedule, Flag, PerformanceThresholds, RangeDays, ScoreByCategory, Strategy } from "@/lib/types";
+import type { CruxPageEvidence } from "@/lib/crux";
 import { updateAgentIgnoreOverride, updateAgentIgnoreSettings } from "@/lib/agentScoring";
 import { collectionSettlementMessage, hasActiveCollections, startCollectionPolling } from "@/lib/collectionPolling";
 import { normalizePerformanceThresholds } from "@/lib/performanceThresholds";
@@ -31,6 +32,7 @@ export interface ReportData {
 }
 
 interface StoreValue extends AppState {
+  visitorExperience: CruxPageEvidence[];
   basePath: string;
   pathFor: (path: string) => string;
   // global strategy toggle
@@ -92,6 +94,7 @@ interface StoreValue extends AppState {
   setDefaultAgentIgnore: (scope: AgentIgnoreScope, value: string, ignored: boolean) => void;
   updatePerformanceThresholds: (thresholds: PerformanceThresholds) => void;
   updateCollectionSchedule: (schedule: CollectionSchedule) => void;
+  setVisitorExperienceVisible: (visible: boolean) => void;
   removePage: (id: string) => void;
   saveTask: (key: string) => void;
   ignoreRec: (key: string) => void;
@@ -140,7 +143,17 @@ function pendingOptimisticPage(id: string, title: string, url: string, flag: Fla
   };
 }
 
-export function StoreProvider({ initial, basePath = "", children }: { initial: AppState; basePath?: string; children: React.ReactNode }) {
+export function StoreProvider({
+  initial,
+  initialVisitorExperience = [],
+  basePath = "",
+  children,
+}: {
+  initial: AppState;
+  initialVisitorExperience?: CruxPageEvidence[];
+  basePath?: string;
+  children: React.ReactNode;
+}) {
   const [data, setData] = useState<AppState>(initial);
   const dataRef = useRef<AppState>(initial);
   const mutationQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -444,6 +457,21 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
     [mutate],
   );
 
+  const setVisitorExperienceVisible = useCallback(
+    (visible: boolean) => {
+      const cur = dataRef.current;
+      mutate(
+        { ...cur, visitorExperienceVisible: visible },
+        { url: "/api/settings/visitor-experience", body: { visible } },
+        {
+          success: `Visitor experience data ${visible ? "shown" : "hidden"}`,
+          failure: "Couldn't update visitor experience visibility — try again",
+        },
+      );
+    },
+    [mutate],
+  );
+
   const removePage = useCallback(
     (id: string) => {
       const cur = dataRef.current;
@@ -683,6 +711,7 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
 
   const value: StoreValue = {
     ...data,
+    visitorExperience: initialVisitorExperience,
     basePath,
     pathFor,
     strategy,
@@ -735,6 +764,7 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
     setDefaultAgentIgnore,
     updatePerformanceThresholds,
     updateCollectionSchedule,
+    setVisitorExperienceVisible,
     removePage,
     saveTask,
     ignoreRec,

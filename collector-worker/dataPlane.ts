@@ -3,6 +3,7 @@ import type { AppState } from "../src/lib/types";
 
 type DataRoute =
   | { kind: "state"; tenant: string }
+  | { kind: "crux"; tenant: string }
   | { kind: "report"; tenant: string; pageId: string; key: string };
 
 function decode(value: string): string | null {
@@ -23,6 +24,11 @@ function route(pathname: string): DataRoute | null {
   if (state) {
     const tenant = decode(state[1]);
     return safeIdentifier(tenant, true) ? { kind: "state", tenant } : null;
+  }
+  const crux = pathname.match(/^\/data\/([^/]+)\/crux$/);
+  if (crux) {
+    const tenant = decode(crux[1]);
+    return safeIdentifier(tenant, true) ? { kind: "crux", tenant } : null;
   }
   const report = pathname.match(/^\/data\/([^/]+)\/reports\/([^/]+)\/([^/]+)$/);
   if (!report) return null;
@@ -65,6 +71,11 @@ export async function handleDataPlaneRequest(
   const matched = route(url.pathname);
   if (!matched) return null;
   const store = createFdeStore(matched.tenant, bindings);
+  if (matched.kind === "crux") {
+    if (request.method !== "GET") return Response.json({ error: "method not allowed" }, { status: 405 });
+    return noStore(Response.json({ evidence: await store.getCruxEvidence() }));
+  }
+
 
   if (matched.kind === "state") {
     if (request.method === "GET") {

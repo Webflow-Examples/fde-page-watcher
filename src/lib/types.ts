@@ -362,6 +362,8 @@ export interface WatcherNote {
 export interface AppState {
   pages: WatchPage[];
   recs: Rec[];
+  /** Presentation-only feature flag. CrUX collection continues while hidden. */
+  visitorExperienceVisible?: boolean;
   agentIgnoreDefaults?: AgentIgnoreSettings;
   performanceThresholds?: PerformanceThresholds;
   collectionSchedule?: CollectionSchedule;

@@ -4,6 +4,12 @@ import { resolveMarkerIndex } from "../src/lib/followups";
 import { mediansOf, pageTrend } from "../src/lib/scoring";
 import { normalizeState } from "../src/lib/store/normalize";
 import type { AppState, ChangeMarker, Night } from "../src/lib/types";
+import {
+  cruxEvidenceFromRows,
+  type CruxPageEvidence,
+  type CruxSnapshotRow,
+  type CruxStatusRow,
+} from "../src/lib/crux";
 
 export interface FdeStoreBindings {
   DB: D1Database;
@@ -69,6 +75,22 @@ export class FdeDataStore {
     const written = await this.writeVersionedState(seeded, null);
     if (written.value) return written.value;
     return written.conflict ?? this.readVersionedState(true);
+  }
+
+  async getCruxEvidence(): Promise<CruxPageEvidence[]> {
+    const [snapshots, statuses] = await Promise.all([
+      this.bindings.DB.prepare(
+        "SELECT page_id, form_factor, scope, requested_url, effective_url, collection_start, collection_end, " +
+          "fetched_at, lcp_p75_ms, inp_p75_ms, cls_p75, ttfb_p75_ms, metrics_json " +
+          "FROM crux_snapshots WHERE tenant = ? ORDER BY page_id, form_factor, collection_end DESC",
+      ).bind(this.tenant).all<CruxSnapshotRow>(),
+      this.bindings.DB.prepare(
+        "SELECT page_id, form_factor, status, effective_scope, latest_collection_end, last_attempted_at, " +
+          "last_succeeded_at, error_code, error_message FROM crux_status WHERE tenant = ? " +
+          "ORDER BY page_id, form_factor",
+      ).bind(this.tenant).all<CruxStatusRow>(),
+    ]);
+    return cruxEvidenceFromRows(snapshots.results, statuses.results);
   }
 
   /** Compare-and-swap a complete state snapshot. `null` means create only. */

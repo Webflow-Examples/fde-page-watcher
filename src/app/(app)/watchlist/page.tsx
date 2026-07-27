@@ -327,6 +327,8 @@ function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
     updatePerformanceThresholds,
     collectionSchedule,
     updateCollectionSchedule,
+    visitorExperienceVisible,
+    setVisitorExperienceVisible,
   } = useStore();
   const orderedPages = useMemo(() => sortWatchlistPages(pages), [pages]);
   const defaultIgnores = normalizeAgentIgnoreSettings(agentIgnoreDefaults);
@@ -649,6 +651,26 @@ function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
               options={[
                 { value: "desktop", label: "Desktop first" },
                 { value: "mobile", label: "Mobile first" },
+              ]}
+            />
+          </div>
+        </section>
+
+        <section aria-labelledby="visitor-experience-heading" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 24, background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, padding: "17px 20px", marginBottom: 16 }}>
+          <div>
+            <div id="visitor-experience-heading" style={{ fontSize: 13.5, fontWeight: 600 }}>Visitor experience data</div>
+            <div style={{ maxWidth: 720, fontSize: 12, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>
+              Show or hide Chrome visitor measurements throughout the app. Collection continues weekly while this is hidden.
+            </div>
+          </div>
+          <div style={{ flex: "none" }}>
+            <SegToggle
+              label="Visitor experience data visibility"
+              value={visitorExperienceVisible ? "visible" : "hidden"}
+              onChange={(value) => setVisitorExperienceVisible(value === "visible")}
+              options={[
+                { value: "visible", label: "Visible" },
+                { value: "hidden", label: "Hidden" },
               ]}
             />
           </div>
