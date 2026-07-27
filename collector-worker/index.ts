@@ -23,7 +23,14 @@ import { handleDataPlaneRequest } from "./dataPlane";
 import { dispatchFdeNightly, type DispatchPayload } from "./nightly";
 import { runWeeklyDataAudit, WEEKLY_AUDIT_CRON, WEEKLY_AUDIT_LATEST_KEY } from "./weeklyAudit";
 import { evaluateCohortAnomaly } from "../src/lib/cohortAnomaly";
+import {
+  collectCruxEvidence,
+  CRUX_COLLECTION_CRON,
+  CRUX_SCHEDULER_STATUS_KEY,
+  type CruxCollectionResult,
+} from "./crux";
 
+const NIGHTLY_COLLECTION_CRON = "*/15 * * * *";
 const NIGHTLY_SCHEDULER_STATUS_KEY = "scheduler/latest.json";
 const AUDIT_SCHEDULER_STATUS_KEY = "scheduler/audit-latest.json";
 
@@ -423,7 +430,10 @@ function noStore(response: Response): Response {
 async function handleRequest(request: Request, env: Env): Promise<Response> {
     const pathname = new URL(request.url).pathname;
     if (request.method === "GET" && pathname === "/health") {
-      const latestAudit = await env.REPORTS.head(WEEKLY_AUDIT_LATEST_KEY).catch(() => null);
+      const [latestAudit, latestCrux] = await Promise.all([
+        env.REPORTS.head(WEEKLY_AUDIT_LATEST_KEY).catch(() => null),
+        env.REPORTS.head(CRUX_SCHEDULER_STATUS_KEY).catch(() => null),
+      ]);
       return noStore(Response.json({
         ok: true,
         service: "fde-page-collector",
@@ -437,14 +447,25 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
               updatedAt: latestAudit.uploaded.toISOString(),
             }
           : { status: "pending" },
+        crux: latestCrux
+          ? {
+              status: latestCrux.customMetadata?.status ?? "unknown",
+              updatedAt: latestCrux.uploaded.toISOString(),
+              available: Number(latestCrux.customMetadata?.available ?? 0),
+              partial: Number(latestCrux.customMetadata?.partial ?? 0),
+              insufficient: Number(latestCrux.customMetadata?.insufficient ?? 0),
+              errors: Number(latestCrux.customMetadata?.errors ?? 0),
+            }
+          : { status: "pending" },
       }));
     }
     const route = jobRoute(pathname);
     const isDispatch = request.method === "POST" && (pathname === "/jobs" || pathname === "/jobs/batch");
     const isNightly = request.method === "POST" && pathname === "/nightly";
+    const isCruxCollection = request.method === "POST" && pathname === "/crux/collect";
     const isAuditLatest = request.method === "GET" && pathname === "/audits/weekly/latest";
     const isDataPlane = pathname.startsWith("/data/");
-    if (!isDispatch && !route && !isNightly && !isAuditLatest && !isDataPlane) {
+    if (!isDispatch && !route && !isNightly && !isCruxCollection && !isAuditLatest && !isDataPlane) {
       return Response.json({ error: "not found" }, { status: 404 });
     }
     if (!(await sameValue(request.headers.get("authorization") ?? "", `Bearer ${env.CRON_SECRET}`))) {
@@ -452,6 +473,27 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     }
 
     if (isNightly) return noStore(Response.json(await dispatchFdeNightly(env), { status: 202 }));
+    if (isCruxCollection) {
+      const observedAt = new Date().toISOString();
+      const result = await collectCruxEvidence(env);
+      const status = result.ok ? "succeeded" : "partial";
+      await env.REPORTS.put(CRUX_SCHEDULER_STATUS_KEY, JSON.stringify({
+        status,
+        trigger: "manual",
+        observedAt,
+        response: result,
+      }), {
+        httpMetadata: { contentType: "application/json" },
+        customMetadata: {
+          status,
+          available: String(result.available),
+          partial: String(result.partial),
+          insufficient: String(result.insufficient),
+          errors: String(result.errors),
+        },
+      });
+      return noStore(Response.json(result));
+    }
     if (isAuditLatest) {
       const audit = await env.REPORTS.get(WEEKLY_AUDIT_LATEST_KEY);
       if (!audit) return Response.json({ error: "audit not found" }, { status: 404 });
@@ -534,21 +576,35 @@ const worker = {
   },
   async scheduled(controller: ScheduledController, env: Env): Promise<void> {
     const observedAt = new Date().toISOString();
-    const isWeeklyAudit = controller.cron === WEEKLY_AUDIT_CRON;
-    const scheduler = isWeeklyAudit ? "weekly data audit" : "nightly collection";
-    const statusKey = isWeeklyAudit ? AUDIT_SCHEDULER_STATUS_KEY : NIGHTLY_SCHEDULER_STATUS_KEY;
+    const kind = controller.cron === WEEKLY_AUDIT_CRON
+      ? "audit"
+      : controller.cron === CRUX_COLLECTION_CRON
+        ? "crux"
+        : controller.cron === NIGHTLY_COLLECTION_CRON
+          ? "nightly"
+          : null;
+    if (!kind) throw new Error(`Unsupported scheduler cron: ${controller.cron}`);
+    const scheduler = kind === "audit"
+      ? "weekly data audit"
+      : kind === "crux" ? "weekly CrUX collection" : "nightly collection";
+    const statusKey = kind === "audit"
+      ? AUDIT_SCHEDULER_STATUS_KEY
+      : kind === "crux" ? CRUX_SCHEDULER_STATUS_KEY : NIGHTLY_SCHEDULER_STATUS_KEY;
     try {
       let response: unknown;
-      if (isWeeklyAudit) {
+      if (kind === "audit") {
         const audit = await runWeeklyDataAudit(env, new Date(controller.scheduledTime));
         response = { auditId: audit.auditId, health: audit.health, totals: audit.totals };
+      } else if (kind === "crux") {
+        response = await collectCruxEvidence(env);
       } else {
         const confirmation = await dispatchFdeNightly(env, { confirmationOnly: true });
         const nightly = await dispatchFdeNightly(env, { dueOnly: true });
         response = { confirmation, nightly };
       }
+      const cruxResponse = kind === "crux" ? response as CruxCollectionResult : null;
       const record = {
-        status: "succeeded",
+        status: cruxResponse && !cruxResponse.ok ? "partial" : "succeeded",
         cron: controller.cron,
         scheduledAt: new Date(controller.scheduledTime).toISOString(),
         observedAt,
@@ -556,11 +612,22 @@ const worker = {
       };
       await env.REPORTS.put(statusKey, JSON.stringify(record), {
         httpMetadata: { contentType: "application/json" },
+        ...(cruxResponse ? {
+          customMetadata: {
+            status: record.status,
+            available: String(cruxResponse.available),
+            partial: String(cruxResponse.partial),
+            insufficient: String(cruxResponse.insufficient),
+            errors: String(cruxResponse.errors),
+          },
+        } : {}),
       });
       console.log(JSON.stringify({ message: `${scheduler} scheduler completed`, ...record }));
     } catch (error) {
-      const errorMessage = isWeeklyAudit
+      const errorMessage = kind === "audit"
         ? "Weekly data audit execution failed"
+        : kind === "crux"
+          ? "Weekly CrUX collection failed"
         : error instanceof Error ? error.message : String(error);
       const record = {
         status: "failed",
@@ -572,6 +639,15 @@ const worker = {
       try {
         await env.REPORTS.put(statusKey, JSON.stringify(record), {
           httpMetadata: { contentType: "application/json" },
+          ...(kind === "crux" ? {
+            customMetadata: {
+              status: "failed",
+              available: "0",
+              partial: "0",
+              insufficient: "0",
+              errors: "1",
+            },
+          } : {}),
         });
       } catch (statusError) {
         console.error(JSON.stringify({
