@@ -4,6 +4,7 @@ import { normalizePerformanceThresholds } from "../performanceThresholds";
 import { pageTrend } from "../scoring";
 import { normalizeWatchCapacity } from "../watchCapacity";
 import { sortWatchlistPages } from "../watchlistOrder";
+import { reconcileTaskMarkers } from "../taskMarkers";
 
 /** Apply compatible, idempotent upgrades when reading persisted state. */
 export function normalizeState(state: AppState): AppState {
@@ -41,6 +42,7 @@ export function normalizeState(state: AppState): AppState {
     ...followUp,
     id: followUp.id ?? `legacy:${followUp.pageId}:${followUp.markerId}:${followUp.interval}:${followUp.dueISO}`,
   }));
+  reconcileTaskMarkers(state);
   state.jobs = state.jobs ?? [];
   return state;
 }

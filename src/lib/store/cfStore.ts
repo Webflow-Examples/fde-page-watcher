@@ -82,6 +82,7 @@ class CfDataStore implements DataStore {
 
       const state = normalizeState(JSON.parse(row.json) as AppState);
       const jobsBefore = structuredClone(state.jobs ?? []);
+      const markersBefore = new Set(state.pages.flatMap((page) => page.markers.map((marker) => `${page.id}:${marker.id}`)));
       await mutate(state);
       const result = await DB.prepare(
         "UPDATE state SET json = ?, version = version + 1, updated_at = ? WHERE tenant = ? AND version = ?",
@@ -95,6 +96,15 @@ class CfDataStore implements DataStore {
           DB.prepare("INSERT OR REPLACE INTO markers (tenant, page_id, id, marker_json) VALUES (?, ?, ?, ?)")
             .bind(this.tenant, page.id, marker.id, JSON.stringify(marker)),
         ));
+        const markersAfter = new Set(state.pages.flatMap((page) => page.markers.map((marker) => `${page.id}:${marker.id}`)));
+        for (const key of markersBefore) {
+          if (markersAfter.has(key)) continue;
+          const separator = key.indexOf(":");
+          markerStatements.push(
+            DB.prepare("DELETE FROM markers WHERE tenant = ? AND page_id = ? AND id = ?")
+              .bind(this.tenant, key.slice(0, separator), key.slice(separator + 1)),
+          );
+        }
         for (const statement of markerStatements) await statement.run();
         return structuredClone(state);
       }
@@ -178,8 +188,12 @@ class CfDataStore implements DataStore {
     const state = await this.updateState((draft) => {
       const page = draft.pages.find((item) => item.id === pageId);
       if (!page) throw new Error(`addMarker: page ${pageId} not found`);
-      const existing = page.markers.find((item) => item.id === input.id);
+      const existing = page.markers.find((item) =>
+        item.id === input.id || (!!input.recKey && item.recKey === input.recKey),
+      );
       if (existing) {
+        Object.assign(existing, input, { id: existing.id, i: resolveMarkerIndex(page.history, input.date) });
+        mutate?.(draft, existing);
         commit.marker = existing;
         return;
       }

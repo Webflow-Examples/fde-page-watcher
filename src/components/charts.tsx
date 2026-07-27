@@ -6,6 +6,7 @@ import { agentReadinessHistoryPoints } from "@/lib/agentHistory";
 import type { PreviousPeriodMedian } from "@/lib/scoring";
 import { formatHistoryTooltipDate, placeMarkerLabelRows, plottedSparklineSeries, snappedHistoryIndex } from "@/lib/charting";
 import { C } from "@/lib/ui";
+import { isTaskMarker } from "@/lib/taskMarkers";
 
 const HISTORY_CHART_DEFAULT_WIDTH = 900;
 const HISTORY_CATEGORY_LABELS: Record<CategoryKey, string> = {
@@ -215,7 +216,7 @@ export function HistoryChart({
           const markerX = x(markerIndex);
           const plotWidth = W - padL - padR;
           const nearRightEdge = markerX >= padL + plotWidth * 0.75;
-          const custom = mk.source !== "task" && !mk.recKey && !mk.text.startsWith("Acted:");
+          const custom = !isTaskMarker(mk);
           const markerColor = custom ? C.green : "#9564FF";
           return (
             <g key={`mk${k}`}>
@@ -244,7 +245,7 @@ export function HistoryChart({
       {(markers || []).map((mk) => {
         const markerIndex = h.findIndex((night) => night.i === mk.i);
         if (markerIndex < 0) return null;
-        const custom = mk.source !== "task" && !mk.recKey && !mk.text.startsWith("Acted:");
+        const custom = !isTaskMarker(mk);
         return <FixedChartDot key={mk.id} kind="history-marker" x={x(markerIndex)} y={padT - 4} viewWidth={W} viewHeight={H} radius={3.5} color={custom ? C.green : "#9564FF"} />;
       })}
       {hoveredNight && hoveredMedian !== null && hoveredX !== null && (

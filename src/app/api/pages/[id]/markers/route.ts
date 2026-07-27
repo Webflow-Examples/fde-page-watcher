@@ -4,6 +4,7 @@ import { getStore } from "@/lib/store";
 import { resolveMarkerIndex, scheduleFollowUps } from "@/lib/followups";
 import { isoDate, normalizeISODate } from "@/lib/ui";
 import type { TaskStatus } from "@/lib/types";
+import { isTaskMarker, taskMarkerText } from "@/lib/taskMarkers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,7 +32,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const marker = {
     id: randomUUID(),
     date,
-    text: body.text.trim(),
+    text: body.recKey ? taskMarkerText(body.text.trim().replace(/^(?:Acted|Completed):\s*/, "")) : body.text.trim(),
     source: body.recKey ? "task" as const : "custom" as const,
     ...(body.recKey ? { recKey: body.recKey } : {}),
   };
@@ -40,12 +41,29 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const state = await getStore().addMarker(id, marker, (draft, committed) => {
       if (body.recKey) {
         const rec = draft.recs.find((item) => item.key === body.recKey);
-        if (rec) {
-          rec.taskStatus = body.taskStatus ?? rec.taskStatus;
-          rec.doneDate = body.taskStatus === "done" ? date : rec.doneDate;
-        }
+        if (!rec) throw new Error(`task ${body.recKey} not found`);
+        if (body.taskStatus !== "done") throw new Error("task marker requires a completed task");
+        rec.taskStatus = "done";
+        rec.doneDate = date;
       }
-      draft.followUps = [...(draft.followUps ?? []), ...scheduleFollowUps(id, committed)];
+      const scheduled = scheduleFollowUps(id, committed);
+      const existingByInterval = new Map(
+        (draft.followUps ?? [])
+          .filter((followUp) => followUp.markerId === committed.id)
+          .map((followUp) => [followUp.interval, followUp]),
+      );
+      const missing: ReturnType<typeof scheduleFollowUps> = [];
+      for (const desired of scheduled) {
+        const existing = existingByInterval.get(desired.interval);
+        if (!existing) {
+          missing.push(desired);
+          continue;
+        }
+        existing.markerText = desired.markerText;
+        existing.markerDate = desired.markerDate;
+        existing.dueISO = desired.dueISO;
+      }
+      draft.followUps = [...(draft.followUps ?? []), ...missing];
     });
     return NextResponse.json({ state });
   } catch (error) {
@@ -69,7 +87,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       if (!page) throw new Error(`page ${id} not found`);
       const marker = page.markers.find((item) => item.id === body.markerId);
       if (!marker) throw new Error(`marker ${body.markerId} not found`);
-      if (marker.source === "task" || marker.recKey || marker.text.startsWith("Acted:")) throw new Error("task markers cannot be edited");
+      if (isTaskMarker(marker)) throw new Error("task markers cannot be edited");
       marker.text = text;
       marker.date = date;
       marker.i = resolveMarkerIndex(page.history, date);
@@ -82,6 +100,29 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
           ? new Date(new Date(`${date}T00:00:00.000Z`).getTime() + days * 86_400_000).toISOString()
           : followUp.dueISO;
       }
+    });
+    return NextResponse.json({ state });
+  } catch (error) {
+    const message = String(error);
+    return NextResponse.json({ error: message }, { status: message.includes("not found") ? 404 : 400 });
+  }
+}
+
+export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const body = (await req.json().catch(() => ({}))) as { markerId?: string };
+  if (!body.markerId) {
+    return NextResponse.json({ error: "marker id is required" }, { status: 400 });
+  }
+  try {
+    const state = await getStore().updateState((draft) => {
+      const page = draft.pages.find((item) => item.id === id);
+      if (!page) throw new Error(`page ${id} not found`);
+      const marker = page.markers.find((item) => item.id === body.markerId);
+      if (!marker) throw new Error(`marker ${body.markerId} not found`);
+      if (isTaskMarker(marker)) throw new Error("task markers are controlled by task completion");
+      page.markers = page.markers.filter((item) => item.id !== marker.id);
+      draft.followUps = (draft.followUps ?? []).filter((followUp) => followUp.markerId !== marker.id);
     });
     return NextResponse.json({ state });
   } catch (error) {

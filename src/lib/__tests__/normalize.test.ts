@@ -45,4 +45,37 @@ describe("state normalization", () => {
     normalized.pages[0].agentIgnores = { checks: [], groups: [] };
     expect(normalizeState(normalized).pages[0].history[0].agentReadiness?.percent).toBe(100);
   });
+
+  it("reconciles task markers from completed state and completed date", () => {
+    const state = buildSeedState();
+    const completed = state.recs.find((rec) => rec.key === "designer:r2")!;
+    const open = state.recs.find((rec) => rec.key === "pricing:r1")!;
+    const completedPage = state.pages.find((page) => page.id === completed.pageId)!;
+    const openPage = state.pages.find((page) => page.id === open.pageId)!;
+    completedPage.markers.push({
+      id: "legacy-completed",
+      i: 0,
+      date: "Jul 1",
+      text: `Acted: ${completed.title}`,
+    });
+    openPage.markers.push({
+      id: "stale-open",
+      i: 0,
+      date: "Jul 1",
+      text: `Acted: ${open.title}`,
+    });
+
+    const normalized = normalizeState(state);
+    const normalizedCompletedPage = normalized.pages.find((page) => page.id === completed.pageId)!;
+    const normalizedOpenPage = normalized.pages.find((page) => page.id === open.pageId)!;
+    const completedMarker = normalizedCompletedPage.markers.find((marker) => marker.recKey === completed.key);
+
+    expect(completedMarker).toMatchObject({
+      id: "legacy-completed",
+      date: completed.doneDate,
+      text: `Completed: ${completed.title}`,
+      source: "task",
+    });
+    expect(normalizedOpenPage.markers.some((marker) => marker.id === "stale-open")).toBe(false);
+  });
 });

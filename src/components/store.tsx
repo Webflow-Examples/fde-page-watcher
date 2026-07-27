@@ -10,6 +10,7 @@ import { localISODate } from "@/lib/ui";
 import { withBasePath } from "@/lib/paths";
 import { defaultNewPageFlag, flagCapacityError } from "@/lib/watchCapacity";
 import { applyWatchlistPageOrder, changePageFlagOrder } from "@/lib/watchlistOrder";
+import { isTaskMarker, removeTaskMarker, taskMarkerText } from "@/lib/taskMarkers";
 
 type SortDir = "asc" | "desc";
 interface SortState {
@@ -45,11 +46,15 @@ interface StoreValue extends AppState {
   // inbox
   inboxGroup: "none" | "page" | "rec";
   setInboxGroup: (g: "none" | "page" | "rec") => void;
+  inboxDescriptions: "show" | "hide";
+  setInboxDescriptions: (value: "show" | "hide") => void;
   inboxSort: SortState;
   sortInbox: (col: string) => void;
   // tasks
   taskGroup: "none" | "page" | "rec";
   setTaskGroup: (g: "none" | "page" | "rec") => void;
+  taskDescriptions: "show" | "hide";
+  setTaskDescriptions: (value: "show" | "hide") => void;
   taskView: "list" | "kanban";
   setTaskView: (v: "list" | "kanban") => void;
   taskSort: SortState;
@@ -93,12 +98,15 @@ interface StoreValue extends AppState {
   advanceTask: (key: string, to: "todo" | "in-progress" | "done") => void;
   submitAdd: () => void;
   submitMarker: () => void;
+  deleteMarker: () => void;
   runPage: (id: string) => void;
   captureBaseline: (id: string) => void;
 }
 
 const Ctx = createContext<StoreValue | null>(null);
 const STRATEGY_PREFERENCE_KEY = "page-watcher:preferred-strategy";
+const INBOX_DESCRIPTIONS_PREFERENCE_KEY = "page-watcher:inbox-descriptions";
+const TASK_DESCRIPTIONS_PREFERENCE_KEY = "page-watcher:task-descriptions";
 
 export function useStore(): StoreValue {
   const v = useContext(Ctx);
@@ -149,8 +157,10 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
   const [rangeDays, setRangeDaysState] = useState<RangeDays>(DEFAULT_RANGE_DAYS);
   const [dashSort, setDashSort] = useState<SortState>({ col: null, dir: "desc" });
   const [inboxGroup, setInboxGroup] = useState<"none" | "page" | "rec">("page");
+  const [inboxDescriptions, setInboxDescriptionsState] = useState<"show" | "hide">("show");
   const [inboxSort, setInboxSort] = useState<SortState>({ col: null, dir: "desc" });
   const [taskGroup, setTaskGroup] = useState<"none" | "page" | "rec">("page");
+  const [taskDescriptions, setTaskDescriptionsState] = useState<"show" | "hide">("show");
   const [taskView, setTaskView] = useState<"list" | "kanban">("list");
   const [taskSort, setTaskSort] = useState<SortState>({ col: null, dir: "desc" });
   const [tab, setTab] = useState<"overview" | "history" | "audits" | "agent">("overview");
@@ -173,6 +183,14 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
           setPreferredStrategyState(savedStrategy);
           setStrategy(savedStrategy);
         }
+        const savedInboxDescriptions = window.localStorage.getItem(INBOX_DESCRIPTIONS_PREFERENCE_KEY);
+        if (savedInboxDescriptions === "show" || savedInboxDescriptions === "hide") {
+          setInboxDescriptionsState(savedInboxDescriptions);
+        }
+        const savedTaskDescriptions = window.localStorage.getItem(TASK_DESCRIPTIONS_PREFERENCE_KEY);
+        if (savedTaskDescriptions === "show" || savedTaskDescriptions === "hide") {
+          setTaskDescriptionsState(savedTaskDescriptions);
+        }
       } catch {
         // Browser storage can be disabled; desktop remains a safe default.
       }
@@ -191,6 +209,24 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
   }, []);
 
   const setRangeDays = useCallback((next: RangeDays) => setRangeDaysState(next), []);
+
+  const setInboxDescriptions = useCallback((next: "show" | "hide") => {
+    setInboxDescriptionsState(next);
+    try {
+      window.localStorage.setItem(INBOX_DESCRIPTIONS_PREFERENCE_KEY, next);
+    } catch {
+      // The preference still applies for the current session.
+    }
+  }, []);
+
+  const setTaskDescriptions = useCallback((next: "show" | "hide") => {
+    setTaskDescriptionsState(next);
+    try {
+      window.localStorage.setItem(TASK_DESCRIPTIONS_PREFERENCE_KEY, next);
+    } catch {
+      // The preference still applies for the current session.
+    }
+  }, []);
 
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flash = useCallback((msg: string) => {
@@ -461,6 +497,7 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
       if (to === rec.taskStatus) return;
       const date = localISODate();
       if (to === "done") {
+        const text = taskMarkerText(rec.title);
         // Completing a task logs a change marker + schedules follow-ups, so it
         // goes through the marker route (sequential storage, REQ-043/044).
         mutate(
@@ -468,15 +505,21 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
             ...cur,
             recs: cur.recs.map((r) => (r.key === key ? { ...r, taskStatus: "done", doneDate: date } : r)),
             pages: cur.pages.map((p) =>
-              p.id === rec.pageId ? { ...p, markers: [...(p.markers || []), { id: crypto.randomUUID(), i: p.history.length - 1, date, text: `Acted: ${rec.title}`, source: "task", recKey: key }] } : p,
+              p.id === rec.pageId ? { ...p, markers: [...(p.markers || []), { id: crypto.randomUUID(), i: p.history.length - 1, date, text, source: "task", recKey: key }] } : p,
             ),
           },
-          { url: `/api/pages/${rec.pageId}/markers`, body: { text: `Acted: ${rec.title}`, date, recKey: key, taskStatus: "done" } },
+          { url: `/api/pages/${rec.pageId}/markers`, body: { text, date, recKey: key, taskStatus: "done" } },
           { success: `Task completed — change marker logged on ${rec.pageTitle}`, failure: "Couldn't complete the task — try again" },
         );
       } else {
+        const optimistic = structuredClone(cur);
+        const optimisticRec = optimistic.recs.find((item) => item.key === key);
+        if (!optimisticRec) return;
+        optimisticRec.taskStatus = to;
+        optimisticRec.doneDate = null;
+        removeTaskMarker(optimistic, optimisticRec);
         mutate(
-          { ...cur, recs: cur.recs.map((r) => (r.key === key ? { ...r, taskStatus: to } : r)) },
+          optimistic,
           { url: `/api/recs`, body: { key, action: "advance", to } },
           { success: to === "in-progress" ? "Task moved to In progress" : "Task moved back to To do", failure: "Couldn't move the task — try again" },
         );
@@ -559,6 +602,25 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
     );
   }, [markerText, markerDate, markerPageId, markerEditingId, mutate, flash]);
 
+  const deleteMarker = useCallback(() => {
+    const pageId = markerPageId;
+    const markerId = markerEditingId;
+    if (!pageId || !markerId) return;
+    const cur = dataRef.current;
+    setModal(null);
+    mutate(
+      {
+        ...cur,
+        pages: cur.pages.map((page) => page.id === pageId
+          ? { ...page, markers: page.markers.filter((marker) => marker.id !== markerId) }
+          : page),
+        followUps: (cur.followUps ?? []).filter((followUp) => followUp.markerId !== markerId),
+      },
+      { url: `/api/pages/${pageId}/markers`, method: "DELETE", body: { markerId } },
+      { success: "Marker deleted", failure: "Couldn't delete the marker — try again" },
+    );
+  }, [markerPageId, markerEditingId, mutate]);
+
   const runPage = useCallback(
     (id: string) => {
       const cur = dataRef.current;
@@ -606,7 +668,7 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
   }, []);
   const editMarker = useCallback((pageId: string, markerId: string) => {
     const marker = dataRef.current.pages.find((page) => page.id === pageId)?.markers.find((item) => item.id === markerId);
-    if (!marker || marker.source === "task" || marker.recKey || marker.text.startsWith("Acted:")) return;
+    if (!marker || isTaskMarker(marker)) return;
     setMarkerPageId(pageId);
     setMarkerEditingId(markerId);
     setMarkerText(marker.text);
@@ -633,10 +695,14 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
     sortDash,
     inboxGroup,
     setInboxGroup,
+    inboxDescriptions,
+    setInboxDescriptions,
     inboxSort,
     sortInbox,
     taskGroup,
     setTaskGroup,
+    taskDescriptions,
+    setTaskDescriptions,
     taskView,
     setTaskView,
     taskSort,
@@ -675,6 +741,7 @@ export function StoreProvider({ initial, basePath = "", children }: { initial: A
     advanceTask,
     submitAdd,
     submitMarker,
+    deleteMarker,
     runPage,
     captureBaseline,
   };

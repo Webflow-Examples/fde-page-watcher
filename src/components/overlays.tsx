@@ -244,7 +244,7 @@ function AddModal() {
 }
 
 function MarkerModal() {
-  const { markerText, markerDate, markerEditingId, setMarkerText, setMarkerDate, submitMarker, closeModal } = useStore();
+  const { markerText, markerDate, markerEditingId, setMarkerText, setMarkerDate, submitMarker, deleteMarker, closeModal } = useStore();
   return (
     <ModalShell onClose={closeModal} label="Log a change marker">
       <div style={{ padding: "22px 24px 0" }}>
@@ -258,6 +258,9 @@ function MarkerModal() {
         <input id="marker-date" type="date" value={markerDate} onChange={(e) => setMarkerDate(e.target.value)} style={inputStyle} />
       </div>
       <div style={{ padding: "0 24px 22px", display: "flex", justifyContent: "flex-end", gap: 10 }}>
+        {markerEditingId && (
+          <button onClick={deleteMarker} style={{ ...cancelBtn, marginRight: "auto", color: C.redSoft }}>Delete marker</button>
+        )}
         <button onClick={closeModal} style={cancelBtn}>Cancel</button>
         <button onClick={submitMarker} style={{ ...primaryBtn, background: C.green, color: C.bg }}>{markerEditingId ? "Save marker" : "Log marker"}</button>
       </div>

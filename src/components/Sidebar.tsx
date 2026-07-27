@@ -6,12 +6,14 @@ import { useStore } from "./store";
 import { C } from "@/lib/ui";
 import { normalizeCollectionSchedule } from "@/lib/collectionSchedule";
 import { ClockIcon, DashboardIcon, EyeIcon, InboxIcon, LogoMark, TasksIcon } from "./icons";
+import { GearIcon } from "@phosphor-icons/react";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", Icon: DashboardIcon, badge: null as "inbox" | "tasks" | "watchlist" | null },
   { href: "/inbox", label: "Inbox", Icon: InboxIcon, badge: "inbox" as const },
   { href: "/tasks", label: "Tasks", Icon: TasksIcon, badge: "tasks" as const },
   { href: "/watchlist", label: "Watchlist", Icon: EyeIcon, badge: "watchlist" as const },
+  { href: "/settings", label: "Settings", Icon: GearIcon, badge: null },
 ];
 
 export function Sidebar() {
@@ -79,8 +81,12 @@ export function Sidebar() {
                     marginLeft: "auto",
                     fontSize: 11,
                     fontWeight: 600,
-                    color: badge === "inbox" ? C.accentSoft : badge === "watchlist" ? C.violetSoft : C.dim,
-                    background: badge === "inbox" ? "rgba(59,137,255,0.16)" : badge === "watchlist" ? "rgba(138,92,246,0.16)" : "rgba(255,255,255,0.08)",
+                    color: badge === "inbox" ? C.accentSoft : badge === "tasks" ? C.green : "inherit",
+                    background: badge === "inbox"
+                      ? "rgba(59,137,255,0.16)"
+                      : badge === "tasks"
+                        ? "rgba(53,208,127,0.16)"
+                        : "transparent",
                     padding: "1px 8px",
                     borderRadius: 20,
                   }}

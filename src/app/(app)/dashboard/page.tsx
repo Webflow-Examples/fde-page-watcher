@@ -16,7 +16,6 @@ import { deltaMeta, historyForRange, pageAgentSnapshotForRange, pageRangeCompari
 import { C, flagChip, savingsValue } from "@/lib/ui";
 import { Sparkline } from "@/components/charts";
 import { DeviceChangeLabels, SortHeader } from "@/components/bits";
-import { formatSuccessfulRunAt, lastSuccessfulRunAt } from "@/lib/collectionStatus";
 import { isPageActivelyMonitored } from "@/lib/watchCapacity";
 import { sortDashboardRows } from "@/lib/dashboardSort";
 import { combinedDashboardSignals } from "@/lib/dashboardVerdict";
@@ -187,8 +186,6 @@ export default function DashboardPage() {
       id: p.id,
       title: p.title,
       url: p.url,
-      successfulRunAt: lastSuccessfulRunAt(p),
-      successfulRunLabel: formatSuccessfulRunAt(lastSuccessfulRunAt(p)),
       mobileTrend,
       desktopTrend,
       monitoringFlag: p.flag,
@@ -604,7 +601,6 @@ export default function DashboardPage() {
                   <span style={{ flex: "none", fontSize: 10, fontWeight: 550, letterSpacing: "0.03em", textTransform: "uppercase", padding: "2px 7px", borderRadius: 4, color: row.flag.fg, background: row.flag.bg }}>{row.flag.label}</span>
                 </div>
                 <div style={{ fontSize: 12, color: C.faint, marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{row.url}</div>
-                <div style={{ fontSize: 10.5, color: C.faint, marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{row.successfulRunAt ? `Last successful run · ${row.successfulRunLabel}` : row.successfulRunLabel}</div>
               </div>
               <div>
                 <DeviceChangeLabels mobile={row.mobileTrend} desktop={row.desktopTrend} />
