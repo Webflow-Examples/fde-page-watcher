@@ -46,6 +46,7 @@ All are optional for local development — the app runs without them.
 | `PSI_RUNS`                   | Samples per strategy (1–5, default 5).                                                                         |
 | `ANTHROPIC_API_KEY`          | Enables post-commit recommendation explanations and Watcher narratives on the app.                           |
 | `ANTHROPIC_MOCK`             | Uses deterministic placeholder AI text without making Anthropic requests.                                    |
+| `WEBFLOW_TOKEN_ENCRYPTION_KEY` | Collector-only base64 AES-256 key used to encrypt tenant Webflow site tokens before D1 persistence.         |
 
 Put these in `.env.local`.
 
@@ -105,6 +106,15 @@ Put these in `.env.local`.
   optional Anthropic recommendation explanations, Watcher narrative refreshes,
   Slack alerts, and due follow-ups cannot roll back or mislabel a successful
   collection.
+- **Webflow Enterprise activity** — Settings can connect one Enterprise site
+  per tenant with a site token scoped to `sites:read`, `site_activity:read`,
+  `pages:read`, `assets:read`, and `cms:read`. The collector validates every
+  capability, encrypts the token with AES-GCM before D1 persistence, imports
+  normalized actor/resource activity into D1, retains bounded raw events in
+  R2, and refreshes activity on the existing 15-minute scheduler. Webflow
+  failures are recorded on the connection and never block scheduled PSI. See
+  [docs/webflow-activity.md](docs/webflow-activity.md) for the product contract
+  and remaining publish-verification phases.
 
 ## Production setup
 
@@ -114,9 +124,11 @@ and collector result endpoints remain protected by `CRON_SECRET`.
 
 1. Apply `migrations/` to the FDE-owned `page-watcher-fde` database, then deploy
    `collector-worker/wrangler.jsonc`. The Worker needs `PAGESPEED_API_KEY`,
-   `CRUX_API_KEY`, and `CRON_SECRET`. Its D1, R2, Workflow, 15-minute due-page
-   scheduler, Monday 05:30 UTC audit, and Tuesday 06:15 UTC CrUX Cron bindings
-   are declared in that config.
+   `CRUX_API_KEY`, `CRON_SECRET`, and a base64-encoded 32-byte
+   `WEBFLOW_TOKEN_ENCRYPTION_KEY` generated with `openssl rand -base64 32`.
+   Its D1, R2, Workflow, 15-minute due-page/Webflow-activity scheduler, Monday
+   05:30 UTC audit, and Tuesday 06:15 UTC CrUX Cron bindings are declared in
+   that config.
 2. Deploy the Webflow app code with `STORAGE_DRIVER` still unset. The app keeps
    reading and writing its existing Webflow-provisioned D1/R2 bindings at this
    stage.

@@ -29,6 +29,7 @@ import {
   CRUX_SCHEDULER_STATUS_KEY,
   type CruxCollectionResult,
 } from "./crux";
+import { syncConfiguredWebflowSite } from "./webflow";
 
 const NIGHTLY_COLLECTION_CRON = "*/15 * * * *";
 const NIGHTLY_SCHEDULER_STATUS_KEY = "scheduler/latest.json";
@@ -598,9 +599,23 @@ const worker = {
       } else if (kind === "crux") {
         response = await collectCruxEvidence(env);
       } else {
+        let webflow: unknown = null;
+        try {
+          webflow = await syncConfiguredWebflowSite(env, env.NIGHTLY_TENANT || "brand-studio:live");
+        } catch (error) {
+          webflow = {
+            ok: false,
+            error: error instanceof Error ? error.message : String(error),
+          };
+          console.error(JSON.stringify({
+            message: "Webflow activity sync failed",
+            tenant: env.NIGHTLY_TENANT || "brand-studio:live",
+            error: webflow,
+          }));
+        }
         const confirmation = await dispatchFdeNightly(env, { confirmationOnly: true });
         const nightly = await dispatchFdeNightly(env, { dueOnly: true });
-        response = { confirmation, nightly };
+        response = { webflow, confirmation, nightly };
       }
       const cruxResponse = kind === "crux" ? response as CruxCollectionResult : null;
       const record = {

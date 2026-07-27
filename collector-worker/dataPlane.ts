@@ -1,10 +1,22 @@
 import { createFdeStore, type FdeStoreBindings } from "./dataStore";
 import type { AppState } from "../src/lib/types";
+import {
+  connectWebflowSite,
+  disconnectWebflowSite,
+  getWebflowConnectionStatus,
+  syncWebflowActivity,
+  WebflowIntegrationError,
+  type WebflowBindings,
+} from "./webflow";
 
 type DataRoute =
   | { kind: "state"; tenant: string }
   | { kind: "crux"; tenant: string }
-  | { kind: "report"; tenant: string; pageId: string; key: string };
+  | { kind: "report"; tenant: string; pageId: string; key: string }
+  | { kind: "webflow-connection"; tenant: string }
+  | { kind: "webflow-sync"; tenant: string };
+
+type DataPlaneBindings = FdeStoreBindings & WebflowBindings;
 
 function decode(value: string): string | null {
   try {
@@ -29,6 +41,14 @@ function route(pathname: string): DataRoute | null {
   if (crux) {
     const tenant = decode(crux[1]);
     return safeIdentifier(tenant, true) ? { kind: "crux", tenant } : null;
+  }
+  const webflow = pathname.match(/^\/data\/([^/]+)\/webflow\/(connection|sync)$/);
+  if (webflow) {
+    const tenant = decode(webflow[1]);
+    if (!safeIdentifier(tenant, true)) return null;
+    return webflow[2] === "connection"
+      ? { kind: "webflow-connection", tenant }
+      : { kind: "webflow-sync", tenant };
   }
   const report = pathname.match(/^\/data\/([^/]+)\/reports\/([^/]+)\/([^/]+)$/);
   if (!report) return null;
@@ -65,17 +85,75 @@ async function boundedJson(request: Request, maxBytes = 8 * 1024 * 1024): Promis
 /** Auth is handled by the parent Worker before this route is called. */
 export async function handleDataPlaneRequest(
   request: Request,
-  bindings: FdeStoreBindings,
+  bindings: DataPlaneBindings,
 ): Promise<Response | null> {
   const url = new URL(request.url);
   const matched = route(url.pathname);
   if (!matched) return null;
+
+  if (matched.kind === "webflow-connection") {
+    try {
+      if (request.method === "GET") {
+        return noStore(Response.json(await getWebflowConnectionStatus(bindings, matched.tenant)));
+      }
+      if (request.method === "DELETE") {
+        await disconnectWebflowSite(bindings, matched.tenant);
+        return noStore(Response.json({ connected: false }));
+      }
+      if (request.method !== "POST") {
+        return Response.json({ error: "method not allowed" }, { status: 405 });
+      }
+      let body: unknown;
+      try {
+        body = await boundedJson(request, 16 * 1024);
+      } catch (error) {
+        return Response.json(
+          { error: error instanceof RangeError ? error.message : "invalid JSON" },
+          { status: 400 },
+        );
+      }
+      const input = body as { siteId?: unknown; token?: unknown };
+      if (typeof input?.siteId !== "string" || typeof input?.token !== "string") {
+        return Response.json({ error: "siteId and token are required" }, { status: 400 });
+      }
+      return noStore(Response.json(await connectWebflowSite(bindings, matched.tenant, {
+        siteId: input.siteId,
+        token: input.token,
+      }), { status: 201 }));
+    } catch (error) {
+      if (error instanceof WebflowIntegrationError) {
+        return noStore(Response.json(
+          { error: error.message, code: error.code },
+          { status: error.status },
+        ));
+      }
+      throw error;
+    }
+  }
+
+  if (matched.kind === "webflow-sync") {
+    if (request.method !== "POST") {
+      return Response.json({ error: "method not allowed" }, { status: 405 });
+    }
+    try {
+      return noStore(Response.json(await syncWebflowActivity(bindings, matched.tenant)));
+    } catch (error) {
+      if (error instanceof WebflowIntegrationError) {
+        return noStore(Response.json(
+          { error: error.message, code: error.code },
+          { status: error.status },
+        ));
+      }
+      throw error;
+    }
+  }
+
   const store = createFdeStore(matched.tenant, bindings);
+
   if (matched.kind === "crux") {
     if (request.method !== "GET") return Response.json({ error: "method not allowed" }, { status: 405 });
     return noStore(Response.json({ evidence: await store.getCruxEvidence() }));
   }
-
 
   if (matched.kind === "state") {
     if (request.method === "GET") {
