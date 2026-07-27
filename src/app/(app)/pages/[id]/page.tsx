@@ -17,7 +17,7 @@ import { SegToggle } from "@/components/bits";
 import { SelectMenu } from "@/components/select-menu";
 import type { SelectMenuOption } from "@/components/select-menu";
 import { DesktopIcon, MobileIcon, PlusIcon, RefreshIcon } from "@/components/icons";
-import { formatSuccessfulRunAt, lastSuccessfulRunAt } from "@/lib/collectionStatus";
+import { failedRunDetailMessage, formatSuccessfulRunAt, lastSuccessfulRunAt } from "@/lib/collectionStatus";
 import { isTaskMarker, taskMarkerText } from "@/lib/taskMarkers";
 
 const PAGE_RANGE_OPTIONS: ReadonlyArray<SelectMenuOption<RangeDays>> = [
@@ -215,7 +215,7 @@ function CollectionStatus({ page }: { page: WatchPage }) {
       <div style={{ fontSize: 12.5, fontWeight: 600, color: failed ? C.redSoft : C.accentSoft }}>{title}</div>
       <div style={{ fontSize: 11.5, color: C.muted, marginTop: 3 }}>
         {failed
-          ? page.lastError ?? "The collector stopped before a result could be committed. Start a new run to retry."
+          ? failedRunDetailMessage(page.lastError)
           : "This state is persisted, so it is safe to refresh or leave the app while the job runs."}
       </div>
     </div>

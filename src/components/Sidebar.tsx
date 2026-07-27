@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useStore } from "./store";
 import { C } from "@/lib/ui";
 import { normalizeCollectionSchedule } from "@/lib/collectionSchedule";
-import { ClockIcon, DashboardIcon, EyeIcon, InboxIcon, LogoMark, TasksIcon } from "./icons";
+import { ClockIcon, DashboardIcon, EyeIcon, InboxIcon, TasksIcon } from "./icons";
 import { GearIcon } from "@phosphor-icons/react";
 
 const navItems = [
@@ -41,9 +42,14 @@ export function Sidebar() {
       }}
     >
       <div className="sidebar-brand" style={{ display: "flex", alignItems: "center", gap: 10, padding: "22px 22px 20px" }}>
-        <div style={{ width: 30, height: 30, borderRadius: 7, background: C.accent, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <LogoMark size={17} style={{ color: "#fff" }} />
-        </div>
+        <Image
+          src="/webflow-social.png"
+          alt="Webflow"
+          width={30}
+          height={30}
+          priority
+          style={{ borderRadius: 7 }}
+        />
         <div className="sidebar-brand-text" style={{ lineHeight: 1.15 }}>
           <div style={{ fontSize: 14.5, fontWeight: 600 }}>Page Watch</div>
           <div style={{ fontSize: 11, color: C.muted }}>Brand Studio</div>

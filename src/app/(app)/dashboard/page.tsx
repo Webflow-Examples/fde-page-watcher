@@ -124,7 +124,6 @@ export default function DashboardPage() {
   const thresholds = normalizePerformanceThresholds(performanceThresholds);
   const schedule = normalizeCollectionSchedule(collectionSchedule);
   const activePages = pages.filter(isPageActivelyMonitored);
-  const inboxCount = recs.filter((rec) => rec.status === "inbox").length;
   const topRibbonRec = recs
     .filter((rec) => rec.status === "inbox" && rec.taskStatus !== "done")
     .sort((left, right) => savingsValue(right) - savingsValue(left))[0] ?? null;
@@ -374,11 +373,11 @@ export default function DashboardPage() {
             </span>
           ) : topRibbonRec ? (
             <button type="button" className="watcher-ribbon__primary" onClick={() => saveTask(topRibbonRec.key)}>
-              Open task
+              Create Task
             </button>
           ) : null}
           <Link className="watcher-ribbon__inbox" href={pathFor("/inbox")}>
-            Inbox · {inboxCount}
+            Open Inbox
           </Link>
         </div>
       </section>
