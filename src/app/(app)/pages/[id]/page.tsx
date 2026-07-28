@@ -20,7 +20,15 @@ import { DesktopIcon, MobileIcon, PlusIcon, RefreshIcon } from "@/components/ico
 import { failedRunDetailMessage, formatSuccessfulRunAt, lastSuccessfulRunAt } from "@/lib/collectionStatus";
 import { isTaskMarker, taskMarkerText } from "@/lib/taskMarkers";
 import { VisitorExperiencePanel } from "@/components/visitor-experience";
-import { evidenceForPage } from "@/lib/visitorExperience";
+import {
+  evidenceForPage,
+  formatVisitorMetric,
+  formatVisitorMetricDelta,
+  metricRating,
+  VISITOR_METRICS,
+  visitorSnapshotForNight,
+} from "@/lib/visitorExperience";
+import type { VisitorMetricKey } from "@/lib/visitorExperience";
 
 const PAGE_RANGE_OPTIONS: ReadonlyArray<SelectMenuOption<RangeDays>> = [
   { value: 3, label: "Last 3 days" },
@@ -411,7 +419,11 @@ function HistoryTab({
     page.agentIgnoreRestores,
   );
   const latestReadiness = readinessHistory.at(-1)?.snapshot ?? null;
-  const GRID = "120px 1fr 84px 84px 84px 84px 100px";
+  const visitorEvidence = evidenceForPage(store.visitorExperience, page.id, strategy);
+  const showVisitorColumns = store.visitorExperienceVisible;
+  const GRID = showVisitorColumns
+    ? "110px minmax(180px, 1fr) repeat(4, 76px) repeat(4, 96px) 90px"
+    : "120px 1fr 84px 84px 84px 84px 100px";
   const openReport = async (d: Night) => {
     const cats = CATEGORIES.map((c) => {
       const s = d.scores[strategy][c.key];
@@ -543,19 +555,36 @@ function HistoryTab({
 
       <div className="table-scroll" style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13 }}>
         <div style={{ padding: "13px 22px", borderBottom: `1px solid ${C.border}`, fontSize: 12, color: C.muted }}>
-          Nightly detail · <span style={{ color: C.text, textTransform: "capitalize", fontWeight: 600 }}>{strategy}</span> primary · median with range below
+          Nightly detail · <span style={{ color: C.text, textTransform: "capitalize", fontWeight: 600 }}>{strategy}</span> primary · Lighthouse median with range below
+          {showVisitorColumns && " · CrUX p75 with weekly change below"}
         </div>
-        <div className="narrow-table" style={{ display: "grid", gridTemplateColumns: GRID, padding: "14px 22px", borderBottom: `1px solid ${C.border}`, fontSize: 11, fontWeight: 550, letterSpacing: "0.05em", textTransform: "uppercase", color: C.faint }}>
+        <div className="narrow-table" style={{ display: "grid", gridTemplateColumns: GRID, minWidth: showVisitorColumns ? 1120 : undefined, padding: "14px 22px", borderBottom: `1px solid ${C.border}`, fontSize: 11, fontWeight: 550, letterSpacing: "0.05em", textTransform: "uppercase", color: C.faint }}>
           <div>Night</div>
           <div>Marker</div>
           <div style={{ textAlign: "center" }}>Perf</div>
           <div style={{ textAlign: "center" }}>A11y</div>
           <div style={{ textAlign: "center" }}>BP</div>
           <div style={{ textAlign: "center" }}>SEO</div>
+          {showVisitorColumns && VISITOR_METRICS.map((metric) => (
+            <div
+              key={metric.key}
+              title={`${metric.label} · ${metric.technicalName}`}
+              style={{ textAlign: "center", borderLeft: metric.key === "lcpP75Ms" ? `1px solid ${C.border}` : undefined }}
+            >
+              {metric.key === "lcpP75Ms" ? "LCP" : metric.key === "inpP75Ms" ? "INP" : metric.key === "clsP75" ? "CLS" : "TTFB"}
+            </div>
+          ))}
           <div />
         </div>
         {runs.map((d) => {
           const markers = page.markers.filter((m) => m.i === d.i);
+          const visitorSnapshot = visitorSnapshotForNight(visitorEvidence?.snapshots ?? [], d);
+          const visitorSnapshotIndex = visitorSnapshot
+            ? visitorEvidence?.snapshots.indexOf(visitorSnapshot) ?? -1
+            : -1;
+          const previousVisitorSnapshot = visitorSnapshotIndex > 0
+            ? visitorEvidence!.snapshots[visitorSnapshotIndex - 1]
+            : null;
           const cell = (k: CategoryKey) => {
             const score = d.scores[strategy][k];
             const categoryLabel = CATEGORIES.find((category) => category.key === k)?.label ?? k;
@@ -569,8 +598,28 @@ function HistoryTab({
               </div>
             );
           };
+          const visitorCell = (key: VisitorMetricKey) => {
+            const value = visitorSnapshot?.[key] ?? null;
+            const previous = previousVisitorSnapshot?.[key] ?? null;
+            const rating = value === null ? null : metricRating(key, value);
+            const movement = formatVisitorMetricDelta(key, previous, value);
+            const delta = previous === null || value === null ? null : value - previous;
+            const valueColor = rating === "Good" ? C.green : rating === "Needs improvement" ? C.amber : rating === "Poor" ? C.redSoft : C.muted;
+            const movementColor = delta === null || delta === 0 ? C.faint : delta < 0 ? C.green : C.redSoft;
+            const label = VISITOR_METRICS.find((metric) => metric.key === key)?.label ?? key;
+            return (
+              <div
+                aria-label={`${label} ${formatVisitorMetric(key, value)}, ${movement === "—" ? "no prior CrUX snapshot" : movement}`}
+                title={visitorSnapshot ? `Rolling window ending ${visitorSnapshot.collectionEnd} · ${rating ?? "Unavailable"}` : "No CrUX window available for this night"}
+                style={{ textAlign: "center", borderLeft: key === "lcpP75Ms" ? `1px solid ${C.border}` : undefined }}
+              >
+                <div style={{ fontSize: 13, lineHeight: 1.1, fontWeight: 650, color: valueColor }}>{formatVisitorMetric(key, value)}</div>
+                <div style={{ marginTop: 3, fontSize: 9.5, lineHeight: 1, color: movementColor }}>{movement}</div>
+              </div>
+            );
+          };
           return (
-            <div key={d.i} className="narrow-table" style={{ display: "grid", gridTemplateColumns: GRID, alignItems: "center", padding: "12px 22px", borderBottom: `1px solid ${C.rowBorder}`, fontSize: 13 }}>
+            <div key={d.i} className="narrow-table" style={{ display: "grid", gridTemplateColumns: GRID, minWidth: showVisitorColumns ? 1120 : undefined, alignItems: "center", padding: "12px 22px", borderBottom: `1px solid ${C.rowBorder}`, fontSize: 13 }}>
               <div style={{ fontWeight: 500 }}>{d.date}</div>
               <div style={{ fontSize: 12, display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 5 }}>
                 {markers.length === 0 ? <span style={{ color: "#4A4A50" }}>—</span> : markers.map((marker) => {
@@ -612,6 +661,9 @@ function HistoryTab({
               {cell("a11y")}
               {cell("bp")}
               {cell("seo")}
+              {showVisitorColumns && VISITOR_METRICS.map((metric) => (
+                <div key={metric.key}>{visitorCell(metric.key)}</div>
+              ))}
               <div style={{ textAlign: "right" }}>
                 <button onClick={() => openReport(d)} style={{ border: `1px solid ${C.border2}`, background: "rgba(255,255,255,0.03)", color: C.text, fontSize: 11.5, fontWeight: 500, padding: "5px 11px", borderRadius: 7, cursor: "pointer" }}>Report</button>
               </div>

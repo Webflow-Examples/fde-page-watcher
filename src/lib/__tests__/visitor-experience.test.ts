@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { CruxPageEvidence, CruxSnapshot } from "../crux";
 import {
   evidenceForPage,
+  formatVisitorMetricDelta,
   formatVisitorMetric,
   metricRating,
+  visitorSnapshotForNight,
   visitorConfidenceLabel,
   visitorExperienceTrend,
 } from "../visitorExperience";
@@ -62,5 +64,25 @@ describe("visitor experience presentation", () => {
     expect(formatVisitorMetric("clsP75", 0.081)).toBe("0.08");
     expect(visitorConfidenceLabel("regressing", "stable")).toBe("Lighthouse worsening; visitor experience stable");
     expect(visitorConfidenceLabel("regressing", "worsening")).toBe("Lighthouse and visitor experience worsening");
+  });
+
+  it("matches nightly rows to the latest eligible weekly CrUX window", () => {
+    const first = snapshot({ collectionEnd: "2026-07-18" });
+    const latest = snapshot({ collectionEnd: "2026-07-25" });
+    const snapshots = [first, latest];
+    expect(visitorSnapshotForNight(snapshots, {
+      date: "Jul 24",
+      iso: "2026-07-25T02:00:00.000Z",
+    })).toBe(first);
+    expect(visitorSnapshotForNight(snapshots, {
+      date: "Jul 25",
+      iso: "2026-07-26T02:00:00.000Z",
+    })).toBe(latest);
+  });
+
+  it("formats metric movement separately from the quality rating", () => {
+    expect(formatVisitorMetricDelta("ttfbP75Ms", 1_700, 1_522)).toBe("↓ 178 ms");
+    expect(formatVisitorMetricDelta("lcpP75Ms", 2_000, 2_500)).toBe("↑ 0.5 s");
+    expect(formatVisitorMetricDelta("clsP75", 0.08, 0.08)).toBe("No change");
   });
 });

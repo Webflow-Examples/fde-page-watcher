@@ -43,7 +43,7 @@ export function Sidebar() {
     >
       <div className="sidebar-brand" style={{ display: "flex", alignItems: "center", gap: 10, padding: "22px 22px 20px" }}>
         <Image
-          src="/webflow-social.png"
+          src={pathFor("/webflow-social.png")}
           alt="Webflow"
           width={30}
           height={30}
