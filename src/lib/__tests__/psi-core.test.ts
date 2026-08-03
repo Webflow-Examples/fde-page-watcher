@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { collectPsi, runPsiOnce } from "../psiCore";
+import { collectPsi, PsiRequestError, runPsiOnce } from "../psiCore";
 
 function psiResponse(warnings: string[] = [], perf = 0.8, fetchTime?: string) {
   return {
@@ -27,6 +27,16 @@ function psiResponse(warnings: string[] = [], perf = 0.8, fetchTime?: string) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("PSI collection quality", () => {
+  it("preserves the provider status and safe quota detail", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+      error: { code: 429, message: "Quota exceeded for this project" },
+    }, { status: 429 })));
+
+    const request = runPsiOnce("https://example.com", "mobile");
+    await expect(request).rejects.toThrow("HTTP 429: Quota exceeded");
+    await expect(request).rejects.toMatchObject<PsiRequestError>({ status: 429 });
+  });
+
   it("rejects missing category scores instead of converting them to zero", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({
       lighthouseResult: {

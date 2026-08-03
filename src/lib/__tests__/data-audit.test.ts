@@ -166,4 +166,41 @@ describe("weekly PSI data audit", () => {
       agentReadinessSnapshotMismatches: 1,
     });
   });
+
+  it("audits independently retained PSI and agent results without inventing missing companions", async () => {
+    const mobileOnly = night();
+    mobileOnly.availableStrategies = ["mobile"];
+    mobileOnly.strategyCapturedAt = { mobile: mobileOnly.iso };
+    delete mobileOnly.agent;
+    delete mobileOnly.agentReadiness;
+
+    const agentOnly = night();
+    agentOnly.i = 5;
+    agentOnly.iso = "2026-07-23T04:05:00.000Z";
+    agentOnly.availableStrategies = [];
+    agentOnly.agentCapturedAt = agentOnly.iso;
+
+    const audit = await buildWeeklyDataAudit({
+      tenant: "tenant:live",
+      generatedAt: "2026-07-24T05:30:05.000Z",
+      periodStart: "2026-07-17T05:30:00.000Z",
+      periodEnd: "2026-07-24T05:30:00.000Z",
+      monitoredPageIds: ["page"],
+      captures: [
+        { pageId: "page", night: mobileOnly, report: { strategies: { mobile: strategyReport() } } },
+        { pageId: "page", night: agentOnly, report: null },
+      ],
+      jobs: [],
+    });
+
+    expect(audit.health).toBe("healthy");
+    expect(audit.totals).toMatchObject({
+      captures: 2,
+      rawReportsFound: 1,
+      missingRawReports: 0,
+      strategyReports: 1,
+      agentScans: 1,
+      missingAgentScans: 0,
+    });
+  });
 });

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import type { AgentIgnoreSettings, CategoryKey, ChangeMarker, Night, Strategy } from "@/lib/types";
 import { agentReadinessHistoryPoints } from "@/lib/agentHistory";
-import type { PreviousPeriodMedian } from "@/lib/scoring";
+import { historyForStrategy, type PreviousPeriodMedian } from "@/lib/scoring";
 import { formatHistoryTooltipDate, placeMarkerLabelRows, plottedSparklineSeries, snappedHistoryIndex, trustedHistorySegments } from "@/lib/charting";
 import { C } from "@/lib/ui";
 import { isTaskMarker } from "@/lib/taskMarkers";
@@ -106,9 +106,11 @@ export function HistoryChart({
 }) {
   const { containerRef, width: W } = useResponsiveChartWidth(HISTORY_CHART_DEFAULT_WIDTH);
   const [hoveredPoint, setHoveredPoint] = useState<{ index: number; pointerY: number } | null>(null);
-  const h = history;
+  const h = historyForStrategy(history, strategy);
   if (h.length < 2) return null;
-  const timeline = [...h, ...excludedHistory].sort((left, right) => left.i - right.i);
+  const timeline = [...h, ...historyForStrategy(excludedHistory, strategy)]
+    .filter((night, index, values) => values.findIndex((candidate) => candidate.i === night.i) === index)
+    .sort((left, right) => left.i - right.i);
   const n = timeline.length;
   const timelineIndexByNight = new Map(timeline.map((night, index) => [night.i, index]));
   const visibleMarkers = (markers || [])
@@ -303,11 +305,9 @@ export function HistoryChart({
         )}
       </svg>
       <FixedChartDot kind="history-line" x={xForNight(latestTrustedNight)} y={y(at(latestTrustedNight, "m"))} viewWidth={W} viewHeight={H} radius={4} color={line} borderColor={C.panel} borderWidth={2} />
-      {(markers || []).map((mk) => {
-        const markerIndex = timeline.findIndex((night) => night.i === mk.i);
-        if (markerIndex < 0) return null;
+      {visibleMarkers.map(({ marker: mk, markerIndex }, index) => {
         const custom = !isTaskMarker(mk);
-        return <FixedChartDot key={mk.id} kind="history-marker" x={x(markerIndex)} y={padT - 4} viewWidth={W} viewHeight={H} radius={3.5} color={custom ? C.green : "#9564FF"} />;
+        return <FixedChartDot key={`${mk.id}-${markerIndex}-${index}`} kind="history-marker" x={x(markerIndex)} y={padT - 4} viewWidth={W} viewHeight={H} radius={3.5} color={custom ? C.green : "#9564FF"} />;
       })}
       {hoveredNight && hoveredMedian !== null && hoveredX !== null && (
         <div

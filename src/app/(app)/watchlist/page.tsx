@@ -608,9 +608,11 @@ function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
                     : p.runState === "running"
                       ? "Collection running"
                       : p.runState === "waiting_for_evidence"
-                        ? "Waiting for independent PSI evidence"
+                        ? "Waiting for independent test evidence"
                       : p.runState === "failed"
                         ? failedRunLabel(p)
+                        : p.lastCollectionStatus === "partial"
+                          ? "Partial collection retained · missing tests will retry"
                         : p.lastCollectionStatus === "inconclusive"
                           ? "Measurement inconclusive · previous trusted score retained"
                         : p.baselineCapturedAt

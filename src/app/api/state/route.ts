@@ -47,5 +47,6 @@ export async function GET() {
       }
     });
   }
-  return NextResponse.json({ state });
+  const visitorExperience = await dataStore.getCruxEvidence().catch(() => []);
+  return NextResponse.json({ state, visitorExperience });
 }

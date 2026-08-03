@@ -5,11 +5,11 @@ import { useParams, usePathname, useRouter, useSearchParams } from "next/navigat
 import { ArrowUpRightIcon, CircleIcon } from "@phosphor-icons/react";
 import { useStore } from "@/components/store";
 import { CATEGORIES } from "@/lib/types";
-import type { AgentCheck, CategoryKey, Night, PageStatus, RangeDays, Rec, WatchPage } from "@/lib/types";
+import type { AgentCheck, CategoryKey, CollectionJob, Night, PageStatus, RangeDays, Rec, WatchPage } from "@/lib/types";
 import { agentCheckKey, agentIgnoreOverrideMode, isAgentCheckIgnored, isAgentGroupIgnored, normalizeAgentIgnoreSettings, summarizeAgentChecks } from "@/lib/agentScoring";
 import { agentReadinessHistoryPoints } from "@/lib/agentHistory";
 import { normalizePerformanceThresholds } from "@/lib/performanceThresholds";
-import { deltaMeta, pageAgentSnapshotForRange, pageHistoryForRange, pagePreviousPeriodMedian, pageRangeComparison, pageRangeLatestNight, pageRangeSeries, pageRangeTrend, pageRecordedHistoryForRange, scoreMeta, statusMeta } from "@/lib/scoring";
+import { deltaMeta, historyForStrategy, nightHasStrategy, pageAgentSnapshotForRange, pageHistoryForRange, pagePreviousPeriodMedian, pageRangeComparison, pageRangeLatestNightForStrategy, pageRangeSeries, pageRangeTrend, pageRecordedHistoryForRange, scoreMeta, statusMeta } from "@/lib/scoring";
 import { auditsFor } from "@/lib/audits";
 import { C, taskLabel } from "@/lib/ui";
 import { AgentReadinessChart, HistoryChart, Sparkline } from "@/components/charts";
@@ -59,7 +59,7 @@ export default function PageDetail() {
     );
   }
 
-  const latestRangeNight = pageRangeLatestNight(page, rangeDays);
+  const latestRangeNight = pageRangeLatestNightForStrategy(page, rangeDays, strategy);
   const agentSnapshot = pageAgentSnapshotForRange(page, rangeDays);
   const agentChecks = agentSnapshot?.checks ?? [];
   const agentSummary = summarizeAgentChecks(agentChecks, page.agentIgnores, store.agentIgnoreDefaults, page.agentIgnoreRestores);
@@ -70,6 +70,7 @@ export default function PageDetail() {
   const collectionBlocked = page.flag === "paused" || (!!page.runState && page.runState !== "failed");
   const successfulRunAt = lastSuccessfulRunAt(page);
   const successfulRunLabel = formatSuccessfulRunAt(successfulRunAt);
+  const activeJob = store.jobs?.find((job) => job.runId === page.runId);
   const watchedPageHref = /^[a-z][a-z\d+.-]*:\/\//i.test(page.url) ? page.url : `https://${page.url}`;
   const thresholds = normalizePerformanceThresholds(store.performanceThresholds);
   const mobileTrend = pageRangeTrend(page, "mobile", rangeDays, thresholds);
@@ -178,7 +179,15 @@ export default function PageDetail() {
             This page is paused. Its history and baseline are retained, but it will not collect new data until it is changed to Watching or Priority.
           </div>
         )}
-        {page.runState && <CollectionStatus page={page} />}
+        {page.runState && <CollectionStatus page={page} job={activeJob} />}
+        {!page.runState && page.lastCollectionStatus === "partial" && (
+          <div style={{ marginBottom: 18, padding: "12px 15px", borderRadius: 9, border: "1px solid rgba(255,154,61,0.30)", background: "rgba(255,154,61,0.08)" }}>
+            <div style={{ fontSize: 12.5, fontWeight: 600, color: C.amber }}>Partial collection retained</div>
+            <div style={{ fontSize: 11.5, color: C.muted, marginTop: 3 }}>
+              Every successful device and agent scan remains in history; unavailable tests will be attempted by the next scheduled collection.
+            </div>
+          </div>
+        )}
         {isPending ? (
           <PendingPanel page={page} store={store} />
         ) : (
@@ -209,16 +218,42 @@ function DetailDeviceStatus({ name, status }: { name: "Desktop" | "Mobile"; stat
   );
 }
 
-function CollectionStatus({ page }: { page: WatchPage }) {
+function CollectionStatus({ page, job }: { page: WatchPage; job?: CollectionJob }) {
   const failed = page.runState === "failed";
+  const retained = job?.completedStrategies ?? [];
+  const retainedTests = [
+    ...retained.map((strategy) => `${strategy[0].toUpperCase()}${strategy.slice(1)} PSI`),
+    ...(job?.cruxCompletedAt ? ["CrUX"] : []),
+    ...(job?.agentCompletedAt ? ["Agent readiness"] : []),
+  ];
+  const retryingTests = [
+    ...(["mobile", "desktop"] as const)
+      .filter((strategy) => !retained.includes(strategy))
+      .map((strategy) => `${strategy[0].toUpperCase()}${strategy.slice(1)} PSI`),
+    ...(!job?.cruxCompletedAt ? ["CrUX"] : []),
+    ...(!job?.agentCompletedAt ? ["Agent readiness"] : []),
+  ];
+  const waitDetail = retainedTests.length > 0
+    ? `${retainedTests.join(" and ")} retained. `
+      + `Retrying ${retryingTests.join(" and ")}`
+      + `${job?.nextRetryAt ? ` around ${formatSuccessfulRunAt(job.nextRetryAt)}` : " in the next evidence cycle"}.`
+    : `No independent test has completed yet. Retrying Mobile PSI, Desktop PSI, CrUX, and Agent readiness`
+      + `${job?.nextRetryAt ? ` around ${formatSuccessfulRunAt(job.nextRetryAt)}` : " in the next evidence cycle"}.`;
+  const providerDetail = (["mobile", "desktop"] as const).flatMap((strategy) => {
+    const error = job?.strategyErrors?.[strategy];
+    return error ? [`${strategy[0].toUpperCase()}${strategy.slice(1)}: ${error}`] : [];
+  }).join(" · ");
+  const latestDetail = [providerDetail, job?.cruxError ? `CrUX: ${job.cruxError}` : "", job?.agentError ? `Agent: ${job.agentError}` : ""]
+    .filter(Boolean)
+    .join(" · ");
   const title = page.runState === "queued"
     ? "Collection queued"
     : page.runState === "dispatching"
       ? "Starting durable collector"
       : page.runState === "waiting_for_evidence"
-        ? "Waiting for independent PSI evidence"
+        ? "Waiting for independent test evidence"
         : page.runState === "running"
-          ? "Collecting mobile and desktop PSI data"
+          ? "Collecting four independent tests"
           : "Last collection failed";
   return (
     <div style={{ marginBottom: 18, padding: "12px 15px", borderRadius: 9, border: `1px solid ${failed ? "rgba(255,92,108,0.35)" : "rgba(59,137,255,0.35)"}`, background: failed ? "rgba(255,92,108,0.09)" : "rgba(59,137,255,0.09)" }}>
@@ -226,8 +261,13 @@ function CollectionStatus({ page }: { page: WatchPage }) {
       <div style={{ fontSize: 11.5, color: C.muted, marginTop: 3 }}>
         {failed
           ? failedRunDetailMessage(page.lastError)
-          : "This state is persisted, so it is safe to refresh or leave the app while the job runs."}
+          : page.runState === "waiting_for_evidence"
+            ? waitDetail
+            : "This state is persisted, so it is safe to refresh or leave the app while the job runs."}
       </div>
+      {!failed && latestDetail && (
+        <div style={{ fontSize: 11, color: C.faint, marginTop: 5 }}>Latest collection response · {latestDetail}</div>
+      )}
     </div>
   );
 }
@@ -263,12 +303,13 @@ function OverviewTab({
 }) {
   const pageRecs = recs.filter((r) => r.pageId === page.id);
   const secondaryStrategy = strategy === "mobile" ? "desktop" : "mobile";
+  const secondaryNight = pageRangeLatestNightForStrategy(page, rangeDays, secondaryStrategy);
   return (
     <div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 16, marginBottom: 20 }}>
         {CATEGORIES.map((c) => {
           const v = latestNight?.scores[strategy][c.key].m ?? null;
-          const secondary = latestNight?.scores[secondaryStrategy][c.key].m ?? null;
+          const secondary = secondaryNight?.scores[secondaryStrategy][c.key].m ?? null;
           const baseline = page.baseline![strategy][c.key].m;
           const secondaryBaseline = page.baseline![secondaryStrategy][c.key].m;
           const sm = v === null ? null : scoreMeta(v);
@@ -412,7 +453,9 @@ function HistoryTab({
   const rangeHistory = pageHistoryForRange(page, rangeDays);
   const recordedRangeHistory = pageRecordedHistoryForRange(page, rangeDays);
   const excludedHistory = recordedRangeHistory.filter((night) => night.evidenceStatus === "provider-anomaly");
-  const runs = [...rangeHistory].reverse().slice(0, 12);
+  // The table is an audit trail, so it shows every recorded collection. The
+  // chart/status/readiness paths above continue to use trusted history only.
+  const runs = [...recordedRangeHistory].reverse().slice(0, 12);
   const thresholds = normalizePerformanceThresholds(store.performanceThresholds);
   const readinessHistory = agentReadinessHistoryPoints(
     rangeHistory,
@@ -427,6 +470,7 @@ function HistoryTab({
     ? "110px minmax(180px, 1fr) repeat(4, 76px) repeat(4, 96px) 90px"
     : "120px 1fr 84px 84px 84px 84px 100px";
   const openReport = async (d: Night) => {
+    if (!nightHasStrategy(d, strategy)) return;
     const cats = CATEGORIES.map((c) => {
       const s = d.scores[strategy][c.key];
       return { label: c.label, median: s.m, range: `${s.lo}–${s.hi}`, key: c.key };
@@ -435,9 +479,10 @@ function HistoryTab({
     // (audit: audit trail). Seed / imported nights have no stored report, so
     // show an honest summary of what IS stored instead of inventing PSI metadata.
     let raw: string;
-    if (d.rawReportKey) {
+    const rawReportKey = d.strategyReportKeys?.[strategy] ?? d.rawReportKey;
+    if (rawReportKey) {
       try {
-        const res = await fetch(store.pathFor(`/api/pages/${page.id}/report/${encodeURIComponent(d.rawReportKey)}`));
+        const res = await fetch(store.pathFor(`/api/pages/${page.id}/report/${encodeURIComponent(rawReportKey)}`));
         if (res.ok) {
           const json = (await res.json()) as { report: unknown };
           raw = JSON.stringify(json.report, null, 2);
@@ -454,6 +499,15 @@ function HistoryTab({
   };
 
   function fallbackReport(d: Night): string {
+    if (!nightHasStrategy(d, strategy)) {
+      return JSON.stringify({
+        note: `No ${strategy} PSI measurement completed for this collection. Other independent results are retained.`,
+        date: d.date,
+        strategy,
+        agentChecksRecorded: d.agent?.length ?? 0,
+        agentReadiness: d.agentReadiness ?? null,
+      }, null, 2);
+    }
     return JSON.stringify(
       {
         note: "No raw PSI payload is stored for this night (seed / imported data). Showing the stored medians and ranges only.",
@@ -485,7 +539,7 @@ function HistoryTab({
           Desktop and Mobile are stacked for comparison. Each median line includes its run-to-run range; reference lines show that device&apos;s original benchmark and, when enough scans exist, the previous {rangeDays}-day period median.
           {excludedHistory.length > 0 && " Orange anomaly bands mark measurements retained for diagnosis but excluded from scores, trends, and recommendations."}
         </div>
-        {rangeHistory.length < 2 ? (
+        {historyForStrategy(rangeHistory, "desktop").length < 2 && historyForStrategy(rangeHistory, "mobile").length < 2 ? (
           <div style={{ padding: "42px 16px", textAlign: "center", color: C.muted, fontSize: 13 }}>At least two collections inside this range are required to chart change.</div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
@@ -495,15 +549,21 @@ function HistoryTab({
                   <span style={{ fontSize: 12, fontWeight: 600, textTransform: "capitalize", color: device === "desktop" ? C.violetSoft : C.accentSoft }}>{device}</span>
                   <span style={{ fontSize: 11, color: C.faint }}>Latest {page.current[device][chartCat]}</span>
                 </div>
-                <HistoryChart
-                  history={rangeHistory}
-                  strategy={device}
-                  catKey={chartCat}
-                  baseline={page.baseline![device][chartCat].m}
-                  previousPeriod={pagePreviousPeriodMedian(page, device, chartCat, rangeDays)}
-                  markers={page.markers}
-                  excludedHistory={excludedHistory}
-                />
+                {historyForStrategy(rangeHistory, device).length < 2 ? (
+                  <div style={{ padding: "34px 16px", textAlign: "center", color: C.muted, fontSize: 12.5 }}>
+                    At least two successful {device} collections are required to chart change.
+                  </div>
+                ) : (
+                  <HistoryChart
+                    history={rangeHistory}
+                    strategy={device}
+                    catKey={chartCat}
+                    baseline={page.baseline![device][chartCat].m}
+                    previousPeriod={pagePreviousPeriodMedian(page, device, chartCat, rangeDays)}
+                    markers={page.markers}
+                    excludedHistory={excludedHistory}
+                  />
+                )}
               </div>
             ))}
           </div>
@@ -520,7 +580,7 @@ function HistoryTab({
             <div>
               <div style={{ fontSize: 12, fontWeight: 600, color: C.violetSoft }}>Agent readiness</div>
               <div style={{ fontSize: 11.5, color: C.faint, marginTop: 4 }}>
-                Each point freezes the score and ignored checks that were effective when that PSI collection completed.
+                Each point freezes the score and ignored checks that were effective when that agent scan completed.
               </div>
             </div>
             {latestReadiness && (
@@ -559,10 +619,11 @@ function HistoryTab({
         </div>
       </div>
 
-      <div className="table-scroll" style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13 }}>
+      <div id="nightly-detail" className="table-scroll" style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13 }}>
         <div style={{ padding: "13px 22px", borderBottom: `1px solid ${C.border}`, fontSize: 12, color: C.muted }}>
           Nightly detail · <span style={{ color: C.text, textTransform: "capitalize", fontWeight: 600 }}>{strategy}</span> primary · Lighthouse median with range below
           {showVisitorColumns && " · CrUX p75 with weekly change below"}
+          {excludedHistory.length > 0 && " · PSI anomaly rows are observed measurements excluded from scoring"}
         </div>
         <div className="narrow-table" style={{ display: "grid", gridTemplateColumns: GRID, minWidth: showVisitorColumns ? 1120 : undefined, padding: "14px 22px", borderBottom: `1px solid ${C.border}`, fontSize: 11, fontWeight: 550, letterSpacing: "0.05em", textTransform: "uppercase", color: C.faint }}>
           <div>Night</div>
@@ -584,6 +645,7 @@ function HistoryTab({
         </div>
         {runs.map((d) => {
           const markers = page.markers.filter((m) => m.i === d.i);
+          const excludedAnomaly = d.evidenceStatus === "provider-anomaly";
           const visitorSnapshot = visitorSnapshotForNight(visitorEvidence?.snapshots ?? [], d);
           const visitorSnapshotIndex = visitorSnapshot
             ? visitorEvidence?.snapshots.indexOf(visitorSnapshot) ?? -1
@@ -591,15 +653,24 @@ function HistoryTab({
           const previousVisitorSnapshot = visitorSnapshotIndex > 0
             ? visitorEvidence!.snapshots[visitorSnapshotIndex - 1]
             : null;
+          const completedTests = [
+            nightHasStrategy(d, "mobile") ? "M PSI" : null,
+            nightHasStrategy(d, "desktop") ? "D PSI" : null,
+            visitorSnapshot ? "CrUX" : null,
+            Array.isArray(d.agent) ? "Agent" : null,
+          ].filter((label): label is string => label !== null);
           const cell = (k: CategoryKey) => {
+            if (!nightHasStrategy(d, strategy)) {
+              return <div aria-label={`No ${strategy} PSI measurement`} style={{ textAlign: "center", color: C.faint }}>—</div>;
+            }
             const score = d.scores[strategy][k];
             const categoryLabel = CATEGORIES.find((category) => category.key === k)?.label ?? k;
             return (
               <div
-                aria-label={`${categoryLabel} median ${score.m}, range ${score.lo} to ${score.hi}`}
+                aria-label={`${categoryLabel} ${excludedAnomaly ? "observed" : "median"} ${score.m}, range ${score.lo} to ${score.hi}${excludedAnomaly ? ", excluded PSI anomaly" : ""}`}
                 style={{ textAlign: "center" }}
               >
-                <div style={{ fontSize: 14, lineHeight: 1.1, fontWeight: 650, color: scoreMeta(score.m).fg }}>{score.m}</div>
+                <div style={{ fontSize: 14, lineHeight: 1.1, fontWeight: 650, color: excludedAnomaly ? C.amber : scoreMeta(score.m).fg }}>{score.m}</div>
                 <div style={{ marginTop: 3, fontSize: 10, lineHeight: 1, color: C.faint }}>{score.lo}–{score.hi}</div>
               </div>
             );
@@ -625,10 +696,35 @@ function HistoryTab({
             );
           };
           return (
-            <div key={d.i} className="narrow-table" style={{ display: "grid", gridTemplateColumns: GRID, minWidth: showVisitorColumns ? 1120 : undefined, alignItems: "center", padding: "12px 22px", borderBottom: `1px solid ${C.rowBorder}`, fontSize: 13 }}>
-              <div style={{ fontWeight: 500 }}>{d.date}</div>
+            <div
+              key={d.i}
+              className="narrow-table"
+              data-psi-anomaly={excludedAnomaly || undefined}
+              style={{
+                display: "grid",
+                gridTemplateColumns: GRID,
+                minWidth: showVisitorColumns ? 1120 : undefined,
+                alignItems: "center",
+                padding: "12px 22px",
+                borderBottom: `1px solid ${C.rowBorder}`,
+                boxShadow: excludedAnomaly ? `inset 3px 0 ${C.amber}` : undefined,
+                background: excludedAnomaly ? "rgba(255,165,72,0.045)" : undefined,
+                fontSize: 13,
+              }}
+            >
+              <div>
+                <div style={{ fontWeight: 500, color: excludedAnomaly ? C.amber : C.text }}>{d.date}</div>
+                <div title={`Completed independently: ${completedTests.join(", ") || "none"}`} style={{ marginTop: 4, color: C.faint, fontSize: 9.5, lineHeight: 1.3 }}>
+                  {completedTests.join(" · ") || "No completed test"}
+                </div>
+              </div>
               <div style={{ fontSize: 12, display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 5 }}>
-                {markers.length === 0 ? <span style={{ color: "#4A4A50" }}>—</span> : markers.map((marker) => {
+                {excludedAnomaly && (
+                  <span title="Retained for diagnosis; not used in status, trend, or recommendations" style={{ color: C.amber, fontWeight: 600 }}>
+                    ◆ PSI anomaly · excluded
+                  </span>
+                )}
+                {!excludedAnomaly && markers.length === 0 ? <span style={{ color: "#4A4A50" }}>—</span> : markers.map((marker) => {
                   const legacyRecKey = isTaskMarker(marker)
                     ? store.recs.find((rec) =>
                       rec.pageId === page.id
@@ -671,7 +767,7 @@ function HistoryTab({
                 <div key={metric.key}>{visitorCell(metric.key)}</div>
               ))}
               <div style={{ textAlign: "right" }}>
-                <button onClick={() => openReport(d)} style={{ border: `1px solid ${C.border2}`, background: "rgba(255,255,255,0.03)", color: C.text, fontSize: 11.5, fontWeight: 500, padding: "5px 11px", borderRadius: 7, cursor: "pointer" }}>Report</button>
+                <button disabled={!nightHasStrategy(d, strategy)} onClick={() => openReport(d)} style={{ border: `1px solid ${C.border2}`, background: "rgba(255,255,255,0.03)", color: C.text, fontSize: 11.5, fontWeight: 500, padding: "5px 11px", borderRadius: 7, cursor: nightHasStrategy(d, strategy) ? "pointer" : "not-allowed", opacity: nightHasStrategy(d, strategy) ? 1 : 0.45 }}>Report</button>
               </div>
             </div>
           );

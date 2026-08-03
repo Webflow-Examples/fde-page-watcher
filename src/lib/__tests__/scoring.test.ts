@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { median, range, noiseBand, classifyStatus, categoryTrendSeries, hasPersistentRegression, historyForPreviousRange, historyForRange, pageHistoryForRange, pagePreviousPeriodMedian, pageRangeTrend, pageRecordedHistoryForRange, previousPeriodMedian, rangeComparison, DROP_THRESHOLD } from "../scoring";
+import { median, range, noiseBand, classifyStatus, categoryTrendSeries, hasPersistentRegression, historyForPreviousRange, historyForRange, historyForStrategy, pageHistoryForRange, pagePreviousPeriodMedian, pageRangeLatestNightForStrategy, pageRangeSeries, pageRangeTrend, pageRecordedHistoryForRange, previousPeriodMedian, rangeComparison, DROP_THRESHOLD } from "../scoring";
 import type { CategoryScore, Night, NightScores, ScoreByCategory, StrategyScores, WatchPage } from "../types";
 
 const cat = (m: number): CategoryScore => ({ m, lo: m - 2, hi: m + 2 });
@@ -127,6 +127,35 @@ describe("selected range comparisons", () => {
 
     expect(pageHistoryForRange(page, 3, now).map((item) => item.i)).toEqual([0]);
     expect(pageRecordedHistoryForRange(page, 3, now).map((item) => item.i)).toEqual([0, 1]);
+  });
+
+  it("keeps independently completed PSI devices out of each other's series", () => {
+    const history: Night[] = [
+      { i: 0, date: "Aug 1", iso: "2026-08-01T03:00:00.000Z", scores: dualStrat(61, 80), availableStrategies: ["mobile"] },
+      { i: 1, date: "Aug 2", iso: "2026-08-02T03:00:00.000Z", scores: dualStrat(62, 81), availableStrategies: ["desktop"] },
+      { i: 2, date: "Aug 3", iso: "2026-08-03T03:00:00.000Z", scores: dualStrat(63, 82), availableStrategies: [], agent: [] },
+    ];
+    const page: WatchPage = {
+      id: "independent-tests",
+      title: "Independent tests",
+      url: "https://example.com",
+      flag: "watching",
+      status: "stable",
+      baseline: dualStrat(60, 80),
+      baselineCapturedAt: "2026-07-31T03:00:00.000Z",
+      current: { mobile: { perf: 61, a11y: 95, bp: 95, seo: 95 }, desktop: { perf: 81, a11y: 95, bp: 95, seo: 95 } },
+      history,
+      markers: [],
+      agent: [],
+    };
+    const now = Date.parse("2026-08-04T00:00:00.000Z");
+
+    expect(historyForStrategy(history, "mobile").map((item) => item.i)).toEqual([0]);
+    expect(historyForStrategy(history, "desktop").map((item) => item.i)).toEqual([1]);
+    expect(pageRangeSeries(page, "mobile", "perf", 7, now)).toEqual([61]);
+    expect(pageRangeSeries(page, "desktop", "perf", 7, now)).toEqual([81]);
+    expect(pageRangeLatestNightForStrategy(page, 7, "mobile", now)?.i).toBe(0);
+    expect(pageRangeLatestNightForStrategy(page, 7, "desktop", now)?.i).toBe(1);
   });
 });
 

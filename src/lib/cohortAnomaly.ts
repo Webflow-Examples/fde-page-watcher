@@ -1,5 +1,5 @@
 import { normalizePerformanceThresholds } from "./performanceThresholds";
-import { mediansOf, pageTrend } from "./scoring";
+import { mediansOf, nightHasStrategy, pageTrend } from "./scoring";
 import type {
   AppState,
   Night,
@@ -26,7 +26,11 @@ function previousTrustedNight(page: WatchPage, night: Night): Night | null {
   const index = page.history.indexOf(night);
   for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
     const candidate = page.history[cursor];
-    if (candidate.evidenceStatus !== "provider-anomaly") return candidate;
+    if (
+      candidate.evidenceStatus !== "provider-anomaly"
+      && nightHasStrategy(candidate, "mobile")
+      && nightHasStrategy(candidate, "desktop")
+    ) return candidate;
   }
   return null;
 }
@@ -85,14 +89,17 @@ export function evaluateCohortAnomaly(
   );
   const completedPageIds = new Set(
     state.pages.flatMap((page) =>
-      page.history.some((night) => night.cohortId === cohortId) || terminalWithoutCapture.has(page.id)
+      page.history.some((night) =>
+        night.cohortId === cohortId
+        && nightHasStrategy(night, "mobile")
+        && nightHasStrategy(night, "desktop")) || terminalWithoutCapture.has(page.id)
         ? [page.id]
         : []),
   );
   const candidates: CohortPage[] = [];
   for (const page of state.pages) {
     const night = page.history.find((item) => item.cohortId === cohortId);
-    if (!night) continue;
+    if (!night || !nightHasStrategy(night, "mobile") || !nightHasStrategy(night, "desktop")) continue;
     const previous = previousTrustedNight(page, night);
     if (!previous) continue;
     const dropped = (["mobile", "desktop"] as Strategy[]).some((strategy) =>

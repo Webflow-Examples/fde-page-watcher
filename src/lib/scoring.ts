@@ -72,9 +72,18 @@ export function range(nums: number[]): { lo: number; hi: number } {
   return { lo: Math.min(...nums), hi: Math.max(...nums) };
 }
 
+/** Legacy rows contain both devices; new rows explicitly identify the devices that actually completed. */
+export function nightHasStrategy(night: Night, strategy: Strategy): boolean {
+  return night.availableStrategies === undefined || night.availableStrategies.includes(strategy);
+}
+
+export function historyForStrategy(history: Night[], strategy: Strategy): Night[] {
+  return history.filter((night) => nightHasStrategy(night, strategy));
+}
+
 /** Median series for a category over the last `days` nights, for one strategy. */
 export function categorySeries(history: Night[], strategy: Strategy, key: CategoryKey, days: number): number[] {
-  return history.slice(-days).map((n) => n.scores[strategy][key].m);
+  return historyForStrategy(history, strategy).slice(-days).map((n) => n.scores[strategy][key].m);
 }
 
 /** Collections inside a real calendar range; undated demo data uses one point per day. */
@@ -120,7 +129,7 @@ export function previousPeriodMedian(
   days: RangeDays,
   now = Date.now(),
 ): PreviousPeriodMedian | null {
-  const previousHistory = historyForPreviousRange(history, days, now);
+  const previousHistory = historyForPreviousRange(historyForStrategy(history, strategy), days, now);
   if (previousHistory.length < days) return null;
   return {
     value: median(previousHistory.map((night) => night.scores[strategy][key].m)),
@@ -138,6 +147,7 @@ export interface RangeComparison {
 
 /** Compare the oldest and newest non-overlapping three-night medians in a range. */
 export function rangeComparison(history: Night[], strategy: Strategy, key: CategoryKey): RangeComparison | null {
+  history = historyForStrategy(history, strategy);
   if (history.length < 2) return null;
   const windowSize = Math.min(3, Math.floor(history.length / 2));
   const from = median(history.slice(0, windowSize).map((night) => night.scores[strategy][key].m));
@@ -158,6 +168,7 @@ export function categoryTrendSeries(
   baseline?: number,
   baselineCapturedAt?: string,
 ): number[] {
+  history = historyForStrategy(history, strategy);
   const capturedAt = baselineCapturedAt && /^\d{4}-\d{2}-\d{2}T/.test(baselineCapturedAt)
     ? Date.parse(baselineCapturedAt)
     : Number.NaN;
@@ -180,6 +191,7 @@ export function categoryTrendSeries(
  * floored so a flat history still tolerates normal PSI jitter.
  */
 export function noiseBand(history: Night[], strategy: Strategy, key: CategoryKey): number {
+  history = historyForStrategy(history, strategy);
   const meds = history.map((n) => n.scores[strategy][key].m);
   if (meds.length < 2) return 5;
   let sum = 0;
@@ -189,6 +201,7 @@ export function noiseBand(history: Night[], strategy: Strategy, key: CategoryKey
 
 /** Typical within-night PSI spread, used to judge selected-range movement. */
 export function rangeNoiseBand(history: Night[], strategy: Strategy, key: CategoryKey): number {
+  history = historyForStrategy(history, strategy);
   const halfRanges = history.map((night) => {
     const score = night.scores[strategy][key];
     return Math.ceil((score.hi - score.lo) / 2);
@@ -229,6 +242,7 @@ function hasConfirmedDrop(
   reference: number,
   tolerances: TrendTolerances,
 ): boolean {
+  history = historyForStrategy(history, strategy);
   if (history.length < tolerances.confirmationRuns) return false;
   return history.slice(-tolerances.confirmationRuns).every((night) => {
     const score = night.scores[strategy][key].m;
@@ -251,6 +265,7 @@ export function classifyStatus(
   key: CategoryKey = "perf",
   toleranceInput: number | Partial<TrendTolerances> = DROP_THRESHOLD,
 ): PageStatus {
+  history = historyForStrategy(history, strategy);
   if (history.length === 0) return "stable";
   const tolerances = trendTolerances(toleranceInput);
   if (history.length < tolerances.newPageGraceRuns) return "pending";
@@ -272,13 +287,18 @@ export function hasPersistentRegression(
   key: CategoryKey = "perf",
   toleranceInput: number | Partial<TrendTolerances> = DROP_THRESHOLD,
 ): boolean {
+  history = historyForStrategy(history, strategy);
   const tolerances = trendTolerances(toleranceInput, 2);
   if (history.length < Math.max(tolerances.newPageGraceRuns, tolerances.confirmationRuns)) return false;
   const base = baselineMedian[key];
   return hasConfirmedDrop(history, strategy, key, base, tolerances);
 }
 
-function postBaselineHistory(page: WatchPage, includeProviderAnomalies = false): Night[] {
+function postBaselineHistory(
+  page: WatchPage,
+  includeProviderAnomalies = false,
+  strategy?: Strategy,
+): Night[] {
   const baselineCapturedAt = page.baselineCapturedAt ?? "";
   const capturedAt = /^\d{4}-\d{2}-\d{2}T/.test(baselineCapturedAt)
     ? Date.parse(baselineCapturedAt)
@@ -287,12 +307,13 @@ function postBaselineHistory(page: WatchPage, includeProviderAnomalies = false):
   const trustedHistory = includeProviderAnomalies
     ? page.history
     : page.history.filter((night) => night.evidenceStatus !== "provider-anomaly");
-  return Number.isFinite(capturedAt) && hasLiveHistory
+  const postBaseline = Number.isFinite(capturedAt) && hasLiveHistory
     ? trustedHistory.filter((night) => {
       const recordedAt = night.iso ? Date.parse(night.iso) : Number.NaN;
       return Number.isFinite(recordedAt) && recordedAt > capturedAt;
     })
     : trustedHistory;
+  return strategy ? historyForStrategy(postBaseline, strategy) : postBaseline;
 }
 
 /** Range-limited monitoring history, excluding exploratory runs before baseline. */
@@ -320,12 +341,21 @@ export function pagePreviousPeriodMedian(
   now = Date.now(),
 ): PreviousPeriodMedian | null {
   if (!page.baseline || !page.baselineCapturedAt) return null;
-  return previousPeriodMedian(postBaselineHistory(page), strategy, key, days, now);
+  return previousPeriodMedian(postBaselineHistory(page, false, strategy), strategy, key, days, now);
 }
 
 /** Latest recorded collection inside the selected range. */
 export function pageRangeLatestNight(page: WatchPage, days: RangeDays, now = Date.now()): Night | null {
   return pageHistoryForRange(page, days, now).at(-1) ?? null;
+}
+
+export function pageRangeLatestNightForStrategy(
+  page: WatchPage,
+  days: RangeDays,
+  strategy: Strategy,
+  now = Date.now(),
+): Night | null {
+  return historyForStrategy(pageHistoryForRange(page, days, now), strategy).at(-1) ?? null;
 }
 
 /** Latest median for one category inside the selected range. */
@@ -336,7 +366,7 @@ export function pageRangeLatestScore(
   days: RangeDays,
   now = Date.now(),
 ): number | null {
-  return pageRangeLatestNight(page, days, now)?.scores[strategy][key].m ?? null;
+  return pageRangeLatestNightForStrategy(page, days, strategy, now)?.scores[strategy][key].m ?? null;
 }
 
 export interface PageAgentSnapshot {
@@ -386,7 +416,8 @@ export function pageRangeSeries(
   days: RangeDays,
   now = Date.now(),
 ): number[] {
-  return pageHistoryForRange(page, days, now).map((night) => night.scores[strategy][key].m);
+  return historyForStrategy(pageHistoryForRange(page, days, now), strategy)
+    .map((night) => night.scores[strategy][key].m);
 }
 
 /** Display trend across the selected range, independent of the original baseline score. */
@@ -398,8 +429,8 @@ export function pageRangeTrend(
   now = Date.now(),
 ): PageStatus {
   const tolerances = trendTolerances(toleranceInput);
-  if (postBaselineHistory(page).length < tolerances.newPageGraceRuns) return "pending";
-  const history = pageHistoryForRange(page, days, now);
+  if (postBaselineHistory(page, false, strategy).length < tolerances.newPageGraceRuns) return "pending";
+  const history = historyForStrategy(pageHistoryForRange(page, days, now), strategy);
   const comparison = rangeComparison(history, strategy, "perf");
   if (!comparison) return "pending";
   const band = rangeNoiseBand(history, strategy, "perf");
@@ -415,7 +446,7 @@ export function pageTrend(
   toleranceInput: number | Partial<TrendTolerances> = DROP_THRESHOLD,
 ): PageStatus {
   if (!page.baseline || !page.baselineCapturedAt) return "pending";
-  return classifyStatus(mediansOf(page.baseline[strategy]), postBaselineHistory(page), strategy, "perf", toleranceInput);
+  return classifyStatus(mediansOf(page.baseline[strategy]), postBaselineHistory(page, false, strategy), strategy, "perf", toleranceInput);
 }
 
 /** Apply the alert threshold only to collections recorded after the baseline. */
@@ -425,7 +456,7 @@ export function pageHasPersistentRegression(
   toleranceInput: number | Partial<TrendTolerances> = DROP_THRESHOLD,
 ): boolean {
   if (!page.baseline || !page.baselineCapturedAt) return false;
-  return hasPersistentRegression(mediansOf(page.baseline[strategy]), postBaselineHistory(page), strategy, "perf", toleranceInput);
+  return hasPersistentRegression(mediansOf(page.baseline[strategy]), postBaselineHistory(page, false, strategy), strategy, "perf", toleranceInput);
 }
 
 /** Deltas per category, latest snapshot vs baseline (both already single-strategy medians). */

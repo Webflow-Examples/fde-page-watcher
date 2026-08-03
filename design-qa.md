@@ -750,3 +750,53 @@ No P0, P1, or P2 defects remain.
 - None required for this pass.
 
 final result: passed
+
+---
+
+# Design QA — PSI anomaly rows in nightly detail
+
+- Source visual truth: `/Users/mmunger/Library/Application Support/CleanShot/media/media_N8hiN9nByC/CleanShot 2026-08-03 at 09.24.11@2x.png` (nightly-detail table) and `/var/folders/jz/8c54r7y95vn_cmfvrt65_l200000gq/T/codex-clipboard-f40f7d90-71a3-470c-9c6b-c1446cc32b36.png` (approved anomaly treatment in history charts)
+- Implementation screenshot: `/tmp/page-watcher-list-anomaly.png`
+- Browser viewport: 1280 × 720 CSS px
+- Source pixels: 1760 × 854 and 1790 × 1633; implementation pixels: 1269 × 714
+- Density normalization: comparison used visible component proportions and token-level treatment rather than pixel-overlay matching because the supplied screenshots show different pages, dates, and crops.
+- State: desktop History tab, last 7 days, two consecutive provider-anomaly rows, existing custom/task markers retained.
+
+## Full-view comparison evidence
+
+The nightly table retains the source hierarchy, grid columns, typography, row density, borders, and score/range treatment. Provider-anomaly rows now use the same amber semantic color as the chart anomaly bands, with a subtle tinted row background and an inset left rule. Trusted rows remain visually unchanged.
+
+## Focused region comparison evidence
+
+The marker column clearly labels each quarantined row as `PSI anomaly · excluded`. Observed Lighthouse medians use amber rather than normal score-status colors, while ranges retain the table's secondary text treatment. Existing green custom markers and violet task markers remain visible on the same anomaly row. The table note explains that these measurements are excluded from scoring.
+
+## Required fidelity surfaces
+
+- Fonts and typography: existing product type, weights, sizes, line heights, and table hierarchy are preserved.
+- Spacing and layout rhythm: the original grid tracks, row padding, column alignment, borders, and responsive horizontal scrolling are preserved.
+- Colors and visual tokens: the existing `C.amber`, panel, border, row-border, text, and faint tokens are reused; no new palette was introduced.
+- Image quality and asset fidelity: no new raster, logo, illustration, or icon assets are required for this table state.
+- Copy and content: anomaly labels and explanatory copy match the chart's established `PSI anomaly · excluded` language and explicitly distinguish observed data from trusted scoring data.
+
+## Interaction and accessibility checks
+
+- Two anomaly rows are present in the rendered fixture and expose `data-psi-anomaly`.
+- Each score cell announces `observed`, its range, and `excluded PSI anomaly` through its accessible label.
+- The anomaly row's Report action opens the stored nightly report successfully.
+- Current render shows no development issue overlay; an earlier HistoryChart list-key warning was removed by rendering marker dots from the already-keyed visible-marker collection.
+
+## Findings
+
+No actionable P0, P1, or P2 differences remain. The implementation intentionally adds the missing anomaly rows and uses the established chart anomaly semantics without changing trusted scoring behavior.
+
+## Comparison history
+
+- Initial pass: anomaly rows rendered correctly, but the development preview exposed a pre-existing HistoryChart child-key warning.
+- Fix: marker dots now render from `visibleMarkers`, eliminating null entries from that rendered list.
+- Post-fix evidence: the nightly table renders two anomaly rows, the Report action works, and the current preview has no issue badge.
+
+## Follow-up polish
+
+None required for this scoped change.
+
+final result: passed

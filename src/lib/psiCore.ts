@@ -44,6 +44,16 @@ interface PsiResponse {
   error?: { code?: number; message?: string };
 }
 
+export class PsiRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "PsiRequestError";
+  }
+}
+
 function record(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
@@ -119,12 +129,16 @@ export async function runPsiOnce(
   if (options.apiKey) params.set("key", options.apiKey);
 
   const response = await fetch(`${PSI_ENDPOINT}?${params.toString()}`, { signal: options.signal });
+  const json = (await response.json().catch(() => ({}))) as PsiResponse;
   if (!response.ok) {
-    throw new Error(`PSI request failed with HTTP ${response.status}`);
+    const detail = json.error?.message ? `: ${safeProviderDetail(json.error.message)}` : "";
+    throw new PsiRequestError(`PSI request failed with HTTP ${response.status}${detail}`, response.status);
   }
 
-  const json = (await response.json()) as PsiResponse;
-  if (json.error) throw new Error(`PSI provider error ${json.error.code ?? "unknown"}`);
+  if (json.error) {
+    const detail = json.error.message ? `: ${safeProviderDetail(json.error.message)}` : "";
+    throw new Error(`PSI provider error ${json.error.code ?? "unknown"}${detail}`);
+  }
   const runtimeError = lighthouseRuntimeError(json);
   if (runtimeError) throw new Error(`Lighthouse runtime error: ${safeProviderDetail(runtimeError)}`);
   const scores = lighthouseScores(json);

@@ -155,6 +155,7 @@ export function StoreProvider({
   children: React.ReactNode;
 }) {
   const [data, setData] = useState<AppState>(initial);
+  const [visitorExperience, setVisitorExperience] = useState<CruxPageEvidence[]>(initialVisitorExperience);
   const dataRef = useRef<AppState>(initial);
   const mutationQueueRef = useRef<Promise<void>>(Promise.resolve());
   const mutationSequenceRef = useRef(0);
@@ -263,6 +264,7 @@ export function StoreProvider({
         const message = collectionSettlementMessage(previous, next);
         if (message) flash(message);
       },
+      onVisitorExperience: setVisitorExperience,
     });
   }, [apply, flash, hasActiveCollection, pathFor]);
 
@@ -711,7 +713,7 @@ export function StoreProvider({
 
   const value: StoreValue = {
     ...data,
-    visitorExperience: initialVisitorExperience,
+    visitorExperience,
     basePath,
     pathFor,
     strategy,

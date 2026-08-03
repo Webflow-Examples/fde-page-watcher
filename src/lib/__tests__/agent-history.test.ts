@@ -31,4 +31,15 @@ describe("agent-readiness history events", () => {
     expect(points[2].fixedNames).toEqual([]);
     expect(points[2].ignoredNames).toEqual(["x402"]);
   });
+
+  it("retains an agent-only event without a PSI device result", () => {
+    const agentOnly = {
+      ...night(0, [{ group: "Discovery", name: "llms.txt", pass: true }]),
+      availableStrategies: [],
+      agentCapturedAt: "2026-08-03T03:00:00.000Z",
+    } satisfies Night;
+
+    expect(agentReadinessHistoryPoints([agentOnly])).toHaveLength(1);
+    expect(agentReadinessHistoryPoints([agentOnly])[0].snapshot.percent).toBe(100);
+  });
 });
