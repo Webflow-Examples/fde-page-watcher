@@ -8,6 +8,7 @@ import { C } from "@/lib/ui";
 import { normalizeCollectionSchedule } from "@/lib/collectionSchedule";
 import { ClockIcon, DashboardIcon, EyeIcon, InboxIcon, TasksIcon } from "./icons";
 import { GearIcon } from "@phosphor-icons/react";
+import webflowSocialLogo from "../../public/webflow-social.png";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", Icon: DashboardIcon, badge: null as "inbox" | "tasks" | "watchlist" | null },
@@ -43,11 +44,12 @@ export function Sidebar() {
     >
       <div className="sidebar-brand" style={{ display: "flex", alignItems: "center", gap: 10, padding: "22px 22px 20px" }}>
         <Image
-          src={pathFor("/webflow-social.png")}
+          src={webflowSocialLogo}
           alt="Webflow"
           width={30}
           height={30}
           priority
+          unoptimized
           style={{ borderRadius: 7 }}
         />
         <div className="sidebar-brand-text" style={{ lineHeight: 1.15 }}>
