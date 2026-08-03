@@ -278,13 +278,15 @@ export function hasPersistentRegression(
   return hasConfirmedDrop(history, strategy, key, base, tolerances);
 }
 
-function postBaselineHistory(page: WatchPage): Night[] {
+function postBaselineHistory(page: WatchPage, includeProviderAnomalies = false): Night[] {
   const baselineCapturedAt = page.baselineCapturedAt ?? "";
   const capturedAt = /^\d{4}-\d{2}-\d{2}T/.test(baselineCapturedAt)
     ? Date.parse(baselineCapturedAt)
     : Number.NaN;
   const hasLiveHistory = page.history.some((night) => night.iso && Number.isFinite(Date.parse(night.iso)));
-  const trustedHistory = page.history.filter((night) => night.evidenceStatus !== "provider-anomaly");
+  const trustedHistory = includeProviderAnomalies
+    ? page.history
+    : page.history.filter((night) => night.evidenceStatus !== "provider-anomaly");
   return Number.isFinite(capturedAt) && hasLiveHistory
     ? trustedHistory.filter((night) => {
       const recordedAt = night.iso ? Date.parse(night.iso) : Number.NaN;
@@ -297,6 +299,16 @@ function postBaselineHistory(page: WatchPage): Night[] {
 export function pageHistoryForRange(page: WatchPage, days: RangeDays, now = Date.now()): Night[] {
   if (!page.baseline || !page.baselineCapturedAt) return [];
   return historyForRange(postBaselineHistory(page), days, now);
+}
+
+/**
+ * Every recorded collection in the selected range, including quarantined PSI
+ * measurements. Use this only for provenance displays; scoring and status
+ * calculations must continue to use pageHistoryForRange.
+ */
+export function pageRecordedHistoryForRange(page: WatchPage, days: RangeDays, now = Date.now()): Night[] {
+  if (!page.baseline || !page.baselineCapturedAt) return [];
+  return historyForRange(postBaselineHistory(page, true), days, now);
 }
 
 /** Previous-period chart reference for one device and metric. */

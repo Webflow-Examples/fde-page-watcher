@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { median, range, noiseBand, classifyStatus, categoryTrendSeries, hasPersistentRegression, historyForPreviousRange, historyForRange, pagePreviousPeriodMedian, pageRangeTrend, previousPeriodMedian, rangeComparison, DROP_THRESHOLD } from "../scoring";
+import { median, range, noiseBand, classifyStatus, categoryTrendSeries, hasPersistentRegression, historyForPreviousRange, historyForRange, pageHistoryForRange, pagePreviousPeriodMedian, pageRangeTrend, pageRecordedHistoryForRange, previousPeriodMedian, rangeComparison, DROP_THRESHOLD } from "../scoring";
 import type { CategoryScore, Night, NightScores, ScoreByCategory, StrategyScores, WatchPage } from "../types";
 
 const cat = (m: number): CategoryScore => ({ m, lo: m - 2, hi: m + 2 });
@@ -104,6 +104,29 @@ describe("selected range comparisons", () => {
     };
     expect(pageRangeTrend(page, "mobile", 3)).toBe("stable");
     expect(pageRangeTrend(page, "desktop", 3)).toBe("regressing");
+  });
+
+  it("keeps quarantined measurements available for provenance but out of scoring history", () => {
+    const now = Date.parse("2026-08-04T00:00:00.000Z");
+    const page: WatchPage = {
+      id: "anomaly",
+      title: "Anomaly",
+      url: "https://example.com",
+      flag: "watching",
+      status: "stable",
+      baseline: strat(80),
+      baselineCapturedAt: "2026-08-01T00:00:00.000Z",
+      current: { mobile: { perf: 80, a11y: 95, bp: 95, seo: 95 }, desktop: { perf: 80, a11y: 95, bp: 95, seo: 95 } },
+      history: [
+        { ...night(0, 80), iso: "2026-08-02T00:00:00.000Z" },
+        { ...night(1, 40), iso: "2026-08-03T00:00:00.000Z", evidenceStatus: "provider-anomaly" },
+      ],
+      markers: [],
+      agent: [],
+    };
+
+    expect(pageHistoryForRange(page, 3, now).map((item) => item.i)).toEqual([0]);
+    expect(pageRecordedHistoryForRange(page, 3, now).map((item) => item.i)).toEqual([0, 1]);
   });
 });
 

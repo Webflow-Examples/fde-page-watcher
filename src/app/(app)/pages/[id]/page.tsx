@@ -9,7 +9,7 @@ import type { AgentCheck, CategoryKey, Night, PageStatus, RangeDays, Rec, WatchP
 import { agentCheckKey, agentIgnoreOverrideMode, isAgentCheckIgnored, isAgentGroupIgnored, normalizeAgentIgnoreSettings, summarizeAgentChecks } from "@/lib/agentScoring";
 import { agentReadinessHistoryPoints } from "@/lib/agentHistory";
 import { normalizePerformanceThresholds } from "@/lib/performanceThresholds";
-import { deltaMeta, pageAgentSnapshotForRange, pageHistoryForRange, pagePreviousPeriodMedian, pageRangeComparison, pageRangeLatestNight, pageRangeSeries, pageRangeTrend, scoreMeta, statusMeta } from "@/lib/scoring";
+import { deltaMeta, pageAgentSnapshotForRange, pageHistoryForRange, pagePreviousPeriodMedian, pageRangeComparison, pageRangeLatestNight, pageRangeSeries, pageRangeTrend, pageRecordedHistoryForRange, scoreMeta, statusMeta } from "@/lib/scoring";
 import { auditsFor } from "@/lib/audits";
 import { C, taskLabel } from "@/lib/ui";
 import { AgentReadinessChart, HistoryChart, Sparkline } from "@/components/charts";
@@ -410,6 +410,8 @@ function HistoryTab({
 }) {
   const router = useRouter();
   const rangeHistory = pageHistoryForRange(page, rangeDays);
+  const recordedRangeHistory = pageRecordedHistoryForRange(page, rangeDays);
+  const excludedHistory = recordedRangeHistory.filter((night) => night.evidenceStatus === "provider-anomaly");
   const runs = [...rangeHistory].reverse().slice(0, 12);
   const thresholds = normalizePerformanceThresholds(store.performanceThresholds);
   const readinessHistory = agentReadinessHistoryPoints(
@@ -479,7 +481,10 @@ function HistoryTab({
           <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>Score over time · last {rangeDays} days</h3>
           <SegToggle label="History category" value={chartCat} onChange={setChartCat} options={CATEGORIES.map((c) => ({ value: c.key, label: c.short }))} />
         </div>
-        <div style={{ fontSize: 12, color: C.faint, marginBottom: 18 }}>Desktop and Mobile are stacked for comparison. Each median line includes its run-to-run range; reference lines show that device&apos;s original benchmark and, when enough scans exist, the previous {rangeDays}-day period median.</div>
+        <div style={{ fontSize: 12, color: C.faint, marginBottom: 18 }}>
+          Desktop and Mobile are stacked for comparison. Each median line includes its run-to-run range; reference lines show that device&apos;s original benchmark and, when enough scans exist, the previous {rangeDays}-day period median.
+          {excludedHistory.length > 0 && " Orange anomaly bands mark measurements retained for diagnosis but excluded from scores, trends, and recommendations."}
+        </div>
         {rangeHistory.length < 2 ? (
           <div style={{ padding: "42px 16px", textAlign: "center", color: C.muted, fontSize: 13 }}>At least two collections inside this range are required to chart change.</div>
         ) : (
@@ -497,6 +502,7 @@ function HistoryTab({
                   baseline={page.baseline![device][chartCat].m}
                   previousPeriod={pagePreviousPeriodMedian(page, device, chartCat, rangeDays)}
                   markers={page.markers}
+                  excludedHistory={excludedHistory}
                 />
               </div>
             ))}

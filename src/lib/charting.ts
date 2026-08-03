@@ -1,3 +1,5 @@
+import type { Night } from "./types";
+
 /** A lone observation has no direction; draw it as a horizontal series. */
 export function plottedSparklineSeries(series: number[]): number[] {
   return series.length === 1 ? [series[0], series[0]] : series;
@@ -40,6 +42,23 @@ export function placeMarkerLabelRows(
     occupied.push(row);
   }
   return placed;
+}
+
+/** Split a chart timeline wherever PSI evidence was quarantined. */
+export function trustedHistorySegments(history: Night[]): Night[][] {
+  const segments: Night[][] = [];
+  let current: Night[] = [];
+
+  for (const night of history) {
+    if (night.evidenceStatus === "provider-anomaly") {
+      if (current.length > 0) segments.push(current);
+      current = [];
+      continue;
+    }
+    current.push(night);
+  }
+  if (current.length > 0) segments.push(current);
+  return segments;
 }
 
 const LONG_MONTHS: Record<string, string> = {
