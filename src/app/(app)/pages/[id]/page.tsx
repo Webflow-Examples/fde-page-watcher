@@ -29,6 +29,7 @@ import {
   visitorSnapshotForNight,
 } from "@/lib/visitorExperience";
 import type { VisitorMetricKey } from "@/lib/visitorExperience";
+import { collectionLocalDateTime, normalizeCollectionSchedule } from "@/lib/collectionSchedule";
 
 const PAGE_RANGE_OPTIONS: ReadonlyArray<SelectMenuOption<RangeDays>> = [
   { value: 3, label: "Last 3 days" },
@@ -456,6 +457,31 @@ function HistoryTab({
   // The table is an audit trail, so it shows every recorded collection. The
   // chart/status/readiness paths above continue to use trusted history only.
   const runs = [...recordedRangeHistory].reverse().slice(0, 12);
+  const collectionSchedule = normalizeCollectionSchedule(store.collectionSchedule);
+  const runMetadata = runs.map((night) => {
+    const local = night.iso
+      ? collectionLocalDateTime(night.iso, collectionSchedule.timeZone)
+      : null;
+    const dateKey = local?.dateKey ?? `legacy:${night.date}`;
+    const runLabel = night.cohortId?.startsWith("confirmation:")
+      ? "Confirmation"
+      : night.cohortId?.startsWith("nightly:")
+        ? "Nightly"
+        : night.cohortId?.startsWith("manual:")
+          ? "Manual"
+          : "Collection";
+    return {
+      night,
+      dateKey,
+      dateLabel: local?.dateLabel ?? night.date,
+      timeLabel: local?.timeLabel ?? null,
+      runLabel,
+    };
+  });
+  const displayedRuns = runMetadata.map((run, index) => ({
+    ...run,
+    startsDateGroup: run.dateKey !== runMetadata[index - 1]?.dateKey,
+  }));
   const thresholds = normalizePerformanceThresholds(store.performanceThresholds);
   const readinessHistory = agentReadinessHistoryPoints(
     rangeHistory,
@@ -624,6 +650,7 @@ function HistoryTab({
           Nightly detail · <span style={{ color: C.text, textTransform: "capitalize", fontWeight: 600 }}>{strategy}</span> primary · Lighthouse median with range below
           {showVisitorColumns && " · CrUX p75 with weekly change below"}
           {excludedHistory.length > 0 && " · PSI anomaly rows are observed measurements excluded from scoring"}
+          {` · Dates in ${collectionSchedule.timeZone}`}
         </div>
         <div className="narrow-table" style={{ display: "grid", gridTemplateColumns: GRID, minWidth: showVisitorColumns ? 1120 : undefined, padding: "14px 22px", borderBottom: `1px solid ${C.border}`, fontSize: 11, fontWeight: 550, letterSpacing: "0.05em", textTransform: "uppercase", color: C.faint }}>
           <div>Night</div>
@@ -643,7 +670,7 @@ function HistoryTab({
           ))}
           <div />
         </div>
-        {runs.map((d) => {
+        {displayedRuns.map(({ night: d, startsDateGroup, dateLabel, timeLabel, runLabel }) => {
           const markers = page.markers.filter((m) => m.i === d.i);
           const excludedAnomaly = d.evidenceStatus === "provider-anomaly";
           const visitorSnapshot = visitorSnapshotForNight(visitorEvidence?.snapshots ?? [], d);
@@ -713,7 +740,15 @@ function HistoryTab({
               }}
             >
               <div>
-                <div style={{ fontWeight: 500, color: excludedAnomaly ? C.amber : C.text }}>{d.date}</div>
+                <div
+                  aria-label={`${dateLabel}${timeLabel ? ` at ${timeLabel}` : ""}, ${runLabel}`}
+                  style={{ fontWeight: 500, color: excludedAnomaly ? C.amber : C.text }}
+                >
+                  {startsDateGroup ? dateLabel : `↳ ${timeLabel ?? "Additional run"}`}
+                </div>
+                <div style={{ marginTop: 3, color: C.faint, fontSize: 9.5, lineHeight: 1.3 }}>
+                  {startsDateGroup && timeLabel ? `${timeLabel} · ${runLabel}` : runLabel}
+                </div>
                 <div title={`Completed independently: ${completedTests.join(", ") || "none"}`} style={{ marginTop: 4, color: C.faint, fontSize: 9.5, lineHeight: 1.3 }}>
                   {completedTests.join(" · ") || "No completed test"}
                 </div>
