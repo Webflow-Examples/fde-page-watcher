@@ -4,6 +4,9 @@ import {
 } from "../src/lib/dataAudit";
 import type { InspectedStoredAuditCapture, WeeklyDataAudit } from "../src/lib/dataAudit";
 import { isPageActivelyMonitored } from "../src/lib/watchCapacity";
+import { nightHasStrategy } from "../src/lib/scoring";
+import { STRATEGIES } from "../src/lib/types";
+import type { Night } from "../src/lib/types";
 import { createFdeStore, type FdeStoreBindings } from "./dataStore";
 
 export const WEEKLY_AUDIT_CRON = "30 5 * * 1";
@@ -20,7 +23,7 @@ function objectRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-async function storedReport(
+async function storedPayload(
   env: WeeklyAuditEnvironment,
   tenant: string,
   pageId: string,
@@ -40,6 +43,25 @@ async function storedReport(
   }
 }
 
+async function storedReport(
+  env: WeeklyAuditEnvironment,
+  tenant: string,
+  pageId: string,
+  night: Night,
+): Promise<unknown | null> {
+  const combined = await storedPayload(env, tenant, pageId, night.rawReportKey);
+  if (combined !== null) return combined;
+
+  const strategyEntries = await Promise.all(STRATEGIES
+    .filter((strategy) => nightHasStrategy(night, strategy))
+    .map(async (strategy) => {
+      const report = await storedPayload(env, tenant, pageId, night.strategyReportKeys?.[strategy]);
+      return report === null ? null : [strategy, report] as const;
+    }));
+  const strategies = Object.fromEntries(strategyEntries.filter((entry) => entry !== null));
+  return Object.keys(strategies).length > 0 ? { strategies } : null;
+}
+
 /** Inspect one large raw report at a time so weekly verification stays memory-bounded. */
 export async function runWeeklyDataAudit(
   env: WeeklyAuditEnvironment,
@@ -56,7 +78,7 @@ export async function runWeeklyDataAudit(
     for (const night of page.history) {
       const capturedAt = night.iso ? Date.parse(night.iso) : Number.NaN;
       if (!Number.isFinite(capturedAt) || capturedAt < periodStart.getTime() || capturedAt >= periodEnd.getTime()) continue;
-      const report = await storedReport(env, tenant, page.id, night.rawReportKey);
+      const report = await storedReport(env, tenant, page.id, night);
       inspections.push(inspectStoredAuditCapture({ pageId: page.id, night, report }));
     }
   }

@@ -36,7 +36,6 @@ const FIELD_KEY_BY_COMPARISON: Record<LabFieldMetricComparison["key"], VisitorMe
   cls: "clsP75",
   ttfb: "ttfbP75Ms",
 };
-
 function scopeLabel(item: CruxPageEvidence, scope: "url" | "origin"): string {
   return scope === "url" ? "Exact URL" : "Origin-wide";
 }

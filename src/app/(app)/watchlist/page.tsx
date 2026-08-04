@@ -15,6 +15,7 @@ import { ChevronDownIcon, PlusIcon, TrashIcon } from "@/components/icons";
 import { flagCapacityError, MAX_ACTIVE_PAGES, MAX_PRIORITY_PAGES, watchCapacity } from "@/lib/watchCapacity";
 import { movePageWithinFlag, reorderPageWithinFlag, sortWatchlistPages } from "@/lib/watchlistOrder";
 import { failedRunLabel } from "@/lib/collectionStatus";
+import { WebflowConnection } from "@/components/webflow-connection";
 
 const GRID = "32px minmax(228px,2.4fr) 230px 1fr 120px";
 const PRIORITY_CHIP = flagChip("priority");
@@ -607,9 +608,11 @@ function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
                     : p.runState === "running"
                       ? "Collection running"
                       : p.runState === "waiting_for_evidence"
-                        ? "Waiting for independent PSI evidence"
+                        ? "Waiting for independent test evidence"
                       : p.runState === "failed"
                         ? failedRunLabel(p)
+                        : p.lastCollectionStatus === "partial"
+                          ? "Partial collection retained · missing tests will retry"
                         : p.lastCollectionStatus === "inconclusive"
                           ? "Measurement inconclusive · previous trusted score retained"
                         : p.baselineCapturedAt
@@ -637,6 +640,8 @@ function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
           </>
         ) : (
           <>
+
+        <WebflowConnection connectionUrl={pathFor("/api/settings/webflow")} />
 
         <section aria-labelledby="default-chart-device-heading" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 24, background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, padding: "17px 20px", marginBottom: 16 }}>
           <div>

@@ -1,5 +1,5 @@
 import type { CruxPageEvidence, CruxSnapshot } from "./crux";
-import type { PageStatus, Strategy } from "./types";
+import type { Night, PageStatus, Strategy } from "./types";
 
 export type VisitorExperienceTrend = "stable" | "worsening" | "improving" | "insufficient";
 export type VisitorMetricKey = "lcpP75Ms" | "inpP75Ms" | "clsP75" | "ttfbP75Ms";
@@ -88,6 +88,46 @@ export function visitorSnapshotValues(
   return snapshots.flatMap((snapshot) => snapshot[key] === null ? [] : [snapshot[key] as number]);
 }
 
+function nightDateKey(night: Pick<Night, "date" | "iso">): string | null {
+  if (!night.iso) return null;
+  const match = /^([A-Z][a-z]{2})\s+(\d{1,2})$/.exec(night.date.trim());
+  if (!match) return night.iso.slice(0, 10);
+  const month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].indexOf(match[1]);
+  if (month < 0) return night.iso.slice(0, 10);
+  const reference = new Date(night.iso);
+  if (!Number.isFinite(reference.getTime())) return null;
+  let year = reference.getUTCFullYear();
+  if (reference.getUTCMonth() === 0 && month === 11) year -= 1;
+  if (reference.getUTCMonth() === 11 && month === 0) year += 1;
+  return `${year}-${String(month + 1).padStart(2, "0")}-${match[2].padStart(2, "0")}`;
+}
+
+/** Latest rolling CrUX window whose end date is on or before this nightly row. */
+export function visitorSnapshotForNight(
+  snapshots: CruxSnapshot[],
+  night: Pick<Night, "date" | "iso">,
+): CruxSnapshot | null {
+  const date = nightDateKey(night);
+  if (!date) return null;
+  return [...snapshots].reverse().find((snapshot) => snapshot.collectionEnd <= date) ?? null;
+}
+
+export function formatVisitorMetricDelta(
+  key: VisitorMetricKey,
+  before: number | null,
+  after: number | null,
+): string {
+  if (before === null || after === null) return "—";
+  const delta = after - before;
+  if (delta === 0) return "No change";
+  const direction = delta < 0 ? "↓" : "↑";
+  const magnitude = key === "clsP75"
+    ? Math.abs(delta).toFixed(2)
+    : key === "lcpP75Ms"
+      ? `${(Math.abs(delta) / 1_000).toFixed(1)} s`
+      : `${Math.round(Math.abs(delta))} ms`;
+  return `${direction} ${magnitude}`;
+}
 export function formatCollectionWindow(snapshot: CruxSnapshot): string {
   const format = (value: string) => new Intl.DateTimeFormat("en-US", {
     month: "short",

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   collectionInstant,
+  collectionLocalDateTime,
   collectionOffsets,
   ensureCollectionOffsets,
   pageScheduleDue,
@@ -15,6 +16,19 @@ const schedule: CollectionSchedule = {
 };
 
 describe("collection scheduling", () => {
+  it("groups stored runs by the project's local calendar date", () => {
+    expect(collectionLocalDateTime("2026-08-03T00:29:45.742Z", "America/Costa_Rica")).toEqual({
+      dateKey: "2026-08-02",
+      dateLabel: "Aug 2",
+      timeLabel: "6:29 PM",
+    });
+    expect(collectionLocalDateTime("2026-08-03T06:14:51.479Z", "America/Costa_Rica")).toEqual({
+      dateKey: "2026-08-03",
+      dateLabel: "Aug 3",
+      timeLabel: "12:14 AM",
+    });
+  });
+
   it("resolves midnight in the saved timezone across daylight-saving offsets", () => {
     expect(collectionInstant(schedule, "2026-01-15").toISOString()).toBe("2026-01-15T06:00:00.000Z");
     expect(collectionInstant(schedule, "2026-07-15").toISOString()).toBe("2026-07-15T05:00:00.000Z");

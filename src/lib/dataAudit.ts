@@ -1,5 +1,6 @@
 import { aggregateLighthouseRunEvidence, extractLighthouseRunEvidence, lighthouseRuntimeError, lighthouseScores } from "./lighthouseEvidence";
 import { captureAgentReadiness } from "./agentScoring";
+import { nightHasStrategy } from "./scoring";
 import { CATEGORIES, STRATEGIES } from "./types";
 import type { CategoryKey, CollectionJob, Night, Strategy } from "./types";
 
@@ -325,6 +326,10 @@ function emptyMetrics(): MutableMetrics {
 function auditAgentReadiness(night: Night, metrics: MutableMetrics): void {
   const checks = Array.isArray(night.agent) ? night.agent : null;
   const snapshot = night.agentReadiness;
+  const expectsAgent = night.availableStrategies === undefined
+    || night.agentCapturedAt !== undefined
+    || checks !== null;
+  if (!expectsAgent) return;
   if (checks) metrics.agentScans += 1;
   else metrics.missingAgentScans += 1;
   if (snapshot) metrics.agentReadinessSnapshots += 1;
@@ -353,12 +358,14 @@ export function inspectStoredAuditCapture(capture: StoredAuditCapture): Inspecte
   const metrics = emptyMetrics();
   const lighthouseVersions = new Map<string, number>();
   auditAgentReadiness(capture.night, metrics);
-  if (capture.report !== null) {
+  const expectedStrategies = STRATEGIES.filter((strategy) => nightHasStrategy(capture.night, strategy));
+  const expectsPsi = expectedStrategies.length > 0;
+  if (expectsPsi && capture.report !== null) {
     const strategies = reportStrategies(capture.report);
     if (!strategies) {
       metrics.invalidScoreRuns += 1;
     } else {
-      for (const strategy of STRATEGIES) {
+      for (const strategy of expectedStrategies) {
         const report = strategies[strategy];
         if (!report) {
           metrics.invalidScoreRuns += 1;
@@ -370,8 +377,8 @@ export function inspectStoredAuditCapture(capture: StoredAuditCapture): Inspecte
   }
   return {
     pageId: capture.pageId,
-    rawReportFound: capture.report !== null,
-    missingRawReport: capture.report === null,
+    rawReportFound: expectsPsi && capture.report !== null,
+    missingRawReport: expectsPsi && capture.report === null,
     ...metrics,
     lighthouseVersions: Object.fromEntries(lighthouseVersions),
   };

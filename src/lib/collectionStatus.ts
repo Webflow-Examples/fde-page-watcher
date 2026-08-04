@@ -1,4 +1,5 @@
 import type { WatchPage } from "./types";
+import { nightHasStrategy } from "./scoring";
 import { naturalDate } from "./ui";
 
 /**
@@ -7,7 +8,13 @@ import { naturalDate } from "./ui";
  */
 export function lastSuccessfulRunAt(page: WatchPage): string | null {
   for (let index = page.history.length - 1; index >= 0; index -= 1) {
-    const iso = page.history[index].iso;
+    const night = page.history[index];
+    if (!nightHasStrategy(night, "mobile") && !nightHasStrategy(night, "desktop")) continue;
+    const captured = Object.values(night.strategyCapturedAt ?? {})
+      .filter((value): value is string => typeof value === "string")
+      .sort()
+      .at(-1);
+    const iso = captured ?? night.iso;
     if (iso && Number.isFinite(Date.parse(iso))) return iso;
   }
   return null;

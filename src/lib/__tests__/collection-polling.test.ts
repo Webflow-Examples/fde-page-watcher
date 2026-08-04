@@ -61,17 +61,20 @@ describe("collection polling recovery", () => {
     current.pages[0].runState = "running";
     const settled = structuredClone(current);
     delete settled.pages[0].runState;
-    const fetchFn = vi.fn(async () => Response.json({ state: settled }));
+    const fetchFn = vi.fn(async () => Response.json({ state: settled, visitorExperience: [] }));
+    const onVisitorExperience = vi.fn();
 
     const stop = startCollectionPolling({
       url: "/api/state",
       fetchFn,
       getState: () => current,
       onState: (next) => { current = next; },
+      onVisitorExperience,
     });
     await vi.waitFor(() => expect(fetchFn).toHaveBeenCalledTimes(1));
     expect(fetchFn).toHaveBeenCalledWith("/api/state", { cache: "no-store" });
     await vi.waitFor(() => expect(hasActiveCollections(current)).toBe(false));
+    expect(onVisitorExperience).toHaveBeenCalledWith([]);
 
     await vi.advanceTimersByTimeAsync(6000);
     expect(fetchFn).toHaveBeenCalledTimes(1);

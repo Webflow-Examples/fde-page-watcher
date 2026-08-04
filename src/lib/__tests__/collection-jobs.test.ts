@@ -15,9 +15,9 @@ afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recur
 const score = (value: number): CategoryScore => ({ m: value, lo: value - 2, hi: value + 2 });
 const scores = (perf: number): NightScores => ({ perf: score(perf), a11y: score(91), bp: score(95), seo: score(98) });
 
-function collectionResult(jobId: string): CollectionResult {
+function collectionResult(jobId: string, schemaVersion: 1 | 2 = 1): CollectionResult {
   return {
-    schemaVersion: 1,
+    schemaVersion,
     jobId,
     runId: jobId,
     pageId: "page",
@@ -203,7 +203,7 @@ describe("durable collection jobs", () => {
     const fetchFn = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
       expect(new Headers(init?.headers).get("authorization")).toBe("Bearer shared-secret");
-      if (url.endsWith("/jobs/polled-job")) return Response.json({ status: "complete", output: collectionResult("polled-job") });
+      if (url.endsWith("/jobs/polled-job")) return Response.json({ status: "complete", output: collectionResult("polled-job", 2) });
       if (url.endsWith("/reports/mobile")) return Response.json({ strategy: "mobile", raws: [{ id: "mobile-raw" }] });
       if (url.endsWith("/reports/desktop")) return Response.json({ strategy: "desktop", raws: [{ id: "desktop-raw" }] });
       if (url.endsWith("/reports") && init?.method === "DELETE") return Response.json({ ok: true });
@@ -230,6 +230,35 @@ describe("durable collection jobs", () => {
       "https://collector.example.test/jobs/polled-job/reports",
       expect.objectContaining({ method: "DELETE" }),
     );
+  });
+
+  it("preserves retained-device progress while the Workflow sleeps", async () => {
+    const dataStore = await store();
+    await enqueueCollectionJob("page", "run", { dataStore, id: "waiting-job" });
+    await dataStore.updateState((state) => {
+      const job = state.jobs![0];
+      job.state = "waiting_for_evidence";
+      job.completedStrategies = ["desktop"];
+      job.strategyAttempts = { mobile: 5, desktop: 3 };
+      job.strategyErrors = { mobile: "PSI request failed with HTTP 429" };
+      job.nextRetryAt = "2026-08-03T12:00:00.000Z";
+      state.pages[0].runState = "waiting_for_evidence";
+    });
+
+    const state = await reconcileCollectionJobs({
+      dataStore,
+      fetchFn: vi.fn(async () => Response.json({ status: "waiting" })) as typeof fetch,
+      collectorUrl: "https://collector.example.test/jobs",
+      collectorSecret: "shared-secret",
+    });
+
+    expect(state.jobs?.[0]).toMatchObject({
+      state: "waiting_for_evidence",
+      completedStrategies: ["desktop"],
+      strategyErrors: { mobile: "PSI request failed with HTTP 429" },
+      nextRetryAt: "2026-08-03T12:00:00.000Z",
+    });
+    expect(state.pages[0].runState).toBe("waiting_for_evidence");
   });
 
   it("keeps transient collector outages retryable and surfaces terminal Workflow errors", async () => {

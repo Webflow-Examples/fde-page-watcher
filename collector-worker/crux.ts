@@ -316,13 +316,17 @@ export async function collectCruxEvidence(
   options: {
     fetchFn?: typeof fetch;
     now?: Date;
+    tenant?: string;
+    pageIds?: string[];
   } = {},
 ): Promise<CruxCollectionResult> {
-  const tenant = env.NIGHTLY_TENANT || "brand-studio:live";
+  const tenant = options.tenant ?? (env.NIGHTLY_TENANT || "brand-studio:live");
   const attemptedAt = (options.now ?? new Date()).toISOString();
   const fetchFn = options.fetchFn ?? fetch;
   const state = await createFdeStore(tenant, env).getState();
-  const pages = state.pages.filter(isPageActivelyMonitored);
+  const requestedPageIds = options.pageIds ? new Set(options.pageIds) : null;
+  const pages = state.pages.filter((page) =>
+    isPageActivelyMonitored(page) && (!requestedPageIds || requestedPageIds.has(page.id)));
   const targets = pages.flatMap((page) =>
     FORM_FACTORS.map((formFactor) => ({ page, formFactor })));
   const originQueries = new Map<string, Promise<unknown>>();

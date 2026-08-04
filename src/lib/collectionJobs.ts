@@ -27,8 +27,9 @@ import { nativeRecommendationOpportunities } from "./nativeElements";
 import { summarizePsiMeasurements } from "./psiCore";
 import { summarizeCulpritEvidence } from "./culpritEvidence";
 import { reconcileFieldOnlyRecommendations } from "./fieldOnlyRecommendations";
+import { COLLECTION_JOB_STALE_AFTER_MS, collectionJobIsStale } from "./collectionRetry";
 
-export const JOB_STALE_AFTER_MS = 30 * 60 * 1000;
+export const JOB_STALE_AFTER_MS = COLLECTION_JOB_STALE_AFTER_MS;
 const ACTIVE_STATES = new Set<CollectionJobState>([
   "queued",
   "dispatching",
@@ -74,14 +75,15 @@ export async function enqueueCollectionJob(
     if (!isPageActivelyMonitored(page)) throw new Error(`enqueueCollectionJob: page ${pageId} is paused`);
     const active = draft.jobs.find((item) => item.pageId === pageId && ACTIVE_STATES.has(item.state));
     if (active) {
-      const age = now.getTime() - Date.parse(active.updatedAt);
-      if (Number.isFinite(age) && age <= JOB_STALE_AFTER_MS) {
+      if (!collectionJobIsStale(active, now)) {
         job = active;
         queued = false;
         return;
       }
       active.state = "failed";
-      active.error = `Job exceeded the ${Math.round(JOB_STALE_AFTER_MS / 60_000)} minute stale limit`;
+      active.error = active.nextRetryAt
+        ? "Job did not resume after its scheduled PSI evidence retry"
+        : `Job exceeded the ${Math.round(JOB_STALE_AFTER_MS / 60_000)} minute stale limit`;
       active.updatedAt = now.toISOString();
       active.completedAt = now.toISOString();
       recoveredStale = true;
@@ -155,7 +157,9 @@ export async function failCollectionJob(
 }
 
 function validateResult(result: CollectionResult, job: CollectionJob): void {
-  if (result.schemaVersion !== 1) throw new Error("Unsupported collection result schema");
+  if (result.schemaVersion !== 1 && result.schemaVersion !== 2) {
+    throw new Error("Unsupported collection result schema");
+  }
   if (result.jobId !== job.id || result.runId !== job.runId || result.pageId !== job.pageId) {
     throw new Error("Collection result identity does not match the job");
   }
@@ -459,7 +463,7 @@ function isCollectorStatus(value: unknown): value is CollectorInstanceStatus {
 function isCollectionResult(value: unknown): value is CollectionResult {
   if (!value || typeof value !== "object") return false;
   const item = value as Partial<CollectionResult>;
-  return item.schemaVersion === 1
+  return (item.schemaVersion === 1 || item.schemaVersion === 2)
     && typeof item.jobId === "string"
     && typeof item.runId === "string"
     && typeof item.pageId === "string"
@@ -523,7 +527,11 @@ export async function reconcileCollectionJobs(options: ReconcileCollectionOption
 
       if (statusValue.status === "queued") return;
       if (["running", "paused", "waiting", "waitingForPause"].includes(statusValue.status)) {
-        if (job.state !== "running") await markCollectionJob(job.id, "running", { dataStore });
+        // The collector writes the richer waiting_for_evidence state and its
+        // nextRetryAt directly. Do not flatten that durable sleep back to running.
+        if (job.state !== "running" && job.state !== "waiting_for_evidence") {
+          await markCollectionJob(job.id, "running", { dataStore });
+        }
         return;
       }
       if (statusValue.status === "errored" || statusValue.status === "terminated" || statusValue.status === "unknown") {

@@ -58,6 +58,39 @@ function localParts(date: Date, timeZone: string): LocalParts {
   };
 }
 
+export interface CollectionLocalDateTime {
+  dateKey: string;
+  dateLabel: string;
+  timeLabel: string;
+}
+
+/** Calendar date and wall-clock time in the project's saved collection timezone. */
+export function collectionLocalDateTime(
+  value: string | Date,
+  timeZone: string,
+): CollectionLocalDateTime | null {
+  const date = value instanceof Date ? value : new Date(value);
+  if (!Number.isFinite(date.getTime())) return null;
+  try {
+    const parts = localParts(date, timeZone);
+    return {
+      dateKey: dateKey(parts),
+      dateLabel: new Intl.DateTimeFormat("en-US", {
+        timeZone,
+        month: "short",
+        day: "numeric",
+      }).format(date),
+      timeLabel: new Intl.DateTimeFormat("en-US", {
+        timeZone,
+        hour: "numeric",
+        minute: "2-digit",
+      }).format(date),
+    };
+  } catch {
+    return null;
+  }
+}
+
 function dateKey(parts: Pick<LocalParts, "year" | "month" | "day">): string {
   return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
 }

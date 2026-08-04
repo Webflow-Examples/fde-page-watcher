@@ -1,3 +1,4 @@
+import type { CruxPageEvidence } from "./crux";
 import type { AppState, CollectionJob, WatchPage } from "./types";
 
 const ACTIVE_STATES = new Set(["queued", "dispatching", "running", "waiting_for_evidence"]);
@@ -19,6 +20,7 @@ export interface CollectionPollerOptions {
   url: string;
   getState: () => AppState;
   onState: (state: AppState) => void;
+  onVisitorExperience?: (evidence: CruxPageEvidence[]) => void;
   fetchFn?: typeof fetch;
   intervalMs?: number;
 }
@@ -38,8 +40,12 @@ export function startCollectionPolling(options: CollectionPollerOptions): () => 
     try {
       const response = await fetchFn(options.url, { cache: "no-store" });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const body = (await response.json().catch(() => null)) as { state?: AppState } | null;
+      const body = (await response.json().catch(() => null)) as {
+        state?: AppState;
+        visitorExperience?: CruxPageEvidence[];
+      } | null;
       if (!stopped && body?.state) options.onState(body.state);
+      if (!stopped && body?.visitorExperience) options.onVisitorExperience?.(body.visitorExperience);
     } catch {
       // The durable job remains active. A transient app or collector outage is
       // retried instead of being misreported as a collection failure.

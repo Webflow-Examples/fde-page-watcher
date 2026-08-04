@@ -26,6 +26,34 @@ describe("successful collection timestamps", () => {
     expect(lastSuccessfulRunAt(page)).toBeNull();
   });
 
+  it("ignores an agent-only event when reporting the last PSI success", () => {
+    const page = buildSeedState().pages[0];
+    page.history = [
+      { ...page.history[0], iso: "2026-08-01T03:00:00.000Z" },
+      {
+        ...page.history[1],
+        iso: "2026-08-02T03:00:00.000Z",
+        availableStrategies: [],
+        agent: [],
+        agentCapturedAt: "2026-08-02T03:00:00.000Z",
+      },
+    ];
+
+    expect(lastSuccessfulRunAt(page)).toBe("2026-08-01T03:00:00.000Z");
+  });
+
+  it("uses a successful device's own capture time from a partial event", () => {
+    const page = buildSeedState().pages[0];
+    page.history = [{
+      ...page.history[0],
+      iso: "2026-08-01T03:00:00.000Z",
+      availableStrategies: ["mobile"],
+      strategyCapturedAt: { mobile: "2026-08-01T03:07:00.000Z" },
+    }];
+
+    expect(lastSuccessfulRunAt(page)).toBe("2026-08-01T03:07:00.000Z");
+  });
+
   it("summarizes a failed run using the last successful capture", () => {
     const page = buildSeedState().pages[0];
     page.history[page.history.length - 1].iso = "2026-07-21T03:04:00.000Z";

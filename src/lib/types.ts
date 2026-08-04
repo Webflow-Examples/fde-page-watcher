@@ -238,10 +238,18 @@ export interface Night {
   date: string; // display date, e.g. "Jul 16"
   iso?: string; // ISO date if produced by a real run
   scores: StrategyScores;
+  /** Undefined on legacy/complete rows; otherwise identifies independently committed PSI devices. */
+  availableStrategies?: Strategy[];
+  /** Actual completion time for each independently committed PSI device. */
+  strategyCapturedAt?: Partial<Record<Strategy, string>>;
   samples?: Partial<Record<Strategy, number>>; // per-strategy successful sample size (REQ-032)
   sampleSize?: number; // min across strategies; kept for older records / quick display
   rawReportKey?: string; // object-storage key for the full PSI payload (REQ-006)
+  /** Per-device raw report keys available before a combined run report exists. */
+  strategyReportKeys?: Partial<Record<Strategy, string>>;
   agent?: AgentCheck[]; // agent-readiness scan recorded for this night, so history is retained (REQ-008)
+  /** Actual completion time for the independently committed agent-readiness scan. */
+  agentCapturedAt?: string;
   agentReadiness?: AgentReadinessSnapshot; // immutable score using the ignore settings effective for this run
   /** Legacy mobile-only opportunity list retained for older stored history. */
   opportunities?: LighthouseOpportunity[];
@@ -410,9 +418,13 @@ export interface WatchPage {
   runId?: string; // active or most-recent on-demand/nightly collection id
   startedAt?: string;
   lastRunAt?: string;
+  /** Independent successful completion time for each PSI device. */
+  lastPsiRunAt?: Partial<Record<Strategy, string>>;
+  /** Independent successful completion time for agent readiness. */
+  lastAgentRunAt?: string;
   lastScheduledAt?: string;
   collectionOffsetMinutes?: number;
-  lastCollectionStatus?: "trusted" | "inconclusive";
+  lastCollectionStatus?: "trusted" | "partial" | "inconclusive";
   lastError?: string;
 }
 
@@ -430,6 +442,18 @@ export interface CollectionJob {
   completedAt?: string;
   workflowId?: string;
   cohortId?: string;
+  /** Strategies already retained in R2 while the other device is still retrying. */
+  completedStrategies?: Strategy[];
+  /** Total provider attempts made for each device in the current Workflow. */
+  strategyAttempts?: Partial<Record<Strategy, number>>;
+  /** Latest provider error for each device that still needs evidence. */
+  strategyErrors?: Partial<Record<Strategy, string>>;
+  cruxCompletedAt?: string;
+  cruxError?: string;
+  agentCompletedAt?: string;
+  agentError?: string;
+  /** Durable wake-up time for a Workflow waiting on any missing independent test. */
+  nextRetryAt?: string;
   error?: string;
   enrichedAt?: string;
   enrichmentError?: string;

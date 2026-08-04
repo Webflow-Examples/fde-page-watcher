@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import type { AgentIgnoreSettings, CategoryKey, ChangeMarker, Night, Strategy } from "@/lib/types";
 import { agentReadinessHistoryPoints } from "@/lib/agentHistory";
-import type { PreviousPeriodMedian } from "@/lib/scoring";
-import { formatHistoryTooltipDate, placeMarkerLabelRows, plottedSparklineSeries, snappedHistoryIndex } from "@/lib/charting";
+import { historyForStrategy, type PreviousPeriodMedian } from "@/lib/scoring";
+import { formatHistoryTooltipDate, placeMarkerLabelRows, plottedSparklineSeries, snappedHistoryIndex, trustedHistorySegments } from "@/lib/charting";
 import { C } from "@/lib/ui";
 import { isTaskMarker } from "@/lib/taskMarkers";
 
@@ -94,6 +94,7 @@ export function HistoryChart({
   baseline,
   previousPeriod,
   markers,
+  excludedHistory = [],
 }: {
   history: Night[];
   strategy: Strategy;
@@ -101,15 +102,32 @@ export function HistoryChart({
   baseline: number;
   previousPeriod: PreviousPeriodMedian | null;
   markers: ChangeMarker[];
+  excludedHistory?: Night[];
 }) {
   const { containerRef, width: W } = useResponsiveChartWidth(HISTORY_CHART_DEFAULT_WIDTH);
   const [hoveredPoint, setHoveredPoint] = useState<{ index: number; pointerY: number } | null>(null);
-  const h = history;
-  const n = h.length;
-  if (n < 2) return null;
+  const h = historyForStrategy(history, strategy);
+  if (h.length < 2) return null;
+  const timeline = [...h, ...historyForStrategy(excludedHistory, strategy)]
+    .filter((night, index, values) => values.findIndex((candidate) => candidate.i === night.i) === index)
+    .sort((left, right) => left.i - right.i);
+  const n = timeline.length;
+  const timelineIndexByNight = new Map(timeline.map((night, index) => [night.i, index]));
   const visibleMarkers = (markers || [])
-    .map((marker) => ({ marker, markerIndex: h.findIndex((night) => night.i === marker.i) }))
+    .map((marker) => ({ marker, markerIndex: timeline.findIndex((night) => night.i === marker.i) }))
     .filter(({ markerIndex }) => markerIndex >= 0);
+  const anomalyGroups = timeline.reduce<Night[][]>((groups, night) => {
+    if (night.evidenceStatus !== "provider-anomaly") return groups;
+    const previousIndex = timeline.indexOf(night) - 1;
+    const previousNight = previousIndex >= 0 ? timeline[previousIndex] : null;
+    if (previousNight?.evidenceStatus === "provider-anomaly") {
+      groups.at(-1)?.push(night);
+    } else {
+      groups.push([night]);
+    }
+    return groups;
+  }, []);
+  const trustedSegments = trustedHistorySegments(timeline);
   const H = 264;
   const padL = 38;
   const padR = 20;
@@ -124,18 +142,13 @@ export function HistoryChart({
   lo = Math.max(0, lo);
   hi = Math.min(100, Math.max(hi, lo + 10));
   const x = (i: number) => padL + (i / (n - 1)) * (W - padL - padR);
+  const xForNight = (night: Night) => x(timelineIndexByNight.get(night.i) ?? 0);
   const y = (v: number) => padT + (1 - (v - lo) / (hi - lo)) * (H - padT - padB);
   const line = strategy === "desktop" ? C.violetSoft : C.accentBright;
   const band = strategy === "desktop" ? "rgba(183,156,255,0.15)" : "rgba(59,137,255,0.16)";
-  const bandTop = h.map((d, index) => `${x(index)},${y(at(d, "hi"))}`).join(" ");
-  const bandBot = h
-    .map((d, index) => `${x(index)},${y(at(d, "lo"))}`)
-    .reverse()
-    .join(" ");
-  const medPts = h.map((d, index) => `${x(index)},${y(at(d, "m"))}`).join(" ");
   const ticks = [lo, Math.round((lo + hi) / 2), hi];
   const xLabels = [...new Set([0, Math.round((n - 1) / 2), n - 1])];
-  const ld = h[n - 1];
+  const latestTrustedNight = h[h.length - 1];
   const clampLabelY = (value: number) => Math.min(H - padB - 7, Math.max(padT + 7, value));
   const baselineLabelY = clampLabelY(y(baseline) - 6);
   const previousPeriodLabelY = previousPeriod
@@ -145,16 +158,19 @@ export function HistoryChart({
           : y(previousPeriod.value) - 6,
       )
     : 0;
-  const markerLabelYs = placeMarkerLabelRows(
-    visibleMarkers.length,
+  const eventLabelYs = placeMarkerLabelRows(
+    anomalyGroups.length + visibleMarkers.length,
     [baselineLabelY, ...(previousPeriod ? [previousPeriodLabelY] : [])],
     padT + 7,
     H - padB - 7,
   );
-  const hoveredNight = hoveredPoint ? h[hoveredPoint.index] : null;
+  const anomalyLabelYs = eventLabelYs.slice(0, anomalyGroups.length);
+  const markerLabelYs = eventLabelYs.slice(anomalyGroups.length);
+  const hoveredNight = hoveredPoint ? timeline[hoveredPoint.index] : null;
   const hoveredMedian = hoveredNight ? at(hoveredNight, "m") : null;
+  const hoveredAnomaly = hoveredNight?.evidenceStatus === "provider-anomaly";
   const hoveredX = hoveredPoint ? x(hoveredPoint.index) : null;
-  const tooltipOnLeft = hoveredX !== null && hoveredX > W - 190;
+  const tooltipOnLeft = hoveredX !== null && hoveredX > W - 220;
   const tooltipAbove = hoveredPoint ? hoveredPoint.pointerY > H - 125 : false;
   const handleMouseMove = (event: MouseEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -187,10 +203,45 @@ export function HistoryChart({
         ))}
         {xLabels.map((i, k) => (
           <text key={`x${k}`} x={x(i)} y={H - 10} textAnchor="middle" fontSize={10} fill={C.faint}>
-            {h[i].date}
+            {timeline[i].date}
           </text>
         ))}
-        <polygon points={`${bandTop} ${bandBot}`} fill={band} />
+        {anomalyGroups.map((group, index) => {
+          const startX = xForNight(group[0]);
+          const endX = xForNight(group[group.length - 1]);
+          const markerX = (startX + endX) / 2;
+          const nearRightEdge = markerX >= padL + (W - padL - padR) * 0.75;
+          return (
+            <g key={`anomaly-${group[0].i}`} data-history-anomaly>
+              <rect
+                x={Math.max(padL, startX - 6)}
+                y={padT}
+                width={Math.max(12, endX - startX + 12)}
+                height={H - padT - padB}
+                fill="rgba(255,165,72,0.10)"
+              />
+              <line x1={startX} x2={startX} y1={padT - 4} y2={H - padB} stroke={C.amber} strokeWidth={1.4} strokeDasharray="4 3" />
+              {endX !== startX && <line x1={endX} x2={endX} y1={padT - 4} y2={H - padB} stroke={C.amber} strokeWidth={1.4} strokeDasharray="4 3" />}
+              <path d={`M ${markerX} ${padT - 8} l 5 5 l -5 5 l -5 -5 z`} fill={C.amber} />
+              <text
+                x={markerX + (nearRightEdge ? -8 : 8)}
+                y={anomalyLabelYs[index]}
+                textAnchor={nearRightEdge ? "end" : "start"}
+                fontSize={10.5}
+                fontWeight={650}
+                fill={C.amber}
+              >
+                PSI anomaly · excluded
+              </text>
+            </g>
+          );
+        })}
+        {trustedSegments.map((segment) => {
+          if (segment.length < 2) return null;
+          const bandTop = segment.map((night) => `${xForNight(night)},${y(at(night, "hi"))}`).join(" ");
+          const bandBot = [...segment].reverse().map((night) => `${xForNight(night)},${y(at(night, "lo"))}`).join(" ");
+          return <polygon key={`band-${segment[0].i}`} points={`${bandTop} ${bandBot}`} fill={band} />;
+        })}
         <line x1={padL} x2={W - padR} y1={y(baseline)} y2={y(baseline)} stroke="#5A5A62" strokeWidth={1.2} strokeDasharray="5 4" />
         <text x={W - padR} y={baselineLabelY} textAnchor="end" fontSize={10} fill={C.muted}>
           original benchmark {baseline}
@@ -211,7 +262,19 @@ export function HistoryChart({
             </text>
           </>
         )}
-        <polyline points={medPts} fill="none" stroke={line} strokeWidth={2.4} strokeLinejoin="round" strokeLinecap="round" />
+        {trustedSegments.map((segment) => segment.length > 1 ? (
+          <polyline
+            key={`line-${segment[0].i}`}
+            points={segment.map((night) => `${xForNight(night)},${y(at(night, "m"))}`).join(" ")}
+            fill="none"
+            stroke={line}
+            strokeWidth={2.4}
+            strokeLinejoin="round"
+            strokeLinecap="round"
+          />
+        ) : (
+          <circle key={`line-${segment[0].i}`} cx={xForNight(segment[0])} cy={y(at(segment[0], "m"))} r={2.2} fill={line} />
+        ))}
         {visibleMarkers.map(({ marker: mk, markerIndex }, k) => {
           const markerX = x(markerIndex);
           const plotWidth = W - padL - padR;
@@ -236,17 +299,15 @@ export function HistoryChart({
         })}
         {hoveredNight && hoveredMedian !== null && hoveredX !== null && (
           <g aria-hidden="true">
-            <line x1={hoveredX} x2={hoveredX} y1={padT} y2={H - padB} stroke={C.text} strokeWidth={1} opacity={0.55} />
-            <circle cx={hoveredX} cy={y(hoveredMedian)} r={4.5} fill={line} stroke={C.panel} strokeWidth={2} />
+            <line x1={hoveredX} x2={hoveredX} y1={padT} y2={H - padB} stroke={hoveredAnomaly ? C.amber : C.text} strokeWidth={1} opacity={0.7} />
+            {!hoveredAnomaly && <circle cx={hoveredX} cy={y(hoveredMedian)} r={4.5} fill={line} stroke={C.panel} strokeWidth={2} />}
           </g>
         )}
       </svg>
-      <FixedChartDot kind="history-line" x={x(n - 1)} y={y(at(ld, "m"))} viewWidth={W} viewHeight={H} radius={4} color={line} borderColor={C.panel} borderWidth={2} />
-      {(markers || []).map((mk) => {
-        const markerIndex = h.findIndex((night) => night.i === mk.i);
-        if (markerIndex < 0) return null;
+      <FixedChartDot kind="history-line" x={xForNight(latestTrustedNight)} y={y(at(latestTrustedNight, "m"))} viewWidth={W} viewHeight={H} radius={4} color={line} borderColor={C.panel} borderWidth={2} />
+      {visibleMarkers.map(({ marker: mk, markerIndex }, index) => {
         const custom = !isTaskMarker(mk);
-        return <FixedChartDot key={mk.id} kind="history-marker" x={x(markerIndex)} y={padT - 4} viewWidth={W} viewHeight={H} radius={3.5} color={custom ? C.green : "#9564FF"} />;
+        return <FixedChartDot key={`${mk.id}-${markerIndex}-${index}`} kind="history-marker" x={x(markerIndex)} y={padT - 4} viewWidth={W} viewHeight={H} radius={3.5} color={custom ? C.green : "#9564FF"} />;
       })}
       {hoveredNight && hoveredMedian !== null && hoveredX !== null && (
         <div
@@ -256,7 +317,7 @@ export function HistoryChart({
             zIndex: 3,
             left: `${(hoveredX / W) * 100}%`,
             top: hoveredPoint?.pointerY ?? padT,
-            width: 154,
+            width: hoveredAnomaly ? 210 : 154,
             padding: "10px 12px",
             borderRadius: 8,
             border: `1px solid ${C.border2}`,
@@ -267,15 +328,22 @@ export function HistoryChart({
             transform: `translate(${tooltipOnLeft ? "calc(-100% - 10px)" : "10px"}, ${tooltipAbove ? "calc(-100% - 10px)" : "10px"})`,
           }}
         >
-          <div style={{ fontSize: 11.5, fontWeight: 650 }}>{HISTORY_CATEGORY_LABELS[catKey]}</div>
+          <div style={{ fontSize: 11.5, fontWeight: 650, color: hoveredAnomaly ? C.amber : C.text }}>
+            {hoveredAnomaly ? "PSI anomaly · excluded" : HISTORY_CATEGORY_LABELS[catKey]}
+          </div>
           <div style={{ marginTop: 2, fontSize: 10.5, color: C.faint }}>{formatHistoryTooltipDate(hoveredNight.date, hoveredNight.iso)}</div>
           <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginTop: 9 }}>
-            <span style={{ fontSize: 10.5, color: C.muted }}>Median</span>
-            <span style={{ fontSize: 22, lineHeight: 1, fontWeight: 650, color: line }}>{hoveredMedian}</span>
+            <span style={{ fontSize: 10.5, color: C.muted }}>{hoveredAnomaly ? "Observed median" : "Median"}</span>
+            <span style={{ fontSize: 22, lineHeight: 1, fontWeight: 650, color: hoveredAnomaly ? C.amber : line }}>{hoveredMedian}</span>
           </div>
           <div style={{ marginTop: 6, paddingTop: 6, borderTop: `1px solid ${C.rowBorder}`, fontSize: 10.5, color: C.muted }}>
             Range <span style={{ color: C.dim, fontWeight: 600 }}>{at(hoveredNight, "lo")}–{at(hoveredNight, "hi")}</span>
           </div>
+          {hoveredAnomaly && (
+            <div style={{ marginTop: 7, fontSize: 10.5, lineHeight: 1.4, color: C.faint2 }}>
+              Retained for diagnosis; not used in status, trend, or recommendations.
+            </div>
+          )}
         </div>
       )}
     </div>

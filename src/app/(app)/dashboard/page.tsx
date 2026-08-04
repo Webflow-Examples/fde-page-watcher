@@ -12,7 +12,7 @@ import { CATEGORIES } from "@/lib/types";
 import type { AgentIgnoreSettings, CategoryKey, Night } from "@/lib/types";
 import { agentReadinessForNight, summarizeAgentChecks } from "@/lib/agentScoring";
 import { effectivePerformanceThresholds, normalizePerformanceThresholds } from "@/lib/performanceThresholds";
-import { deltaMeta, historyForRange, pageAgentSnapshotForRange, pageRangeComparison, pageRangeLatestNight, pageRangeSeries, pageRangeTrend, scoreMeta } from "@/lib/scoring";
+import { deltaMeta, historyForRange, pageAgentSnapshotForRange, pageRangeComparison, pageRangeLatestNightForStrategy, pageRangeSeries, pageRangeTrend, scoreMeta } from "@/lib/scoring";
 import { C, flagChip, savingsValue } from "@/lib/ui";
 import { Sparkline } from "@/components/charts";
 import { DeviceChangeLabels, FieldEvidenceChip, PerformanceIssueStatusBadge, SortHeader, WebflowClassificationChips } from "@/components/bits";
@@ -169,14 +169,17 @@ export default function DashboardPage() {
     const { pass, total, ignored, percent: pct } = rangeAgentSummary;
     const readinessSeries = agentSeries(historyForRange(p.history, rangeDays), p.agentIgnores, agentIgnoreDefaults, p.agentIgnoreRestores);
     const am = scoreMeta(pct);
-    const latestRangeNight = pageRangeLatestNight(p, rangeDays);
+    const latestMobileNight = pageRangeLatestNightForStrategy(p, rangeDays, "mobile");
+    const latestDesktopNight = pageRangeLatestNightForStrategy(p, rangeDays, "desktop");
+    const latestRangeNight = strategy === "mobile" ? latestMobileNight : latestDesktopNight;
+    const latestSecondaryNight = secondaryStrategy === "mobile" ? latestMobileNight : latestDesktopNight;
     const hasSnapshot = !!latestRangeNight;
     const hasBaseline = !!p.baseline && !!p.baselineCapturedAt;
     const isMonitored = isPageActivelyMonitored(p);
     const combinedSignals = combinedDashboardSignals({
       isMonitored,
-      mobilePerformance: latestRangeNight?.scores.mobile.perf.m ?? null,
-      desktopPerformance: latestRangeNight?.scores.desktop.perf.m ?? null,
+      mobilePerformance: latestMobileNight?.scores.mobile.perf.m ?? null,
+      desktopPerformance: latestDesktopNight?.scores.desktop.perf.m ?? null,
       lowPerformanceThreshold: pageThresholds.lowPerformance,
       mobileTrend,
       desktopTrend,
@@ -200,14 +203,14 @@ export default function DashboardPage() {
       const v = latestRangeNight.scores[strategy][c.key].m;
       const sm = scoreMeta(v);
       const series = pageRangeSeries(p, strategy, c.key, rangeDays);
-      const secondary = latestRangeNight.scores[secondaryStrategy][c.key].m;
-      const secondaryMeta = scoreMeta(secondary);
+      const secondary = latestSecondaryNight?.scores[secondaryStrategy][c.key].m ?? null;
+      const secondaryMeta = secondary === null ? null : scoreMeta(secondary);
       if (!hasBaseline) {
-        return { key: c.key, score: v as number | null, fg: sm.fg, delta: "", deltaFg: C.faint, series, line: sm.line, secondary, secondaryFg: secondaryMeta.fg, secondaryLabel: secondaryStrategy === "mobile" ? "M" : "D" };
+        return { key: c.key, score: v as number | null, fg: sm.fg, delta: "", deltaFg: C.faint, series, line: sm.line, secondary, secondaryFg: secondaryMeta?.fg ?? C.faint, secondaryLabel: secondaryStrategy === "mobile" ? "M" : "D" };
       }
       const comparison = pageRangeComparison(p, strategy, c.key, rangeDays);
       const dm = comparison ? deltaMeta(comparison.to, comparison.from) : null;
-      return { key: c.key, score: v as number | null, fg: sm.fg, delta: dm?.text ?? "", deltaFg: dm?.fg ?? C.faint, series, line: sm.line, secondary, secondaryFg: secondaryMeta.fg, secondaryLabel: secondaryStrategy === "mobile" ? "M" : "D" };
+      return { key: c.key, score: v as number | null, fg: sm.fg, delta: dm?.text ?? "", deltaFg: dm?.fg ?? C.faint, series, line: sm.line, secondary, secondaryFg: secondaryMeta?.fg ?? C.faint, secondaryLabel: secondaryStrategy === "mobile" ? "M" : "D" };
     });
     const sortVals: Record<string, string | number> = { title: p.title.toLowerCase(), status: trend, agent: pct };
     CATEGORIES.forEach((c) => (sortVals[c.key] = latestRangeNight?.scores[strategy][c.key].m ?? -1));

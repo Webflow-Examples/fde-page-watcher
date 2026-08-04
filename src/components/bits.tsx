@@ -161,7 +161,6 @@ function LabFieldComparisonLine({ status, size }: { status: LabFieldComparisonSt
     </span>
   );
 }
-
 function VisitorExperienceLine({ status, size }: { status: VisitorExperienceTrend; size: number }) {
   const label = status === "insufficient" ? "Unavailable" : status;
   const color = status === "worsening" ? C.redSoft : status === "improving" ? C.green : status === "stable" ? C.accentSoft : C.muted;

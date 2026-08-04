@@ -2,10 +2,10 @@ import { createFdeStore, type FdeStoreBindings } from "./dataStore";
 import type { CollectionJob, CollectionJobState } from "../src/lib/types";
 import { isPageActivelyMonitored } from "../src/lib/watchCapacity";
 import { ensureCollectionOffsets, PAGE_COLLECTION_SPACING_MINUTES, pageScheduleDue } from "../src/lib/collectionSchedule";
+import { collectionJobIsStale } from "../src/lib/collectionRetry";
 
 const ACTIVE = new Set<CollectionJobState>(["queued", "dispatching", "running", "waiting_for_evidence"]);
 const STALE_AFTER_MS = 30 * 60 * 1000;
-const WAITING_STALE_AFTER_MS = 4 * 60 * 60 * 1000;
 
 export interface NightlyEnvironment extends FdeStoreBindings {
   COLLECTION_WORKFLOW: Workflow<DispatchPayload>;
@@ -80,17 +80,18 @@ export async function dispatchFdeNightly(
     for (const page of pages) {
       const active = draft.jobs.find((job) => job.pageId === page.id && ACTIVE.has(job.state));
       if (active) {
-        const age = now.getTime() - Date.parse(active.updatedAt);
-        const staleAfter = active.state === "waiting_for_evidence"
-          || active.cohortId?.startsWith("confirmation:")
-          ? WAITING_STALE_AFTER_MS
-          : STALE_AFTER_MS;
-        if (Number.isFinite(age) && age <= staleAfter) {
+        const confirmationAge = now.getTime() - Date.parse(active.updatedAt);
+        const confirmationIsLive = active.cohortId?.startsWith("confirmation:")
+          && Number.isFinite(confirmationAge)
+          && confirmationAge <= STALE_AFTER_MS;
+        if (!collectionJobIsStale(active, now) || confirmationIsLive) {
           coalesced += 1;
           continue;
         }
         active.state = "failed";
-        active.error = "Job exceeded the 30 minute stale limit";
+        active.error = active.nextRetryAt
+          ? "Job did not resume after its scheduled test-evidence retry"
+          : "Job exceeded the 30 minute stale limit";
         active.updatedAt = now.toISOString();
         active.completedAt = now.toISOString();
       }

@@ -287,14 +287,18 @@ export class FdeDataStore {
       }
     }
 
-    const beforeHistory = new Set(before.pages.flatMap((page) => page.history.map((night) => `${page.id}:${night.runId ?? night.i}`)));
+    const beforeHistory = new Map(before.pages.flatMap((page) => page.history.map((night) => [
+      `${page.id}:${night.runId ?? night.i}`,
+      JSON.stringify(night),
+    ])));
     const beforeMarkers = new Map(before.pages.flatMap((page) => page.markers.map((marker) => [`${page.id}:${marker.id}`, JSON.stringify(marker)])));
     const afterMarkerKeys = new Set(after.pages.flatMap((page) => page.markers.map((marker) => `${page.id}:${marker.id}`)));
     for (const page of after.pages) {
       for (const night of page.history) {
-        if (beforeHistory.has(`${page.id}:${night.runId ?? night.i}`)) continue;
+        if (beforeHistory.get(`${page.id}:${night.runId ?? night.i}`) === JSON.stringify(night)) continue;
         statements.push(this.bindings.DB.prepare(
-          "INSERT OR IGNORE INTO history (tenant, page_id, i, night_json) VALUES (?, ?, ?, ?)",
+          "INSERT INTO history (tenant, page_id, i, night_json) VALUES (?, ?, ?, ?) " +
+          "ON CONFLICT(tenant, page_id, i) DO UPDATE SET night_json = excluded.night_json",
         ).bind(this.tenant, page.id, night.i, JSON.stringify(night)));
       }
       for (const marker of page.markers) {

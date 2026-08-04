@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { formatHistoryTooltipDate, placeMarkerLabelRows, plottedSparklineSeries, snappedHistoryIndex } from "../charting";
+import { formatHistoryTooltipDate, placeMarkerLabelRows, plottedSparklineSeries, snappedHistoryIndex, trustedHistorySegments } from "../charting";
+import type { Night } from "../types";
 
 describe("plottedSparklineSeries", () => {
   it("turns one unchanged observation into a flat two-point line", () => {
@@ -46,5 +47,29 @@ describe("placeMarkerLabelRows", () => {
       expect(Math.abs(row - 29)).toBeGreaterThanOrEqual(14);
       expect(Math.abs(row - 57)).toBeGreaterThanOrEqual(14);
     }
+  });
+});
+
+describe("trustedHistorySegments", () => {
+  const score = (value: number) => ({ m: value, lo: value, hi: value });
+  const night = (i: number, evidenceStatus?: Night["evidenceStatus"]): Night => ({
+    i,
+    date: `Aug ${i + 1}`,
+    evidenceStatus,
+    scores: {
+      mobile: { perf: score(80), a11y: score(90), bp: score(90), seo: score(90) },
+      desktop: { perf: score(80), a11y: score(90), bp: score(90), seo: score(90) },
+    },
+  });
+
+  it("creates a visible line break around quarantined PSI measurements", () => {
+    const segments = trustedHistorySegments([
+      night(0),
+      night(1, "provider-anomaly"),
+      night(2, "provider-anomaly"),
+      night(3),
+    ]);
+
+    expect(segments.map((segment) => segment.map((item) => item.i))).toEqual([[0], [3]]);
   });
 });

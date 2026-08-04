@@ -2,7 +2,7 @@
 -- Mirrors the three tiers fsStore.ts implements on the local filesystem:
 --   state   -> key-value read model (the whole AppState blob), version-guarded
 --              for compare-and-swap writes from concurrent server-side callers.
---   history -> append-only per-page Night entries.
+--   history -> per-run Night entries, updated as independent tests finish.
 --   markers -> append-only per-page ChangeMarker entries.
 -- Raw PSI/agent report payloads live in R2, not D1 (see cfStore.ts putReport/getReport).
 

@@ -229,4 +229,52 @@ describe("CrUX collector", () => {
       }),
     ]);
   });
+
+  it("can collect one page independently for a page workflow", async () => {
+    const { env, puts } = environment([
+      {
+        id: "page-one",
+        title: "One",
+        url: "https://example.com/one",
+        flag: "watching",
+        status: "pending",
+        current: {
+          mobile: { perf: 0, a11y: 0, bp: 0, seo: 0 },
+          desktop: { perf: 0, a11y: 0, bp: 0, seo: 0 },
+        },
+        history: [],
+        markers: [],
+        agent: [],
+      },
+      {
+        id: "page-two",
+        title: "Two",
+        url: "https://example.com/two",
+        flag: "watching",
+        status: "pending",
+        current: {
+          mobile: { perf: 0, a11y: 0, bp: 0, seo: 0 },
+          desktop: { perf: 0, a11y: 0, bp: 0, seo: 0 },
+        },
+        history: [],
+        markers: [],
+        agent: [],
+      },
+    ]);
+    const fetchFn = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { formFactor: "PHONE" | "DESKTOP" };
+      return new Response(JSON.stringify(response("url", body.formFactor)));
+    });
+
+    const result = await collectCruxEvidence(env as never, {
+      fetchFn,
+      tenant: "brand-studio:live",
+      pageIds: ["page-two"],
+    });
+
+    expect(result).toMatchObject({ pages: 1, targets: 2, available: 2, errors: 0 });
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+    expect(puts).toHaveLength(2);
+    expect(puts.every((item) => item.key.includes("/page-two/"))).toBe(true);
+  });
 });
