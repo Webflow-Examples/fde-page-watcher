@@ -7,9 +7,12 @@ import { sortWatchlistPages } from "../watchlistOrder";
 import { reconcileTaskMarkers } from "../taskMarkers";
 import { normalizeNativeElementControls } from "../nativeElements";
 import { normalizeProductEscalations } from "../escalations";
+import { normalizeAlertWebhookUrl } from "../webhook";
 
 /** Apply compatible, idempotent upgrades when reading persisted state. */
 export function normalizeState(state: AppState): AppState {
+  state.alertWebhookUrl = normalizeAlertWebhookUrl(state.alertWebhookUrl);
+  state.alertDigests = (state.alertDigests ?? []).slice(-30);
   state.visitorExperienceVisible = state.visitorExperienceVisible === true;
   state.agentIgnoreDefaults = normalizeAgentIgnoreSettings(state.agentIgnoreDefaults);
   state.performanceThresholds = normalizePerformanceThresholds(state.performanceThresholds);

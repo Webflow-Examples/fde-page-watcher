@@ -37,6 +37,16 @@ export function DashboardIcon({ size = 17, style }: IconProps) {
   );
 }
 
+export function PagesIcon({ size = 17, style }: IconProps) {
+  return (
+    <svg {...base(size, style)} strokeWidth={1.6}>
+      <path d="M7 3h8l4 4v14H7z" />
+      <path d="M15 3v5h4M10 12h6M10 16h6" />
+      <path d="M4 6v15" />
+    </svg>
+  );
+}
+
 export function InboxIcon({ size = 17, style }: IconProps) {
   return (
     <svg {...base(size, style)} strokeWidth={1.6}>

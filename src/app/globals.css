@@ -607,6 +607,23 @@ button:disabled {
   min-width: 0;
 }
 
+.pages-header {
+  padding: 30px 40px 24px;
+}
+
+.pages-header h1 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.pages-header p {
+  margin: 7px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
 .watcher-ribbon {
   position: sticky;
   top: 0;
@@ -1349,6 +1366,10 @@ textarea:focus-visible,
 
   .dashboard-content {
     padding: 0 18px 36px;
+  }
+
+  .pages-header {
+    padding: 26px 18px 22px;
   }
 
   .watchlist-tolerance-grid {

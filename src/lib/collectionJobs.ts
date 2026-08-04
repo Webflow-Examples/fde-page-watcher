@@ -60,7 +60,7 @@ function trimJobs(state: AppState): void {
 export async function enqueueCollectionJob(
   pageId: string,
   kind: CollectionJobKind,
-  options: { dataStore?: DataStore; id?: string; now?: Date } = {},
+  options: { dataStore?: DataStore; id?: string; now?: Date; cohortId?: string } = {},
 ): Promise<EnqueueResult> {
   const dataStore = options.dataStore ?? getStore();
   const now = options.now ?? new Date();
@@ -97,6 +97,7 @@ export async function enqueueCollectionJob(
       attempts: 0,
       createdAt: now.toISOString(),
       updatedAt: now.toISOString(),
+      cohortId: options.cohortId,
     };
     draft.jobs.push(job);
     page.runId = job.runId;
@@ -576,7 +577,7 @@ export async function reconcileCollectionJobs(options: ReconcileCollectionOption
   return dataStore.getState();
 }
 
-/** Run optional AI/Slack work only after one authoritative result is committed. */
+/** Run optional AI and outbound notification work only after one authoritative result is committed. */
 export async function finalizeCollectionJob(jobId: string, dataStore: DataStore = getStore()): Promise<void> {
   const snapshot = await dataStore.getState();
   const job = (snapshot.jobs ?? []).find((item) => item.id === jobId);

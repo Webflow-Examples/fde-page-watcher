@@ -98,6 +98,7 @@ interface StoreValue extends AppState {
   updatePerformanceThresholds: (thresholds: PerformanceThresholds) => void;
   updatePagePerformanceThresholds: (id: string, overrides: PagePerformanceThresholdOverrides) => void;
   updateCollectionSchedule: (schedule: CollectionSchedule) => void;
+  updateAlertWebhookUrl: (url: string) => void;
   setVisitorExperienceVisible: (visible: boolean) => void;
   removePage: (id: string) => void;
   saveTask: (key: string) => void;
@@ -519,6 +520,22 @@ export function StoreProvider({
     [mutate],
   );
 
+  const updateAlertWebhookUrl = useCallback(
+    (url: string) => {
+      const cur = dataRef.current;
+      const normalized = url.trim();
+      mutate(
+        { ...cur, alertWebhookUrl: normalized || null },
+        { url: "/api/settings/alert-webhook", body: { url: normalized } },
+        {
+          success: normalized ? "Alert webhook updated" : "Alert webhook disabled",
+          failure: "Couldn't update the alert webhook — check the URL and try again",
+        },
+      );
+    },
+    [mutate],
+  );
+
   const setVisitorExperienceVisible = useCallback(
     (visible: boolean) => {
       const cur = dataRef.current;
@@ -884,6 +901,7 @@ export function StoreProvider({
     updatePerformanceThresholds,
     updatePagePerformanceThresholds,
     updateCollectionSchedule,
+    updateAlertWebhookUrl,
     setVisitorExperienceVisible,
     removePage,
     saveTask,

@@ -15,6 +15,7 @@ import { isKnownNativeElementId } from "./nativeElements";
 import type { NativeElementDisposition } from "./types";
 import type { ProductEscalationStatus } from "./types";
 import { buildProductEscalation, createEscalationEvidence, isProductEscalationStatus } from "./escalations";
+import { alertWebhookUrlIsValid } from "./webhook";
 
 /**
  * Server-side domain mutations. Each executes inside the store's atomic
@@ -184,6 +185,20 @@ export function setVisitorExperienceVisible(
 ): Promise<AppState> {
   return withState((state) => {
     state.visitorExperienceVisible = visible;
+  }, dataStore);
+}
+
+export function setAlertWebhookUrl(
+  value: string,
+  dataStore: DataStore = getStore(),
+): Promise<AppState> {
+  const url = value.trim();
+  if (url && !alertWebhookUrlIsValid(url)) {
+    throw new Error("setAlertWebhookUrl: enter a valid HTTPS URL without embedded credentials");
+  }
+  return withState((state) => {
+    if (url) state.alertWebhookUrl = url;
+    else state.alertWebhookUrl = null;
   }, dataStore);
 }
 

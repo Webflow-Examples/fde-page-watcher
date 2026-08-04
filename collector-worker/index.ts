@@ -53,6 +53,7 @@ import {
   type CruxCollectionResult,
 } from "./crux";
 import { syncConfiguredWebflowSite } from "./webflow";
+import { ensureScheduledDailyDigest, processDailyDigests } from "../src/lib/dailyDigest";
 
 const NIGHTLY_COLLECTION_CRON = "*/15 * * * *";
 const NIGHTLY_SCHEDULER_STATUS_KEY = "scheduler/latest.json";
@@ -878,7 +879,12 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       return Response.json({ error: "unauthorized" }, { status: 401 });
     }
 
-    if (isNightly) return noStore(Response.json(await dispatchFdeNightly(env), { status: 202 }));
+    if (isNightly) {
+      const result = await dispatchFdeNightly(env);
+      const store = createFdeStore(env.NIGHTLY_TENANT || "brand-studio:live", env);
+      const digests = await processDailyDigests(store);
+      return noStore(Response.json({ ...result, digests }, { status: 202 }));
+    }
     if (isCruxCollection) {
       const observedAt = new Date().toISOString();
       const result = await collectCruxEvidence(env);
@@ -1020,7 +1026,10 @@ const worker = {
         }
         const confirmation = await dispatchFdeNightly(env, { confirmationOnly: true });
         const nightly = await dispatchFdeNightly(env, { dueOnly: true });
-        response = { webflow, confirmation, nightly };
+        const store = createFdeStore(env.NIGHTLY_TENANT || "brand-studio:live", env);
+        await ensureScheduledDailyDigest(store, new Date(controller.scheduledTime));
+        const digests = await processDailyDigests(store, new Date(controller.scheduledTime));
+        response = { webflow, confirmation, nightly, digests };
       }
       const cruxResponse = kind === "crux" ? response as CruxCollectionResult : null;
       const record = {

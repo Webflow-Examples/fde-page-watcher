@@ -108,7 +108,21 @@ function agentSeries(
   });
 }
 
-export default function DashboardPage() {
+function isDashboardFilter(value: string | undefined): value is DashboardFilter {
+  return value === "all"
+    || value === "lowPerformance"
+    || value === "agentGaps"
+    || value === "regressions"
+    || value === "improvements";
+}
+
+function DashboardContent({
+  view,
+  initialFilter,
+}: {
+  view: "dashboard" | "pages";
+  initialFilter?: string;
+}) {
   const router = useRouter();
   const {
     pages,
@@ -128,7 +142,7 @@ export default function DashboardPage() {
     visitorExperienceVisible,
     visitorExperience,
   } = useStore();
-  const [activeFilter, setActiveFilter] = useState<DashboardFilter>("all");
+  const [activeFilter, setActiveFilter] = useState<DashboardFilter>(() => isDashboardFilter(initialFilter) ? initialFilter : "all");
   const tableRef = useRef<HTMLDivElement>(null);
   const thresholds = normalizePerformanceThresholds(performanceThresholds);
   const schedule = normalizeCollectionSchedule(collectionSchedule);
@@ -292,6 +306,10 @@ export default function DashboardPage() {
 
   function selectFilter(filter: DashboardFilter, scrollToTable = false) {
     if (filter !== "all" && filterCounts[filter] === 0) return;
+    if (view === "dashboard") {
+      router.push(pathFor(`/pages${filter === "all" ? "" : `?filter=${filter}`}`));
+      return;
+    }
     setActiveFilter(filter);
     if (scrollToTable) scrollToTableFilters();
   }
@@ -315,6 +333,10 @@ export default function DashboardPage() {
         : improvementCounts;
     if (counts[device] === 0) return;
     setStrategy(device);
+    if (view === "dashboard") {
+      router.push(pathFor(`/pages?filter=${filter}`));
+      return;
+    }
     setActiveFilter(filter);
     scrollToTableFilters();
   }
@@ -379,6 +401,8 @@ export default function DashboardPage() {
 
   return (
     <div className="dashboard-page">
+      {view === "dashboard" ? (
+        <>
       <section
         className={`watcher-ribbon${topRibbonRec || isRunning ? "" : " watcher-ribbon--muted"}`}
         aria-label="The Watcher recommendation"
@@ -657,10 +681,18 @@ export default function DashboardPage() {
             </div>
           </section>
         )}
-        {/* The existing table is unchanged below this unified toolbar. */}
+      </div>
+        </>
+      ) : (
+        <>
+          <header className="pages-header">
+            <h1>Pages</h1>
+            <p>Review current scores, trends, and agent readiness for every watched page.</p>
+          </header>
+          <div className="dashboard-content">
         <div ref={tableRef} className="dashboard-table-card">
           <div className="dashboard-table-toolbar">
-            <div className="dashboard-filter-bar" role="toolbar" aria-label="Dashboard filters">
+            <div className="dashboard-filter-bar" role="toolbar" aria-label="Page filters">
               <div className="dashboard-filter-bar__status">
                 <StatusSegmentedControl
                   ariaLabel="Page status"
@@ -686,7 +718,7 @@ export default function DashboardPage() {
               </div>
               <div className="dashboard-filter-bar__view">
                 <DeviceSegmentedControl
-                  ariaLabel="Dashboard chart device"
+                  ariaLabel="Page chart device"
                   value={strategy}
                   onChange={setStrategy}
                   options={[
@@ -696,7 +728,7 @@ export default function DashboardPage() {
                 />
                 <span className="dashboard-filter-bar__divider" aria-hidden="true" />
                 <SelectMenu
-                  ariaLabel="Dashboard date range"
+                  ariaLabel="Page date range"
                   value={rangeDays}
                   options={RANGE_OPTIONS}
                   onChange={setRangeDays}
@@ -785,6 +817,16 @@ export default function DashboardPage() {
           {`Change compares the oldest and newest nightly medians inside the selected ${rangeDays}-day range. Both device labels remain visible; charts and large scores follow the ${strategy} selection, with the other device shown beneath. Filter counts can overlap. Agent is derived from recorded per-check history.`}
         </p>
       </div>
+        </>
+      )}
     </div>
   );
+}
+
+export default function DashboardPage() {
+  return <DashboardContent view="dashboard" />;
+}
+
+export function PagesPageContent({ initialFilter }: { initialFilter?: string }) {
+  return <DashboardContent view="pages" initialFilter={initialFilter} />;
 }

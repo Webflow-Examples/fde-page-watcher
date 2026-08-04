@@ -365,12 +365,29 @@ export interface PerformanceThresholds {
 /** Optional page-specific values layered over the team monitoring defaults. */
 export type PagePerformanceThresholdOverrides = Partial<PerformanceThresholds>;
 
+/** Legacy per-page event-delivery state retained for persisted-state compatibility. */
 export interface PerformanceAlertState {
   /** Stable device/category condition used to suppress duplicate deliveries. */
   signature: string;
   strategies: Strategy[];
   categories: CategoryKey[];
   sentAt: string;
+}
+
+/** One scheduled collection cohort's at-most-once daily webhook delivery. */
+export interface DailyAlertDigest {
+  cohortId: string;
+  date: string;
+  expectedPageIds: string[];
+  createdAt: string;
+  attempts: number;
+  claimedAt?: string;
+  completedAt?: string;
+  sentAt?: string;
+  lastAttemptAt?: string;
+  lastHttpStatus?: number;
+  lastError?: string;
+  retryAfterISO?: string;
 }
 
 /** A scheduled follow-up comparison after a change marker (REQ-044). */
@@ -406,7 +423,7 @@ export interface WatchPage {
   agentIgnoreRestores?: AgentIgnoreSettings; // page-specific restores of globally ignored checks/categories
   /** Sparse page-specific calibration; omitted values inherit team defaults. */
   performanceThresholdOverrides?: PagePerformanceThresholdOverrides;
-  /** Active delivered regression condition; cleared after recovery. */
+  /** Legacy event-alert state; daily digests use AppState.alertDigests. */
   performanceAlertState?: PerformanceAlertState;
   /** Page-scoped triage controls keyed by stable native-element finding id. */
   nativeElementControls?: Record<string, NativeElementControl>;
@@ -639,6 +656,10 @@ export interface AppState {
   pages: WatchPage[];
   recs: Rec[];
   productEscalations?: ProductEscalation[];
+  /** Workspace-owned HTTPS endpoint for confirmed performance-regression alerts. */
+  alertWebhookUrl?: string | null;
+  /** Recent scheduled digest claims/deliveries, retained for idempotency and retries. */
+  alertDigests?: DailyAlertDigest[];
   /** Presentation-only feature flag. CrUX collection continues while hidden. */
   visitorExperienceVisible?: boolean;
   agentIgnoreDefaults?: AgentIgnoreSettings;

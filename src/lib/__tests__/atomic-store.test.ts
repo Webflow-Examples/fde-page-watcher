@@ -3,11 +3,12 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createFsStore, type DataStore } from "../store/fsStore";
-import { addPage, advanceTask, createProductEscalation, pendingPage, setAgentIgnore, setDefaultAgentIgnore, setNativeElementDisposition, setPageFlag, setPageOrder, setPagePerformanceThresholdOverrides, setPageTitle, setPerformanceThresholds, updateProductEscalation } from "../mutations";
+import { addPage, advanceTask, createProductEscalation, pendingPage, setAgentIgnore, setAlertWebhookUrl, setDefaultAgentIgnore, setNativeElementDisposition, setPageFlag, setPageOrder, setPagePerformanceThresholdOverrides, setPageTitle, setPerformanceThresholds, updateProductEscalation } from "../mutations";
 import { DEFAULT_PERFORMANCE_THRESHOLDS } from "../performanceThresholds";
 import { agentCheckKey } from "../agentScoring";
-import { captureBaseline, insertRecommendations, runPage } from "../collector";
+import { captureBaseline, insertRecommendations, runNightly, runPage } from "../collector";
 import type { AppState, CategoryScore, NightScores, Rec } from "../types";
+import type { DailyDigestWebhookPayload } from "../webhook";
 
 const roots: string[] = [];
 
@@ -69,6 +70,15 @@ function collection(perf = 75) {
 }
 
 describe("atomic tenant updates", () => {
+  it("stores and explicitly disables a workspace alert webhook", async () => {
+    const dataStore = await storeWithState();
+    await setAlertWebhookUrl("  https://hooks.example.com/page-watch  ", dataStore);
+    expect((await dataStore.getState()).alertWebhookUrl).toBe("https://hooks.example.com/page-watch");
+    await setAlertWebhookUrl("", dataStore);
+    expect((await dataStore.getState()).alertWebhookUrl).toBeNull();
+    expect(() => setAlertWebhookUrl("http://hooks.example.com", dataStore)).toThrow("valid HTTPS URL");
+  });
+
   it("serializes independent mutations without losing either update", async () => {
     const dataStore = await storeWithState();
     await Promise.all([
@@ -360,9 +370,13 @@ describe("atomic tenant updates", () => {
     expect(state.recs.map((item) => item.id)).not.toEqual(expect.arrayContaining(["weak", "single-run"]));
   });
 
-  it("suppresses duplicate regression alerts until the page recovers", async () => {
+  it("sends one digest per nightly run and never alerts for manual page runs", async () => {
     const dataStore = await storeWithState();
-    const alertFn = vi.fn(async () => ({ sent: true, status: 200 }));
+    const alertFn = vi.fn(async (...args: [string | null | undefined, DailyDigestWebhookPayload]) => {
+      void args;
+      return { sent: true, status: 200 };
+    });
+    await setAlertWebhookUrl("https://hooks.example.com/page-watch", dataStore);
     await captureBaseline("page", {
       dataStore,
       collectFn: async () => collection(80),
@@ -374,24 +388,36 @@ describe("atomic tenant updates", () => {
       newPageGraceRuns: 0,
     }, dataStore);
 
-    for (const [runId, perf, iso] of [
-      ["drop-one", 60, "2026-08-02T12:00:00.000Z"],
-      ["drop-two", 59, "2026-08-03T12:00:00.000Z"],
-      ["recovered", 80, "2026-08-04T12:00:00.000Z"],
-      ["drop-again", 58, "2026-08-05T12:00:00.000Z"],
-    ] as const) {
-      await runPage("page", {
-        dataStore,
-        collectFn: async () => collection(perf),
-        scanFn: async () => [],
-        alertFn,
-        runIdFactory: () => runId,
-        now: () => new Date(iso),
-      });
-    }
+    await runPage("page", {
+      dataStore,
+      collectFn: async () => collection(60),
+      scanFn: async () => [],
+      alertFn,
+      runIdFactory: () => "manual-drop",
+      now: () => new Date("2026-08-02T10:00:00.000Z"),
+    });
+    expect(alertFn).not.toHaveBeenCalled();
 
-    expect(alertFn).toHaveBeenCalledTimes(2);
-    expect((await dataStore.getState()).pages[0].performanceAlertState?.signature).toContain("page:desktop,mobile:Performance");
+    await runNightly({
+      dataStore,
+      collectFn: async () => collection(59),
+      scanFn: async () => [],
+      alertFn,
+      followupFn: async () => ({ sent: false }),
+      runIdFactory: () => "nightly-drop",
+      now: () => new Date("2026-08-02T12:00:00.000Z"),
+    });
+
+    expect(alertFn).toHaveBeenCalledTimes(1);
+    expect(alertFn.mock.calls[0][1]).toMatchObject({
+      event: "page_watch.daily_digest",
+      id: "nightly:2026-08-02",
+      date: "2026-08-02",
+      pages: [{ title: "Page", status: "regressing", categories: ["Performance"] }],
+    });
+    expect((await dataStore.getState()).alertDigests).toEqual([
+      expect.objectContaining({ cohortId: "nightly:2026-08-02", attempts: 1, sentAt: "2026-08-02T12:00:00.000Z" }),
+    ]);
   });
 
   it("defaults newly added pages to Watching", async () => {

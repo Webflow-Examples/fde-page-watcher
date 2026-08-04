@@ -5,6 +5,7 @@ import { getStore } from "@/lib/store";
 import { dispatchCollectionJobs, enqueueCollectionJob, finalizeCollectionJob, reconcileCollectionJobs } from "@/lib/collectionJobs";
 import { runNightly } from "@/lib/collector";
 import { isPageActivelyMonitored } from "@/lib/watchCapacity";
+import { dailyDigestCohortId, ensureDailyDigest } from "@/lib/dailyDigest";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,10 +37,15 @@ export async function POST(req: Request) {
     const pages = snapshot.pages
       .filter(isPageActivelyMonitored)
       .sort((a, b) => (a.flag === "priority" ? 0 : 1) - (b.flag === "priority" ? 0 : 1));
+    const now = new Date();
+    const cohortId = dailyDigestCohortId(snapshot, now);
+    await dataStore.updateState((draft) => {
+      ensureDailyDigest(draft, cohortId, pages.map((page) => page.id), now);
+    });
     const jobIds: string[] = [];
     let coalesced = 0;
     for (const page of pages) {
-      const result = await enqueueCollectionJob(page.id, "nightly", { dataStore });
+      const result = await enqueueCollectionJob(page.id, "nightly", { dataStore, cohortId });
       if (result.queued) jobIds.push(result.job.id);
       else coalesced += 1;
     }

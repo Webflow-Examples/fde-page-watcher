@@ -4,8 +4,8 @@ Nightly Lighthouse (PageSpeed Insights), weekly Chrome UX Report field
 evidence, and agent-readiness monitoring for a watchlist of priority
 Webflow.com pages. For each page it tracks per-strategy (mobile + desktop)
 scores over time, classifies status, surfaces recommendations, lets you triage
-them into tasks, log change markers, and posts drop alerts and 2/7/30-day
-follow-up comparisons to Slack.
+them into tasks, log change markers, posts one daily regression digest to a
+workspace webhook, and sends 2/7/30-day follow-up comparisons to Slack.
 
 Built with Next.js (App Router) + React. TypeScript throughout.
 
@@ -41,7 +41,7 @@ All are optional for local development — the app runs without them.
 | `STORAGE_DRIVER`             | Set to `remote` only after the one-time FDE copy verifies; unset keeps Webflow storage as the source.          |
 | `DATASET_MODE`               | `demo` uses the existing sample namespace; `live` uses an isolated, initially empty namespace.                |
 | `BASE_URL`                   | Webflow Cloud mount path (for example `/page-watch`); client routes and APIs are prefixed automatically.       |
-| `SLACK_WEBHOOK_URL`          | Incoming webhook for drop alerts and follow-up reports.                                                       |
+| `SLACK_WEBHOOK_URL`          | Incoming Slack webhook for 2/7/30-day follow-up reports.                                                  |
 | `PSI_MOCK`                   | Local-only deterministic scores instead of PSI.                                                               |
 | `PSI_RUNS`                   | Samples per strategy (1–5, default 5).                                                                         |
 | `ANTHROPIC_API_KEY`          | Enables post-commit recommendation explanations and Watcher narratives on the app.                           |
@@ -98,13 +98,13 @@ Put these in `.env.local`.
   migration source and are not deleted by the migration.
 - **State mutations** go through targeted server-side domain endpoints
   (`/api/pages`, `/api/recs`, `/api/pages/[id]/*`) and the store-level atomic
-  update primitive. External PSI/Slack work happens outside that critical
+  update primitive. External PSI/webhook/Slack work happens outside that critical
   section; result commits re-read authoritative state.
 - **Background execution** — Cloudflare Workflows own production execution.
   The local runner uses Next.js `after()` only for development.
 - **Post-commit enrichment** — after the scores/raw reports are safely stored,
   optional Anthropic recommendation explanations, Watcher narrative refreshes,
-  Slack alerts, and due follow-ups cannot roll back or mislabel a successful
+  webhook alerts, and due Slack follow-ups cannot roll back or mislabel a successful
   collection.
 - **Webflow Enterprise activity** — Settings can connect one Enterprise site
   per tenant with a site token scoped to `sites:read`, `site_activity:read`,
