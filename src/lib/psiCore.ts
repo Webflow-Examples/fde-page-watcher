@@ -60,7 +60,7 @@ function medianMetric(values: Array<number | null>): number | undefined {
   return median(usable);
 }
 
-export function summarizePsiMeasurements(raws: unknown[]): PsiMeasurementContext {
+export function summarizePsiMeasurements(raws: unknown[] = []): PsiMeasurementContext {
   const lighthouse = raws
     .map((raw) => record(record(raw)?.lighthouseResult))
     .filter((value): value is Record<string, unknown> => value !== null);
@@ -74,12 +74,16 @@ export function summarizePsiMeasurements(raws: unknown[]): PsiMeasurementContext
     lighthouseVersion: versions[0],
     medianBenchmarkIndex: medianMetric(lighthouse.map((result) =>
       finiteMetric(record(result.environment)?.benchmarkIndex))),
+    medianFirstContentfulPaint: medianMetric(lighthouse.map((result) =>
+      auditMetric(result, "first-contentful-paint"))),
     medianTotalBlockingTime: medianMetric(lighthouse.map((result) =>
       auditMetric(result, "total-blocking-time"))),
     medianLargestContentfulPaint: medianMetric(lighthouse.map((result) =>
       auditMetric(result, "largest-contentful-paint"))),
     medianSpeedIndex: medianMetric(lighthouse.map((result) =>
       auditMetric(result, "speed-index"))),
+    medianCumulativeLayoutShift: medianMetric(lighthouse.map((result) =>
+      auditMetric(result, "cumulative-layout-shift"))),
     medianServerResponseTime: medianMetric(lighthouse.map((result) =>
       auditMetric(result, "server-response-time"))),
   };

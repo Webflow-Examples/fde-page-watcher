@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildWatcher, buildWatcherCards } from "../watcher";
 import { agentCheckKey } from "../agentScoring";
+import type { CruxPageEvidence } from "../crux";
 import type { CategoryScore, NightScores, Rec, ScoreByCategory, StrategyScores, WatchPage } from "../types";
 
 const cat = (m: number): CategoryScore => ({ m, lo: m - 1, hi: m + 1 });
@@ -189,6 +190,86 @@ describe("buildWatcher — top recommendation", () => {
     ];
     const w = buildWatcher([focus], recs, "mobile");
     expect(w.topRec?.recTitle).toBe("active-title");
+  });
+
+  it("prioritizes recommendations corroborated by exact-URL visitor evidence", () => {
+    const watched = page("pricing", good, { ...good, perf: 50 });
+    watched.history[1].measurementContext = {
+      mobile: { medianLargestContentfulPaint: 4_500, medianCumulativeLayoutShift: 0.05 },
+    };
+    const lcp = { ...rec("unused-javascript", "0.5 s", "inbox", "todo"), title: "Fix LCP" };
+    const cls = { ...rec("unsized-images", "3.0 s", "inbox", "todo"), title: "Fix CLS" };
+    const visitorEvidence: CruxPageEvidence[] = [{
+      pageId: "pricing",
+      formFactor: "PHONE",
+      status: null,
+      snapshots: [{
+        formFactor: "PHONE",
+        scope: "url",
+        requestedUrl: "https://pricing.com",
+        effectiveUrl: "https://pricing.com",
+        collectionStart: "2026-07-01",
+        collectionEnd: "2026-07-28",
+        fetchedAt: "2026-07-29T00:00:00.000Z",
+        lcpP75Ms: 4_300,
+        inpP75Ms: null,
+        clsP75: 0.05,
+        ttfbP75Ms: null,
+        metrics: {},
+      }],
+    }];
+
+    const w = buildWatcher([watched], [cls, lcp], "mobile", 30, undefined, undefined, visitorEvidence);
+    expect(w).toMatchObject({ fieldCorroborated: 1, fieldOnly: 0 });
+    expect(w.topRec).toMatchObject({ recTitle: "Fix LCP", evidenceLabel: "Visitor corroborated" });
+    expect(w.changed.some((bullet) => bullet.text === "has visitor issues reproduced in Lighthouse.")).toBe(true);
+  });
+
+  it("does not count origin-wide evidence as a page-level Watcher issue", () => {
+    const watched = page("pricing", good, { ...good, perf: 50 });
+    watched.history[1].measurementContext = { mobile: { medianLargestContentfulPaint: 4_500 } };
+    const originEvidence: CruxPageEvidence[] = [{
+      pageId: "pricing",
+      formFactor: "PHONE",
+      status: null,
+      snapshots: [{
+        formFactor: "PHONE",
+        scope: "origin",
+        requestedUrl: "https://pricing.com",
+        effectiveUrl: "https://pricing.com",
+        collectionStart: "2026-07-01",
+        collectionEnd: "2026-07-28",
+        fetchedAt: "2026-07-29T00:00:00.000Z",
+        lcpP75Ms: 4_300,
+        inpP75Ms: null,
+        clsP75: null,
+        ttfbP75Ms: null,
+        metrics: {},
+      }],
+    }];
+
+    const w = buildWatcher([watched], [], "mobile", 30, undefined, undefined, originEvidence);
+    expect(w).toMatchObject({ fieldCorroborated: 0, fieldOnly: 0 });
+    expect(w.changed).not.toContainEqual(expect.objectContaining({ text: "has visitor issues reproduced in Lighthouse." }));
+  });
+
+  it("does not recommend a synthetic field investigation while recovery is verifying", () => {
+    const inactive = {
+      ...rec("crux-field-only-lcp", "Field signal", "inbox", "todo"),
+      source: "crux-field-only" as const,
+      fieldLifecycle: {
+        mobile: {
+          status: "verifying" as const,
+          firstDetectedAt: "2026-07-28T00:00:00.000Z",
+          lastDetectedAt: "2026-07-28T00:00:00.000Z",
+          lastEvaluatedCollectionEnd: "2026-08-04",
+          consecutiveGoodWindows: 1,
+        },
+      },
+    };
+    const fallback = { ...rec("uses-responsive-images", "0.4 s", "inbox", "todo"), title: "Resize images" };
+    const w = buildWatcher([focus], [inactive, fallback], "mobile");
+    expect(w.topRec?.recTitle).toBe("Resize images");
   });
 });
 

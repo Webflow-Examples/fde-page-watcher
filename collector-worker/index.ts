@@ -5,24 +5,31 @@ import {
   summarizePsiMeasurements,
 } from "../src/lib/psiCore";
 import type { CompactRunResult } from "../src/lib/psiCore";
-import { scan } from "../src/lib/agentReadiness";
+import { scanPageContent } from "../src/lib/agentReadiness";
 import { costBand } from "../src/lib/cost";
 import { mediansOf } from "../src/lib/scoring";
 import { shortDate } from "../src/lib/ui";
 import type {
   CollectionResult,
+  AggregatedLighthouseFinding,
   LighthouseCollectionQuality,
   LighthouseOpportunity,
   Rec,
   Strategy,
   StrategyScores,
   PsiMeasurementContext,
+  CulpritEvidence,
 } from "../src/lib/types";
+import { mergeStrategyOpportunities, promotedDiagnostics } from "../src/lib/diagnostics";
+import { formatDiagnosticImpact, webflowClassificationFor } from "../src/lib/webflowPerformance";
+import { nativeRecommendationOpportunities } from "../src/lib/nativeElements";
+import { summarizeCulpritEvidence } from "../src/lib/culpritEvidence";
 import { createFdeStore } from "./dataStore";
 import { handleDataPlaneRequest } from "./dataPlane";
 import { dispatchFdeNightly, type DispatchPayload } from "./nightly";
 import { runWeeklyDataAudit, WEEKLY_AUDIT_CRON, WEEKLY_AUDIT_LATEST_KEY } from "./weeklyAudit";
 import { evaluateCohortAnomaly } from "../src/lib/cohortAnomaly";
+import { reconcileFieldOnlyRecommendationsInState } from "../src/lib/fieldOnlyRecommendations";
 import {
   collectCruxEvidence,
   CRUX_COLLECTION_CRON,
@@ -39,8 +46,10 @@ interface StrategySummary {
   scores: CollectionResult["scores"][Strategy];
   sampleSize: number;
   opportunities: LighthouseOpportunity[];
+  diagnostics: AggregatedLighthouseFinding[];
   quality: LighthouseCollectionQuality;
   measurementContext: PsiMeasurementContext;
+  culpritEvidence: CulpritEvidence[];
 }
 
 function reportKey(jobId: string, strategy: Strategy): string {
@@ -119,6 +128,7 @@ async function commitWorkflowResult(env: Env, payload: DispatchPayload, result: 
     stagedReport(env, payload.jobId, "desktop"),
   ]);
   const completedAt = new Date(result.capturedAt);
+  const visitorEvidence = await store.getCruxEvidence().catch(() => []);
   const appended = await store.appendNight(payload.pageId, payload.runId, {
     date: shortDate(completedAt),
     iso: completedAt.toISOString(),
@@ -127,6 +137,10 @@ async function commitWorkflowResult(env: Env, payload: DispatchPayload, result: 
     sampleSize: Math.min(result.samples.mobile, result.samples.desktop),
     agent: result.agent,
     opportunities: result.opportunities,
+    opportunitiesByStrategy: result.opportunitiesByStrategy,
+    diagnostics: result.diagnostics,
+    culpritEvidence: result.culpritEvidence,
+    nativeElements: result.nativeElements,
     collectionQuality: result.collectionQuality,
     cohortId: result.cohortId,
     measurementContext: result.measurementContext,
@@ -147,19 +161,35 @@ async function commitWorkflowResult(env: Env, payload: DispatchPayload, result: 
       page.status = "stable";
     }
     const added = shortDate(completedAt);
-    for (const opportunity of result.opportunities.slice(0, 6)) {
+    const recommendationOpportunities = [
+      ...mergeStrategyOpportunities(
+        result.opportunitiesByStrategy ?? { mobile: result.opportunities },
+        result.diagnostics,
+      ),
+      ...nativeRecommendationOpportunities(result.nativeElements, page.nativeElementControls),
+    ];
+    for (const opportunity of recommendationOpportunities.slice(0, 12)) {
       const title = opportunity.title.trim().toLowerCase();
-      if (draft.recs.some((item) => item.key === `${page.id}:${opportunity.id}` || (item.pageId === page.id && item.title.trim().toLowerCase() === title))) continue;
+      const existing = draft.recs.find((item) =>
+        item.key === `${page.id}:${opportunity.id}`
+        || (item.pageId === page.id && item.title.trim().toLowerCase() === title));
+      if (existing) {
+        existing.strategies = [...new Set([...(existing.strategies ?? []), ...opportunity.strategies])];
+        existing.webflow = webflowClassificationFor(opportunity);
+        continue;
+      }
       const rec: Rec = {
         key: `${page.id}:${opportunity.id}`,
         pageId: page.id,
         pageTitle: page.title,
         url: page.url,
         id: opportunity.id,
+        strategies: opportunity.strategies,
         sourceRunId: currentJob.runId,
         title: opportunity.title,
         category: opportunity.category ?? "Performance",
-        savings: `${(opportunity.savingsMs / 1000).toFixed(1)} s`,
+        webflow: webflowClassificationFor(opportunity),
+        savings: formatDiagnosticImpact(opportunity),
         estTime: costBand(`${opportunity.id} ${opportunity.title}`),
         status: "inbox",
         taskStatus: "todo",
@@ -168,6 +198,13 @@ async function commitWorkflowResult(env: Env, payload: DispatchPayload, result: 
       };
       draft.recs.push(rec);
     }
+    reconcileFieldOnlyRecommendationsInState(
+      draft,
+      visitorEvidence,
+      completedAt,
+      [page.id],
+      currentJob.runId,
+    );
     currentJob.state = "succeeded";
     currentJob.updatedAt = completedAt.toISOString();
     currentJob.completedAt = completedAt.toISOString();
@@ -330,8 +367,13 @@ export class CollectorWorkflow extends WorkflowEntrypoint<Env, DispatchPayload> 
             scores: result.scores,
             sampleSize: result.sampleSize,
             opportunities: result.opportunities,
+            diagnostics: promotedDiagnostics(result.findings),
             quality: result.quality,
             measurementContext: summarizePsiMeasurements(
+              result.raws.filter((_, index) =>
+                compactRuns.findIndex((candidate) => candidate.sampleKey === compactRuns[index]?.sampleKey) === index),
+            ),
+            culpritEvidence: summarizeCulpritEvidence(
               result.raws.filter((_, index) =>
                 compactRuns.findIndex((candidate) => candidate.sampleKey === compactRuns[index]?.sampleKey) === index),
             ),
@@ -351,7 +393,7 @@ export class CollectorWorkflow extends WorkflowEntrypoint<Env, DispatchPayload> 
     // Lighthouse payloads are staged in R2 and streamed to the app on demand.
     const mobile = await collectStrategy("mobile");
     const desktop = await collectStrategy("desktop");
-    const agent = await step.do("scan agent readiness", { retries: { limit: 2, delay: "10 seconds" }, timeout: "2 minutes" }, async () => scan(payload.url));
+    const pageScan = await step.do("scan published page content", { retries: { limit: 2, delay: "10 seconds" }, timeout: "2 minutes" }, async () => scanPageContent(payload.url));
     const capturedAt = await step.do("record capture time", async () =>
       new Date().toISOString(),
     );
@@ -364,8 +406,21 @@ export class CollectorWorkflow extends WorkflowEntrypoint<Env, DispatchPayload> 
       capturedAt,
       scores,
       samples: { mobile: mobile.sampleSize, desktop: desktop.sampleSize },
-      agent,
+      agent: pageScan.agent,
+      nativeElements: pageScan.nativeElements,
       opportunities: mobile.opportunities,
+      opportunitiesByStrategy: {
+        mobile: mobile.opportunities,
+        desktop: desktop.opportunities,
+      },
+      diagnostics: {
+        mobile: mobile.diagnostics,
+        desktop: desktop.diagnostics,
+      },
+      culpritEvidence: {
+        mobile: mobile.culpritEvidence,
+        desktop: desktop.culpritEvidence,
+      },
       collectionQuality: { mobile: mobile.quality, desktop: desktop.quality },
       cohortId: payload.cohortId,
       measurementContext: {

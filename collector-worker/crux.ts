@@ -7,11 +7,13 @@ import {
   selectCruxEvidence,
   type CruxFormFactor,
   type CruxHistoryQuery,
+  type CruxPageEvidence,
   type CruxScope,
   type CruxSnapshot,
 } from "../src/lib/crux";
 import { isPageActivelyMonitored } from "../src/lib/watchCapacity";
 import { createFdeStore, type FdeStoreBindings } from "./dataStore";
+import { reconcileFieldOnlyRecommendationsInState } from "../src/lib/fieldOnlyRecommendations";
 
 export const CRUX_COLLECTION_CRON = "15 6 * * 2";
 export const CRUX_SCHEDULER_STATUS_KEY = "scheduler/crux-latest.json";
@@ -41,6 +43,7 @@ export interface CruxCollectionResult {
 interface TargetResult {
   status: "available" | "partial" | "insufficient" | "error";
   snapshots: number;
+  evidence?: CruxPageEvidence;
 }
 
 function rawReportKey(
@@ -338,7 +341,7 @@ export async function collectCruxEvidence(
     };
     try {
       const evidence = await selectCruxEvidence(page.url, formFactor, query, attemptedAt);
-      return await persistEvidence(
+      const persisted = await persistEvidence(
         env,
         tenant,
         page.id,
@@ -347,6 +350,17 @@ export async function collectCruxEvidence(
         evidence,
         attemptedAt,
       );
+      return {
+        ...persisted,
+        ...(evidence && persisted.status !== "insufficient" ? {
+          evidence: {
+            pageId: page.id,
+            formFactor,
+            status: null,
+            snapshots: evidence.snapshots,
+          },
+        } : {}),
+      };
     } catch (error) {
       const safe = safeError(error);
       await statusStatement(env.DB, {
@@ -372,6 +386,18 @@ export async function collectCruxEvidence(
 
   const count = (status: TargetResult["status"]) =>
     results.filter((result) => result.status === status).length;
+  const freshEvidence = results.flatMap((result) => result.evidence ? [result.evidence] : []);
+  const preview = structuredClone(state);
+  const previewChanges = reconcileFieldOnlyRecommendationsInState(
+    preview,
+    freshEvidence,
+    new Date(attemptedAt),
+  );
+  if (previewChanges.created || previewChanges.updated) {
+    await createFdeStore(tenant, env).updateState((draft) => {
+      reconcileFieldOnlyRecommendationsInState(draft, freshEvidence, new Date(attemptedAt));
+    });
+  }
   return {
     ok: count("error") === 0,
     tenant,

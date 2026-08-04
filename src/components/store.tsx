@@ -2,16 +2,18 @@
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { DEFAULT_RANGE_DAYS } from "@/lib/types";
-import type { AgentIgnoreOverrideMode, AgentIgnoreScope, AppState, CategoryKey, CollectionSchedule, Flag, PerformanceThresholds, RangeDays, ScoreByCategory, Strategy } from "@/lib/types";
+import type { AgentIgnoreOverrideMode, AgentIgnoreScope, AppState, CategoryKey, CollectionSchedule, Flag, NativeElementDisposition, PagePerformanceThresholdOverrides, PerformanceThresholds, ProductEscalationStatus, RangeDays, ScoreByCategory, Strategy } from "@/lib/types";
 import type { CruxPageEvidence } from "@/lib/crux";
 import { updateAgentIgnoreOverride, updateAgentIgnoreSettings } from "@/lib/agentScoring";
 import { collectionSettlementMessage, hasActiveCollections, startCollectionPolling } from "@/lib/collectionPolling";
-import { normalizePerformanceThresholds } from "@/lib/performanceThresholds";
+import { effectivePerformanceThresholds, normalizePerformanceThresholdOverrides, normalizePerformanceThresholds } from "@/lib/performanceThresholds";
 import { localISODate } from "@/lib/ui";
 import { withBasePath } from "@/lib/paths";
 import { defaultNewPageFlag, flagCapacityError } from "@/lib/watchCapacity";
 import { applyWatchlistPageOrder, changePageFlagOrder } from "@/lib/watchlistOrder";
 import { isTaskMarker, removeTaskMarker, taskMarkerText } from "@/lib/taskMarkers";
+import { recommendationNeedsEscalation } from "@/lib/escalations";
+import { pageTrend } from "@/lib/scoring";
 
 type SortDir = "asc" | "desc";
 interface SortState {
@@ -46,15 +48,15 @@ interface StoreValue extends AppState {
   dashSort: SortState;
   sortDash: (col: string) => void;
   // inbox
-  inboxGroup: "none" | "page" | "rec";
-  setInboxGroup: (g: "none" | "page" | "rec") => void;
+  inboxGroup: "none" | "page" | "rec" | "culprit";
+  setInboxGroup: (g: "none" | "page" | "rec" | "culprit") => void;
   inboxDescriptions: "show" | "hide";
   setInboxDescriptions: (value: "show" | "hide") => void;
   inboxSort: SortState;
   sortInbox: (col: string) => void;
   // tasks
-  taskGroup: "none" | "page" | "rec";
-  setTaskGroup: (g: "none" | "page" | "rec") => void;
+  taskGroup: "none" | "page" | "rec" | "culprit";
+  setTaskGroup: (g: "none" | "page" | "rec" | "culprit") => void;
   taskDescriptions: "show" | "hide";
   setTaskDescriptions: (value: "show" | "hide") => void;
   taskView: "list" | "kanban";
@@ -92,11 +94,16 @@ interface StoreValue extends AppState {
   renamePage: (id: string, title: string) => void;
   setAgentIgnore: (id: string, scope: AgentIgnoreScope, value: string, mode: AgentIgnoreOverrideMode) => void;
   setDefaultAgentIgnore: (scope: AgentIgnoreScope, value: string, ignored: boolean) => void;
+  setNativeElementDisposition: (id: string, findingId: string, disposition: NativeElementDisposition | null) => void;
   updatePerformanceThresholds: (thresholds: PerformanceThresholds) => void;
+  updatePagePerformanceThresholds: (id: string, overrides: PagePerformanceThresholdOverrides) => void;
   updateCollectionSchedule: (schedule: CollectionSchedule) => void;
   setVisitorExperienceVisible: (visible: boolean) => void;
   removePage: (id: string) => void;
   saveTask: (key: string) => void;
+  triageRec: (key: string) => void;
+  createEscalation: (key: string) => void;
+  updateEscalation: (id: string, patch: { status?: ProductEscalationStatus; owner?: string; notes?: string; refreshEvidence?: boolean }) => void;
   ignoreRec: (key: string) => void;
   advanceTask: (key: string, to: "todo" | "in-progress" | "done") => void;
   submitAdd: () => void;
@@ -169,10 +176,10 @@ export function StoreProvider({
   // starts fresh at seven days after a full app reload.
   const [rangeDays, setRangeDaysState] = useState<RangeDays>(DEFAULT_RANGE_DAYS);
   const [dashSort, setDashSort] = useState<SortState>({ col: null, dir: "desc" });
-  const [inboxGroup, setInboxGroup] = useState<"none" | "page" | "rec">("page");
+  const [inboxGroup, setInboxGroup] = useState<"none" | "page" | "rec" | "culprit">("page");
   const [inboxDescriptions, setInboxDescriptionsState] = useState<"show" | "hide">("show");
   const [inboxSort, setInboxSort] = useState<SortState>({ col: null, dir: "desc" });
-  const [taskGroup, setTaskGroup] = useState<"none" | "page" | "rec">("page");
+  const [taskGroup, setTaskGroup] = useState<"none" | "page" | "rec" | "culprit">("page");
   const [taskDescriptions, setTaskDescriptionsState] = useState<"show" | "hide">("show");
   const [taskView, setTaskView] = useState<"list" | "kanban">("list");
   const [taskSort, setTaskSort] = useState<SortState>({ col: null, dir: "desc" });
@@ -418,6 +425,35 @@ export function StoreProvider({
     [mutate],
   );
 
+  const setNativeElementDisposition = useCallback(
+    (id: string, findingId: string, disposition: NativeElementDisposition | null) => {
+      const cur = dataRef.current;
+      const updatedAt = new Date().toISOString();
+      mutate(
+        {
+          ...cur,
+          watcherNote: undefined,
+          pages: cur.pages.map((page) => {
+            if (page.id !== id) return page;
+            const controls = { ...(page.nativeElementControls ?? {}) };
+            if (disposition === null) delete controls[findingId];
+            else controls[findingId] = { disposition, updatedAt };
+            return { ...page, nativeElementControls: controls };
+          }),
+          recs: disposition
+            ? cur.recs.map((rec) => rec.key === `${id}:${findingId}` && rec.status === "inbox" ? { ...rec, status: "ignored" } : rec)
+            : cur.recs,
+        },
+        { url: `/api/pages/${id}/native-elements`, body: { findingId, disposition } },
+        {
+          success: disposition === "acknowledged" ? "Finding acknowledged" : disposition === "suppressed" ? "Finding suppressed from active rollups" : "Finding returned to active review",
+          failure: "Couldn't update the native-element finding — try again",
+        },
+      );
+    },
+    [mutate],
+  );
+
   const updatePerformanceThresholds = useCallback(
     (thresholds: PerformanceThresholds) => {
       const cur = dataRef.current;
@@ -432,6 +468,30 @@ export function StoreProvider({
         {
           success: "Performance tolerances updated",
           failure: "Couldn't update the performance tolerances — try again",
+        },
+      );
+    },
+    [mutate],
+  );
+
+  const updatePagePerformanceThresholds = useCallback(
+    (id: string, overrides: PagePerformanceThresholdOverrides) => {
+      const cur = dataRef.current;
+      const normalized = normalizePerformanceThresholdOverrides(overrides);
+      mutate(
+        {
+          ...cur,
+          watcherNote: undefined,
+          pages: cur.pages.map((page) => page.id === id ? {
+            ...page,
+            performanceThresholdOverrides: normalized,
+            status: pageTrend(page, "mobile", effectivePerformanceThresholds(cur.performanceThresholds, normalized)),
+          } : page),
+        },
+        { url: `/api/pages/${id}/performance-thresholds`, body: normalized },
+        {
+          success: Object.keys(normalized).length ? "Page calibration saved" : "Page calibration reset to team defaults",
+          failure: "Couldn't update the page calibration — try again",
         },
       );
     },
@@ -498,6 +558,62 @@ export function StoreProvider({
         { ...cur, recs: cur.recs.map((r) => (r.key === key ? { ...r, status: "task", taskStatus: "todo" } : r)) },
         { url: `/api/recs`, body: { key, action: "save" } },
         { success: "Saved to Tasks — track it on the Tasks board", failure: "Couldn't save to Tasks — try again" },
+      );
+    },
+    [mutate],
+  );
+
+  const createEscalation = useCallback(
+    (key: string) => {
+      const rec = dataRef.current.recs.find((item) => item.key === key);
+      if (!rec) return;
+      flash(`Creating product escalation for ${rec.pageTitle}…`);
+      fetch(pathFor("/api/escalations"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "create", recKey: key }),
+      }).then(async (response) => {
+        const value = await response.json().catch(() => null) as { state?: AppState; error?: string } | null;
+        if (!response.ok || !value?.state) throw new Error(value?.error ?? `HTTP ${response.status}`);
+        apply(value.state);
+        flash("Product escalation created — assign and export it from Escalations");
+      }).catch(() => flash("Couldn't create the product escalation — try again"));
+    },
+    [apply, flash, pathFor],
+  );
+
+  const triageRec = useCallback(
+    (key: string) => {
+      const rec = dataRef.current.recs.find((item) => item.key === key);
+      if (!rec) return;
+      if (recommendationNeedsEscalation(rec)) createEscalation(key);
+      else saveTask(key);
+    },
+    [createEscalation, saveTask],
+  );
+
+  const updateEscalation = useCallback(
+    (id: string, patch: { status?: ProductEscalationStatus; owner?: string; notes?: string; refreshEvidence?: boolean }) => {
+      const cur = dataRef.current;
+      const updatedAt = new Date().toISOString();
+      mutate(
+        {
+          ...cur,
+          productEscalations: (cur.productEscalations ?? []).map((item) => item.id === id ? {
+            ...item,
+            ...(patch.status ? { status: patch.status } : {}),
+            ...(patch.owner !== undefined ? { owner: patch.owner.trim() } : {}),
+            ...(patch.notes !== undefined ? { notes: patch.notes.trim() } : {}),
+            ...(patch.status === "submitted" && !item.submittedAt ? { submittedAt: updatedAt } : {}),
+            ...(patch.status === "resolved" ? { resolvedAt: updatedAt } : patch.status ? { resolvedAt: undefined } : {}),
+            updatedAt,
+          } : item),
+        },
+        { url: "/api/escalations", body: { action: "update", id, ...patch } },
+        {
+          success: patch.refreshEvidence ? "Escalation evidence refreshed" : "Escalation updated",
+          failure: "Couldn't update the escalation — try again",
+        },
       );
     },
     [mutate],
@@ -762,11 +878,16 @@ export function StoreProvider({
     renamePage,
     setAgentIgnore,
     setDefaultAgentIgnore,
+    setNativeElementDisposition,
     updatePerformanceThresholds,
+    updatePagePerformanceThresholds,
     updateCollectionSchedule,
     setVisitorExperienceVisible,
     removePage,
     saveTask,
+    triageRec,
+    createEscalation,
+    updateEscalation,
     ignoreRec,
     advanceTask,
     submitAdd,

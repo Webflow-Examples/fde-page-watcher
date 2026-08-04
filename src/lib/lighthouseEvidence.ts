@@ -7,6 +7,7 @@ import type {
   LighthouseRunFinding,
   ScoreByCategory,
 } from "./types";
+import { classifyWebflowPerformance } from "./webflowPerformance";
 
 export const MINIMUM_TRUSTED_RUNS = 3;
 
@@ -138,6 +139,7 @@ export function extractLighthouseRunEvidence(value: unknown, run: number): Light
         || savingsMs > 0
         || savingsBytes > 0
         || audit.scoreDisplayMode === "binary",
+      webflow: classifyWebflowPerformance(id),
     }];
   });
 
@@ -192,6 +194,7 @@ export function aggregateLighthouseRunEvidence(
 
     return {
       ...source,
+      webflow: source.webflow ?? classifyWebflowPerformance(id),
       savingsMs: median(savingsMsValues),
       savingsBytes: median(savingsBytesValues),
       observedRuns,
@@ -221,11 +224,13 @@ export function aggregateLighthouseRunEvidence(
       description: finding.description,
       category: finding.category,
       savingsMs: finding.savingsMs,
+      savingsBytes: finding.savingsBytes,
       observedRuns: finding.observedRuns,
       eligibleRuns: finding.eligibleRuns,
       confidence: finding.confidence === "high" ? "high" : "medium",
       savingsLowMs: finding.savingsLowMs,
       savingsHighMs: finding.savingsHighMs,
+      webflow: finding.webflow ?? classifyWebflowPerformance(finding.id),
     }));
 
   const warnedRuns = successfulRuns - eligibleRuns;

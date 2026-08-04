@@ -4,7 +4,7 @@ import type { AppState, ChangeMarker, Night, WatchPage } from "../types";
 import type { CruxPageEvidence } from "../crux";
 import { buildInitialState } from "../seed";
 import { captureAgentReadiness } from "../agentScoring";
-import { normalizePerformanceThresholds } from "../performanceThresholds";
+import { effectivePerformanceThresholds } from "../performanceThresholds";
 import { mediansOf, pageTrend } from "../scoring";
 import { resolveMarkerIndex } from "../followups";
 import { normalizeState } from "./normalize";
@@ -243,7 +243,7 @@ class FsDataStore implements DataStore {
         desktop: mediansOf(night.scores.desktop),
       };
       page.agent = agent ?? [];
-      page.status = pageTrend(page, "mobile", normalizePerformanceThresholds(draft.performanceThresholds));
+      page.status = pageTrend(page, "mobile", effectivePerformanceThresholds(draft.performanceThresholds, page));
       page.runState = undefined;
       page.lastRunAt = night.iso ?? new Date().toISOString();
       page.lastCollectionStatus = "trusted";

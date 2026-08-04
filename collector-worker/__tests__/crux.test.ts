@@ -181,4 +181,52 @@ describe("CrUX collector", () => {
       JSON.parse(String(init?.body)).origin);
     expect(originCalls).toHaveLength(2);
   });
+
+  it("creates a field-only recommendation immediately after fresh exact-URL evidence", async () => {
+    const category = { m: 90, lo: 88, hi: 92 };
+    const strategyScores = { perf: category, a11y: category, bp: category, seo: category };
+    const { env, statements } = environment([{
+      id: "page-one",
+      title: "One",
+      url: "https://example.com/page",
+      flag: "watching",
+      status: "stable",
+      current: {
+        mobile: { perf: 90, a11y: 90, bp: 90, seo: 90 },
+        desktop: { perf: 90, a11y: 90, bp: 90, seo: 90 },
+      },
+      history: [{
+        i: 1,
+        date: "Jul 27",
+        iso: "2026-07-27T05:00:00.000Z",
+        scores: { mobile: strategyScores, desktop: strategyScores },
+        measurementContext: {
+          mobile: { medianCumulativeLayoutShift: 0.05 },
+          desktop: { medianCumulativeLayoutShift: 0.04 },
+        },
+      }],
+      markers: [],
+      agent: [],
+    }]);
+    const fetchFn = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { formFactor: "PHONE" | "DESKTOP" };
+      return new Response(JSON.stringify(response("url", body.formFactor)));
+    });
+
+    await collectCruxEvidence(env as never, {
+      fetchFn,
+      now: new Date("2026-07-27T06:15:00.000Z"),
+    });
+
+    const stateWrite = statements.find((item) => item.sql.startsWith("UPDATE state SET json"));
+    expect(stateWrite).toBeDefined();
+    const saved = JSON.parse(String(stateWrite!.values[0])) as { recs: Array<Record<string, unknown>> };
+    expect(saved.recs).toEqual([
+      expect.objectContaining({
+        id: "crux-field-only-cls",
+        source: "crux-field-only",
+        strategies: ["mobile", "desktop"],
+      }),
+    ]);
+  });
 });

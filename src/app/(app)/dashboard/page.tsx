@@ -11,16 +11,22 @@ import { DeviceSegmentedControl, StatusSegmentedControl } from "@/components/seg
 import { CATEGORIES } from "@/lib/types";
 import type { AgentIgnoreSettings, CategoryKey, Night } from "@/lib/types";
 import { agentReadinessForNight, summarizeAgentChecks } from "@/lib/agentScoring";
-import { normalizePerformanceThresholds } from "@/lib/performanceThresholds";
+import { effectivePerformanceThresholds, normalizePerformanceThresholds } from "@/lib/performanceThresholds";
 import { deltaMeta, historyForRange, pageAgentSnapshotForRange, pageRangeComparison, pageRangeLatestNight, pageRangeSeries, pageRangeTrend, scoreMeta } from "@/lib/scoring";
 import { C, flagChip, savingsValue } from "@/lib/ui";
 import { Sparkline } from "@/components/charts";
-import { DeviceChangeLabels, SortHeader } from "@/components/bits";
+import { DeviceChangeLabels, FieldEvidenceChip, PerformanceIssueStatusBadge, SortHeader, WebflowClassificationChips } from "@/components/bits";
 import { isPageActivelyMonitored } from "@/lib/watchCapacity";
 import { sortDashboardRows } from "@/lib/dashboardSort";
 import { combinedDashboardSignals } from "@/lib/dashboardVerdict";
 import { normalizeCollectionSchedule } from "@/lib/collectionSchedule";
 import { evidenceForPage, visitorExperienceTrend } from "@/lib/visitorExperience";
+import { performanceIssueCounts, siteCulpritRollups, sitePerformanceIssues } from "@/lib/performanceIssues";
+import { remediationTone, triageActionLabel, webflowClassificationFor } from "@/lib/webflowPerformance";
+import { siteNativeElementRollups } from "@/lib/nativeElements";
+import { compareLabAndField } from "@/lib/labFieldComparison";
+import { fieldPriorityRankForRec, recommendationEvidenceSignal } from "@/lib/fieldPrioritization";
+import { isFieldRecommendationActionable } from "@/lib/fieldOnlyRecommendations";
 
 const GRID = "minmax(170px,1fr) 142px 126px 126px 126px 126px 120px";
 type DashboardFilter = "all" | "lowPerformance" | "agentGaps" | "regressions" | "improvements";
@@ -117,7 +123,7 @@ export default function DashboardPage() {
     setRangeDays,
     dashSort,
     sortDash,
-    saveTask,
+    triageRec,
     pathFor,
     visitorExperienceVisible,
     visitorExperience,
@@ -128,14 +134,34 @@ export default function DashboardPage() {
   const schedule = normalizeCollectionSchedule(collectionSchedule);
   const activePages = pages.filter(isPageActivelyMonitored);
   const topRibbonRec = recs
-    .filter((rec) => rec.status === "inbox" && rec.taskStatus !== "done")
-    .sort((left, right) => savingsValue(right) - savingsValue(left))[0] ?? null;
+    .filter((rec) =>
+      rec.status === "inbox"
+      && rec.taskStatus !== "done"
+      && isFieldRecommendationActionable(rec)
+      && (!rec.strategies?.length || rec.strategies.includes(strategy)))
+    .sort((left, right) => {
+      const priority = { available: 0, partial: 1, unknown: 2, blocked: 3 } as const;
+      return fieldPriorityRankForRec(right, pages, visitorExperience) - fieldPriorityRankForRec(left, pages, visitorExperience)
+        || priority[webflowClassificationFor(left).remediation] - priority[webflowClassificationFor(right).remediation]
+        || savingsValue(right) - savingsValue(left);
+    })[0] ?? null;
+  const topRibbonClassification = topRibbonRec ? webflowClassificationFor(topRibbonRec) : null;
+  const topRibbonEvidence = topRibbonRec
+    ? recommendationEvidenceSignal(topRibbonRec, pages.find((page) => page.id === topRibbonRec.pageId), visitorExperience)
+    : null;
   const isRunning = activePages.some((page) => page.runState && page.runState !== "failed");
+  const siteIssues = sitePerformanceIssues(activePages, strategy);
+  const siteIssueCounts = performanceIssueCounts(siteIssues);
+  const culpritRollups = siteCulpritRollups(activePages, strategy).slice(0, 6);
+  const nativeElementRollups = siteNativeElementRollups(activePages);
 
   const rows = pages.map((p, watchlistOrder) => {
-    const mobileTrend = pageRangeTrend(p, "mobile", rangeDays, thresholds);
-    const desktopTrend = pageRangeTrend(p, "desktop", rangeDays, thresholds);
-    const experienceTrend = visitorExperienceTrend(evidenceForPage(visitorExperience, p.id, strategy));
+    const pageThresholds = effectivePerformanceThresholds(thresholds, p);
+    const mobileTrend = pageRangeTrend(p, "mobile", rangeDays, pageThresholds);
+    const desktopTrend = pageRangeTrend(p, "desktop", rangeDays, pageThresholds);
+    const visitorEvidence = evidenceForPage(visitorExperience, p.id, strategy);
+    const experienceTrend = visitorExperienceTrend(visitorEvidence);
+    const labFieldComparison = compareLabAndField(historyForRange(p.history, rangeDays), strategy, visitorEvidence).status;
     const trend = strategy === "mobile" ? mobileTrend : desktopTrend;
     const secondaryStrategy = strategy === "mobile" ? "desktop" : "mobile";
     const rangeAgentSnapshot = pageAgentSnapshotForRange(p, rangeDays);
@@ -151,7 +177,7 @@ export default function DashboardPage() {
       isMonitored,
       mobilePerformance: latestRangeNight?.scores.mobile.perf.m ?? null,
       desktopPerformance: latestRangeNight?.scores.desktop.perf.m ?? null,
-      lowPerformanceThreshold: thresholds.lowPerformance,
+      lowPerformanceThreshold: pageThresholds.lowPerformance,
       mobileTrend,
       desktopTrend,
     });
@@ -159,7 +185,7 @@ export default function DashboardPage() {
       lowPerformance: strategy === "mobile"
         ? combinedSignals.mobileLowPerformance
         : combinedSignals.desktopLowPerformance,
-      agentGaps: isMonitored && total > 0 && pct < thresholds.agentReadiness,
+      agentGaps: isMonitored && total > 0 && pct < pageThresholds.agentReadiness,
       regressions: strategy === "mobile"
         ? combinedSignals.mobileRegression
         : combinedSignals.desktopRegression,
@@ -192,6 +218,7 @@ export default function DashboardPage() {
       mobileTrend,
       desktopTrend,
       experienceTrend,
+      labFieldComparison,
       monitoringFlag: p.flag,
       watchlistOrder,
       flag: flagChip(p.flag),
@@ -362,11 +389,27 @@ export default function DashboardPage() {
         <p className="watcher-ribbon__message">
           {isRunning ? (
             <>Analyzing <strong>{activePages.length} pages</strong>…</>
-          ) : topRibbonRec ? (
-            <>
-              Start with <strong>{topRibbonRec.pageTitle}</strong> — {topRibbonRec.title} recovers an estimated{" "}
-              <strong>{topRibbonRec.savings}</strong> of load time.
-            </>
+          ) : topRibbonRec && topRibbonClassification ? (
+            topRibbonRec.source === "crux-field-only" ? (
+              <>
+                Investigate <strong>{topRibbonRec.pageTitle}</strong> — {topRibbonRec.title} is the clearest next step because exact-URL visitor evidence is outside the good range while Lighthouse did not reproduce or explain it.
+              </>
+            ) : topRibbonClassification.remediation === "blocked" ? (
+              <>
+                Product gap on <strong>{topRibbonRec.pageTitle}</strong> — {topRibbonRec.title} is associated with an estimated{" "}
+                <strong>{topRibbonRec.savings}</strong> of load time. Track it for escalation.{topRibbonEvidence?.priority === "corroborated" ? " Visitor evidence corroborates the affected metric." : topRibbonEvidence?.priority === "field-only" ? " Visitor evidence is worse than the controlled test." : ""}
+              </>
+            ) : topRibbonClassification.remediation === "partial" ? (
+              <>
+                Work around <strong>{topRibbonRec.pageTitle}</strong> — {topRibbonRec.title} could recover about{" "}
+                <strong>{topRibbonRec.savings}</strong> of load time.{topRibbonEvidence?.priority === "corroborated" ? " Visitor evidence corroborates the affected metric." : topRibbonEvidence?.priority === "field-only" ? " Visitor evidence is worse than the controlled test." : ""}
+              </>
+            ) : (
+              <>
+                Start with <strong>{topRibbonRec.pageTitle}</strong> — {topRibbonRec.title} can recover about{" "}
+                <strong>{topRibbonRec.savings}</strong> of load time.{topRibbonEvidence?.priority === "corroborated" ? " Visitor evidence corroborates the affected metric." : topRibbonEvidence?.priority === "field-only" ? " Visitor evidence is worse than the controlled test." : ""}
+              </>
+            )
           ) : (
             <>No open recommendations. Next collection window · {schedule.localTime} {schedule.timeZone}</>
           )}
@@ -377,9 +420,12 @@ export default function DashboardPage() {
               <Circle size={10} weight="fill" />
             </span>
           ) : topRibbonRec ? (
-            <button type="button" className="watcher-ribbon__primary" onClick={() => saveTask(topRibbonRec.key)}>
-              Create Task
-            </button>
+            <>
+              {topRibbonEvidence && <FieldEvidenceChip signal={topRibbonEvidence} />}
+              <button type="button" className="watcher-ribbon__primary" onClick={() => triageRec(topRibbonRec.key)}>
+                {triageActionLabel(topRibbonRec)}
+              </button>
+            </>
           ) : null}
           <Link className="watcher-ribbon__inbox" href={pathFor("/inbox")}>
             Open Inbox
@@ -516,6 +562,98 @@ export default function DashboardPage() {
       </header>
 
       <div className="dashboard-content">
+        <section aria-label="Site-wide performance culprits" style={{ marginBottom: 20, background: C.panel, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden" }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 18, padding: "17px 20px", borderBottom: `1px solid ${C.border}` }}>
+            <div>
+              <h2 style={{ margin: 0, fontSize: 15, fontWeight: 650 }}>Site-wide performance culprits</h2>
+              <div style={{ marginTop: 4, fontSize: 11.5, color: C.faint }}>
+                <span style={{ textTransform: "capitalize" }}>{strategy}</span> · active findings grouped across retained diagnostic history
+              </div>
+            </div>
+            {siteIssues.length > 0 && (
+              <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap", gap: 9 }}>
+                {siteIssueCounts.regressed > 0 && <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, color: C.dim }}><PerformanceIssueStatusBadge status="regressed" /><strong>{siteIssueCounts.regressed}</strong></span>}
+                {siteIssueCounts.active > 0 && <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, color: C.dim }}><PerformanceIssueStatusBadge status="active" /><strong>{siteIssueCounts.active}</strong></span>}
+                {siteIssueCounts.verifying > 0 && <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, color: C.dim }}><PerformanceIssueStatusBadge status="verifying" /><strong>{siteIssueCounts.verifying}</strong></span>}
+                {siteIssueCounts.resolved > 0 && <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, color: C.dim }}><PerformanceIssueStatusBadge status="resolved" /><strong>{siteIssueCounts.resolved}</strong></span>}
+              </div>
+            )}
+          </div>
+          {culpritRollups.length === 0 ? (
+            <div style={{ padding: "26px 20px", color: C.muted, fontSize: 12.5 }}>
+              No currently-present <span style={{ textTransform: "capitalize" }}>{strategy}</span> culprits have enough retained diagnostic evidence yet.
+            </div>
+          ) : (
+            <div className="dashboard-culprit-grid" style={{ background: C.border }}>
+              {culpritRollups.map((rollup) => {
+                const dominantRemediation = rollup.remediationCounts.blocked > 0
+                  ? "blocked"
+                  : rollup.remediationCounts.partial > 0
+                    ? "partial"
+                    : rollup.remediationCounts.available > 0
+                      ? "available"
+                      : "unknown";
+                const tone = remediationTone(dominantRemediation);
+                return (
+                  <article key={rollup.culprit} style={{ minWidth: 0, padding: "16px 18px", background: C.panel }}>
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 13.5, fontWeight: 650 }}>{rollup.label}</div>
+                        <div style={{ marginTop: 4, fontSize: 11.5, color: C.faint }}>
+                          {rollup.pageCount} {rollup.pageCount === 1 ? "page" : "pages"} · {rollup.issueCount} {rollup.issueCount === 1 ? "issue" : "issues"} · as of {rollup.oldestDetection.date}
+                        </div>
+                      </div>
+                      <span style={{ marginLeft: "auto", flex: "none", width: 8, height: 8, marginTop: 4, borderRadius: "50%", background: tone.color }} />
+                    </div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 11 }}>
+                      {rollup.metrics.filter((metric) => metric.metric !== "other").map((metric) => (
+                        <span key={`${metric.metric}:${metric.metricWeight}`} style={{ fontSize: 10.5, fontWeight: 650, color: C.accentSoft, background: "rgba(59,137,255,0.12)", padding: "2px 7px", borderRadius: 5 }}>
+                          {metric.metric} · {metric.metricWeight}%
+                        </span>
+                      ))}
+                      {rollup.remediationCounts.blocked > 0 && <span style={{ fontSize: 10.5, fontWeight: 650, color: C.redSoft, background: "rgba(255,92,108,0.13)", padding: "2px 7px", borderRadius: 5 }}>{rollup.remediationCounts.blocked} product</span>}
+                      {rollup.remediationCounts.partial > 0 && <span style={{ fontSize: 10.5, fontWeight: 650, color: C.amber, background: "rgba(255,154,61,0.13)", padding: "2px 7px", borderRadius: 5 }}>{rollup.remediationCounts.partial} partial</span>}
+                      {rollup.remediationCounts.available > 0 && <span style={{ fontSize: 10.5, fontWeight: 650, color: C.green, background: "rgba(53,208,127,0.13)", padding: "2px 7px", borderRadius: 5 }}>{rollup.remediationCounts.available} fixable</span>}
+                      {rollup.regressedCount > 0 && <span style={{ fontSize: 10.5, fontWeight: 650, color: C.redSoft, padding: "2px 2px" }}>{rollup.regressedCount} returned</span>}
+                    </div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 12 }}>
+                      {rollup.pages.slice(0, 3).map((page) => (
+                        <button key={page.id} type="button" onClick={() => router.push(pathFor(`/pages/${page.id}?tab=opportunities`))} style={{ border: `1px solid ${C.border2}`, background: "rgba(255,255,255,0.035)", color: C.dim, fontSize: 10.5, padding: "3px 7px", borderRadius: 5, cursor: "pointer" }}>
+                          {page.title} ↗
+                        </button>
+                      ))}
+                      {rollup.pages.length > 3 && <span style={{ alignSelf: "center", fontSize: 10.5, color: C.faint }}>+{rollup.pages.length - 3} more</span>}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </section>
+        {nativeElementRollups.length > 0 && (
+          <section aria-label="Native Webflow element hotspots" style={{ marginBottom: 20, background: C.panel, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden" }}>
+            <div style={{ padding: "15px 20px", borderBottom: `1px solid ${C.border}` }}>
+              <h2 style={{ margin: 0, fontSize: 14, fontWeight: 650 }}>Native Webflow element hotspots</h2>
+              <div style={{ marginTop: 3, fontSize: 11.5, color: C.faint }}>Device-neutral findings from published HTML, grouped across monitored pages.</div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(235px, 1fr))", gap: 1, background: C.border }}>
+              {nativeElementRollups.map((rollup) => (
+                <article key={rollup.id} style={{ padding: "15px 18px", background: C.panel }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 650 }}>{rollup.title}</div>
+                  <div style={{ marginTop: 4, fontSize: 11.5, color: C.faint }}>{rollup.instanceCount} {rollup.instanceCount === 1 ? "instance" : "instances"} · {rollup.pageCount} {rollup.pageCount === 1 ? "page" : "pages"}</div>
+                  <div style={{ marginTop: 9 }}><WebflowClassificationChips classification={rollup.webflow} /></div>
+                  {rollup.acknowledgedCount > 0 && <div style={{ marginTop: 8, fontSize: 10.5, fontWeight: 650, color: C.green }}>{rollup.acknowledgedCount} {rollup.acknowledgedCount === 1 ? "page has" : "pages have"} acknowledged this finding</div>}
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 11 }}>
+                    {rollup.pages.slice(0, 3).map((page) => (
+                      <button key={page.id} type="button" onClick={() => router.push(pathFor(`/pages/${page.id}?tab=opportunities`))} style={{ border: `1px solid ${C.border2}`, background: "rgba(255,255,255,0.035)", color: C.dim, fontSize: 10.5, padding: "3px 7px", borderRadius: 5, cursor: "pointer" }}>{page.title} ↗</button>
+                    ))}
+                    {rollup.pages.length > 3 && <span style={{ alignSelf: "center", fontSize: 10.5, color: C.faint }}>+{rollup.pages.length - 3} more</span>}
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
         {/* The existing table is unchanged below this unified toolbar. */}
         <div ref={tableRef} className="dashboard-table-card">
           <div className="dashboard-table-toolbar">
@@ -611,6 +749,7 @@ export default function DashboardPage() {
                   mobile={row.mobileTrend}
                   desktop={row.desktopTrend}
                   visitorExperience={visitorExperienceVisible ? row.experienceTrend : undefined}
+                  labFieldComparison={visitorExperienceVisible ? row.labFieldComparison : undefined}
                 />
               </div>
               {row.cats.map((c: { key: CategoryKey; score: number | null; fg: string; delta: string; deltaFg: string; series: number[]; line: string; secondary: number | null; secondaryFg: string; secondaryLabel: string }) => (

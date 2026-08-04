@@ -1,19 +1,19 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ArrowUpRightIcon, CircleIcon } from "@phosphor-icons/react";
 import { useStore } from "@/components/store";
 import { CATEGORIES } from "@/lib/types";
-import type { AgentCheck, CategoryKey, Night, PageStatus, RangeDays, Rec, WatchPage } from "@/lib/types";
+import type { AgentCheck, CategoryKey, DevicePolicy, Night, PagePerformanceThresholdOverrides, PageStatus, RangeDays, Rec, WatchPage, WebflowRemediationLevel } from "@/lib/types";
 import { agentCheckKey, agentIgnoreOverrideMode, isAgentCheckIgnored, isAgentGroupIgnored, normalizeAgentIgnoreSettings, summarizeAgentChecks } from "@/lib/agentScoring";
 import { agentReadinessHistoryPoints } from "@/lib/agentHistory";
-import { normalizePerformanceThresholds } from "@/lib/performanceThresholds";
+import { effectivePerformanceThresholds } from "@/lib/performanceThresholds";
 import { deltaMeta, pageAgentSnapshotForRange, pageHistoryForRange, pagePreviousPeriodMedian, pageRangeComparison, pageRangeLatestNight, pageRangeSeries, pageRangeTrend, scoreMeta, statusMeta } from "@/lib/scoring";
 import { auditsFor } from "@/lib/audits";
 import { C, taskLabel } from "@/lib/ui";
 import { AgentReadinessChart, HistoryChart, Sparkline } from "@/components/charts";
-import { SegToggle } from "@/components/bits";
+import { FieldEvidenceChip, FieldRecommendationStatusBadge, PerformanceIssueStatusBadge, SegToggle, WebflowClassificationChips } from "@/components/bits";
 import { SelectMenu } from "@/components/select-menu";
 import type { SelectMenuOption } from "@/components/select-menu";
 import { DesktopIcon, MobileIcon, PlusIcon, RefreshIcon } from "@/components/icons";
@@ -21,6 +21,16 @@ import { failedRunDetailMessage, formatSuccessfulRunAt, lastSuccessfulRunAt } fr
 import { isTaskMarker, taskMarkerText } from "@/lib/taskMarkers";
 import { VisitorExperiencePanel } from "@/components/visitor-experience";
 import { evidenceForPage } from "@/lib/visitorExperience";
+import { opportunitiesForNight } from "@/lib/diagnostics";
+import { formatLabMetric, LAB_METRICS, labMetricRating, labMetricSeries } from "@/lib/labMetrics";
+import { remediationTone, triageActionLabel, webflowClassificationFor } from "@/lib/webflowPerformance";
+import { performanceIssueCounts, performanceIssuesForPage } from "@/lib/performanceIssues";
+import type { PerformanceIssueLifecycle, PerformanceIssueStatus } from "@/lib/performanceIssues";
+import { nativeElementDisposition, nativeElementIssuesForPage } from "@/lib/nativeElements";
+import type { NativeElementLifecycle } from "@/lib/nativeElements";
+import { culpritEvidenceTrends, formatEvidenceValue } from "@/lib/culpritEvidence";
+import { recommendationEvidenceSignal } from "@/lib/fieldPrioritization";
+import { isFieldRecommendationActionable } from "@/lib/fieldOnlyRecommendations";
 
 const PAGE_RANGE_OPTIONS: ReadonlyArray<SelectMenuOption<RangeDays>> = [
   { value: 3, label: "Last 3 days" },
@@ -63,7 +73,7 @@ export default function PageDetail() {
   const successfulRunAt = lastSuccessfulRunAt(page);
   const successfulRunLabel = formatSuccessfulRunAt(successfulRunAt);
   const watchedPageHref = /^[a-z][a-z\d+.-]*:\/\//i.test(page.url) ? page.url : `https://${page.url}`;
-  const thresholds = normalizePerformanceThresholds(store.performanceThresholds);
+  const thresholds = effectivePerformanceThresholds(store.performanceThresholds, page);
   const mobileTrend = pageRangeTrend(page, "mobile", rangeDays, thresholds);
   const desktopTrend = pageRangeTrend(page, "desktop", rangeDays, thresholds);
   const isStatusPreview = process.env.NODE_ENV === "development" && searchParams.get("statusPreview") === "compare";
@@ -177,7 +187,7 @@ export default function PageDetail() {
           <div role="tabpanel" id={`page-panel-${tab}`} aria-labelledby={`page-tab-${tab}`} tabIndex={0}>
             {tab === "overview" && <OverviewTab page={page} latestNight={latestRangeNight} agentChecks={agentChecks} recs={recs} strategy={strategy} rangeDays={rangeDays} apct={apct} apm={apm} pass={pass} total={total} ignored={ignored} failList={failList} store={store} />}
             {tab === "history" && <HistoryTab page={page} strategy={strategy} rangeDays={rangeDays} chartCat={chartCat} setChartCat={setChartCat} store={store} />}
-            {tab === "audits" && <OpportunitiesTab latest={latestRangeNight} />}
+            {tab === "audits" && <OpportunitiesTab page={page} latest={latestRangeNight} strategy={strategy} />}
             {tab === "agent" && <AgentTab page={page} checks={agentChecks} date={agentSnapshot?.date ?? null} rangeDays={rangeDays} pass={pass} fail={fail} ignored={ignored} unavailable={unavailableCount} store={store} />}
           </div>
         )}
@@ -198,6 +208,65 @@ function DetailDeviceStatus({ name, status }: { name: "Desktop" | "Mobile"; stat
       <span className="detail-device-name">{name}</span>
       <strong className="detail-device-value">{meta.label.toLowerCase()}</strong>
     </span>
+  );
+}
+
+function LabMetricsPanel({
+  page,
+  latestNight,
+  strategy,
+  rangeDays,
+}: {
+  page: WatchPage;
+  latestNight: Night | null;
+  strategy: "mobile" | "desktop";
+  rangeDays: RangeDays;
+}) {
+  const context = latestNight?.measurementContext?.[strategy];
+  const history = pageHistoryForRange(page, rangeDays);
+  const hasMetrics = LAB_METRICS.some((metric) => typeof context?.[metric.key] === "number");
+  const tone = (rating: ReturnType<typeof labMetricRating>) =>
+    rating === "Good" ? C.green : rating === "Needs improvement" ? C.amber : C.redSoft;
+
+  return (
+    <section style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, padding: 22, marginBottom: 20 }} aria-labelledby="lab-metrics-heading">
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 20 }}>
+        <div>
+          <h3 id="lab-metrics-heading" style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>Performance sub-metrics</h3>
+          <div style={{ fontSize: 11.5, color: C.faint, marginTop: 4 }}>Lighthouse lab medians · <span style={{ textTransform: "capitalize" }}>{strategy}</span> · last {rangeDays} days</div>
+        </div>
+        {context?.lighthouseVersion && <span style={{ fontSize: 10.5, color: C.faint }}>Lighthouse {context.lighthouseVersion}</span>}
+      </div>
+      {!hasMetrics ? (
+        <div style={{ padding: "28px 12px 10px", textAlign: "center", color: C.muted, fontSize: 12.5 }}>
+          Sub-metric history starts with the next successful collection.
+        </div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginTop: 16 }}>
+          {LAB_METRICS.map((metric) => {
+            const value = context?.[metric.key];
+            const rating = typeof value === "number" ? labMetricRating(metric.key, value) : null;
+            const series = labMetricSeries(history, strategy, metric.key);
+            return (
+              <div key={metric.key} style={{ minWidth: 0, padding: "13px 14px", borderRadius: 10, border: `1px solid ${C.border2}`, background: C.panel2 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                  <span style={{ fontSize: 12.5, fontWeight: 600 }}>{metric.label}</span>
+                  <span style={{ fontSize: 10, color: C.faint }}>{metric.short}</span>
+                </div>
+                <div style={{ marginTop: 11 }}>
+                  <span style={{ display: "block", fontSize: 22, fontWeight: 600, color: rating ? tone(rating) : C.muted, whiteSpace: "nowrap" }}>{formatLabMetric(metric.key, value)}</span>
+                  <span style={{ display: "block", minHeight: 14, marginTop: 4, fontSize: 9.5, color: rating ? tone(rating) : C.faint }}>{rating ?? "No data"}</span>
+                </div>
+                <div style={{ height: 30, marginTop: 8 }}>
+                  {series.length > 0 && <Sparkline series={series} color={rating ? tone(rating) : C.muted} w={150} h={30} />}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <div style={{ marginTop: 12, color: C.faint, fontSize: 10.5 }}>Lower values are better. These controlled lab measurements are separate from Chrome visitor evidence.</div>
+    </section>
   );
 }
 
@@ -253,7 +322,8 @@ function OverviewTab({
   failList: { name: string }[];
   store: ReturnType<typeof useStore>;
 }) {
-  const pageRecs = recs.filter((r) => r.pageId === page.id);
+  const pageRecs = recs.filter((r) =>
+    r.pageId === page.id && (!r.strategies?.length || r.strategies.includes(strategy)));
   const secondaryStrategy = strategy === "mobile" ? "desktop" : "mobile";
   return (
     <div>
@@ -298,11 +368,16 @@ function OverviewTab({
         })}
       </div>
 
+      <LabMetricsPanel page={page} latestNight={latestNight} strategy={strategy} rangeDays={rangeDays} />
+
+      <PageCalibrationPanel key={`${page.id}:${JSON.stringify(page.performanceThresholdOverrides ?? {})}`} page={page} store={store} />
+
       {store.visitorExperienceVisible && (
         <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, padding: 22, marginBottom: 20 }}>
           <VisitorExperiencePanel
             evidence={evidenceForPage(store.visitorExperience, page.id, strategy)}
-            labTrend={pageRangeTrend(page, strategy, rangeDays, normalizePerformanceThresholds(store.performanceThresholds))}
+            labHistory={pageHistoryForRange(page, rangeDays)}
+            strategy={strategy}
           />
         </div>
       )}
@@ -348,19 +423,33 @@ function OverviewTab({
       <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, overflow: "hidden" }}>
         <div style={{ padding: "18px 22px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>Recommendations for this page</h3>
-          <span style={{ fontSize: 12, color: C.faint }}>Lighthouse estimated savings</span>
+          <span style={{ fontSize: 12, color: C.faint }}>Measured impact or signal</span>
         </div>
-        {pageRecs.map((r) => (
+        {pageRecs.map((r) => {
+          const fieldActionable = isFieldRecommendationActionable(r);
+          return (
           <div key={r.key} style={{ display: "flex", alignItems: "center", gap: 16, padding: "15px 22px", borderBottom: `1px solid ${C.rowBorder}` }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13.5, fontWeight: 500 }}>{r.title}</div>
-              <div style={{ fontSize: 12, color: C.faint, marginTop: 2 }}>{r.category}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 2 }}>
+                <span style={{ fontSize: 12, color: C.faint }}>{r.category}</span>
+                {r.strategies?.map((device) => (
+                  <span key={device} style={{ fontSize: 9.5, color: C.accentSoft, textTransform: "capitalize" }}>{device}</span>
+                ))}
+              </div>
+              <div style={{ marginTop: 7 }}>
+                <WebflowClassificationChips classification={webflowClassificationFor(r)} />
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
+                <FieldEvidenceChip signal={recommendationEvidenceSignal(r, page, store.visitorExperience)} />
+                <FieldRecommendationStatusBadge rec={r} />
+              </div>
               {r.aiSummary && <div style={{ fontSize: 12, color: C.muted, marginTop: 6, lineHeight: 1.45 }}>{r.aiSummary}</div>}
             </div>
             <div style={{ fontSize: 13, fontWeight: 600, color: C.amber, whiteSpace: "nowrap" }}>{r.savings}</div>
-            {r.status === "inbox" ? (
+            {r.status === "inbox" && fieldActionable ? (
               <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={() => store.saveTask(r.key)} style={{ border: "none", background: C.accent, color: "#fff", fontSize: 12, fontWeight: 550, padding: "7px 12px", borderRadius: 7, cursor: "pointer", whiteSpace: "nowrap" }}>Save as task</button>
+                <button onClick={() => store.triageRec(r.key)} style={{ border: "none", background: C.accent, color: "#fff", fontSize: 12, fontWeight: 550, padding: "7px 12px", borderRadius: 7, cursor: "pointer", whiteSpace: "nowrap" }}>{triageActionLabel(r)}</button>
                 <button onClick={() => store.ignoreRec(r.key)} style={{ border: `1px solid ${C.border2}`, background: "rgba(255,255,255,0.03)", color: C.dim, fontSize: 12, fontWeight: 500, padding: "7px 12px", borderRadius: 7, cursor: "pointer", whiteSpace: "nowrap" }}>Ignore</button>
               </div>
             ) : (
@@ -375,13 +464,105 @@ function OverviewTab({
                   background: r.status === "task" ? "rgba(59,137,255,0.14)" : "rgba(255,255,255,0.06)",
                 }}
               >
-                {r.status === "task" ? `In tasks · ${taskLabel(r.taskStatus)}` : "Ignored"}
+                {r.status === "task" ? `In tasks · ${taskLabel(r.taskStatus)}` : r.status === "ignored" ? "Ignored" : "Monitoring lifecycle"}
               </span>
             )}
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
+  );
+}
+
+const PAGE_CALIBRATION_FIELDS = [
+  { key: "regression", label: "Regression", suffix: "points", min: 1, max: 50 },
+  { key: "confirmationRuns", label: "Confirm after", suffix: "scans", min: 1, max: 5 },
+  { key: "regressionFloor", label: "Score floor", suffix: "/ 100", min: 1, max: 100 },
+  { key: "minimumFindingRuns", label: "Finding evidence", suffix: "runs", min: 1, max: 5 },
+  { key: "minimumSavingsMs", label: "Minimum time saving", suffix: "ms", min: 0, max: 5000 },
+  { key: "minimumSavingsKilobytes", label: "Minimum transfer saving", suffix: "KB", min: 0, max: 5000 },
+] as const;
+
+type PageCalibrationNumericKey = typeof PAGE_CALIBRATION_FIELDS[number]["key"];
+
+function PageCalibrationPanel({ page, store }: { page: WatchPage; store: ReturnType<typeof useStore> }) {
+  const team = effectivePerformanceThresholds(store.performanceThresholds);
+  const saved = page.performanceThresholdOverrides ?? {};
+  const [custom, setCustom] = useState(Object.keys(saved).length > 0);
+  const [draft, setDraft] = useState<Record<PageCalibrationNumericKey, string>>(() =>
+    Object.fromEntries(PAGE_CALIBRATION_FIELDS.map(({ key }) => [key, String(saved[key] ?? team[key])])) as Record<PageCalibrationNumericKey, string>);
+  const [devicePolicy, setDevicePolicy] = useState<DevicePolicy>(saved.devicePolicy ?? team.devicePolicy);
+
+  const valid = PAGE_CALIBRATION_FIELDS.every(({ key, min, max }) => {
+    const value = Number(draft[key]);
+    return Number.isInteger(value) && value >= min && value <= max;
+  });
+  const save = () => {
+    if (!valid) return;
+    const overrides = Object.fromEntries(PAGE_CALIBRATION_FIELDS.map(({ key }) => [key, Number(draft[key])])) as PagePerformanceThresholdOverrides;
+    overrides.devicePolicy = devicePolicy;
+    store.updatePagePerformanceThresholds(page.id, overrides);
+  };
+  const reset = () => {
+    setCustom(false);
+    setDraft(Object.fromEntries(PAGE_CALIBRATION_FIELDS.map(({ key }) => [key, String(team[key])])) as Record<PageCalibrationNumericKey, string>);
+    setDevicePolicy(team.devicePolicy);
+    store.updatePagePerformanceThresholds(page.id, {});
+  };
+
+  return (
+    <section aria-labelledby="page-calibration-heading" style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, padding: 22, marginBottom: 20 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 20 }}>
+        <div>
+          <h3 id="page-calibration-heading" style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>Page alert calibration</h3>
+          <div style={{ marginTop: 4, color: C.faint, fontSize: 11.5, lineHeight: 1.5 }}>
+            Tune noisy or business-critical pages without changing the team defaults. Evidence gates apply only to new Inbox findings.
+          </div>
+        </div>
+        <SegToggle
+          label="Page calibration source"
+          value={custom ? "custom" : "team"}
+          onChange={(value) => value === "team" ? reset() : setCustom(true)}
+          options={[{ value: "team", label: "Team defaults" }, { value: "custom", label: "Custom" }]}
+        />
+      </div>
+      {!custom ? (
+        <div style={{ marginTop: 16, padding: "12px 14px", borderRadius: 8, background: C.bgElev, color: C.muted, fontSize: 12 }}>
+          Inheriting {team.regression}-point regression · {team.confirmationRuns} confirmation scan{team.confirmationRuns === 1 ? "" : "s"} · {team.devicePolicy} device policy · {team.minimumFindingRuns} finding run{team.minimumFindingRuns === 1 ? "" : "s"}.
+        </div>
+      ) : (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 10, marginTop: 16 }}>
+            {PAGE_CALIBRATION_FIELDS.map(({ key, label, suffix, min, max }) => (
+              <label key={key} style={{ display: "grid", gap: 6, padding: 12, borderRadius: 8, background: C.bgElev, color: C.muted, fontSize: 11 }}>
+                {label}
+                <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                  <input
+                    aria-label={label}
+                    type="number"
+                    min={min}
+                    max={max}
+                    value={draft[key]}
+                    onChange={(event) => setDraft((current) => ({ ...current, [key]: event.target.value }))}
+                    style={{ width: 80, border: `1px solid ${C.border2}`, borderRadius: 6, background: C.panel, color: C.text, padding: "7px 8px", fontSize: 12 }}
+                  />
+                  <span style={{ color: C.faint }}>{suffix}</span>
+                </span>
+              </label>
+            ))}
+            <div style={{ padding: 12, borderRadius: 8, background: C.bgElev }}>
+              <div style={{ color: C.muted, fontSize: 11, marginBottom: 8 }}>Device policy</div>
+              <SegToggle label="Page device policy" value={devicePolicy} onChange={setDevicePolicy} options={[{ value: "either", label: "Either" }, { value: "both", label: "Both" }, { value: "preferred", label: "Default" }]} />
+            </div>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginTop: 12 }}>
+            <span style={{ color: valid ? C.faint : C.redSoft, fontSize: 11.5 }}>{valid ? "Overrides affect this page's status, alerts, and future findings." : "One or more values are outside the supported range."}</span>
+            <button type="button" disabled={!valid} onClick={save} style={{ border: "none", borderRadius: 7, background: C.accent, color: "#fff", padding: "8px 12px", fontSize: 12, fontWeight: 600, cursor: valid ? "pointer" : "not-allowed", opacity: valid ? 1 : 0.55 }}>Save calibration</button>
+          </div>
+        </>
+      )}
+    </section>
   );
 }
 
@@ -403,7 +584,7 @@ function HistoryTab({
   const router = useRouter();
   const rangeHistory = pageHistoryForRange(page, rangeDays);
   const runs = [...rangeHistory].reverse().slice(0, 12);
-  const thresholds = normalizePerformanceThresholds(store.performanceThresholds);
+  const thresholds = effectivePerformanceThresholds(store.performanceThresholds, page);
   const readinessHistory = agentReadinessHistoryPoints(
     rangeHistory,
     page.agentIgnores,
@@ -493,7 +674,8 @@ function HistoryTab({
         {store.visitorExperienceVisible && (
           <VisitorExperiencePanel
             evidence={evidenceForPage(store.visitorExperience, page.id, strategy)}
-            labTrend={pageRangeTrend(page, strategy, rangeDays, thresholds)}
+            labHistory={rangeHistory}
+            strategy={strategy}
             compact
           />
         )}
@@ -644,33 +826,281 @@ function PendingPanel({ page, store }: { page: WatchPage; store: ReturnType<type
   );
 }
 
-function OpportunitiesTab({ latest }: { latest: Night | null }) {
-  const audits = auditsFor(latest?.opportunities);
+function lifecycleEvidence(issue: PerformanceIssueLifecycle): string {
+  const persistence = `${issue.observedCaptures}/${issue.eligibleCaptures} diagnostic captures since first detection`;
+  if (issue.status === "regressed") return `First detected ${issue.firstDetected.date} · returned ${issue.returnedAt?.date ?? issue.lastDetected.date} · ${issue.consecutiveDetections} consecutive · ${persistence}`;
+  if (issue.status === "resolved") return `First detected ${issue.firstDetected.date} · resolved ${issue.resolvedAt?.date ?? issue.lastDetected.date} · ${persistence}`;
+  if (issue.status === "verifying") return `First detected ${issue.firstDetected.date} · absent from the latest capture · ${persistence}`;
+  return `First detected ${issue.firstDetected.date} · ${issue.consecutiveDetections} consecutive · ${persistence}`;
+}
+
+function nativeLifecycleEvidence(issue: NativeElementLifecycle): string {
+  const persistence = `${issue.observedCaptures}/${issue.eligibleCaptures} HTML scans since first detection`;
+  if (issue.status === "regressed") return `First detected ${issue.firstDetected.date} · returned ${issue.returnedAt?.date ?? issue.lastDetected.date} · ${issue.consecutiveDetections} consecutive · ${persistence}`;
+  if (issue.status === "resolved") return `First detected ${issue.firstDetected.date} · resolved ${issue.resolvedAt?.date ?? issue.lastDetected.date} · ${persistence}`;
+  if (issue.status === "verifying") return `First detected ${issue.firstDetected.date} · absent from the latest available scan · ${persistence}`;
+  return `First detected ${issue.firstDetected.date} · ${issue.consecutiveDetections} consecutive · ${persistence}`;
+}
+
+function CulpritEvidencePanel({ history, strategy }: { history: Night[]; strategy: "mobile" | "desktop" }) {
+  const trends = culpritEvidenceTrends(history, strategy);
+  return (
+    <section aria-label="Culprit evidence" style={{ borderBottom: `1px solid ${C.border}` }}>
+      <div style={{ padding: "16px 22px", borderBottom: trends.length ? `1px solid ${C.border}` : undefined, background: "rgba(59,137,255,0.025)" }}>
+        <h4 style={{ margin: 0, fontSize: 13.5, fontWeight: 650 }}>Why the score moved</h4>
+        <div style={{ marginTop: 3, fontSize: 11.5, color: C.faint }}>Privacy-safe culprit measurements from warning-free Lighthouse reports. Trends compare retained collection snapshots.</div>
+      </div>
+      {trends.length === 0 ? (
+        <div style={{ padding: "18px 22px", fontSize: 12, color: C.muted }}>No culprit evidence has been retained for {strategy} yet. The next collection will capture DOM, CSS, script, resource, image, and LCP details.</div>
+      ) : (
+        <div className="culprit-evidence-grid" style={{ background: C.border }}>
+          {trends.map(({ evidence, primary, series, delta }) => {
+            const changeColor = delta === undefined || delta === 0 ? C.faint2 : delta < 0 ? C.green : C.amber;
+            const change = delta === undefined || !primary
+              ? "First retained snapshot"
+              : delta === 0
+                ? "No change from previous snapshot"
+                : `${delta > 0 ? "+" : "−"}${formatEvidenceValue(Math.abs(delta), primary.unit)} since previous snapshot`;
+            return (
+              <article key={evidence.auditId} style={{ minWidth: 0, padding: "15px 18px", background: C.panel }}>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 650 }}>{evidence.title}</div>
+                    {primary && <div style={{ marginTop: 4, fontSize: 17, fontWeight: 650, color: C.accentSoft }}>{formatEvidenceValue(primary.value, primary.unit)} <span style={{ fontSize: 10.5, fontWeight: 500, color: C.faint }}>{primary.label.toLowerCase()}</span></div>}
+                  </div>
+                  {series.length > 1 && <div style={{ width: 62, flex: "none" }}><Sparkline series={series} color={changeColor} w={62} h={27} /></div>}
+                </div>
+                <div style={{ marginTop: 7, fontSize: 10.5, color: changeColor }}>{change}</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 9 }}>
+                  {evidence.facts.filter((item) => item.key !== primary?.key).slice(0, 3).map((item) => (
+                    <span key={item.key} style={{ fontSize: 10.5, color: C.dim, background: "rgba(255,255,255,0.045)", padding: "2px 6px", borderRadius: 5 }}>{formatEvidenceValue(item.value, item.unit)} {item.label.toLowerCase()}</span>
+                  ))}
+                </div>
+                {evidence.lcpElement && (
+                  <div style={{ marginTop: 9, fontSize: 10.5, color: C.muted }}>
+                    &lt;{evidence.lcpElement.elementType}&gt;
+                    {evidence.lcpElement.assetHost ? ` · ${evidence.lcpElement.assetHost}` : ""}
+                    {evidence.lcpElement.width && evidence.lcpElement.height ? ` · ${Math.round(evidence.lcpElement.width)}×${Math.round(evidence.lcpElement.height)} px` : ""}
+                  </div>
+                )}
+                {!!evidence.sources?.length && <div style={{ marginTop: 9, fontSize: 10.5, color: C.faint }}>Top hosts · {evidence.sources.map((item) => item.host).join(" · ")}</div>}
+                <div style={{ marginTop: 7, fontSize: 10, color: C.faint }}>Median of {evidence.sampleRuns} warning-free {evidence.sampleRuns === 1 ? "run" : "runs"}</div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function NativeElementsPanel({ page }: { page: WatchPage }) {
+  const store = useStore();
+  const history = page.history;
+  const issues = nativeElementIssuesForPage(history);
+  const detected = issues.filter((issue) => issue.status === "active" || issue.status === "regressed");
+  const current = detected.filter((issue) => nativeElementDisposition(page.nativeElementControls, issue.id) !== "suppressed");
+  const suppressed = detected.filter((issue) => nativeElementDisposition(page.nativeElementControls, issue.id) === "suppressed");
+  const cleared = issues.filter((issue) => issue.status === "verifying" || issue.status === "resolved");
+  const retainedScans = history.filter((night) => night.nativeElements?.status === "available");
+  const latestAttempt = [...history].reverse().find((night) => night.nativeElements);
+  return (
+    <section aria-label="Native Webflow elements" style={{ borderBottom: `1px solid ${C.border}` }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "16px 22px", background: "rgba(138,92,246,0.035)", borderBottom: current.length || cleared.length || retainedScans.length === 0 ? `1px solid ${C.border}` : undefined }}>
+        <div>
+          <h4 style={{ margin: 0, fontSize: 13.5, fontWeight: 650 }}>Native Webflow elements</h4>
+          <div style={{ marginTop: 3, fontSize: 11.5, color: C.faint }}>Published-HTML checks for Background Video, YouTube/Vimeo, Lottie, Spline, and unresponsive raster images.</div>
+        </div>
+        <span style={{ marginLeft: "auto", flex: "none", fontSize: 11, fontWeight: 650, color: current.length ? C.violetSoft : C.green, background: current.length ? "rgba(138,92,246,0.12)" : "rgba(53,208,127,0.12)", padding: "3px 8px", borderRadius: 6 }}>
+          {current.length ? `${current.length} detected` : suppressed.length ? `${suppressed.length} suppressed` : retainedScans.length ? "No current findings" : "Awaiting scan"}
+        </span>
+      </div>
+      {latestAttempt?.nativeElements?.status === "unavailable" && (
+        <div style={{ padding: "10px 22px", borderBottom: `1px solid ${C.rowBorder}`, fontSize: 11.5, color: C.amber }}>
+          Latest HTML scan unavailable: {latestAttempt.nativeElements.reason ?? "published page could not be inspected"}. Prior lifecycle state was preserved.
+        </div>
+      )}
+      {retainedScans.length === 0 && (
+        <div style={{ padding: "22px", fontSize: 12, color: C.muted }}>No native-element scan has been retained yet. Run a new collection to inspect the published HTML.</div>
+      )}
+      {retainedScans.length > 0 && current.length === 0 && suppressed.length === 0 && cleared.length === 0 && (
+        <div style={{ padding: "22px", fontSize: 12, color: C.green }}>No known problematic Webflow-native element footprints were detected.</div>
+      )}
+      {current.map((issue) => (
+        <div key={issue.key} style={{ padding: "15px 22px", borderBottom: `1px solid ${C.rowBorder}` }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 7 }}>
+                <span style={{ fontSize: 13.5, fontWeight: 650 }}>{issue.title}</span>
+                <PerformanceIssueStatusBadge status={issue.status} />
+                <WebflowClassificationChips classification={issue.webflow} />
+                <span style={{ fontSize: 10.5, color: C.faint2, textTransform: "capitalize" }}>{issue.confidence} confidence</span>
+                {nativeElementDisposition(page.nativeElementControls, issue.id) === "acknowledged" && <span style={{ fontSize: 10.5, fontWeight: 650, color: C.green, background: "rgba(53,208,127,0.12)", padding: "2px 7px", borderRadius: 5 }}>Acknowledged</span>}
+              </div>
+              <div style={{ marginTop: 5, fontSize: 12, color: C.faint2, lineHeight: 1.45 }}>{issue.detail}</div>
+              {!!issue.evidence?.length && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 7 }} aria-label="Detection evidence">
+                  {issue.evidence.map((item) => <span key={item.label} style={{ fontSize: 10.5, color: C.dim, background: "rgba(255,255,255,0.045)", border: `1px solid ${C.border2}`, padding: "2px 7px", borderRadius: 5 }}><strong>{item.count}</strong> {item.label}</span>)}
+                </div>
+              )}
+              <div style={{ marginTop: 7, fontSize: 11.5, color: C.muted, lineHeight: 1.45 }}><span style={{ color: C.faint2, fontWeight: 600 }}>Webflow guidance:</span> {issue.webflow.guidance}</div>
+              <div style={{ marginTop: 5, fontSize: 11.5, color: C.faint }}>{nativeLifecycleEvidence(issue)}</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginTop: 10 }}>
+                {nativeElementDisposition(page.nativeElementControls, issue.id) === "acknowledged" ? (
+                  <button type="button" onClick={() => store.setNativeElementDisposition(page.id, issue.id, null)} style={{ border: `1px solid ${C.border2}`, background: "transparent", color: C.dim, fontSize: 11, padding: "5px 9px", borderRadius: 6, cursor: "pointer" }}>Clear acknowledgement</button>
+                ) : (
+                  <button type="button" onClick={() => store.setNativeElementDisposition(page.id, issue.id, "acknowledged")} style={{ border: `1px solid ${C.border2}`, background: "rgba(53,208,127,0.08)", color: C.green, fontSize: 11, padding: "5px 9px", borderRadius: 6, cursor: "pointer" }}>Acknowledge</button>
+                )}
+                <button type="button" onClick={() => store.setNativeElementDisposition(page.id, issue.id, "suppressed")} style={{ border: `1px solid ${C.border2}`, background: "transparent", color: C.faint2, fontSize: 11, padding: "5px 9px", borderRadius: 6, cursor: "pointer" }}>Suppress</button>
+              </div>
+            </div>
+            <div style={{ flex: "none", textAlign: "right" }}>
+              <div style={{ fontSize: 11, color: C.faint }}>Instances</div>
+              <div style={{ fontSize: 17, fontWeight: 650, color: C.violetSoft }}>{issue.count}</div>
+            </div>
+          </div>
+        </div>
+      ))}
+      {suppressed.length > 0 && (
+        <div>
+          <div style={{ padding: "11px 22px", borderBottom: `1px solid ${C.rowBorder}`, fontSize: 11.5, fontWeight: 600, color: C.faint2 }}>Suppressed findings · excluded from hotspots and future recommendations</div>
+          {suppressed.map((issue) => (
+            <div key={issue.key} style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 7, padding: "12px 22px", borderBottom: `1px solid ${C.rowBorder}`, opacity: 0.78 }}>
+              <span style={{ fontSize: 12.5, fontWeight: 600 }}>{issue.title}</span>
+              <span style={{ fontSize: 10.5, color: C.faint }}>{issue.count} {issue.count === 1 ? "instance" : "instances"}</span>
+              <button type="button" onClick={() => store.setNativeElementDisposition(page.id, issue.id, null)} style={{ marginLeft: "auto", border: `1px solid ${C.border2}`, background: "transparent", color: C.dim, fontSize: 11, padding: "5px 9px", borderRadius: 6, cursor: "pointer" }}>Restore to review</button>
+            </div>
+          ))}
+        </div>
+      )}
+      {cleared.length > 0 && (
+        <div>
+          <div style={{ padding: "11px 22px", borderBottom: `1px solid ${C.rowBorder}`, fontSize: 11.5, fontWeight: 600, color: C.faint2 }}>Cleared native-element findings</div>
+          {cleared.map((issue) => (
+            <div key={issue.key} style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 7, padding: "12px 22px", borderBottom: `1px solid ${C.rowBorder}` }}>
+              <span style={{ fontSize: 12.5, fontWeight: 600 }}>{issue.title}</span>
+              <PerformanceIssueStatusBadge status={issue.status} />
+              <span style={{ marginLeft: "auto", fontSize: 11, color: C.faint }}>{nativeLifecycleEvidence(issue)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function OpportunitiesTab({ page, latest, strategy }: { page: WatchPage; latest: Night | null; strategy: "mobile" | "desktop" }) {
+  const history = page.history;
+  const audits = auditsFor(
+    opportunitiesForNight(latest, strategy),
+    latest?.diagnostics?.[strategy] ?? [],
+  );
+  const issues = performanceIssuesForPage(history, strategy);
+  const issueById = new Map(issues.map((issue) => [issue.id, issue]));
+  const lifecycleCounts = performanceIssueCounts(issues);
+  const clearedIssues = issues.filter((issue) => issue.status === "verifying" || issue.status === "resolved");
+  const lifecycleSummary: { key: PerformanceIssueStatus; label: string }[] = [
+    { key: "regressed", label: "returned" },
+    { key: "active", label: "active" },
+    { key: "verifying", label: "verifying" },
+    { key: "resolved", label: "resolved" },
+  ];
+  const remediationCounts = audits.reduce<Record<WebflowRemediationLevel, number>>((counts, audit) => {
+    counts[audit.webflow.remediation] += 1;
+    return counts;
+  }, { blocked: 0, partial: 0, available: 0, unknown: 0 });
+  const remediationSummary: { key: WebflowRemediationLevel; label: string }[] = [
+    { key: "available", label: "fixable in Webflow" },
+    { key: "partial", label: "partial remediation" },
+    { key: "blocked", label: "product gaps" },
+    { key: "unknown", label: "need review" },
+  ];
   return (
     <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, overflow: "hidden" }}>
       <div style={{ padding: "18px 22px", borderBottom: `1px solid ${C.border}` }}>
         <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>Failing audits &amp; opportunities</h3>
-        <div style={{ fontSize: 12, color: C.faint, marginTop: 3 }}>Ordered by Lighthouse&apos;s estimated load-time savings.</div>
+        <div style={{ fontSize: 12, color: C.faint, marginTop: 3 }}>Repeatable <span style={{ textTransform: "capitalize" }}>{strategy}</span> findings with lifecycle derived from retained diagnostic captures.</div>
       </div>
-      {audits.length === 0 && (
-        <div style={{ padding: "42px 22px", textAlign: "center", color: C.muted, fontSize: 13 }}>
-          {latest ? "The representative Lighthouse run reported no load-time opportunities." : "No real Lighthouse opportunity data has been collected yet."}
+      {issues.length > 0 && (
+        <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 12, padding: "12px 22px", borderBottom: `1px solid ${C.border}`, background: "rgba(255,255,255,0.018)" }}>
+          <span style={{ fontSize: 11, fontWeight: 650, color: C.faint2, textTransform: "uppercase", letterSpacing: "0.04em" }}>Lifecycle</span>
+          {lifecycleSummary.filter(({ key }) => lifecycleCounts[key] > 0).map(({ key, label }) => (
+            <span key={key} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5, color: C.dim }}>
+              <PerformanceIssueStatusBadge status={key} />
+              <strong>{lifecycleCounts[key]}</strong> {label}
+            </span>
+          ))}
+          <span style={{ marginLeft: "auto", fontSize: 11, color: C.faint }}>Resolved after 2 consecutive clean captures</span>
         </div>
       )}
-      {audits.map((a, i) => (
-        <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 16, padding: "17px 22px", borderBottom: `1px solid ${C.rowBorder}` }}>
+      {audits.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 14, padding: "12px 22px", borderBottom: `1px solid ${C.border}`, background: C.panel2 }}>
+          {remediationSummary.filter(({ key }) => remediationCounts[key] > 0).map(({ key, label }) => {
+            const tone = remediationTone(key);
+            return (
+              <span key={key} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11.5, color: tone.color }}>
+                <span style={{ width: 7, height: 7, borderRadius: "50%", background: tone.color }} />
+                <strong>{remediationCounts[key]}</strong> {label}
+              </span>
+            );
+          })}
+        </div>
+      )}
+      <CulpritEvidencePanel history={history} strategy={strategy} />
+      <NativeElementsPanel page={page} />
+      {audits.length === 0 && (
+        <div style={{ padding: "42px 22px", textAlign: "center", color: C.muted, fontSize: 13 }}>
+          {latest ? `No repeatable ${strategy} diagnostics were promoted in this range.` : "No real Lighthouse diagnostic data has been collected yet."}
+        </div>
+      )}
+      {audits.map((a) => (
+        <div key={a.id} style={{ display: "flex", alignItems: "flex-start", gap: 16, padding: "17px 22px", borderBottom: `1px solid ${C.rowBorder}` }}>
           <div style={{ flex: "none", width: 8, height: 8, borderRadius: "50%", marginTop: 6, background: a.dot }} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 14, fontWeight: 600 }}>{a.title}</div>
             <div style={{ fontSize: 12.5, color: C.faint2, marginTop: 4, lineHeight: 1.5 }}>{a.desc}</div>
-            <span style={{ display: "inline-block", fontSize: 11, fontWeight: 500, color: C.dim, background: "rgba(255,255,255,0.06)", padding: "2px 9px", borderRadius: 5, marginTop: 9 }}>{a.category}</span>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginTop: 9 }}>
+              {issueById.get(a.id) && <PerformanceIssueStatusBadge status={issueById.get(a.id)!.status} />}
+              <WebflowClassificationChips classification={a.webflow} />
+              <span style={{ display: "inline-block", fontSize: 11, fontWeight: 500, color: C.dim, background: "rgba(255,255,255,0.06)", padding: "2px 9px", borderRadius: 5 }}>{a.category}</span>
+              {a.evidence && <span style={{ display: "inline-block", fontSize: 11, color: C.accentSoft, background: "rgba(59,137,255,0.12)", padding: "2px 9px", borderRadius: 5 }}>{a.evidence}</span>}
+              {a.confidence && <span style={{ display: "inline-block", fontSize: 11, color: C.faint2, padding: "2px 2px", textTransform: "capitalize" }}>{a.confidence} confidence</span>}
+            </div>
+            <div style={{ fontSize: 11.5, color: C.muted, marginTop: 9, lineHeight: 1.45 }}>
+              <span style={{ color: C.faint2, fontWeight: 600 }}>Webflow guidance:</span> {a.webflow.guidance}
+            </div>
+            {issueById.get(a.id) && (
+              <div style={{ fontSize: 11.5, color: C.faint, marginTop: 5, lineHeight: 1.45 }}>
+                {lifecycleEvidence(issueById.get(a.id)!)}
+              </div>
+            )}
           </div>
           <div style={{ flex: "none", textAlign: "right" }}>
-            <div style={{ fontSize: 11, color: C.faint }}>Est. savings</div>
+            <div style={{ fontSize: 11, color: C.faint }}>Measured impact</div>
             <div style={{ fontSize: 17, fontWeight: 600, color: C.amber }}>{a.savings}</div>
           </div>
         </div>
       ))}
+      {clearedIssues.length > 0 && (
+        <div>
+          <div style={{ padding: "14px 22px", borderBottom: `1px solid ${C.border}`, background: C.panel2 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 600 }}>Cleared findings</div>
+            <div style={{ fontSize: 11, color: C.faint, marginTop: 2 }}>Absent from the latest diagnostic capture; verification state remains evidence-based.</div>
+          </div>
+          {clearedIssues.map((issue) => (
+            <div key={issue.key} style={{ display: "flex", alignItems: "flex-start", gap: 14, padding: "14px 22px", borderBottom: `1px solid ${C.rowBorder}` }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 7 }}>
+                  <span style={{ fontSize: 13.5, fontWeight: 600 }}>{issue.title}</span>
+                  <PerformanceIssueStatusBadge status={issue.status} />
+                  <WebflowClassificationChips classification={issue.webflow} />
+                </div>
+                <div style={{ fontSize: 11.5, color: C.faint, marginTop: 6 }}>{lifecycleEvidence(issue)}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

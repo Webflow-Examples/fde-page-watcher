@@ -1,6 +1,7 @@
-import type { AgentCheck } from "./types";
+import type { AgentCheck, NativeElementScan } from "./types";
 import { AGENT_CHECK_GROUPS } from "./agentChecks";
 import { normalizeUrl } from "./psiCore";
+import { nativeElementScan, unavailableNativeElementScan } from "./nativeElements";
 
 // Real, dependency-free agent-readiness scan. Each check is recorded pass/fail
 // (REQ-008); if the page is unreachable the whole scan is marked unavailable
@@ -21,7 +22,16 @@ async function probe(u: string, opts: RequestInit = {}, timeoutMs = 8000): Promi
 
 const AI_UAS = /gptbot|oai-searchbot|chatgpt-user|claudebot|claude-web|anthropic|ccbot|google-extended|perplexitybot|bytespider|amazonbot/i;
 
-export async function scan(url: string): Promise<AgentCheck[]> {
+export interface PageContentScanResult {
+  agent: AgentCheck[];
+  nativeElements: NativeElementScan;
+}
+
+function unavailableAgentChecks(): AgentCheck[] {
+  return AGENT_CHECK_GROUPS.flatMap((g) => g.items.map((name) => ({ name, group: g.name, pass: false, unavailable: true, detail: "page unreachable" })));
+}
+
+export async function scanPageContent(url: string): Promise<PageContentScanResult> {
   const full = normalizeUrl(url);
   const origin = (() => {
     try {
@@ -34,8 +44,19 @@ export async function scan(url: string): Promise<AgentCheck[]> {
   const base = await probe(full);
   if (!base) {
     // Unreachable → every check unavailable, not failing.
-    return AGENT_CHECK_GROUPS.flatMap((g) => g.items.map((name) => ({ name, group: g.name, pass: false, unavailable: true, detail: "page unreachable" })));
+    return {
+      agent: unavailableAgentChecks(),
+      nativeElements: unavailableNativeElementScan("page unreachable"),
+    };
   }
+
+  const baseText = await base.text().catch(() => "");
+  const contentType = base.headers.get("content-type") ?? "";
+  const htmlAvailable = /text\/html|application\/xhtml\+xml/i.test(contentType)
+    || /^\s*(?:<!doctype\s+html|<html\b)/i.test(baseText);
+  const nativeElements = htmlAvailable
+    ? nativeElementScan(baseText)
+    : unavailableNativeElementScan("published page did not return HTML");
 
   const robotsRes = await probe(`${origin}/robots.txt`);
   const robotsOk = !!robotsRes?.ok;
@@ -78,7 +99,13 @@ export async function scan(url: string): Promise<AgentCheck[]> {
     ACP: { pass: false },
   };
 
-  return AGENT_CHECK_GROUPS.flatMap((g) =>
+  const agent = AGENT_CHECK_GROUPS.flatMap((g) =>
     g.items.map((name) => ({ name, group: g.name, pass: results[name]?.pass ?? false, detail: results[name]?.detail })),
   );
+  return { agent, nativeElements };
+}
+
+/** Backward-compatible agent-only scanner for callers that do not need HTML findings. */
+export async function scan(url: string): Promise<AgentCheck[]> {
+  return (await scanPageContent(url)).agent;
 }

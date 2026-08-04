@@ -1,4 +1,4 @@
-import type { PerformanceThresholds } from "./types";
+import type { PagePerformanceThresholdOverrides, PerformanceThresholds, WatchPage } from "./types";
 
 export const DEFAULT_PERFORMANCE_THRESHOLDS: PerformanceThresholds = {
   lowPerformance: 60,
@@ -12,6 +12,9 @@ export const DEFAULT_PERFORMANCE_THRESHOLDS: PerformanceThresholds = {
   regressionFloor: 100,
   agentReadiness: 100,
   newPageGraceRuns: 2,
+  minimumFindingRuns: 1,
+  minimumSavingsMs: 0,
+  minimumSavingsKilobytes: 0,
 };
 
 export const PERFORMANCE_THRESHOLD_LIMITS = {
@@ -25,6 +28,9 @@ export const PERFORMANCE_THRESHOLD_LIMITS = {
   regressionFloor: { min: 1, max: 100 },
   agentReadiness: { min: 1, max: 100 },
   newPageGraceRuns: { min: 0, max: 10 },
+  minimumFindingRuns: { min: 1, max: 5 },
+  minimumSavingsMs: { min: 0, max: 5000 },
+  minimumSavingsKilobytes: { min: 0, max: 5000 },
 } as const;
 
 function normalizeInteger(value: unknown, fallback: number, min: number, max: number): number {
@@ -60,7 +66,42 @@ export function normalizePerformanceThresholds(settings?: Partial<PerformanceThr
     regressionFloor: normalizeField(settings, "regressionFloor"),
     agentReadiness: normalizeField(settings, "agentReadiness"),
     newPageGraceRuns: normalizeField(settings, "newPageGraceRuns"),
+    minimumFindingRuns: normalizeField(settings, "minimumFindingRuns"),
+    minimumSavingsMs: normalizeField(settings, "minimumSavingsMs"),
+    minimumSavingsKilobytes: normalizeField(settings, "minimumSavingsKilobytes"),
   };
+}
+
+export function normalizePerformanceThresholdOverrides(
+  settings?: PagePerformanceThresholdOverrides,
+): PagePerformanceThresholdOverrides {
+  if (!settings) return {};
+  const normalized: PagePerformanceThresholdOverrides = {};
+  for (const key of Object.keys(PERFORMANCE_THRESHOLD_LIMITS) as Array<keyof typeof PERFORMANCE_THRESHOLD_LIMITS>) {
+    const value = settings[key];
+    const limits = PERFORMANCE_THRESHOLD_LIMITS[key];
+    if (typeof value === "number" && Number.isFinite(value)) {
+      normalized[key] = Math.max(limits.min, Math.min(limits.max, Math.round(value)));
+    }
+  }
+  if (settings.devicePolicy === "either" || settings.devicePolicy === "both" || settings.devicePolicy === "preferred") {
+    normalized.devicePolicy = settings.devicePolicy;
+  }
+  return normalized;
+}
+
+export function effectivePerformanceThresholds(
+  teamSettings?: Partial<PerformanceThresholds>,
+  pageOrOverrides?: Pick<WatchPage, "performanceThresholdOverrides"> | PagePerformanceThresholdOverrides,
+): PerformanceThresholds {
+  const overrides: PagePerformanceThresholdOverrides | undefined = pageOrOverrides
+    && Object.prototype.hasOwnProperty.call(pageOrOverrides, "performanceThresholdOverrides")
+    ? (pageOrOverrides as Pick<WatchPage, "performanceThresholdOverrides">).performanceThresholdOverrides
+    : pageOrOverrides as PagePerformanceThresholdOverrides | undefined;
+  return normalizePerformanceThresholds({
+    ...normalizePerformanceThresholds(teamSettings),
+    ...normalizePerformanceThresholdOverrides(overrides),
+  });
 }
 
 function fieldIsValid<K extends keyof typeof PERFORMANCE_THRESHOLD_LIMITS>(
@@ -77,4 +118,36 @@ export function performanceThresholdsAreValid(settings: Partial<PerformanceThres
     fieldIsValid(settings, key as keyof typeof PERFORMANCE_THRESHOLD_LIMITS)
   )
     && (settings.devicePolicy === "either" || settings.devicePolicy === "both" || settings.devicePolicy === "preferred");
+}
+
+export function performanceThresholdOverridesAreValid(settings: unknown): settings is PagePerformanceThresholdOverrides {
+  if (!settings || typeof settings !== "object" || Array.isArray(settings)) return false;
+  const values = settings as Record<string, unknown>;
+  const supported = new Set<string>([...Object.keys(PERFORMANCE_THRESHOLD_LIMITS), "devicePolicy"]);
+  if (Object.keys(values).some((key) => !supported.has(key))) return false;
+  for (const key of Object.keys(PERFORMANCE_THRESHOLD_LIMITS) as Array<keyof typeof PERFORMANCE_THRESHOLD_LIMITS>) {
+    if (!(key in values)) continue;
+    const value = values[key];
+    const limits = PERFORMANCE_THRESHOLD_LIMITS[key];
+    if (!Number.isInteger(value) || (value as number) < limits.min || (value as number) > limits.max) return false;
+  }
+  return !("devicePolicy" in values)
+    || values.devicePolicy === "either"
+    || values.devicePolicy === "both"
+    || values.devicePolicy === "preferred";
+}
+
+export function recommendationMeetsEvidenceThresholds(
+  finding: { savingsMs: number; savingsBytes?: number; observedRuns?: number; category?: string },
+  thresholds: PerformanceThresholds,
+): boolean {
+  if (finding.category === "Native elements") return true;
+  if (finding.observedRuns !== undefined && finding.observedRuns < thresholds.minimumFindingRuns) return false;
+  const savingsBytes = finding.savingsBytes ?? 0;
+  if (finding.savingsMs <= 0 && savingsBytes <= 0) return true;
+  const timeGateEnabled = thresholds.minimumSavingsMs > 0;
+  const transferGateEnabled = thresholds.minimumSavingsKilobytes > 0;
+  if (!timeGateEnabled && !transferGateEnabled) return true;
+  return (timeGateEnabled && finding.savingsMs >= thresholds.minimumSavingsMs)
+    || (transferGateEnabled && savingsBytes >= thresholds.minimumSavingsKilobytes * 1024);
 }

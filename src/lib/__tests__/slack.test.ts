@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { postFollowup } from "../slack";
+import { postAlert, postFollowup } from "../slack";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -41,5 +41,14 @@ describe("Slack delivery", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("ok", { status: 200 })));
     const delivery = await postFollowup("Page", "2d", []);
     expect(delivery).toEqual({ sent: true, status: 200 });
+  });
+
+  it("includes qualified visitor evidence in regression alerts", async () => {
+    vi.stubEnv("SLACK_WEBHOOK_URL", "https://hooks.slack.test/example");
+    const fetchMock = vi.fn().mockResolvedValue(new Response("ok", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await postAlert("Homepage", "https://example.test", ["Performance"], "CrUX corroborates mobile Main content load.");
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(JSON.parse(String(init.body)).text).toContain("\nCrUX corroborates mobile Main content load.");
   });
 });

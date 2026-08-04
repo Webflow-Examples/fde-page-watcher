@@ -1,6 +1,6 @@
 import type { AgentIgnoreSettings, PerformanceThresholds, RangeDays, Rec, Strategy, WatchPage } from "./types";
 import { summarizeAgentChecks } from "./agentScoring";
-import { DEFAULT_PERFORMANCE_THRESHOLDS, normalizePerformanceThresholds } from "./performanceThresholds";
+import { DEFAULT_PERFORMANCE_THRESHOLDS, effectivePerformanceThresholds, normalizePerformanceThresholds } from "./performanceThresholds";
 import { C } from "./ui";
 import { savingsValue } from "./ui";
 import {
@@ -10,6 +10,9 @@ import {
   pageRangeTrend,
 } from "./scoring";
 import { isPageActivelyMonitored } from "./watchCapacity";
+import type { CruxPageEvidence } from "./crux";
+import { pageFieldPriority, recommendationEvidenceSignal } from "./fieldPrioritization";
+import { isFieldRecommendationActionable } from "./fieldOnlyRecommendations";
 
 /** "A" · "A and B" · "A, B and C". */
 function listJoin(names: string[]): string {
@@ -32,9 +35,11 @@ export interface WatcherSummary {
   lowPerformance: number;
   agentGaps: number;
   qualityIssues: number;
+  fieldCorroborated: number;
+  fieldOnly: number;
   changed: WatcherBullet[];
   winning: string | null;
-  topRec: { pageId: string; pageTitle: string; recTitle: string; savings: string } | null;
+  topRec: { pageId: string; pageTitle: string; recTitle: string; savings: string; evidenceLabel: string; source?: Rec["source"] } | null;
 }
 
 export interface WatcherCardItem {
@@ -99,7 +104,7 @@ export function buildWatcherCards(
   performanceThresholds?: Partial<PerformanceThresholds>,
 ): WatcherCards {
   const activePages = pages.filter(isPageActivelyMonitored);
-  const thresholds = normalizePerformanceThresholds(performanceThresholds);
+  const teamThresholds = normalizePerformanceThresholds(performanceThresholds);
   const improvements: WatcherCardItem[] = [];
   const regressions: WatcherCardItem[] = [];
   const lowPerformance: WatcherCardItem[] = [];
@@ -107,6 +112,7 @@ export function buildWatcherCards(
   const devices = orderedDevices(preferredStrategy);
 
   for (const page of activePages) {
+    const thresholds = effectivePerformanceThresholds(teamThresholds, page);
     const trends = {
       mobile: pageRangeTrend(page, "mobile", rangeDays, thresholds),
       desktop: pageRangeTrend(page, "desktop", rangeDays, thresholds),
@@ -181,11 +187,13 @@ export function buildWatcher(
   rangeDays: RangeDays = 30,
   agentIgnoreDefaults?: AgentIgnoreSettings,
   performanceThresholds?: Partial<PerformanceThresholds>,
+  visitorEvidence: CruxPageEvidence[] = [],
 ): WatcherSummary {
   const activePages = pages.filter(isPageActivelyMonitored);
-  const thresholds = normalizePerformanceThresholds(performanceThresholds);
+  const teamThresholds = normalizePerformanceThresholds(performanceThresholds);
   const devices = orderedDevices(strategy);
   const trends = new Map(activePages.map((page) => {
+    const thresholds = effectivePerformanceThresholds(teamThresholds, page);
     const byDevice = {
       mobile: pageRangeTrend(page, "mobile", rangeDays, thresholds),
       desktop: pageRangeTrend(page, "desktop", rangeDays, thresholds),
@@ -207,35 +215,48 @@ export function buildWatcher(
   const lowPerformance = activePages.filter((page) => devicesForPolicy(
     devices.filter((device) => {
       const score = latestScore(page, device, "perf", rangeDays);
-      return score !== null && score < thresholds.lowPerformance;
+      return score !== null && score < effectivePerformanceThresholds(teamThresholds, page).lowPerformance;
     }),
     strategy,
-    thresholds.devicePolicy,
+    effectivePerformanceThresholds(teamThresholds, page).devicePolicy,
   ).length > 0).length;
   const agentGaps = activePages.filter((page) => {
     const snapshot = pageAgentSnapshotForRange(page, rangeDays);
     if (!snapshot) return false;
     const summary = summarizeAgentChecks(snapshot.checks, page.agentIgnores, agentIgnoreDefaults, page.agentIgnoreRestores);
-    return summary.total > 0 && summary.percent < thresholds.agentReadiness;
+    return summary.total > 0 && summary.percent < effectivePerformanceThresholds(teamThresholds, page).agentReadiness;
   }).length;
-  const qualityCutoffs = {
-    a11y: thresholds.accessibility,
-    bp: thresholds.bestPractices,
-    seo: thresholds.seo,
-  } as const;
   const qualityIssues = activePages.filter((page) => devicesForPolicy(
     devices.filter((device) => (["a11y", "bp", "seo"] as const).some((key) => {
       const score = latestScore(page, device, key, rangeDays);
+      const thresholds = effectivePerformanceThresholds(teamThresholds, page);
+      const qualityCutoffs = { a11y: thresholds.accessibility, bp: thresholds.bestPractices, seo: thresholds.seo } as const;
       return score !== null && score < qualityCutoffs[key];
     })),
     strategy,
-    thresholds.devicePolicy,
+    effectivePerformanceThresholds(teamThresholds, page).devicePolicy,
   ).length > 0).length;
+  const fieldByPage = new Map(activePages.map((page) => [page.id, pageFieldPriority(page, strategy, visitorEvidence)]));
+  const hasExactUrlSignal = (page: WatchPage, key: "corroborated" | "fieldOnly") => {
+    const priority = fieldByPage.get(page.id);
+    return priority?.comparison.fieldWindow?.scope === "url" && priority[key].length > 0;
+  };
+  const fieldCorroborated = activePages.filter((page) => hasExactUrlSignal(page, "corroborated")).length;
+  const fieldOnly = activePages.filter((page) => hasExactUrlSignal(page, "fieldOnly")).length;
 
   const ranked = activePages.filter((p) => trends.get(p.id) !== "pending" && p.baseline);
   const regressionPages = ranked.filter((p) => trends.get(p.id) === "regressing");
 
   const changed: WatcherBullet[] = [];
+
+  const corroboratedPages = activePages.filter((page) => hasExactUrlSignal(page, "corroborated"));
+  const fieldOnlyPages = activePages.filter((page) => hasExactUrlSignal(page, "fieldOnly"));
+  if (corroboratedPages.length) {
+    changed.push({ lead: listJoin(corroboratedPages.map((page) => page.title)), leadColor: C.redSoft, text: "has visitor issues reproduced in Lighthouse." });
+  }
+  if (fieldOnlyPages.length) {
+    changed.push({ lead: listJoin(fieldOnlyPages.map((page) => page.title)), leadColor: C.amber, text: "has visitor issues that Lighthouse did not reproduce." });
+  }
 
   // Evaluate Accessibility and SEO over the same selected range instead of
   // asserting they are stable — the Watcher must not make unchecked claims.
@@ -243,9 +264,8 @@ export function buildWatcher(
   if (ranked.length) {
     for (const [key, label] of [["a11y", "Accessibility"], ["seo", "SEO"]] as const) {
       const dropped = ranked.filter((p) =>
-        (pageRangeComparison(p, strategy, key, rangeDays)?.delta ?? 0) <= -thresholds.regression
-        && (pageRangeComparison(p, strategy, key, rangeDays)?.to ?? 100) < thresholds.regressionFloor
-      );
+        (pageRangeComparison(p, strategy, key, rangeDays)?.delta ?? 0) <= -effectivePerformanceThresholds(teamThresholds, p).regression
+        && (pageRangeComparison(p, strategy, key, rangeDays)?.to ?? 100) < effectivePerformanceThresholds(teamThresholds, p).regressionFloor);
       if (dropped.length === 0) stableCategories.push(label);
       else changed.push({ lead: listJoin(dropped.map((p) => p.title)), leadColor: C.amber, text: `dropped on ${label} over the last ${rangeDays} days.` });
     }
@@ -254,17 +274,30 @@ export function buildWatcher(
     ? `${listJoin(stableCategories)} ${stableCategories.length > 1 ? "are" : "is"} stable across the board.`
     : null;
 
-  const focus = regressionPages[0] ?? [...ranked].sort(
+  const focus = corroboratedPages[0] ?? fieldOnlyPages[0] ?? regressionPages[0] ?? [...ranked].sort(
     (a, b) => (latestScore(a, strategy, "perf", rangeDays) ?? 100) - (latestScore(b, strategy, "perf", rangeDays) ?? 100),
   )[0];
   let topRec: WatcherSummary["topRec"] = null;
   if (focus) {
     // Only recommend something still actionable — not an ignored or completed rec.
     const cand = recs
-      .filter((r) => r.pageId === focus.id && r.category === "Performance" && r.status !== "ignored" && r.taskStatus !== "done")
-      .sort((a, b) => savingsValue(b) - savingsValue(a))[0];
-    if (cand) topRec = { pageId: focus.id, pageTitle: focus.title, recTitle: cand.title, savings: cand.savings };
+      .filter((r) =>
+        r.pageId === focus.id
+        && r.category === "Performance"
+        && (!r.strategies?.length || r.strategies.includes(strategy))
+        && r.status !== "ignored"
+        && r.taskStatus !== "done")
+      .filter(isFieldRecommendationActionable)
+      .sort((a, b) => {
+        const aSignal = recommendationEvidenceSignal(a, focus, visitorEvidence);
+        const bSignal = recommendationEvidenceSignal(b, focus, visitorEvidence);
+        return bSignal.rank - aSignal.rank || savingsValue(b) - savingsValue(a);
+      })[0];
+    if (cand) {
+      const signal = recommendationEvidenceSignal(cand, focus, visitorEvidence);
+      topRec = { pageId: focus.id, pageTitle: focus.title, recTitle: cand.title, savings: cand.savings, evidenceLabel: signal.label, source: cand.source };
+    }
   }
 
-  return { total: activePages.length, stable, improving, regressing, lowPerformance, agentGaps, qualityIssues, changed, winning, topRec };
+  return { total: activePages.length, stable, improving, regressing, lowPerformance, agentGaps, qualityIssues, fieldCorroborated, fieldOnly, changed, winning, topRec };
 }

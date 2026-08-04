@@ -48,8 +48,8 @@ async function post(text: string): Promise<SlackDelivery> {
 }
 
 /** Drop alert naming the page and affected categories (REQ-017). */
-export function postAlert(pageTitle: string, url: string, categories: string[]): Promise<SlackDelivery> {
-  return post(`⚠️ *${pageTitle}* (${url}) regressed on ${categories.join(", ")} — beyond the drop threshold on consecutive nights.`);
+export function postAlert(pageTitle: string, url: string, categories: string[], fieldContext?: string): Promise<SlackDelivery> {
+  return post(`⚠️ *${pageTitle}* (${url}) regressed on ${categories.join(", ")} — beyond the drop threshold on consecutive nights.${fieldContext ? `\n${fieldContext}` : ""}`);
 }
 
 /** Follow-up report: before/after per category, labeled as correlation (REQ-041/045). */

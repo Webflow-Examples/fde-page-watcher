@@ -4,8 +4,11 @@ import { useRouter } from "next/navigation";
 import { useStore } from "@/components/store";
 import type { Rec } from "@/lib/types";
 import { C, costValue, savingsValue } from "@/lib/ui";
-import { SegToggle, SortHeader } from "@/components/bits";
+import { FieldEvidenceChip, FieldRecommendationStatusBadge, SegToggle, SortHeader, WebflowClassificationChips } from "@/components/bits";
 import { CheckIcon, ExternalIcon } from "@/components/icons";
+import { culpritGroupLabel, effortLabel, triageActionLabel, webflowClassificationFor } from "@/lib/webflowPerformance";
+import { fieldPriorityRankForRec, recommendationEvidenceSignal } from "@/lib/fieldPrioritization";
+import { isFieldRecommendationActionable } from "@/lib/fieldOnlyRecommendations";
 
 const GRID = "44px minmax(220px,1fr) 92px 92px 240px";
 
@@ -17,12 +20,12 @@ interface Group {
 
 export default function InboxPage() {
   const router = useRouter();
-  const { recs, inboxGroup, setInboxGroup, inboxDescriptions, setInboxDescriptions, inboxSort, sortInbox, saveTask, ignoreRec, pathFor } = useStore();
+  const { pages, recs, visitorExperience, inboxGroup, setInboxGroup, inboxDescriptions, setInboxDescriptions, inboxSort, sortInbox, triageRec, ignoreRec, pathFor } = useStore();
   const categoryChip = (category: string) => (
     <span style={{ fontSize: 11, fontWeight: 500, color: C.faint2, background: "rgba(255,255,255,0.04)", padding: "2px 8px", borderRadius: 5 }}>{category}</span>
   );
 
-  let items = recs.filter((r) => r.status === "inbox");
+  let items = recs.filter((r) => r.status === "inbox" && isFieldRecommendationActionable(r));
   if (inboxSort.col) {
     const dir = inboxSort.dir === "asc" ? 1 : -1;
     const key = (r: Rec) => (inboxSort.col === "rec" ? r.title.toLowerCase() : inboxSort.col === "savings" ? savingsValue(r) : costValue(r));
@@ -31,8 +34,12 @@ export default function InboxPage() {
       const bv = key(b);
       if (av < bv) return -1 * dir;
       if (av > bv) return 1 * dir;
-      return 0;
+      return fieldPriorityRankForRec(b, pages, visitorExperience) - fieldPriorityRankForRec(a, pages, visitorExperience);
     });
+  } else {
+    items = [...items].sort((a, b) =>
+      fieldPriorityRankForRec(b, pages, visitorExperience) - fieldPriorityRankForRec(a, pages, visitorExperience)
+      || savingsValue(b) - savingsValue(a));
   }
 
   let groups: Group[];
@@ -48,6 +55,20 @@ export default function InboxPage() {
     items.forEach((it) => {
       if (!m.has(it.title)) m.set(it.title, { label: it.title, sub: it.category, items: [] });
       m.get(it.title)!.items.push(it);
+    });
+    groups = [...m.values()];
+  } else if (inboxGroup === "culprit") {
+    const m = new Map<string, Group>();
+    items.forEach((it) => {
+      const classification = webflowClassificationFor(it);
+      const key = classification.culprit;
+      if (!m.has(key)) {
+        const metric = classification.metric === "other"
+          ? "Unassigned metric"
+          : `${classification.metric} · ${classification.metricWeight}% weight`;
+        m.set(key, { label: culpritGroupLabel(it), sub: metric, items: [] });
+      }
+      m.get(key)!.items.push(it);
     });
     groups = [...m.values()];
   } else {
@@ -83,7 +104,8 @@ export default function InboxPage() {
               options={[
                 { value: "none", label: "None" },
                 { value: "page", label: "Page" },
-                { value: "rec", label: "Recommendation" },
+                { value: "rec", label: "Fix" },
+                { value: "culprit", label: "Issue" },
               ]}
             />
           </div>
@@ -104,8 +126,8 @@ export default function InboxPage() {
             <div style={{ display: "grid", gridTemplateColumns: GRID, gap: 16, alignItems: "center", padding: "4px 22px 0", fontSize: 11, fontWeight: 550, letterSpacing: "0.04em", textTransform: "uppercase" }}>
               <div />
               <SortHeader label="Recommendation" align="left" active={inboxSort.col === "rec"} dir={inboxSort.dir} onSort={() => sortInbox("rec")} />
-              <SortHeader label="Savings" align="right" active={inboxSort.col === "savings"} dir={inboxSort.dir} onSort={() => sortInbox("savings")} />
-              <SortHeader label="Cost" align="right" active={inboxSort.col === "cost"} dir={inboxSort.dir} onSort={() => sortInbox("cost")} />
+              <SortHeader label="Impact" align="right" active={inboxSort.col === "savings"} dir={inboxSort.dir} onSort={() => sortInbox("savings")} />
+              <SortHeader label="Effort" align="right" active={inboxSort.col === "cost"} dir={inboxSort.dir} onSort={() => sortInbox("cost")} />
               <div style={{ color: C.faint, textAlign: "right" }}>Actions</div>
             </div>
             {groups.map((g, gi) => (
@@ -113,21 +135,33 @@ export default function InboxPage() {
                 {g.label && (
                   <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "13px 22px", borderBottom: `1px solid ${C.border}`, background: C.panel2 }}>
                     <span style={{ fontSize: 13, fontWeight: 600 }}>{g.label}</span>
-                    {inboxGroup === "rec"
+                    {inboxGroup === "rec" || inboxGroup === "culprit"
                       ? categoryChip(g.sub ?? "")
                       : <span style={{ fontSize: 11.5, color: C.faint }}>{g.sub}</span>}
                     <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 600, color: C.accentSoft, background: "rgba(59,137,255,0.14)", padding: "1px 8px", borderRadius: 20 }}>{g.items.length}</span>
                   </div>
                 )}
-                {g.items.map((it) => (
+                {g.items.map((it) => {
+                  const evidenceSignal = recommendationEvidenceSignal(it, pages.find((page) => page.id === it.pageId), visitorExperience);
+                  return (
                   <div key={it.key} style={{ display: "grid", gridTemplateColumns: GRID, gap: 16, alignItems: "center", padding: "16px 22px", borderBottom: `1px solid ${C.rowBorder}` }}>
                     <span style={{ justifySelf: "start", fontSize: 10, fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase", color: C.accentSoft, background: "rgba(59,137,255,0.14)", padding: "3px 8px", borderRadius: 5 }}>New</span>
                     <div style={{ minWidth: 0 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <span style={{ fontSize: 14, fontWeight: 600 }}>{inboxGroup === "rec" ? it.pageTitle : it.title}</span>
                         {inboxGroup !== "rec" && categoryChip(it.category)}
+                        {it.strategies?.map((device) => (
+                          <span key={device} style={{ fontSize: 9.5, color: C.accentSoft, textTransform: "capitalize" }}>{device}</span>
+                        ))}
                       </div>
                       {inboxDescriptions === "show" && it.aiSummary && <div style={{ fontSize: 12, color: C.muted, marginTop: 4, lineHeight: 1.45 }}>{it.aiSummary}</div>}
+                      <div style={{ marginTop: 7 }}>
+                        <WebflowClassificationChips classification={webflowClassificationFor(it)} />
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
+                        <FieldEvidenceChip signal={evidenceSignal} />
+                        <FieldRecommendationStatusBadge rec={it} />
+                      </div>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
                         {inboxGroup === "none" && (
                           <span style={{ fontSize: 11, fontWeight: 550, color: C.dim, background: "rgba(255,255,255,0.06)", border: `1px solid #2E2E34`, padding: "2px 8px", borderRadius: 5 }}>{it.pageTitle}</span>
@@ -136,16 +170,17 @@ export default function InboxPage() {
                       </div>
                     </div>
                     <div style={{ textAlign: "right", fontSize: 14, fontWeight: 600, color: C.amber }}>{it.savings}</div>
-                    <div style={{ textAlign: "right", fontSize: 14, fontWeight: 600, color: C.dim }}>{it.estTime}</div>
+                    <div style={{ textAlign: "right", fontSize: 13, fontWeight: 600, color: C.dim }}>{effortLabel(it)}</div>
                     <div style={{ justifySelf: "end", display: "flex", gap: 8 }}>
-                      <button onClick={() => saveTask(it.key)} style={{ border: "none", background: C.accent, color: "#fff", fontSize: 12, fontWeight: 550, padding: "7px 13px", borderRadius: 7, cursor: "pointer", whiteSpace: "nowrap" }}>Save as task</button>
+                      <button onClick={() => triageRec(it.key)} style={{ border: "none", background: C.accent, color: "#fff", fontSize: 12, fontWeight: 550, padding: "7px 13px", borderRadius: 7, cursor: "pointer", whiteSpace: "nowrap" }}>{triageActionLabel(it)}</button>
                       <button onClick={() => ignoreRec(it.key)} style={{ border: `1px solid ${C.border2}`, background: "rgba(255,255,255,0.03)", color: C.dim, fontSize: 12, fontWeight: 500, padding: "7px 13px", borderRadius: 7, cursor: "pointer", whiteSpace: "nowrap" }}>Ignore</button>
                       <button onClick={() => router.push(pathFor(`/pages/${it.pageId}`))} title="Open page" style={{ border: `1px solid ${C.border2}`, background: "rgba(255,255,255,0.03)", padding: "7px 9px", borderRadius: 7, cursor: "pointer", display: "flex", alignItems: "center" }}>
                         <ExternalIcon size={15} style={{ color: C.dim }} />
                       </button>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             ))}
           </div>

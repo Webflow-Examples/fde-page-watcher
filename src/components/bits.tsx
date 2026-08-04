@@ -1,8 +1,97 @@
-import type { PageStatus } from "@/lib/types";
+import type { PageStatus, Rec, WebflowPerformanceClassification } from "@/lib/types";
 import { statusMeta } from "@/lib/scoring";
 import { C } from "@/lib/ui";
 import { SegmentedControl } from "@/components/segmented-control";
 import type { VisitorExperienceTrend } from "@/lib/visitorExperience";
+import { remediationTone } from "@/lib/webflowPerformance";
+import type { PerformanceIssueStatus } from "@/lib/performanceIssues";
+import type { LabFieldComparisonStatus } from "@/lib/labFieldComparison";
+import type { RecommendationEvidenceSignal } from "@/lib/fieldPrioritization";
+import { fieldRecommendationLifecycleStatus } from "@/lib/fieldOnlyRecommendations";
+
+export function FieldRecommendationStatusBadge({ rec }: { rec: Pick<Rec, "source" | "fieldLifecycle"> }) {
+  const status = fieldRecommendationLifecycleStatus(rec);
+  if (!status) return null;
+  const meta = status === "regressed"
+    ? { label: "Field issue returned", color: C.redSoft, background: "rgba(255,92,108,0.13)", title: "The visitor-only issue returned after it had cleared or become corroborated." }
+    : status === "active"
+      ? { label: "Active field issue", color: C.amber, background: "rgba(255,154,61,0.13)", title: "Exact-URL visitor evidence is outside the good range and Lighthouse does not reproduce it." }
+      : status === "verifying"
+        ? { label: "Verifying recovery", color: C.accentSoft, background: "rgba(59,137,255,0.13)", title: "One distinct CrUX window is good; a second is required to confirm resolution." }
+        : status === "corroborated"
+          ? { label: "Now reproduced in lab", color: C.violetSoft, background: "rgba(138,92,246,0.13)", title: "The visitor issue is now reproduced or explained by the latest Lighthouse evidence." }
+          : { label: "Field issue resolved", color: C.green, background: "rgba(53,208,127,0.13)", title: "Two distinct CrUX windows are within the good range." };
+  return (
+    <span title={meta.title} style={{ fontSize: 10.5, fontWeight: 650, color: meta.color, background: meta.background, padding: "2px 7px", borderRadius: 5, whiteSpace: "nowrap" }}>
+      {meta.label}
+    </span>
+  );
+}
+
+export function FieldEvidenceChip({ signal }: { signal: RecommendationEvidenceSignal }) {
+  const tone = signal.priority === "corroborated"
+    ? { color: C.redSoft, background: "rgba(255,92,108,0.13)" }
+    : signal.priority === "field-only"
+      ? { color: C.amber, background: "rgba(255,154,61,0.13)" }
+      : signal.priority === "aligned-good"
+        ? { color: C.green, background: "rgba(53,208,127,0.13)" }
+        : signal.priority === "origin-context"
+          ? { color: C.accentSoft, background: "rgba(59,137,255,0.13)" }
+          : { color: C.muted, background: "rgba(255,255,255,0.06)" };
+  return (
+    <span title={signal.detail} style={{ display: "inline-flex", alignItems: "center", fontSize: 10.5, fontWeight: 650, color: tone.color, background: tone.background, padding: "2px 7px", borderRadius: 5, whiteSpace: "nowrap" }}>
+      {signal.label}{signal.strategy ? ` · ${signal.strategy}` : ""}
+    </span>
+  );
+}
+
+export function PerformanceIssueStatusBadge({ status }: { status: PerformanceIssueStatus }) {
+  const meta = status === "regressed"
+    ? { label: "Returned", color: C.redSoft, background: "rgba(255,92,108,0.13)", title: "Returned after a confirmed resolution" }
+    : status === "resolved"
+      ? { label: "Resolved", color: C.green, background: "rgba(53,208,127,0.13)", title: "Absent from two consecutive diagnostic captures" }
+      : status === "verifying"
+        ? { label: "Verifying fix", color: C.accentSoft, background: "rgba(59,137,255,0.13)", title: "Absent once; one more clean capture is required" }
+        : { label: "Active", color: C.amber, background: "rgba(255,154,61,0.13)", title: "Present in the latest diagnostic capture" };
+  return (
+    <span title={meta.title} style={{ fontSize: 10.5, fontWeight: 650, color: meta.color, background: meta.background, padding: "2px 7px", borderRadius: 5, whiteSpace: "nowrap" }}>
+      {meta.label}
+    </span>
+  );
+}
+
+/** Compact culprit, weighted metric, and remediation labels for a Lighthouse finding. */
+export function WebflowClassificationChips({
+  classification,
+  showMetric = true,
+  showCulprit = true,
+}: {
+  classification: WebflowPerformanceClassification;
+  showMetric?: boolean;
+  showCulprit?: boolean;
+}) {
+  const tone = remediationTone(classification.remediation);
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
+      {showMetric && classification.metric !== "other" && (
+        <span style={{ fontSize: 10.5, fontWeight: 650, color: C.accentSoft, background: "rgba(59,137,255,0.12)", padding: "2px 7px", borderRadius: 5, whiteSpace: "nowrap" }}>
+          {classification.metric} · {classification.metricWeight}%
+        </span>
+      )}
+      {showCulprit && (
+        <span style={{ fontSize: 10.5, fontWeight: 550, color: C.violetSoft, background: "rgba(138,92,246,0.12)", padding: "2px 7px", borderRadius: 5, whiteSpace: "nowrap" }}>
+          {classification.culpritLabel}
+        </span>
+      )}
+      <span
+        title={classification.guidance}
+        style={{ fontSize: 10.5, fontWeight: 650, color: tone.color, background: tone.background, padding: "2px 7px", borderRadius: 5, whiteSpace: "nowrap" }}
+      >
+        {classification.remediationLabel}
+      </span>
+    </span>
+  );
+}
 
 /** Status pill with its accessibility shape (circle / triangle / square) — REQ-009. */
 export function StatusBadge({ status, size = 12.5 }: { status: PageStatus; size?: number }) {
@@ -33,12 +122,14 @@ export function DeviceChangeLabels({
   mobile,
   desktop,
   visitorExperience,
+  labFieldComparison,
   size = 11.5,
   direction = "column",
 }: {
   mobile: PageStatus;
   desktop: PageStatus;
   visitorExperience?: VisitorExperienceTrend;
+  labFieldComparison?: LabFieldComparisonStatus;
   size?: number;
   direction?: "row" | "column";
 }) {
@@ -47,7 +138,27 @@ export function DeviceChangeLabels({
       <DeviceChangeLine device="M" name="Mobile" status={mobile} size={size} />
       <DeviceChangeLine device="D" name="Desktop" status={desktop} size={size} />
       {visitorExperience && <VisitorExperienceLine status={visitorExperience} size={size} />}
+      {labFieldComparison && <LabFieldComparisonLine status={labFieldComparison} size={size} />}
     </div>
+  );
+}
+
+function LabFieldComparisonLine({ status, size }: { status: LabFieldComparisonStatus; size: number }) {
+  const meta = status === "aligned"
+    ? { label: "Aligned", color: C.green }
+    : status === "corroborated"
+      ? { label: "Corroborated", color: C.redSoft }
+      : status === "divergent"
+        ? { label: "Divergent", color: C.amber }
+        : status === "partial"
+          ? { label: "Partial", color: C.accentSoft }
+          : { label: "Unavailable", color: C.muted };
+  return (
+    <span aria-label={`Lab and field evidence: ${meta.label}`} title={`Lab and field evidence: ${meta.label}`} style={{ display: "inline-flex", alignItems: "center", gap: 5, color: meta.color, fontSize: size, fontWeight: 550, whiteSpace: "nowrap" }}>
+      <span style={{ width: 20, color: C.faint2, fontSize: size - 1, fontWeight: 650 }}>L/F</span>
+      <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: "50%", background: meta.color }} />
+      <span>{meta.label}</span>
+    </span>
   );
 }
 

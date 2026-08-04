@@ -1,16 +1,20 @@
 import { randomUUID } from "node:crypto";
 import { isKnownAgentIgnoreTarget } from "./agentChecks";
 import { updateAgentIgnoreOverride, updateAgentIgnoreSettings } from "./agentScoring";
-import { normalizePerformanceThresholds, performanceThresholdsAreValid } from "./performanceThresholds";
+import { effectivePerformanceThresholds, normalizePerformanceThresholdOverrides, normalizePerformanceThresholds, performanceThresholdOverridesAreValid, performanceThresholdsAreValid } from "./performanceThresholds";
 import { collectionScheduleIsValid, ensureCollectionOffsets } from "./collectionSchedule";
 import { pageTrend } from "./scoring";
 import { getStore } from "./store";
 import type { DataStore } from "./store";
 import { shortDate } from "./ui";
-import type { AgentIgnoreOverrideMode, AgentIgnoreScope, AppState, CollectionSchedule, Flag, PerformanceThresholds, RecStatus, ScoreByCategory, TaskStatus, WatchPage } from "./types";
+import type { AgentIgnoreOverrideMode, AgentIgnoreScope, AppState, CollectionSchedule, Flag, PagePerformanceThresholdOverrides, PerformanceThresholds, RecStatus, ScoreByCategory, TaskStatus, WatchPage } from "./types";
 import { defaultNewPageFlag, flagCapacityError } from "./watchCapacity";
 import { applyWatchlistPageOrder, changePageFlagOrder, sortWatchlistPages } from "./watchlistOrder";
 import { removeTaskMarker } from "./taskMarkers";
+import { isKnownNativeElementId } from "./nativeElements";
+import type { NativeElementDisposition } from "./types";
+import type { ProductEscalationStatus } from "./types";
+import { buildProductEscalation, createEscalationEvidence, isProductEscalationStatus } from "./escalations";
 
 /**
  * Server-side domain mutations. Each executes inside the store's atomic
@@ -98,6 +102,34 @@ export function setDefaultAgentIgnore(
   }, dataStore);
 }
 
+export function setNativeElementDisposition(
+  id: string,
+  findingId: string,
+  disposition: NativeElementDisposition | null,
+  dataStore: DataStore = getStore(),
+  now: Date = new Date(),
+): Promise<AppState> {
+  return withState((state) => {
+    const page = state.pages.find((item) => item.id === id);
+    if (!page) throw new Error(`setNativeElementDisposition: page ${id} not found`);
+    if (!isKnownNativeElementId(findingId)) {
+      throw new Error(`setNativeElementDisposition: finding ${findingId} does not exist`);
+    }
+    const controls = { ...(page.nativeElementControls ?? {}) };
+    if (disposition === null) delete controls[findingId];
+    else controls[findingId] = { disposition, updatedAt: now.toISOString() };
+    page.nativeElementControls = controls;
+
+    // Triage matching Inbox noise without disrupting work already committed
+    // to Tasks. Clearing the disposition deliberately does not recreate it.
+    if (disposition) {
+      const rec = state.recs.find((item) => item.key === `${id}:${findingId}`);
+      if (rec?.status === "inbox") rec.status = "ignored";
+    }
+    delete state.watcherNote;
+  }, dataStore);
+}
+
 export function setPerformanceThresholds(
   thresholds: PerformanceThresholds,
   dataStore: DataStore = getStore(),
@@ -108,8 +140,25 @@ export function setPerformanceThresholds(
   return withState((state) => {
     state.performanceThresholds = normalizePerformanceThresholds(thresholds);
     for (const page of state.pages) {
-      page.status = pageTrend(page, "mobile", state.performanceThresholds);
+      page.status = pageTrend(page, "mobile", effectivePerformanceThresholds(state.performanceThresholds, page));
     }
+    delete state.watcherNote;
+  }, dataStore);
+}
+
+export function setPagePerformanceThresholdOverrides(
+  id: string,
+  overrides: PagePerformanceThresholdOverrides,
+  dataStore: DataStore = getStore(),
+): Promise<AppState> {
+  if (!performanceThresholdOverridesAreValid(overrides)) {
+    throw new Error("setPagePerformanceThresholdOverrides: values are outside the supported range");
+  }
+  return withState((state) => {
+    const page = state.pages.find((item) => item.id === id);
+    if (!page) throw new Error(`setPagePerformanceThresholdOverrides: page ${id} not found`);
+    page.performanceThresholdOverrides = normalizePerformanceThresholdOverrides(overrides);
+    page.status = pageTrend(page, "mobile", effectivePerformanceThresholds(state.performanceThresholds, page));
     delete state.watcherNote;
   }, dataStore);
 }
@@ -143,6 +192,67 @@ export function removePage(id: string, dataStore: DataStore = getStore()): Promi
     state.pages = state.pages.filter((p) => p.id !== id);
     state.recs = state.recs.filter((r) => r.pageId !== id);
     state.followUps = (state.followUps ?? []).filter((f) => f.pageId !== id);
+    state.productEscalations = (state.productEscalations ?? []).filter((item) => item.pageId !== id);
+    delete state.watcherNote;
+  }, dataStore);
+}
+
+export async function createProductEscalation(
+  recKey: string,
+  dataStore: DataStore = getStore(),
+  now: Date = new Date(),
+): Promise<AppState> {
+  const visitorEvidence = await dataStore.getCruxEvidence().catch(() => []);
+  return withState((state) => {
+    const rec = state.recs.find((item) => item.key === recKey);
+    if (!rec) throw new Error(`createProductEscalation: recommendation ${recKey} not found`);
+    state.productEscalations = state.productEscalations ?? [];
+    if (state.productEscalations.some((item) => item.recKey === recKey)) return;
+    state.productEscalations.push(buildProductEscalation(state, rec, now, visitorEvidence));
+    rec.status = "task";
+    if (rec.taskStatus === "done") {
+      rec.taskStatus = "todo";
+      rec.doneDate = null;
+      removeTaskMarker(state, rec);
+    }
+    delete state.watcherNote;
+  }, dataStore);
+}
+
+export async function updateProductEscalation(
+  id: string,
+  patch: { status?: ProductEscalationStatus; owner?: string; notes?: string; refreshEvidence?: boolean },
+  dataStore: DataStore = getStore(),
+  now: Date = new Date(),
+): Promise<AppState> {
+  if (patch.status !== undefined && !isProductEscalationStatus(patch.status)) {
+    throw new Error("updateProductEscalation: invalid status");
+  }
+  if (patch.owner !== undefined && patch.owner.trim().length > 100) throw new Error("updateProductEscalation: owner is too long");
+  if (patch.notes !== undefined && patch.notes.trim().length > 4_000) throw new Error("updateProductEscalation: notes are too long");
+  const visitorEvidence = patch.refreshEvidence ? await dataStore.getCruxEvidence().catch(() => []) : [];
+  return withState((state) => {
+    const escalation = (state.productEscalations ?? []).find((item) => item.id === id);
+    if (!escalation) throw new Error(`updateProductEscalation: escalation ${id} not found`);
+    const timestamp = now.toISOString();
+    const nextOwner = patch.owner !== undefined ? patch.owner.trim() : escalation.owner;
+    if ((patch.status === "ready" || patch.status === "submitted") && !nextOwner) {
+      throw new Error("updateProductEscalation: assign an owner before review or submission");
+    }
+    if (patch.owner !== undefined) escalation.owner = patch.owner.trim();
+    if (patch.notes !== undefined) escalation.notes = patch.notes.trim();
+    if (patch.status !== undefined) {
+      escalation.status = patch.status;
+      if (patch.status === "submitted") escalation.submittedAt = escalation.submittedAt ?? timestamp;
+      if (patch.status === "resolved") escalation.resolvedAt = timestamp;
+      else delete escalation.resolvedAt;
+    }
+    if (patch.refreshEvidence) {
+      const rec = state.recs.find((item) => item.key === escalation.recKey);
+      if (!rec) throw new Error(`updateProductEscalation: recommendation ${escalation.recKey} not found`);
+      escalation.evidence = createEscalationEvidence(state, rec, timestamp, visitorEvidence);
+    }
+    escalation.updatedAt = timestamp;
     delete state.watcherNote;
   }, dataStore);
 }

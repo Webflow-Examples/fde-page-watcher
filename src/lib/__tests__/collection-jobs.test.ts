@@ -6,6 +6,8 @@ import { createFsStore, type DataStore } from "../store/fsStore";
 import { pendingPage } from "../mutations";
 import { commitCollectionResult, enqueueCollectionJob, failCollectionJob, markCollectionJob, reconcileCollectionJobs } from "../collectionJobs";
 import type { CategoryScore, CollectionResult, NightScores } from "../types";
+import { nativeElementScan } from "../nativeElements";
+import type { CruxPageEvidence } from "../crux";
 
 const roots: string[] = [];
 afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))));
@@ -24,6 +26,38 @@ function collectionResult(jobId: string): CollectionResult {
     samples: { mobile: 5, desktop: 4 },
     agent: [{ name: "robots.txt", group: "Discoverability", pass: true }],
     opportunities: [{ id: "unused-javascript", title: "Reduce unused JavaScript", category: "Performance", savingsMs: 1200 }],
+    opportunitiesByStrategy: {
+      mobile: [{ id: "unused-javascript", title: "Reduce unused JavaScript", category: "Performance", savingsMs: 1200 }],
+      desktop: [{ id: "unused-javascript", title: "Reduce unused JavaScript", category: "Performance", savingsMs: 800 }],
+    },
+    diagnostics: {
+      mobile: [{
+        id: "dom-size",
+        title: "Avoid an excessive DOM size",
+        category: "Performance",
+        score: 0,
+        scoreDisplayMode: "binary",
+        savingsMs: 0,
+        savingsBytes: 0,
+        actionable: true,
+        observedRuns: 5,
+        totalObservedRuns: 5,
+        eligibleRuns: 5,
+        successfulRuns: 5,
+        quorum: 3,
+        frequency: 1,
+        promoted: true,
+        confidence: "high",
+        savingsLowMs: 0,
+        savingsHighMs: 0,
+        savingsLowBytes: 0,
+        savingsHighBytes: 0,
+      }],
+    },
+    culpritEvidence: {
+      mobile: [{ auditId: "dom-size", title: "DOM structure", facts: [{ key: "nodes", label: "DOM nodes", value: 1_240, unit: "count" }], sampleRuns: 4 }],
+    },
+    nativeElements: nativeElementScan('<div class="w-background-video" data-video-urls="hero.mp4,hero.webm"></div>'),
   };
 }
 
@@ -65,13 +99,93 @@ describe("durable collection jobs", () => {
     expect(committed.pages[0].baseline?.mobile.perf.m).toBe(72);
     expect(committed.pages[0].history).toHaveLength(1);
     expect(committed.pages[0].history[0].opportunities?.[0].id).toBe("unused-javascript");
+    expect(committed.pages[0].history[0].opportunitiesByStrategy?.desktop?.[0].savingsMs).toBe(800);
+    expect(committed.pages[0].history[0].nativeElements).toMatchObject({
+      status: "available",
+      findings: [expect.objectContaining({ id: "webflow-background-video", count: 1 })],
+    });
+    expect(committed.pages[0].history[0].culpritEvidence?.mobile).toEqual([
+      expect.objectContaining({ auditId: "dom-size", facts: [expect.objectContaining({ value: 1_240 })] }),
+    ]);
     expect(committed.pages[0].runState).toBeUndefined();
     expect(committed.jobs?.[0].state).toBe("succeeded");
     expect(committed.recs[0].title).toBe("Reduce unused JavaScript");
+    expect(committed.recs[0].strategies).toEqual(["mobile", "desktop"]);
+    expect(committed.recs[0].webflow).toMatchObject({ culprit: "global-javascript", remediation: "blocked" });
+    expect(committed.recs.find((rec) => rec.id === "dom-size")).toMatchObject({
+      savings: "Detected",
+      strategies: ["mobile"],
+      webflow: { culprit: "dom-complexity", remediation: "partial" },
+    });
+    expect(committed.recs.find((rec) => rec.id === "webflow-background-video")).toMatchObject({
+      category: "Native elements",
+      savings: "Detected",
+      strategies: ["mobile", "desktop"],
+    });
     expect(await dataStore.getReport("page", "run-job-one")).not.toBeNull();
 
     const repeated = await commitCollectionResult(result, {}, dataStore);
     expect(repeated.pages[0].history).toHaveLength(1);
+  });
+
+  it("retains suppressed native evidence without creating future Inbox noise", async () => {
+    const dataStore = await store();
+    await dataStore.updateState((state) => {
+      state.pages[0].nativeElementControls = {
+        "webflow-background-video": { disposition: "suppressed", updatedAt: "2026-08-03T12:00:00.000Z" },
+      };
+    });
+    await enqueueCollectionJob("page", "run", { dataStore, id: "suppressed-job" });
+    await markCollectionJob("suppressed-job", "running", { dataStore });
+
+    const committed = await commitCollectionResult(collectionResult("suppressed-job"), {}, dataStore);
+    expect(committed.pages[0].history[0].nativeElements?.findings).toEqual([
+      expect.objectContaining({ id: "webflow-background-video" }),
+    ]);
+    expect(committed.recs.some((rec) => rec.id === "webflow-background-video")).toBe(false);
+    expect(committed.recs.some((rec) => rec.id === "unused-javascript")).toBe(true);
+  });
+
+  it("creates a field-only recommendation after a durable lab collection", async () => {
+    const baseStore = await store();
+    const visitorEvidence: CruxPageEvidence[] = [{
+      pageId: "page",
+      formFactor: "PHONE",
+      status: null,
+      snapshots: [{
+        formFactor: "PHONE",
+        scope: "url",
+        requestedUrl: "https://webflow.com/enterprise/contact-sales",
+        effectiveUrl: "https://webflow.com/enterprise/contact-sales",
+        collectionStart: "2026-06-29",
+        collectionEnd: "2026-07-26",
+        fetchedAt: "2026-07-27T06:15:00.000Z",
+        lcpP75Ms: 4_500,
+        inpP75Ms: null,
+        clsP75: null,
+        ttfbP75Ms: null,
+        metrics: {},
+      }],
+    }];
+    const dataStore = Object.create(baseStore) as DataStore;
+    dataStore.getCruxEvidence = async () => visitorEvidence;
+    await enqueueCollectionJob("page", "run", { dataStore, id: "field-only-job" });
+    await markCollectionJob("field-only-job", "running", { dataStore });
+    const result = collectionResult("field-only-job");
+    result.opportunities = [];
+    result.opportunitiesByStrategy = { mobile: [], desktop: [] };
+    result.measurementContext = {
+      mobile: { medianLargestContentfulPaint: 2_000 },
+      desktop: { medianLargestContentfulPaint: 1_700 },
+    };
+
+    const committed = await commitCollectionResult(result, {}, dataStore);
+    expect(committed.recs.find((rec) => rec.id === "crux-field-only-lcp")).toMatchObject({
+      source: "crux-field-only",
+      strategies: ["mobile"],
+      savings: "Field signal",
+      fieldSignals: { mobile: { fieldFormatted: "4.5 s", fieldRating: "Poor" } },
+    });
   });
 
   it("surfaces terminal failures on both the job and page", async () => {

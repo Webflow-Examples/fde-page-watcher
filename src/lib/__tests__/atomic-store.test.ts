@@ -1,12 +1,12 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createFsStore, type DataStore } from "../store/fsStore";
-import { addPage, advanceTask, pendingPage, setAgentIgnore, setDefaultAgentIgnore, setPageFlag, setPageOrder, setPageTitle, setPerformanceThresholds } from "../mutations";
+import { addPage, advanceTask, createProductEscalation, pendingPage, setAgentIgnore, setDefaultAgentIgnore, setNativeElementDisposition, setPageFlag, setPageOrder, setPagePerformanceThresholdOverrides, setPageTitle, setPerformanceThresholds, updateProductEscalation } from "../mutations";
 import { DEFAULT_PERFORMANCE_THRESHOLDS } from "../performanceThresholds";
 import { agentCheckKey } from "../agentScoring";
-import { captureBaseline, runPage } from "../collector";
+import { captureBaseline, insertRecommendations, runPage } from "../collector";
 import type { AppState, CategoryScore, NightScores, Rec } from "../types";
 
 const roots: string[] = [];
@@ -216,6 +216,73 @@ describe("atomic tenant updates", () => {
     expect(state.pages[0].agentIgnoreRestores?.checks).toEqual([checkKey]);
   });
 
+  it("persists native-element triage without deleting history and clears Inbox noise", async () => {
+    const dataStore = await storeWithState();
+    await dataStore.updateState((state) => {
+      state.recs.push({
+        ...rec(),
+        key: "page:webflow-background-video",
+        id: "webflow-background-video",
+        title: "Webflow Background Video loads eagerly",
+        category: "Native elements",
+        status: "inbox",
+      });
+      state.pages[0].history = [{
+        i: 0,
+        date: "Aug 3",
+        scores: { mobile: scores(), desktop: scores() },
+        nativeElements: { status: "available", findings: [] },
+      }];
+    });
+
+    await setNativeElementDisposition("page", "webflow-background-video", "suppressed", dataStore, new Date("2026-08-03T12:00:00.000Z"));
+    const suppressed = await dataStore.getState();
+    expect(suppressed.pages[0].nativeElementControls).toEqual({
+      "webflow-background-video": { disposition: "suppressed", updatedAt: "2026-08-03T12:00:00.000Z" },
+    });
+    expect(suppressed.pages[0].history).toHaveLength(1);
+    expect(suppressed.recs.find((item) => item.id === "webflow-background-video")?.status).toBe("ignored");
+
+    await setNativeElementDisposition("page", "webflow-background-video", null, dataStore);
+    const restored = await dataStore.getState();
+    expect(restored.pages[0].nativeElementControls).toEqual({});
+    expect(restored.recs.find((item) => item.id === "webflow-background-video")?.status).toBe("ignored");
+  });
+
+  it("creates and advances an owned product escalation atomically", async () => {
+    const dataStore = await storeWithState();
+    await dataStore.updateState((state) => {
+      state.recs.push({
+        ...rec(),
+        key: "page:unused-javascript",
+        id: "unused-javascript",
+        title: "Reduce unused JavaScript",
+        status: "inbox",
+      });
+    });
+    await createProductEscalation("page:unused-javascript", dataStore, new Date("2026-08-03T12:00:00.000Z"));
+    const created = await dataStore.getState();
+    expect(created.recs.find((item) => item.id === "unused-javascript")?.status).toBe("task");
+    expect(created.productEscalations).toEqual([
+      expect.objectContaining({ id: "product:page:unused-javascript", status: "draft", createdAt: "2026-08-03T12:00:00.000Z" }),
+    ]);
+    await expect(updateProductEscalation("product:page:unused-javascript", { status: "ready" }, dataStore))
+      .rejects.toThrow("assign an owner");
+
+    await updateProductEscalation("product:page:unused-javascript", {
+      owner: "Performance Platform",
+      notes: "Needs a product-level fix.",
+      status: "submitted",
+    }, dataStore, new Date("2026-08-03T13:00:00.000Z"));
+    const submitted = await dataStore.getState();
+    expect(submitted.productEscalations?.[0]).toMatchObject({
+      owner: "Performance Platform",
+      notes: "Needs a product-level fix.",
+      status: "submitted",
+      submittedAt: "2026-08-03T13:00:00.000Z",
+    });
+  });
+
   it("freezes readiness and ignored checks with every successful collection", async () => {
     const dataStore = await storeWithState();
     const passing = { group: "API / Auth / MCP", name: "API Catalog", pass: true };
@@ -267,6 +334,64 @@ describe("atomic tenant updates", () => {
       confirmationRuns: 2,
       devicePolicy: "both",
     });
+  });
+
+  it("persists page calibration and applies its evidence gates to new recommendations", async () => {
+    const dataStore = await storeWithState();
+    await setPagePerformanceThresholdOverrides("page", {
+      regression: 14,
+      confirmationRuns: 3,
+      devicePolicy: "both",
+      minimumFindingRuns: 3,
+      minimumSavingsMs: 250,
+      minimumSavingsKilobytes: 50,
+    }, dataStore);
+
+    await insertRecommendations(dataStore, "page", [
+      { id: "weak", title: "Weak finding", savingsMs: 100, savingsBytes: 10_000, observedRuns: 3 },
+      { id: "repeatable", title: "Repeatable finding", savingsMs: 400, observedRuns: 3 },
+      { id: "structural", title: "Structural finding", savingsMs: 0, observedRuns: 3 },
+      { id: "single-run", title: "Single-run finding", savingsMs: 900, observedRuns: 1 },
+    ], new Date("2026-08-03T12:00:00.000Z"), { summarize: false });
+
+    const state = await dataStore.getState();
+    expect(state.pages[0].performanceThresholdOverrides).toMatchObject({ regression: 14, confirmationRuns: 3, devicePolicy: "both" });
+    expect(state.recs.map((item) => item.id)).toEqual(expect.arrayContaining(["rec", "repeatable", "structural"]));
+    expect(state.recs.map((item) => item.id)).not.toEqual(expect.arrayContaining(["weak", "single-run"]));
+  });
+
+  it("suppresses duplicate regression alerts until the page recovers", async () => {
+    const dataStore = await storeWithState();
+    const alertFn = vi.fn(async () => ({ sent: true, status: 200 }));
+    await captureBaseline("page", {
+      dataStore,
+      collectFn: async () => collection(80),
+      now: () => new Date("2026-08-01T12:00:00.000Z"),
+    });
+    await setPagePerformanceThresholdOverrides("page", {
+      regression: 8,
+      confirmationRuns: 1,
+      newPageGraceRuns: 0,
+    }, dataStore);
+
+    for (const [runId, perf, iso] of [
+      ["drop-one", 60, "2026-08-02T12:00:00.000Z"],
+      ["drop-two", 59, "2026-08-03T12:00:00.000Z"],
+      ["recovered", 80, "2026-08-04T12:00:00.000Z"],
+      ["drop-again", 58, "2026-08-05T12:00:00.000Z"],
+    ] as const) {
+      await runPage("page", {
+        dataStore,
+        collectFn: async () => collection(perf),
+        scanFn: async () => [],
+        alertFn,
+        runIdFactory: () => runId,
+        now: () => new Date(iso),
+      });
+    }
+
+    expect(alertFn).toHaveBeenCalledTimes(2);
+    expect((await dataStore.getState()).pages[0].performanceAlertState?.signature).toContain("page:desktop,mobile:Performance");
   });
 
   it("defaults newly added pages to Watching", async () => {

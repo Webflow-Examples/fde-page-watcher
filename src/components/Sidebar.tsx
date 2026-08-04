@@ -7,22 +7,25 @@ import { useStore } from "./store";
 import { C } from "@/lib/ui";
 import { normalizeCollectionSchedule } from "@/lib/collectionSchedule";
 import { ClockIcon, DashboardIcon, EyeIcon, InboxIcon, TasksIcon } from "./icons";
-import { GearIcon } from "@phosphor-icons/react";
+import { GearIcon, MegaphoneIcon } from "@phosphor-icons/react";
+import { isFieldRecommendationActionable } from "@/lib/fieldOnlyRecommendations";
 
 const navItems = [
-  { href: "/dashboard", label: "Dashboard", Icon: DashboardIcon, badge: null as "inbox" | "tasks" | "watchlist" | null },
+  { href: "/dashboard", label: "Dashboard", Icon: DashboardIcon, badge: null as "inbox" | "tasks" | "escalations" | "watchlist" | null },
   { href: "/inbox", label: "Inbox", Icon: InboxIcon, badge: "inbox" as const },
   { href: "/tasks", label: "Tasks", Icon: TasksIcon, badge: "tasks" as const },
+  { href: "/escalations", label: "Escalations", Icon: MegaphoneIcon, badge: "escalations" as const },
   { href: "/watchlist", label: "Watchlist", Icon: EyeIcon, badge: "watchlist" as const },
   { href: "/settings", label: "Settings", Icon: GearIcon, badge: null },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { pages, recs, pathFor, collectionSchedule } = useStore();
-  const inboxCount = recs.filter((r) => r.status === "inbox").length;
+  const { pages, recs, productEscalations, pathFor, collectionSchedule } = useStore();
+  const inboxCount = recs.filter((r) => r.status === "inbox" && isFieldRecommendationActionable(r)).length;
   const taskCount = recs.filter((r) => r.status === "task").length;
   const watchlistCount = pages.length;
+  const escalationCount = (productEscalations ?? []).filter((item) => item.status !== "resolved").length;
 
   const schedule = normalizeCollectionSchedule(collectionSchedule);
 
@@ -60,7 +63,7 @@ export function Sidebar() {
         {navItems.map(({ href, label, Icon, badge }) => {
           const resolvedHref = pathFor(href);
           const active = pathname === resolvedHref || (href === "/dashboard" && pathname === pathFor("/"));
-          const count = badge === "inbox" ? inboxCount : badge === "tasks" ? taskCount : badge === "watchlist" ? watchlistCount : 0;
+          const count = badge === "inbox" ? inboxCount : badge === "tasks" ? taskCount : badge === "escalations" ? escalationCount : badge === "watchlist" ? watchlistCount : 0;
           return (
             <Link
               key={href}
@@ -87,11 +90,13 @@ export function Sidebar() {
                     marginLeft: "auto",
                     fontSize: 11,
                     fontWeight: 600,
-                    color: badge === "inbox" ? C.accentSoft : badge === "tasks" ? C.green : "inherit",
+                    color: badge === "inbox" ? C.accentSoft : badge === "tasks" ? C.green : badge === "escalations" ? C.amber : "inherit",
                     background: badge === "inbox"
                       ? "rgba(59,137,255,0.16)"
                       : badge === "tasks"
                         ? "rgba(53,208,127,0.16)"
+                        : badge === "escalations"
+                          ? "rgba(255,154,61,0.16)"
                         : "transparent",
                     padding: "1px 8px",
                     borderRadius: 20,

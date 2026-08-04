@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { collectPsi, runPsiOnce } from "../psiCore";
+import { collectPsi, runPsiOnce, summarizePsiMeasurements } from "../psiCore";
 
 function psiResponse(warnings: string[] = [], perf = 0.8, fetchTime?: string) {
   return {
@@ -27,6 +27,29 @@ function psiResponse(warnings: string[] = [], perf = 0.8, fetchTime?: string) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("PSI collection quality", () => {
+  it("summarizes all five scored lab sub-metrics across runs", () => {
+    const raw = (offset: number) => ({
+      lighthouseResult: {
+        lighthouseVersion: "13.0.0",
+        audits: {
+          "first-contentful-paint": { numericValue: 1_000 + offset },
+          "speed-index": { numericValue: 2_000 + offset },
+          "largest-contentful-paint": { numericValue: 2_500 + offset },
+          "total-blocking-time": { numericValue: 200 + offset },
+          "cumulative-layout-shift": { numericValue: 0.1 + offset / 10_000 },
+        },
+      },
+    });
+    expect(summarizePsiMeasurements([raw(0), raw(200), raw(100)])).toMatchObject({
+      lighthouseVersion: "13.0.0",
+      medianFirstContentfulPaint: 1_100,
+      medianSpeedIndex: 2_100,
+      medianLargestContentfulPaint: 2_600,
+      medianTotalBlockingTime: 300,
+      medianCumulativeLayoutShift: 0.11,
+    });
+  });
+
   it("rejects missing category scores instead of converting them to zero", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({
       lighthouseResult: {

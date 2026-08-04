@@ -1,10 +1,12 @@
 import type { AppState } from "../types";
 import { captureAgentReadiness, normalizeAgentIgnoreSettings } from "../agentScoring";
-import { normalizePerformanceThresholds } from "../performanceThresholds";
+import { effectivePerformanceThresholds, normalizePerformanceThresholdOverrides, normalizePerformanceThresholds } from "../performanceThresholds";
 import { pageTrend } from "../scoring";
 import { normalizeWatchCapacity } from "../watchCapacity";
 import { sortWatchlistPages } from "../watchlistOrder";
 import { reconcileTaskMarkers } from "../taskMarkers";
+import { normalizeNativeElementControls } from "../nativeElements";
+import { normalizeProductEscalations } from "../escalations";
 
 /** Apply compatible, idempotent upgrades when reading persisted state. */
 export function normalizeState(state: AppState): AppState {
@@ -20,12 +22,11 @@ export function normalizeState(state: AppState): AppState {
     // Migrate the original health vocabulary into the baseline-trend model.
     // Recomputing from source data is safer than mapping "improvable" because
     // that legacy value described a transient drop, not improvement.
-    const storedStatus = page.status as string;
-    if (["healthy", "improvable", "degraded"].includes(storedStatus)) {
-      page.status = pageTrend(page, "mobile", state.performanceThresholds);
-    }
     page.agentIgnores = normalizeAgentIgnoreSettings(page.agentIgnores);
     page.agentIgnoreRestores = normalizeAgentIgnoreSettings(page.agentIgnoreRestores);
+    page.performanceThresholdOverrides = normalizePerformanceThresholdOverrides(page.performanceThresholdOverrides);
+    page.status = pageTrend(page, "mobile", effectivePerformanceThresholds(state.performanceThresholds, page));
+    page.nativeElementControls = normalizeNativeElementControls(page.nativeElementControls);
     for (const night of page.history) {
       if (!night.agentReadiness && Array.isArray(night.agent)) {
         night.agentReadiness = captureAgentReadiness(
@@ -45,5 +46,6 @@ export function normalizeState(state: AppState): AppState {
   }));
   reconcileTaskMarkers(state);
   state.jobs = state.jobs ?? [];
+  state.productEscalations = normalizeProductEscalations(state.productEscalations);
   return state;
 }

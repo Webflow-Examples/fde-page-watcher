@@ -50,10 +50,64 @@ function mockCollect(url: string, strategy: Strategy, n: number): CollectResult 
       { id: "unused-javascript", title: "Reduce unused JavaScript", category: "Performance", savingsMs: 1800, savingsBytes: 0, actionable: true },
       { id: "modern-image-formats", title: "Serve images in next-gen formats", category: "Performance", savingsMs: 1200, savingsBytes: 0, actionable: true },
       { id: "render-blocking-resources", title: "Eliminate render-blocking resources", category: "Performance", savingsMs: 600, savingsBytes: 0, actionable: true },
+      { id: "dom-size", title: "Avoid an excessive DOM size", category: "Performance", score: 0, scoreDisplayMode: "binary", savingsMs: 0, savingsBytes: 0, actionable: true },
     ],
   }));
   const aggregated = aggregateLighthouseRunEvidence(runEvidence, n);
-  const raws = Array.from({ length: n }, (_, k) => ({ mock: true, url, strategy, run: k + 1, note: "PSI_MOCK synthetic report" }));
+  const raws = Array.from({ length: n }, (_, k) => ({
+    mock: true,
+    url,
+    strategy,
+    run: k + 1,
+    note: "PSI_MOCK synthetic report",
+    lighthouseResult: {
+      lighthouseVersion: "mock-1",
+      environment: { benchmarkIndex: strategy === "desktop" ? 1_200 : 800 },
+      audits: {
+        "first-contentful-paint": { numericValue: strategy === "desktop" ? 1_050 : 2_150 },
+        "speed-index": { numericValue: strategy === "desktop" ? 2_100 : 4_250 },
+        "largest-contentful-paint": { numericValue: strategy === "desktop" ? 1_700 : 3_350 },
+        "total-blocking-time": { numericValue: strategy === "desktop" ? 120 : 520 },
+        "cumulative-layout-shift": { numericValue: strategy === "desktop" ? 0.04 : 0.14 },
+        "server-response-time": { numericValue: 180 },
+        "dom-size": { details: { items: [
+          { statistic: "Total DOM Elements", value: 1_180 + k * 12 },
+          { statistic: "Maximum DOM Depth", value: 24 },
+          { statistic: "Maximum Child Elements", value: 46 },
+        ] } },
+        "unused-css-rules": { details: {
+          overallSavingsBytes: 148_000 + k * 1_000,
+          items: [{ url: "https://cdn.prod.website-files.com/site/styles.css", totalBytes: 310_000, wastedBytes: 148_000 + k * 1_000 }],
+        } },
+        "unused-javascript": { details: {
+          overallSavingsBytes: 286_000 + k * 2_000,
+          items: [{ url: "https://cdn.prod.website-files.com/site/webflow.js", totalBytes: 520_000, wastedBytes: 286_000 + k * 2_000 }],
+        } },
+        "third-party-summary": { details: { items: [
+          { url: "https://www.googletagmanager.com/gtm.js", transferSize: 128_000, mainThreadTime: 210 + k * 4, blockingTime: 82 + k * 2 },
+          { url: "https://connect.facebook.net/sdk.js", transferSize: 76_000, mainThreadTime: 130, blockingTime: 44 },
+        ] } },
+        "render-blocking-resources": { details: {
+          overallSavingsMs: 600 + k * 10,
+          items: [
+            { url: "https://cdn.prod.website-files.com/site/styles.css", totalBytes: 310_000, wastedMs: 420 },
+            { url: "https://fonts.googleapis.com/css2", totalBytes: 12_000, wastedMs: 180 },
+          ],
+        } },
+        "uses-responsive-images": { details: {
+          overallSavingsBytes: 420_000 + k * 2_000,
+          items: [
+            { url: "https://cdn.prod.website-files.com/site/hero.jpg", totalBytes: 620_000, wastedBytes: 340_000 },
+            { url: "https://cdn.prod.website-files.com/site/card.jpg", totalBytes: 180_000, wastedBytes: 80_000 },
+          ],
+        } },
+        "largest-contentful-paint-element": { details: { items: [{
+          url: "https://cdn.prod.website-files.com/site/hero.jpg",
+          node: { snippet: "<img class=\"hero-image\">", boundingRect: { width: 1440, height: 810 } },
+        }] } },
+      },
+    },
+  }));
   return {
     schemaVersion: 2,
     scores,

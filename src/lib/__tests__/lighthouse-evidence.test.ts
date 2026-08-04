@@ -121,7 +121,7 @@ describe("multi-run Lighthouse evidence", () => {
 
     expect(lighthouseScores(raw)).toEqual({ perf: 72, a11y: 90, bp: 95, seo: 100 });
     const normalized = extractLighthouseRunEvidence(raw, 2);
-    expect(normalized).toEqual({
+    expect(normalized).toMatchObject({
       run: 2,
       warnings: ["Page loaded too slowly"],
       findings: [{
@@ -134,6 +134,11 @@ describe("multi-run Lighthouse evidence", () => {
         savingsMs: 1_234,
         savingsBytes: 0,
         actionable: true,
+        webflow: {
+          metric: "LCP",
+          culprit: "global-javascript",
+          remediation: "blocked",
+        },
       }],
     });
     expect(JSON.stringify(normalized)).not.toContain("customer.example");

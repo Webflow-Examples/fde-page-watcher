@@ -871,6 +871,43 @@ function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
               onReset={() => resetThresholds(["newPageGraceRuns"])}
               wide
             />
+
+            <ToleranceField
+              id="minimum-finding-runs"
+              label="Finding evidence"
+              help="Require this many repeatable Lighthouse captures before a quantified finding can enter Inbox."
+              value={thresholdDrafts.minimumFindingRuns}
+              defaultValue={DEFAULT_PERFORMANCE_THRESHOLDS.minimumFindingRuns}
+              min={PERFORMANCE_THRESHOLD_LIMITS.minimumFindingRuns.min}
+              max={PERFORMANCE_THRESHOLD_LIMITS.minimumFindingRuns.max}
+              suffix="runs"
+              onChange={(value) => setThresholdDraft("minimumFindingRuns", value)}
+              onReset={() => resetThresholds(["minimumFindingRuns"])}
+            />
+            <ToleranceField
+              id="minimum-time-saving"
+              label="Minimum time saving"
+              help="Suppress new quantified Inbox findings whose estimated time saving is below this value, unless their transfer saving clears its own threshold."
+              value={thresholdDrafts.minimumSavingsMs}
+              defaultValue={DEFAULT_PERFORMANCE_THRESHOLDS.minimumSavingsMs}
+              min={PERFORMANCE_THRESHOLD_LIMITS.minimumSavingsMs.min}
+              max={PERFORMANCE_THRESHOLD_LIMITS.minimumSavingsMs.max}
+              suffix="ms"
+              onChange={(value) => setThresholdDraft("minimumSavingsMs", value)}
+              onReset={() => resetThresholds(["minimumSavingsMs"])}
+            />
+            <ToleranceField
+              id="minimum-transfer-saving"
+              label="Minimum transfer saving"
+              help="Suppress new quantified Inbox findings below this transfer saving, unless their estimated time saving clears its own threshold. Structural findings with no estimate remain visible."
+              value={thresholdDrafts.minimumSavingsKilobytes}
+              defaultValue={DEFAULT_PERFORMANCE_THRESHOLDS.minimumSavingsKilobytes}
+              min={PERFORMANCE_THRESHOLD_LIMITS.minimumSavingsKilobytes.min}
+              max={PERFORMANCE_THRESHOLD_LIMITS.minimumSavingsKilobytes.max}
+              suffix="KB"
+              onChange={(value) => setThresholdDraft("minimumSavingsKilobytes", value)}
+              onReset={() => resetThresholds(["minimumSavingsKilobytes"])}
+            />
           </div>
 
           <div className="watchlist-tolerance-actions" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginTop: 16 }}>

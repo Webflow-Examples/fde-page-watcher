@@ -2,6 +2,7 @@ import { buildInitialState } from "../src/lib/seed";
 import { captureAgentReadiness } from "../src/lib/agentScoring";
 import { resolveMarkerIndex } from "../src/lib/followups";
 import { mediansOf, pageTrend } from "../src/lib/scoring";
+import { effectivePerformanceThresholds } from "../src/lib/performanceThresholds";
 import { normalizeState } from "../src/lib/store/normalize";
 import type { AppState, ChangeMarker, Night } from "../src/lib/types";
 import {
@@ -185,7 +186,7 @@ export class FdeDataStore {
         desktop: mediansOf(night.scores.desktop),
       };
       page.agent = agent ?? [];
-      page.status = pageTrend(page, "mobile");
+      page.status = pageTrend(page, "mobile", effectivePerformanceThresholds(draft.performanceThresholds, page));
       page.runState = undefined;
       page.lastRunAt = night.iso ?? new Date().toISOString();
       page.lastCollectionStatus = "trusted";

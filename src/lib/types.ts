@@ -46,6 +46,37 @@ export type StrategyScores = Record<Strategy, NightScores>;
 
 export type LighthouseFindingConfidence = "high" | "medium" | "intermittent" | "insufficient";
 
+export type WebflowPerformanceMetric = "TBT" | "LCP" | "CLS" | "other";
+export type WebflowPerformanceCulprit =
+  | "global-javascript"
+  | "main-thread-work"
+  | "third-party-code"
+  | "dom-complexity"
+  | "lcp-element"
+  | "global-css"
+  | "image-delivery"
+  | "render-blocking"
+  | "custom-javascript"
+  | "layout-stability"
+  | "background-video"
+  | "video-embeds"
+  | "interactive-media"
+  | "other";
+export type WebflowRemediationLevel = "blocked" | "partial" | "available" | "unknown";
+
+/** Deterministic Webflow-specific interpretation of a Lighthouse audit. */
+export interface WebflowPerformanceClassification {
+  version: 1;
+  metric: WebflowPerformanceMetric;
+  metricWeight: 0 | 25 | 30;
+  culprit: WebflowPerformanceCulprit;
+  culpritLabel: string;
+  remediation: WebflowRemediationLevel;
+  remediationLabel: string;
+  guidance: string;
+  source: "published-page-performance" | "crux-field-only";
+}
+
 /** One failing Lighthouse audit normalized from a single PSI response. */
 export interface LighthouseRunFinding {
   id: string;
@@ -57,6 +88,7 @@ export interface LighthouseRunFinding {
   savingsMs: number;
   savingsBytes: number;
   actionable: boolean;
+  webflow?: WebflowPerformanceClassification;
 }
 
 /** Warnings and findings retained for one successful Lighthouse run. */
@@ -80,6 +112,39 @@ export interface AggregatedLighthouseFinding extends LighthouseRunFinding {
   savingsHighMs: number;
   savingsLowBytes: number;
   savingsHighBytes: number;
+}
+
+export type CulpritEvidenceUnit = "count" | "bytes" | "milliseconds" | "percent" | "pixels";
+
+export interface CulpritEvidenceFact {
+  key: string;
+  label: string;
+  value: number;
+  unit: CulpritEvidenceUnit;
+}
+
+export interface CulpritEvidenceSource {
+  /** Hostname only; paths, queries, fragments, and resource names are discarded. */
+  host: string;
+  transferBytes?: number;
+  blockingMs?: number;
+}
+
+export interface LcpElementEvidence {
+  elementType: string;
+  assetHost?: string;
+  width?: number;
+  height?: number;
+}
+
+/** Compact, privacy-safe explanation of one recurring Lighthouse culprit. */
+export interface CulpritEvidence {
+  auditId: string;
+  title: string;
+  facts: CulpritEvidenceFact[];
+  sources?: CulpritEvidenceSource[];
+  lcpElement?: LcpElementEvidence;
+  sampleRuns: number;
 }
 
 export type LighthouseCollectionQualityStatus = "reliable" | "low-confidence" | "unusable";
@@ -108,11 +173,47 @@ export interface LighthouseOpportunity {
   description?: string;
   category: string;
   savingsMs: number;
+  savingsBytes?: number;
   observedRuns?: number;
   eligibleRuns?: number;
   confidence?: Extract<LighthouseFindingConfidence, "high" | "medium">;
   savingsLowMs?: number;
   savingsHighMs?: number;
+  webflow?: WebflowPerformanceClassification;
+}
+
+export type NativeWebflowElementType = "background-video" | "video-embed" | "lottie" | "spline" | "image";
+
+export interface NativeElementEvidence {
+  label: string;
+  count: number;
+}
+
+export type NativeElementDisposition = "acknowledged" | "suppressed";
+
+export interface NativeElementControl {
+  disposition: NativeElementDisposition;
+  updatedAt: string;
+}
+
+/** Privacy-safe page-content finding for a known Webflow-native element footprint. */
+export interface NativeElementFinding {
+  id: string;
+  element: NativeWebflowElementType;
+  title: string;
+  detail: string;
+  count: number;
+  signals: string[];
+  /** Aggregate, privacy-safe evidence. Never contains HTML, URLs, selectors, or customer text. */
+  evidence?: NativeElementEvidence[];
+  confidence: "high" | "medium";
+  webflow: WebflowPerformanceClassification;
+}
+
+export interface NativeElementScan {
+  status: "available" | "unavailable";
+  findings: NativeElementFinding[];
+  reason?: string;
 }
 
 /**
@@ -142,7 +243,16 @@ export interface Night {
   rawReportKey?: string; // object-storage key for the full PSI payload (REQ-006)
   agent?: AgentCheck[]; // agent-readiness scan recorded for this night, so history is retained (REQ-008)
   agentReadiness?: AgentReadinessSnapshot; // immutable score using the ignore settings effective for this run
-  opportunities?: LighthouseOpportunity[]; // real Lighthouse opportunities for this capture
+  /** Legacy mobile-only opportunity list retained for older stored history. */
+  opportunities?: LighthouseOpportunity[];
+  /** Load-time opportunities retained independently for both Lighthouse devices. */
+  opportunitiesByStrategy?: Partial<Record<Strategy, LighthouseOpportunity[]>>;
+  /** Repeatable findings, including binary and byte-only diagnostics. */
+  diagnostics?: Partial<Record<Strategy, AggregatedLighthouseFinding[]>>;
+  /** Median culprit details extracted from warning-free Lighthouse runs. */
+  culpritEvidence?: Partial<Record<Strategy, CulpritEvidence[]>>;
+  /** Device-neutral findings from the published-page HTML scan. */
+  nativeElements?: NativeElementScan;
   collectionQuality?: Partial<Record<Strategy, LighthouseCollectionQuality>>;
   cohortId?: string;
   evidenceStatus?: "trusted" | "provider-anomaly";
@@ -152,9 +262,11 @@ export interface Night {
 export interface PsiMeasurementContext {
   lighthouseVersion?: string;
   medianBenchmarkIndex?: number;
+  medianFirstContentfulPaint?: number;
   medianTotalBlockingTime?: number;
   medianLargestContentfulPaint?: number;
   medianSpeedIndex?: number;
+  medianCumulativeLayoutShift?: number;
   medianServerResponseTime?: number;
 }
 
@@ -234,6 +346,23 @@ export interface PerformanceThresholds {
   agentReadiness: number;
   /** Completed post-baseline scans required before status classification begins. */
   newPageGraceRuns: number;
+  /** Repeatable Lighthouse captures required before a finding enters Inbox. */
+  minimumFindingRuns: number;
+  /** Ignore quantified findings below this estimated time saving. */
+  minimumSavingsMs: number;
+  /** Ignore quantified findings below this estimated transfer saving. */
+  minimumSavingsKilobytes: number;
+}
+
+/** Optional page-specific values layered over the team monitoring defaults. */
+export type PagePerformanceThresholdOverrides = Partial<PerformanceThresholds>;
+
+export interface PerformanceAlertState {
+  /** Stable device/category condition used to suppress duplicate deliveries. */
+  signature: string;
+  strategies: Strategy[];
+  categories: CategoryKey[];
+  sentAt: string;
 }
 
 /** A scheduled follow-up comparison after a change marker (REQ-044). */
@@ -267,6 +396,12 @@ export interface WatchPage {
   agent: AgentCheck[]; // latest agent-readiness scan (per-check)
   agentIgnores?: AgentIgnoreSettings; // page-specific ignores, applied after global defaults
   agentIgnoreRestores?: AgentIgnoreSettings; // page-specific restores of globally ignored checks/categories
+  /** Sparse page-specific calibration; omitted values inherit team defaults. */
+  performanceThresholdOverrides?: PagePerformanceThresholdOverrides;
+  /** Active delivered regression condition; cleared after recovery. */
+  performanceAlertState?: PerformanceAlertState;
+  /** Page-scoped triage controls keyed by stable native-element finding id. */
+  nativeElementControls?: Record<string, NativeElementControl>;
   baselineCapturedAt?: string;
   acted?: Record<string, boolean>;
   // Async collection state (REQ-054): a run is queued/executed in the
@@ -313,7 +448,12 @@ export interface CollectionResult {
   scores: StrategyScores;
   samples: Record<Strategy, number>;
   agent: AgentCheck[];
+  /** Legacy mobile-only list accepted from version-one collectors. */
   opportunities: LighthouseOpportunity[];
+  opportunitiesByStrategy?: Partial<Record<Strategy, LighthouseOpportunity[]>>;
+  diagnostics?: Partial<Record<Strategy, AggregatedLighthouseFinding[]>>;
+  culpritEvidence?: Partial<Record<Strategy, CulpritEvidence[]>>;
+  nativeElements?: NativeElementScan;
   collectionQuality?: Partial<Record<Strategy, LighthouseCollectionQuality>>;
   cohortId?: string;
   measurementContext?: Partial<Record<Strategy, PsiMeasurementContext>>;
@@ -321,6 +461,37 @@ export interface CollectionResult {
 
 export type RecStatus = "inbox" | "task" | "ignored";
 export type TaskStatus = "todo" | "in-progress" | "done";
+export type RecommendationSource = "lighthouse" | "native-elements" | "crux-field-only";
+export type FieldOnlyMetricKey = "lcp" | "responsiveness" | "cls" | "ttfb";
+
+/** Exact-URL visitor evidence retained on a synthetic field-only recommendation. */
+export interface FieldOnlyRecommendationSignal {
+  metricKey: FieldOnlyMetricKey;
+  metricLabel: string;
+  relationship: "direct" | "proxy";
+  labLabel: string;
+  labFormatted: string;
+  fieldLabel: string;
+  fieldValue: number;
+  fieldFormatted: string;
+  fieldRating: "Needs improvement" | "Poor";
+  scope: "url";
+  collectionStart: string;
+  collectionEnd: string;
+  detectedAt: string;
+}
+
+export type FieldOnlyLifecycleStatus = "active" | "verifying" | "resolved" | "corroborated" | "regressed";
+
+export interface FieldOnlyStrategyLifecycle {
+  status: FieldOnlyLifecycleStatus;
+  firstDetectedAt: string;
+  lastDetectedAt: string;
+  lastEvaluatedCollectionEnd: string;
+  consecutiveGoodWindows: number;
+  resolvedAt?: string;
+  returnedAt?: string;
+}
 
 /** A recommendation that flows Inbox -> Task, unified as in the source design (REQ-047). */
 export interface Rec {
@@ -329,9 +500,18 @@ export interface Rec {
   pageTitle: string;
   url: string;
   id: string; // recommendation id (stable per audit)
+  /** Evidence system that created this recommendation. Legacy records omit it. */
+  source?: RecommendationSource;
+  /** Devices on which this recommendation was independently promoted. */
+  strategies?: Strategy[];
+  /** Per-device evidence for recommendations created from visitor-only CrUX signals. */
+  fieldSignals?: Partial<Record<Strategy, FieldOnlyRecommendationSignal>>;
+  /** Per-device lifecycle; two distinct good CrUX windows confirm resolution. */
+  fieldLifecycle?: Partial<Record<Strategy, FieldOnlyStrategyLifecycle>>;
   sourceRunId?: string;
   title: string;
   category: string;
+  webflow?: WebflowPerformanceClassification;
   savings: string; // Lighthouse load-time estimate, e.g. "1.8 s"
   estTime: string; // coarse effort band, e.g. "2 days" (REQ-055)
   status: RecStatus;
@@ -343,11 +523,15 @@ export interface Rec {
 
 /** A failing Lighthouse audit / opportunity shown on the page detail. */
 export interface Audit {
+  id: string;
   title: string;
   desc: string;
   category: string;
   savings: string;
   dot: string;
+  evidence?: string;
+  confidence?: LighthouseFindingConfidence;
+  webflow: WebflowPerformanceClassification;
 }
 
 /** The Watcher's Claude-written dashboard narrative, refreshed once per nightly run. */
@@ -358,10 +542,79 @@ export interface WatcherNote {
   modelVersion?: number;
 }
 
+export type ProductEscalationStatus = "draft" | "ready" | "submitted" | "resolved";
+
+export interface EscalationStrategyEvidence {
+  strategy: Strategy;
+  performanceScore?: number;
+  metricValue?: number;
+  metricUnit?: "milliseconds" | "score";
+  diagnostic?: {
+    observedRuns: number;
+    eligibleRuns: number;
+    confidence: LighthouseFindingConfidence;
+    savingsMs: number;
+    savingsBytes: number;
+  };
+  lifecycle?: {
+    status: "active" | "verifying" | "resolved" | "regressed";
+    firstDetected: string;
+    lastDetected: string;
+  };
+  culpritEvidence: CulpritEvidence[];
+  fieldEvidence?: {
+    relationship: "direct" | "proxy";
+    verdict: "aligned-good" | "corroborated-issue" | "field-only-risk" | "lab-only-risk" | "unavailable";
+    verdictLabel: string;
+    metricLabel: string;
+    value?: string;
+    rating?: "Good" | "Needs improvement" | "Poor";
+    scope?: "url" | "origin";
+    collectionStart?: string;
+    collectionEnd?: string;
+  };
+}
+
+export interface EscalationEvidenceSnapshot {
+  capturedAt: string;
+  page: { id: string; title: string; url: string };
+  recommendation: {
+    id: string;
+    title: string;
+    category: string;
+    impact: string;
+    strategies: Strategy[];
+  };
+  classification: WebflowPerformanceClassification;
+  strategies: EscalationStrategyEvidence[];
+  nativeFinding?: {
+    count: number;
+    confidence: "high" | "medium";
+    signals: string[];
+    detail: string;
+  };
+}
+
+export interface ProductEscalation {
+  id: string;
+  recKey: string;
+  pageId: string;
+  title: string;
+  status: ProductEscalationStatus;
+  owner: string;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+  submittedAt?: string;
+  resolvedAt?: string;
+  evidence: EscalationEvidenceSnapshot;
+}
+
 /** The full application state — the single source of truth persisted per tenant. */
 export interface AppState {
   pages: WatchPage[];
   recs: Rec[];
+  productEscalations?: ProductEscalation[];
   /** Presentation-only feature flag. CrUX collection continues while hidden. */
   visitorExperienceVisible?: boolean;
   agentIgnoreDefaults?: AgentIgnoreSettings;

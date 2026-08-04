@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { collect } from "./psi";
-import { scan } from "./agentReadiness";
+import { scanPageContent } from "./agentReadiness";
 import {
   enrichRecommendations,
   generateWatcherNote,
@@ -18,11 +18,15 @@ import type {
   CollectionJobKind,
   CollectionJobState,
   CollectionResult,
-  LighthouseOpportunity,
   Strategy,
   StrategyScores,
 } from "./types";
 import { isPageActivelyMonitored } from "./watchCapacity";
+import { mergeStrategyOpportunities, promotedDiagnostics } from "./diagnostics";
+import { nativeRecommendationOpportunities } from "./nativeElements";
+import { summarizePsiMeasurements } from "./psiCore";
+import { summarizeCulpritEvidence } from "./culpritEvidence";
+import { reconcileFieldOnlyRecommendations } from "./fieldOnlyRecommendations";
 
 export const JOB_STALE_AFTER_MS = 30 * 60 * 1000;
 const ACTIVE_STATES = new Set<CollectionJobState>([
@@ -188,6 +192,10 @@ export async function commitCollectionResult(
       sampleSize: Math.min(result.samples.mobile, result.samples.desktop),
       agent: result.agent,
       opportunities: result.opportunities,
+      opportunitiesByStrategy: result.opportunitiesByStrategy,
+      diagnostics: result.diagnostics,
+      culpritEvidence: result.culpritEvidence,
+      nativeElements: result.nativeElements,
       collectionQuality: result.collectionQuality,
       cohortId: result.cohortId,
       measurementContext: result.measurementContext,
@@ -223,7 +231,20 @@ export async function commitCollectionResult(
 
   // Keep reconciliation fast: recommendations are real but optional AI prose
   // is deferred; it must never put the durable collection commit at risk.
-  return insertRecommendations(dataStore, result.pageId, result.opportunities, completedAt, { summarize: false });
+  await insertRecommendations(
+    dataStore,
+    result.pageId,
+    [
+      ...mergeStrategyOpportunities(
+        result.opportunitiesByStrategy ?? { mobile: result.opportunities },
+        result.diagnostics,
+      ),
+      ...nativeRecommendationOpportunities(result.nativeElements),
+    ],
+    completedAt,
+    { summarize: false },
+  );
+  return reconcileFieldOnlyRecommendations(dataStore, result.pageId, completedAt, result.runId);
 }
 
 /** Local development executor. Production dispatches the same job to a Workflow. */
@@ -234,15 +255,18 @@ export async function executeLocalCollectionJob(jobId: string, dataStore: DataSt
   const page = started.pages.find((item) => item.id === job.pageId);
   if (!page) throw new Error(`Collection page ${job.pageId} not found`);
   try {
-    const [strategyResults, agent] = await Promise.all([
+    const [strategyResults, pageScan] = await Promise.all([
       Promise.all(STRATEGIES.map(async (strategy) => ({ strategy, result: await collect(page.url, strategy) }))),
-      scan(page.url),
+      scanPageContent(page.url),
     ]);
     const scores = {} as StrategyScores;
     const samples = {} as Record<Strategy, number>;
     const collectionQuality: CollectionResult["collectionQuality"] = {};
+    const opportunitiesByStrategy: NonNullable<CollectionResult["opportunitiesByStrategy"]> = {};
+    const diagnostics: NonNullable<CollectionResult["diagnostics"]> = {};
+    const culpritEvidence: NonNullable<CollectionResult["culpritEvidence"]> = {};
+    const measurementContext: NonNullable<CollectionResult["measurementContext"]> = {};
     const strategies: Record<string, unknown> = {};
-    let opportunities: LighthouseOpportunity[] = [];
     for (const item of strategyResults) {
       if (item.result.quality?.status && item.result.quality.status !== "reliable") {
         throw new Error(
@@ -254,7 +278,10 @@ export async function executeLocalCollectionJob(jobId: string, dataStore: DataSt
       samples[item.strategy] = item.result.sampleSize;
       if (item.result.quality) collectionQuality[item.strategy] = item.result.quality;
       strategies[item.strategy] = item.result;
-      if (item.strategy === "mobile") opportunities = item.result.opportunities;
+      opportunitiesByStrategy[item.strategy] = item.result.opportunities;
+      diagnostics[item.strategy] = promotedDiagnostics(item.result.findings);
+      culpritEvidence[item.strategy] = summarizeCulpritEvidence(item.result.raws);
+      measurementContext[item.strategy] = summarizePsiMeasurements(item.result.raws);
     }
     const capturedAt = new Date().toISOString();
     return await commitCollectionResult(
@@ -266,9 +293,14 @@ export async function executeLocalCollectionJob(jobId: string, dataStore: DataSt
         capturedAt,
         scores,
         samples,
-        agent,
-        opportunities,
+        agent: pageScan.agent,
+        opportunities: opportunitiesByStrategy.mobile ?? [],
+        opportunitiesByStrategy,
+        diagnostics,
+        culpritEvidence,
+        nativeElements: pageScan.nativeElements,
         collectionQuality,
+        measurementContext,
       },
       { strategies },
       dataStore,
