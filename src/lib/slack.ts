@@ -47,11 +47,6 @@ async function post(text: string): Promise<SlackDelivery> {
   }
 }
 
-/** Drop alert naming the page and affected categories (REQ-017). */
-export function postAlert(pageTitle: string, url: string, categories: string[], fieldContext?: string): Promise<SlackDelivery> {
-  return post(`⚠️ *${pageTitle}* (${url}) regressed on ${categories.join(", ")} — beyond the drop threshold on consecutive nights.${fieldContext ? `\n${fieldContext}` : ""}`);
-}
-
 /** Follow-up report: before/after per category, labeled as correlation (REQ-041/045). */
 export function postFollowup(pageTitle: string, interval: string, lines: string[]): Promise<SlackDelivery> {
   return post(`📈 *${pageTitle}* — ${interval} follow-up after change marker (change correlated with the marker, not proven cause):\n${lines.join("\n")}`);

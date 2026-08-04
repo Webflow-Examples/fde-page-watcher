@@ -3,12 +3,14 @@ import type { DataStore } from "./store";
 import { collect } from "./psi";
 import { scan, scanPageContent } from "./agentReadiness";
 import { costBand } from "./cost";
-import { postAlert, postFollowup } from "./slack";
+import { postFollowup } from "./slack";
 import type { SlackDelivery } from "./slack";
+import { postWebhook } from "./webhook";
+import { dailyDigestCohortId, ensureDailyDigest, processDailyDigests } from "./dailyDigest";
 import { generateText } from "./anthropic";
 import { buildWatcher } from "./watcher";
 import { getEnv } from "./env";
-import { mediansOf, pageHasPersistentRegression, pageRangeComparison, pageRangeTrend } from "./scoring";
+import { mediansOf, pageRangeComparison, pageRangeTrend } from "./scoring";
 import { effectivePerformanceThresholds, normalizePerformanceThresholds, recommendationMeetsEvidenceThresholds } from "./performanceThresholds";
 import { parseMarkerDate, shortDate } from "./ui";
 import { CATEGORIES, STRATEGIES } from "./types";
@@ -18,7 +20,6 @@ import type {
   LighthouseCollectionQuality,
   LighthouseOpportunity,
   Night,
-  PerformanceThresholds,
   Rec,
   Strategy,
   StrategyScores,
@@ -32,7 +33,6 @@ import { summarizePsiMeasurements } from "./psiCore";
 import { formatDiagnosticImpact, webflowClassificationFor } from "./webflowPerformance";
 import { nativeElementDisposition, nativeRecommendationOpportunities, unavailableNativeElementScan } from "./nativeElements";
 import { summarizeCulpritEvidence } from "./culpritEvidence";
-import { alertFieldContext } from "./fieldPrioritization";
 import { reconcileFieldOnlyRecommendations } from "./fieldOnlyRecommendations";
 
 type CollectFn = typeof collect;
@@ -44,7 +44,7 @@ export interface CollectorDependencies {
   collectFn?: CollectFn;
   scanFn?: ScanFn;
   pageScanFn?: PageScanFn;
-  alertFn?: typeof postAlert;
+  alertFn?: typeof postWebhook;
   followupFn?: typeof postFollowup;
   now?: () => Date;
   nightlyConcurrency?: number;
@@ -62,7 +62,7 @@ function deps(options: CollectorDependencies) {
           nativeElements: unavailableNativeElementScan("native element scan not supplied"),
         })
         : scanPageContent),
-    alertFn: options.alertFn ?? postAlert,
+    alertFn: options.alertFn ?? postWebhook,
     followupFn: options.followupFn ?? postFollowup,
     now: options.now ?? (() => new Date()),
   };
@@ -143,13 +143,7 @@ export async function executePageRun(pageId: string, runId: string, options: Col
     ],
     completedAt,
   );
-  const next = await reconcileFieldOnlyRecommendations(d.dataStore, pageId, completedAt, runId);
-  const finalPage = next.pages.find((item) => item.id === pageId);
-  if (finalPage) {
-    const thresholds = effectivePerformanceThresholds(next.performanceThresholds, finalPage);
-    await maybeAlert(d.dataStore, finalPage, d.alertFn, thresholds);
-  }
-  return next;
+  return reconcileFieldOnlyRecommendations(d.dataStore, pageId, completedAt, runId);
 }
 
 /** Reserve and synchronously execute one run (used by nightly and tests). */
@@ -235,68 +229,6 @@ export async function insertRecommendations(
   });
 }
 
-function alertStrategies(page: WatchPage, thresholds: PerformanceThresholds): Strategy[] {
-  const candidates: Strategy[] = thresholds.devicePolicy === "preferred"
-    ? ["mobile"]
-    : ["mobile", "desktop"];
-  const regressing = candidates.filter((strategy) => pageHasPersistentRegression(page, strategy, thresholds));
-  if (thresholds.devicePolicy === "both") return regressing.length === candidates.length ? candidates : [];
-  return regressing;
-}
-
-function affectedAlertCategories(
-  page: WatchPage,
-  strategies: Strategy[],
-  thresholds: PerformanceThresholds,
-): string[] {
-  if (!page.baseline) return [];
-  return CATEGORIES.flatMap((category) => {
-    const affected = strategies.some((strategy) => {
-      const base = mediansOf(page.baseline![strategy]);
-      const current = page.current[strategy][category.key];
-      return base[category.key] - current >= thresholds.regression
-        && current < thresholds.regressionFloor;
-    });
-    return affected ? [category.label] : [];
-  });
-}
-
-function alertSignature(page: WatchPage, strategies: Strategy[], categories: string[], fieldSignature = "field-unavailable"): string {
-  return `${page.id}:${[...strategies].sort().join(",")}:${[...categories].sort().join(",")}:${fieldSignature}`;
-}
-
-async function maybeAlert(dataStore: DataStore, page: WatchPage, alertFn: typeof postAlert, thresholds: PerformanceThresholds): Promise<void> {
-  if (!page.baseline) return;
-  const strategies = alertStrategies(page, thresholds);
-  const affected = affectedAlertCategories(page, strategies, thresholds);
-  const field = affected.length
-    ? alertFieldContext(page, strategies, await dataStore.getCruxEvidence().catch(() => []))
-    : { signature: "field-unavailable" };
-  const signature = affected.length ? alertSignature(page, strategies, affected, field.signature) : null;
-  if (!signature) {
-    if (page.performanceAlertState) {
-      await dataStore.updateState((state) => {
-        const current = state.pages.find((item) => item.id === page.id);
-        if (current) delete current.performanceAlertState;
-      });
-    }
-    return;
-  }
-  if (page.performanceAlertState?.signature === signature) return;
-  const delivery = await alertFn(page.title, page.url, affected, field.text);
-  if (!delivery.sent) return;
-  await dataStore.updateState((state) => {
-    const current = state.pages.find((item) => item.id === page.id);
-    if (!current) return;
-    current.performanceAlertState = {
-      signature,
-      strategies,
-      categories: CATEGORIES.filter((category) => affected.includes(category.label)).map((category) => category.key),
-      sentAt: new Date().toISOString(),
-    };
-  });
-}
-
 /** Plain-English, one/two-sentence explanation of a newly-created recommendation. */
 async function summarizeRec(rec: Rec, page: WatchPage): Promise<string | null> {
   const prompt = `You are writing a plain-English explanation of a Lighthouse performance recommendation for a marketing team member, not a developer.
@@ -363,42 +295,19 @@ export async function enrichRecommendations(dataStore: DataStore, pageId: string
   });
 }
 
-/** Send the current run's drop alert at most once at the job-model level. */
+/** Mark post-commit notification work complete and try any now-ready daily digest. */
 export async function notifyCollectionJob(dataStore: DataStore, jobId: string): Promise<void> {
   const snapshot = await dataStore.getState();
   const job = (snapshot.jobs ?? []).find((item) => item.id === jobId);
   if (!job || job.state !== "succeeded" || job.notifiedAt) return;
-  const page = snapshot.pages.find((item) => item.id === job.pageId);
-  if (!page) return;
-  const thresholds = effectivePerformanceThresholds(snapshot.performanceThresholds, page);
-  const strategies = alertStrategies(page, thresholds);
-  const affected = page.baseline ? affectedAlertCategories(page, strategies, thresholds) : [];
-  const field = affected.length
-    ? alertFieldContext(page, strategies, await dataStore.getCruxEvidence().catch(() => []))
-    : { signature: "field-unavailable" };
-  const signature = affected.length ? alertSignature(page, strategies, affected, field.signature) : null;
-  const duplicate = !!signature && page.performanceAlertState?.signature === signature;
-  let delivery: SlackDelivery = { sent: true };
-  if (signature && !duplicate) delivery = await postAlert(page.title, page.url, affected, field.text);
-  if (!delivery.sent && getEnv("SLACK_WEBHOOK_URL")) throw new Error(delivery.error ?? "Slack delivery failed");
   await dataStore.updateState((draft) => {
     const current = (draft.jobs ?? []).find((item) => item.id === jobId);
     if (current?.state === "succeeded" && !current.notifiedAt) {
       current.notifiedAt = new Date().toISOString();
       delete current.notificationError;
     }
-    const currentPage = draft.pages.find((item) => item.id === page.id);
-    if (!currentPage) return;
-    if (!signature) delete currentPage.performanceAlertState;
-    else if (duplicate || delivery.sent) {
-      currentPage.performanceAlertState = duplicate ? currentPage.performanceAlertState : {
-        signature,
-        strategies,
-        categories: CATEGORIES.filter((category) => affected.includes(category.label)).map((category) => category.key),
-        sentAt: new Date().toISOString(),
-      };
-    }
   });
+  await processDailyDigests(dataStore);
 }
 
 /** Capture a real baseline, then atomically apply it to the current page. */
@@ -474,6 +383,11 @@ export async function runNightly(options: CollectorDependencies = {}): Promise<{
   await Promise.all(Array.from({ length: Math.min(concurrency, ordered.length) }, () => worker()));
   await processFollowUps(options);
   await generateWatcherNote(d.dataStore, d.now());
+  const digestAt = d.now();
+  await d.dataStore.updateState((state) => {
+    ensureDailyDigest(state, dailyDigestCohortId(state, digestAt), [], digestAt);
+  });
+  await processDailyDigests(d.dataStore, digestAt, d.alertFn);
   return { ran, failed, coalesced };
 }
 

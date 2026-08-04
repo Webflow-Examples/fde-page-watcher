@@ -16,6 +16,7 @@ import { flagCapacityError, MAX_ACTIVE_PAGES, MAX_PRIORITY_PAGES, watchCapacity 
 import { movePageWithinFlag, reorderPageWithinFlag, sortWatchlistPages } from "@/lib/watchlistOrder";
 import { failedRunLabel } from "@/lib/collectionStatus";
 import { WebflowConnection } from "@/components/webflow-connection";
+import { alertWebhookUrlIsValid } from "@/lib/webhook";
 
 const GRID = "32px minmax(228px,2.4fr) 230px 1fr 120px";
 const PRIORITY_CHIP = flagChip("priority");
@@ -328,6 +329,8 @@ function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
     updatePerformanceThresholds,
     collectionSchedule,
     updateCollectionSchedule,
+    alertWebhookUrl,
+    updateAlertWebhookUrl,
     visitorExperienceVisible,
     setVisitorExperienceVisible,
   } = useStore();
@@ -337,6 +340,7 @@ function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
   const normalizedSchedule = normalizeCollectionSchedule(collectionSchedule);
   const [collectionTimeDraft, setCollectionTimeDraft] = useState(normalizedSchedule.localTime);
   const [collectionTimeZoneDraft, setCollectionTimeZoneDraft] = useState(normalizedSchedule.timeZone);
+  const [alertWebhookDraft, setAlertWebhookDraft] = useState(alertWebhookUrl ?? "");
   const [timeZones, setTimeZones] = useState<string[]>([]);
   const [thresholdDrafts, setThresholdDrafts] = useState<Record<NumericToleranceKey, string>>(() =>
     Object.fromEntries(NUMERIC_TOLERANCE_KEYS.map((key) => [key, String(thresholds[key])])) as Record<NumericToleranceKey, string>
@@ -399,6 +403,12 @@ function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
       timeZone: collectionTimeZoneDraft,
       overridden: true,
     });
+  };
+  const normalizedAlertWebhookDraft = alertWebhookDraft.trim();
+  const alertWebhookValid = !normalizedAlertWebhookDraft || alertWebhookUrlIsValid(normalizedAlertWebhookDraft);
+  const alertWebhookDirty = normalizedAlertWebhookDraft !== (alertWebhookUrl ?? "");
+  const saveAlertWebhook = () => {
+    if (alertWebhookValid) updateAlertWebhookUrl(normalizedAlertWebhookDraft);
   };
 
   const resetThresholds = (keys: NumericToleranceKey[]) => {
@@ -642,6 +652,46 @@ function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
           <>
 
         <WebflowConnection connectionUrl={pathFor("/api/settings/webflow")} />
+
+        <section aria-labelledby="alert-webhook-heading" style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 14, padding: "20px", marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 24 }}>
+            <div>
+              <div id="alert-webhook-heading" style={{ fontSize: 13.5, fontWeight: 600 }}>Alert webhook</div>
+              <div style={{ maxWidth: 720, marginTop: 4, color: C.muted, fontSize: 12, lineHeight: 1.5 }}>
+                Send one JSON digest after each day&apos;s scheduled collection cohort settles. It includes a stable digest ID, date, title, summary, text, and a machine-readable list of every page that needs attention.
+              </div>
+            </div>
+            <button
+              type="button"
+              disabled={!alertWebhookDirty || !alertWebhookValid}
+              onClick={saveAlertWebhook}
+              style={{ border: "none", background: C.accent, color: "#fff", fontSize: 12, fontWeight: 600, padding: "9px 13px", borderRadius: 7, cursor: "pointer", flex: "none" }}
+            >
+              Save webhook
+            </button>
+          </div>
+          <label htmlFor="alert-webhook-url" style={{ display: "grid", gap: 7, marginTop: 16, color: C.muted, fontSize: 11.5 }}>
+            Webhook URL
+            <input
+              id="alert-webhook-url"
+              type="url"
+              inputMode="url"
+              autoComplete="url"
+              maxLength={2048}
+              value={alertWebhookDraft}
+              onChange={(event) => setAlertWebhookDraft(event.target.value)}
+              placeholder="https://hooks.example.com/page-watch"
+              aria-invalid={!alertWebhookValid}
+              aria-describedby="alert-webhook-help"
+              style={{ width: "100%", background: C.bgElev, color: C.text, border: `1px solid ${alertWebhookValid ? C.border2 : C.redSoft}`, borderRadius: 7, padding: "9px 10px", fontSize: 13 }}
+            />
+          </label>
+          <div id="alert-webhook-help" aria-live="polite" style={{ marginTop: 7, color: alertWebhookValid ? C.faint : C.redSoft, fontSize: 11.5, lineHeight: 1.5 }}>
+            {alertWebhookValid
+              ? normalizedAlertWebhookDraft ? "HTTPS only. Treat this URL as a secret; it is used only for outbound alert delivery." : "Leave blank to disable webhook alerts."
+              : "Enter a valid HTTPS URL without embedded username or password credentials."}
+          </div>
+        </section>
 
         <section aria-labelledby="default-chart-device-heading" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 24, background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, padding: "17px 20px", marginBottom: 16 }}>
           <div>

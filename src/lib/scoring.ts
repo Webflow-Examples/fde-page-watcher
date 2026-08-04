@@ -279,7 +279,7 @@ export function classifyStatus(
   return "stable";
 }
 
-/** Persistent drops retain a stricter threshold for Slack alerting. */
+/** Persistent drops retain a stricter threshold for outbound alerting. */
 export function hasPersistentRegression(
   baselineMedian: ScoreByCategory,
   history: Night[],

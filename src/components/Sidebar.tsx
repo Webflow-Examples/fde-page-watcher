@@ -6,13 +6,14 @@ import { usePathname } from "next/navigation";
 import { useStore } from "./store";
 import { C } from "@/lib/ui";
 import { normalizeCollectionSchedule } from "@/lib/collectionSchedule";
-import { ClockIcon, DashboardIcon, EyeIcon, InboxIcon, TasksIcon } from "./icons";
+import { ClockIcon, DashboardIcon, EyeIcon, InboxIcon, PagesIcon, TasksIcon } from "./icons";
 import { GearIcon, MegaphoneIcon } from "@phosphor-icons/react";
 import { isFieldRecommendationActionable } from "@/lib/fieldOnlyRecommendations";
 import webflowSocialLogo from "../../public/webflow-social.png";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", Icon: DashboardIcon, badge: null as "inbox" | "tasks" | "escalations" | "watchlist" | null },
+  { href: "/pages", label: "Pages", Icon: PagesIcon, badge: null },
   { href: "/inbox", label: "Inbox", Icon: InboxIcon, badge: "inbox" as const },
   { href: "/tasks", label: "Tasks", Icon: TasksIcon, badge: "tasks" as const },
   { href: "/escalations", label: "Escalations", Icon: MegaphoneIcon, badge: "escalations" as const },
@@ -64,7 +65,9 @@ export function Sidebar() {
       <nav className="sidebar-nav" style={{ display: "flex", flexDirection: "column", gap: 3, padding: "6px 12px" }}>
         {navItems.map(({ href, label, Icon, badge }) => {
           const resolvedHref = pathFor(href);
-          const active = pathname === resolvedHref || (href === "/dashboard" && pathname === pathFor("/"));
+          const active = pathname === resolvedHref
+            || (href === "/dashboard" && pathname === pathFor("/"))
+            || (href === "/pages" && pathname.startsWith(`${resolvedHref}/`));
           const count = badge === "inbox" ? inboxCount : badge === "tasks" ? taskCount : badge === "escalations" ? escalationCount : badge === "watchlist" ? watchlistCount : 0;
           return (
             <Link
