@@ -18,6 +18,7 @@ import type {
   AppState,
   AgentCheck,
   CollectionJob,
+  KitesurfEvidence,
   LighthouseCollectionQuality,
   LighthouseOpportunity,
   Night,
@@ -32,7 +33,7 @@ import type {
 } from "../src/lib/types";
 import { mergeStrategyOpportunities, promotedDiagnostics } from "../src/lib/diagnostics";
 import { formatDiagnosticImpact, webflowClassificationFor } from "../src/lib/webflowPerformance";
-import { nativeRecommendationOpportunities } from "../src/lib/nativeElements";
+import { mergeNativeElementScans, nativeRecommendationOpportunities } from "../src/lib/nativeElements";
 import { summarizeCulpritEvidence } from "../src/lib/culpritEvidence";
 import { CATEGORIES, STRATEGIES } from "../src/lib/types";
 import {
@@ -54,6 +55,8 @@ import {
 } from "./crux";
 import { syncConfiguredWebflowSite } from "./webflow";
 import { ensureScheduledDailyDigest, processDailyDigests } from "../src/lib/dailyDigest";
+import { unavailableKitesurfEvidence } from "../src/lib/kitesurfEvidence";
+import { captureAndStoreKitesurfEvidence, type KitesurfCaptureResult } from "./kitesurf";
 
 const NIGHTLY_COLLECTION_CRON = "*/15 * * * *";
 const NIGHTLY_SCHEDULER_STATUS_KEY = "scheduler/latest.json";
@@ -74,6 +77,7 @@ interface StrategySummary {
 interface AgentSummary {
   checks: AgentCheck[];
   nativeElements: NativeElementScan;
+  kitesurf: KitesurfEvidence;
   capturedAt: string;
 }
 
@@ -312,6 +316,7 @@ async function commitWorkflowAgent(
     const night = ensureWorkflowNight(page, payload, summary.capturedAt);
     night.agent = agent;
     night.nativeElements = summary.nativeElements;
+    night.kitesurf = summary.kitesurf;
     night.agentCapturedAt = summary.capturedAt;
     night.agentReadiness = captureAgentReadiness(
       agent,
@@ -360,6 +365,7 @@ async function commitWorkflowResult(env: Env, payload: DispatchPayload, result: 
     night.diagnostics = result.diagnostics;
     night.culpritEvidence = result.culpritEvidence;
     night.nativeElements = result.nativeElements;
+    night.kitesurf = result.kitesurf;
     night.collectionQuality = result.collectionQuality;
     night.cohortId = result.cohortId;
     night.measurementContext = result.measurementContext;
@@ -523,6 +529,7 @@ export class CollectorWorkflow extends WorkflowEntrypoint<Env, DispatchPayload> 
       let cruxError: string | undefined;
       let agent: AgentSummary | undefined;
       let agentError: string | undefined;
+      let kitesurf: KitesurfCaptureResult | undefined;
 
       for (let cycle = 0; cycle < EVIDENCE_RETRY_MAX_CYCLES; cycle += 1) {
         if (!crux) {
@@ -546,6 +553,35 @@ export class CollectorWorkflow extends WorkflowEntrypoint<Env, DispatchPayload> 
           }
         }
 
+        if (!kitesurf) {
+          kitesurf = await step.do(
+            "capture Kitesurf rendered evidence",
+            { timeout: "2 minutes" },
+            async (): Promise<KitesurfCaptureResult> => {
+              if (!payload.tenant) {
+                return { evidence: unavailableKitesurfEvidence("tenant scope unavailable") };
+              }
+              try {
+                return await captureAndStoreKitesurfEvidence(this.env, {
+                  tenant: payload.tenant,
+                  pageId: payload.pageId,
+                  runId: payload.runId,
+                  url: payload.url,
+                });
+              } catch (error) {
+                const unavailable = unavailableKitesurfEvidence(error);
+                console.warn(JSON.stringify({
+                  message: "Kitesurf rendered probe unavailable",
+                  jobId: payload.jobId,
+                  pageId: payload.pageId,
+                  error: unavailable.reason,
+                }));
+                return { evidence: unavailable };
+              }
+            },
+          );
+        }
+
         if (!agent) {
           try {
             const collectedAgent = await step.do(
@@ -555,7 +591,8 @@ export class CollectorWorkflow extends WorkflowEntrypoint<Env, DispatchPayload> 
                 const pageScan = await scanPageContent(payload.url);
                 return {
                   checks: pageScan.agent,
-                  nativeElements: pageScan.nativeElements,
+                  nativeElements: mergeNativeElementScans(pageScan.nativeElements, kitesurf?.nativeElements),
+                  kitesurf: kitesurf?.evidence ?? unavailableKitesurfEvidence("probe not attempted"),
                   capturedAt: new Date().toISOString(),
                 };
               },
@@ -760,6 +797,7 @@ export class CollectorWorkflow extends WorkflowEntrypoint<Env, DispatchPayload> 
         samples: { mobile: mobile.sampleSize, desktop: desktop.sampleSize },
         agent: agent.checks,
         nativeElements: agent.nativeElements,
+        kitesurf: agent.kitesurf,
         opportunities: mobile.opportunities,
         opportunitiesByStrategy: {
           mobile: mobile.opportunities,

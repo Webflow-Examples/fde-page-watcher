@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { scanPageContent } from "../agentReadiness";
 import {
   detectNativeWebflowElements,
+  mergeNativeElementScans,
   nativeElementIssuesForPage,
   nativeElementScan,
   nativeRecommendationOpportunities,
@@ -87,6 +88,24 @@ describe("native Webflow element detection", () => {
     const result = await scanPageContent("https://example.test");
     expect(result.nativeElements).toEqual({ status: "unavailable", findings: [], reason: "page unreachable" });
     expect(result.agent.every((check) => check.unavailable)).toBe(true);
+  });
+
+  it("adds rendered findings without discarding server-HTML evidence", () => {
+    const server = nativeElementScan('<div class="w-background-video"></div>');
+    const rendered = nativeElementScan(`
+      <div class="w-background-video"></div>
+      <div class="w-background-video"></div>
+      <div data-animation-type="lottie"></div>
+    `);
+
+    expect(mergeNativeElementScans(server, rendered)).toMatchObject({
+      status: "available",
+      findings: expect.arrayContaining([
+        expect.objectContaining({ id: "webflow-background-video", count: 2 }),
+        expect.objectContaining({ id: "webflow-lottie-eager", count: 1 }),
+      ]),
+    });
+    expect(mergeNativeElementScans(server, unavailableNativeElementScan("render failed"))).toEqual(server);
   });
 
   it("applies confirmed lifecycle rules while skipping unavailable scans", () => {

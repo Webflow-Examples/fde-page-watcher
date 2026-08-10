@@ -240,6 +240,36 @@ export function nativeElementScan(html: string): NativeElementScan {
   return { status: "available", findings: detectNativeWebflowElements(html) };
 }
 
+/** Preserve server-HTML findings while adding anything visible only after rendering. */
+export function mergeNativeElementScans(...scans: Array<NativeElementScan | undefined>): NativeElementScan {
+  const available = scans.filter((scan): scan is NativeElementScan => scan?.status === "available");
+  if (available.length === 0) {
+    return scans.find((scan): scan is NativeElementScan => !!scan)
+      ?? unavailableNativeElementScan("published page could not be inspected");
+  }
+  const findings = new Map<string, NativeElementFinding>();
+  for (const scan of available) {
+    for (const next of scan.findings) {
+      const current = findings.get(next.id);
+      if (!current) {
+        findings.set(next.id, next);
+        continue;
+      }
+      const source = next.count > current.count ? next : current;
+      const evidence = new Map<string, number>();
+      for (const item of [...(current.evidence ?? []), ...(next.evidence ?? [])]) {
+        evidence.set(item.label, Math.max(evidence.get(item.label) ?? 0, item.count));
+      }
+      findings.set(next.id, {
+        ...source,
+        signals: [...new Set([...current.signals, ...next.signals])],
+        evidence: [...evidence].map(([label, count]) => ({ label, count })),
+      });
+    }
+  }
+  return { status: "available", findings: [...findings.values()] };
+}
+
 export interface NativeElementLifecycle extends NativeElementFinding {
   key: string;
   status: PerformanceIssueStatus;

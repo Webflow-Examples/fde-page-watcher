@@ -5,7 +5,7 @@ import { useParams, usePathname, useRouter, useSearchParams } from "next/navigat
 import { ArrowUpRightIcon, CircleIcon } from "@phosphor-icons/react";
 import { useStore } from "@/components/store";
 import { CATEGORIES } from "@/lib/types";
-import type { AgentCheck, CategoryKey, CollectionJob, DevicePolicy, Night, PagePerformanceThresholdOverrides, PageStatus, RangeDays, Rec, WatchPage, WebflowRemediationLevel } from "@/lib/types";
+import type { AgentCheck, CategoryKey, CollectionJob, DevicePolicy, KitesurfEvidence, Night, PagePerformanceThresholdOverrides, PageStatus, RangeDays, Rec, WatchPage, WebflowRemediationLevel } from "@/lib/types";
 import { agentCheckKey, agentIgnoreOverrideMode, isAgentCheckIgnored, isAgentGroupIgnored, normalizeAgentIgnoreSettings, summarizeAgentChecks } from "@/lib/agentScoring";
 import { agentReadinessHistoryPoints } from "@/lib/agentHistory";
 import { effectivePerformanceThresholds } from "@/lib/performanceThresholds";
@@ -713,6 +713,7 @@ function HistoryTab({
         strategy,
         agentChecksRecorded: d.agent?.length ?? 0,
         agentReadiness: d.agentReadiness ?? null,
+        kitesurf: d.kitesurf ?? null,
       }, null, 2);
     }
     return JSON.stringify(
@@ -729,6 +730,7 @@ function HistoryTab({
         },
         agentChecksRecorded: d.agent?.length ?? 0,
         agentReadiness: d.agentReadiness ?? null,
+        kitesurf: d.kitesurf ?? null,
       },
       null,
       2,
@@ -867,6 +869,7 @@ function HistoryTab({
             nightHasStrategy(d, "desktop") ? "D PSI" : null,
             visitorSnapshot ? "CrUX" : null,
             Array.isArray(d.agent) ? "Agent" : null,
+            d.kitesurf?.status === "available" ? "Kitesurf" : null,
           ].filter((label): label is string => label !== null);
           const cell = (k: CategoryKey) => {
             if (!nightHasStrategy(d, strategy)) {
@@ -1294,6 +1297,55 @@ function OpportunitiesTab({ page, latest, strategy }: { page: WatchPage; latest:
   );
 }
 
+function formatProbeBytes(value: number): string {
+  if (value < 1_024) return `${Math.round(value)} B`;
+  if (value < 1_048_576) return `${(value / 1_024).toFixed(1)} KB`;
+  return `${(value / 1_048_576).toFixed(1)} MB`;
+}
+
+function KitesurfProbeCard({ evidence }: { evidence: KitesurfEvidence | null }) {
+  const metrics = evidence?.status === "available" ? [
+    { label: "HTTP status", value: evidence.httpStatus?.toString() ?? "—" },
+    { label: "DOM nodes", value: evidence.document?.domNodes.toLocaleString() ?? "—" },
+    { label: "Interactive", value: evidence.accessibility?.interactiveNodes.toLocaleString() ?? "—" },
+    { label: "Requests", value: evidence.network?.requests.toLocaleString() ?? "—" },
+    { label: "Network errors", value: evidence.network ? (evidence.network.failedRequests + evidence.network.errorResponses).toLocaleString() : "—" },
+    { label: "Runtime errors", value: ((evidence.runtime?.consoleErrors ?? 0) + (evidence.runtime?.pageErrors ?? 0)).toLocaleString() },
+    { label: "Reported transfer", value: evidence.network ? formatProbeBytes(evidence.network.transferBytes) : "—" },
+    { label: "Kitesurf DCL", value: evidence.diagnosticTimings?.domContentLoadedMs === undefined ? "—" : `${Math.round(evidence.diagnosticTimings.domContentLoadedMs)} ms` },
+  ] : [];
+  const tone = evidence?.status === "available" ? C.green : evidence ? C.amber : C.muted;
+  return (
+    <section aria-label="Kitesurf rendered-page probe" style={{ marginBottom: 20, background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, overflow: "hidden" }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 14, padding: "16px 18px", borderBottom: evidence?.status === "available" ? `1px solid ${C.border}` : undefined }}>
+        <div>
+          <div style={{ fontSize: 13.5, fontWeight: 650 }}>Kitesurf rendered-page probe</div>
+          <div style={{ marginTop: 3, fontSize: 11.5, lineHeight: 1.45, color: C.faint }}>
+            Stateless agent-browser evidence. Kitesurf timing is diagnostic only and is excluded from Lighthouse, CrUX, baselines, and status.
+          </div>
+        </div>
+        <span style={{ marginLeft: "auto", flex: "none", fontSize: 10.5, fontWeight: 650, color: tone, background: evidence?.status === "available" ? "rgba(53,208,127,0.12)" : evidence ? "rgba(255,184,77,0.12)" : "rgba(255,255,255,0.06)", padding: "3px 8px", borderRadius: 6 }}>
+          {evidence?.status === "available" ? "Rendered" : evidence ? "Unavailable" : "Awaiting probe"}
+        </span>
+      </div>
+      {evidence?.status === "available" ? (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(112px, 1fr))", gap: 1, background: C.border }}>
+          {metrics.map((metric) => (
+            <div key={metric.label} style={{ minWidth: 0, padding: "13px 15px", background: C.panel }}>
+              <div style={{ fontSize: 10.5, color: C.faint }}>{metric.label}</div>
+              <div style={{ marginTop: 4, fontSize: 14, fontWeight: 650, color: C.dim }}>{metric.value}</div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div style={{ padding: "14px 18px", fontSize: 12, color: evidence ? C.amber : C.muted }}>
+          {evidence ? `Probe unavailable: ${evidence.reason ?? "Kitesurf could not render this page"}. The HTTP agent-readiness scan remained active as fallback.` : "Run a new production collection to capture the first Kitesurf-rendered snapshot."}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function AgentTab({
   page,
   checks,
@@ -1321,8 +1373,10 @@ function AgentTab({
   const restores = normalizeAgentIgnoreSettings(page.agentIgnoreRestores);
   const defaults = normalizeAgentIgnoreSettings(store.agentIgnoreDefaults);
   const allApplicableUnavailable = checks.length > 0 && pass === 0 && fail === 0 && unavailable > 0;
+  const latestKitesurf = [...pageHistoryForRange(page, rangeDays)].reverse().find((night) => night.kitesurf)?.kitesurf ?? null;
   return (
     <div>
+      <KitesurfProbeCard evidence={latestKitesurf} />
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20, padding: "15px 18px", background: C.panel, border: `1px solid ${C.border}`, borderRadius: 11 }}>
         <div style={{ fontSize: 13, color: C.faint2 }}>{date ? `Recorded per check on ${date}.` : `No scan recorded in the selected ${rangeDays}-day range.`} Watch List defaults apply unless overridden here.</div>
         <div style={{ marginLeft: "auto", display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 16, fontSize: 12.5, fontWeight: 500 }}>

@@ -216,6 +216,55 @@ export interface NativeElementScan {
   reason?: string;
 }
 
+/** Compact, provider-specific evidence from one rendered Kitesurf page probe. */
+export interface KitesurfEvidence {
+  schemaVersion: 1;
+  engine: "kitesurf";
+  status: "available" | "unavailable";
+  capturedAt: string;
+  httpStatus?: number;
+  title?: string;
+  renderedContentHash?: string;
+  accessibilityHash?: string;
+  rawReportKey?: string;
+  document?: {
+    domNodes: number;
+    textCharacters: number;
+    headings: number;
+    links: number;
+    buttons: number;
+    forms: number;
+    images: number;
+    iframes: number;
+    serializedHtmlCharacters: number;
+    htmlRetained: boolean;
+  };
+  accessibility?: {
+    nodes: number;
+    interactiveNodes: number;
+  };
+  network?: {
+    requests: number;
+    failedRequests: number;
+    errorResponses: number;
+    thirdPartyHosts: number;
+    resourceEntries: number;
+    transferBytes: number;
+  };
+  runtime?: {
+    consoleErrors: number;
+    pageErrors: number;
+  };
+  /** Kitesurf-only diagnostics; never used as Chrome lab or visitor metrics. */
+  diagnosticTimings?: {
+    wallTimeMs: number;
+    responseStartMs?: number;
+    domContentLoadedMs?: number;
+    loadEventMs?: number;
+  };
+  reason?: string;
+}
+
 /**
  * Immutable agent-readiness result captured with the ignore configuration
  * effective for one collection. Keeping this alongside the raw checks prevents
@@ -261,6 +310,8 @@ export interface Night {
   culpritEvidence?: Partial<Record<Strategy, CulpritEvidence[]>>;
   /** Device-neutral findings from the published-page HTML scan. */
   nativeElements?: NativeElementScan;
+  /** Rendered, non-Chromium agent/browser evidence retained independently of PSI. */
+  kitesurf?: KitesurfEvidence;
   collectionQuality?: Partial<Record<Strategy, LighthouseCollectionQuality>>;
   cohortId?: string;
   evidenceStatus?: "trusted" | "provider-anomaly";
@@ -495,6 +546,7 @@ export interface CollectionResult {
   diagnostics?: Partial<Record<Strategy, AggregatedLighthouseFinding[]>>;
   culpritEvidence?: Partial<Record<Strategy, CulpritEvidence[]>>;
   nativeElements?: NativeElementScan;
+  kitesurf?: KitesurfEvidence;
   collectionQuality?: Partial<Record<Strategy, LighthouseCollectionQuality>>;
   cohortId?: string;
   measurementContext?: Partial<Record<Strategy, PsiMeasurementContext>>;

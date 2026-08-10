@@ -201,6 +201,7 @@ export async function commitCollectionResult(
       diagnostics: result.diagnostics,
       culpritEvidence: result.culpritEvidence,
       nativeElements: result.nativeElements,
+      kitesurf: result.kitesurf,
       collectionQuality: result.collectionQuality,
       cohortId: result.cohortId,
       measurementContext: result.measurementContext,
