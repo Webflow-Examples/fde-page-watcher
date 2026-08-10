@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Design System — Performance Dashboard</title>
+<style>
+  :root {
+    --bg: #0b0b0c;
+    --bg-elev: #0e0e10;
+    --panel: #131315;
+    --panel-2: #161619;
+    --border: #1e1e22;
+    --border-2: #26262a;
+    --text: #f4f4f5;
+    --text-dim: #c4c4c8;
+    --text-muted: #8a8a90;
+    --text-faint: #6c6c72;
+    --accent: #146ef5;
+    --accent-bright: #3b89ff;
+    --accent-soft: #5ea0ff;
+    --violet: #8a5cf6;
+    --violet-soft: #b79cff;
+    --green: #35d07f;
+    --amber: #ff9a3d;
+    --red: #ff5c6c;
+    --red-soft: #ff9a9f;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a { color: inherit; }
+
+  .wrap {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 48px 40px 96px;
+  }
+
+  header.page-head {
+    margin-bottom: 56px;
+  }
+
+  header.page-head h1 {
+    margin: 0 0 8px;
+    font-size: 30px;
+    font-weight: 650;
+    letter-spacing: -0.02em;
+  }
+
+  header.page-head p {
+    margin: 0;
+    max-width: 640px;
+    color: var(--text-muted);
+    font-size: 14px;
+    line-height: 1.55;
+  }
+
+  section.block {
+    margin-bottom: 64px;
+  }
+
+  section.block h2 {
+    margin: 0 0 6px;
+    font-size: 20px;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+  }
+
+  section.block > p.lede {
+    margin: 0 0 24px;
+    color: var(--text-muted);
+    font-size: 13px;
+    line-height: 1.5;
+    max-width: 620px;
+  }
+
+  .card {
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--panel);
+    padding: 20px;
+  }
+
+  code, .mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+  }
+
+  /* ---------- Color palette ---------- */
+  .swatch-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 14px;
+  }
+
+  .swatch {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--panel);
+  }
+
+  .swatch-color {
+    height: 64px;
+  }
+
+  .swatch-meta {
+    padding: 10px 12px 12px;
+  }
+
+  .swatch-name {
+    font-size: 12.5px;
+    font-weight: 600;
+    margin: 0 0 2px;
+  }
+
+  .swatch-hex {
+    margin: 0;
+    color: var(--text-faint);
+    font-size: 11px;
+  }
+
+  /* ---------- Spacing scale ---------- */
+  .spacing-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .spacing-row:last-child { border-bottom: 0; }
+
+  .spacing-label {
+    flex: none;
+    width: 64px;
+    color: var(--text-dim);
+    font-size: 12.5px;
+    font-weight: 600;
+  }
+
+  .spacing-bar-track {
+    flex: 1;
+    display: flex;
+    align-items: center;
+  }
+
+  .spacing-bar {
+    height: 14px;
+    background: linear-gradient(90deg, var(--accent), var(--accent-soft));
+    border-radius: 3px;
+  }
+
+  .spacing-px {
+    flex: none;
+    width: 56px;
+    text-align: right;
+    color: var(--text-faint);
+    font-size: 11.5px;
+  }
+
+  /* ---------- Radius ---------- */
+  .radius-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 14px;
+  }
+
+  .radius-sample {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .radius-box {
+    width: 64px;
+    height: 64px;
+    background: var(--panel-2);
+    border: 1px solid var(--border-2);
+  }
+
+  .radius-name {
+    font-size: 11.5px;
+    color: var(--text-muted);
+  }
+
+  /* ---------- Typography ---------- */
+  .type-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 20px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .type-row:last-child { border-bottom: 0; }
+
+  .type-meta {
+    flex: none;
+    width: 190px;
+    color: var(--text-faint);
+    font-size: 11.5px;
+  }
+
+  .type-sample {
+    flex: 1;
+    min-width: 0;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* ---------- Components: badges ---------- */
+  .row-wrap {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10.5px;
+    font-weight: 650;
+    padding: 2px 7px;
+    border-radius: 5px;
+    white-space: nowrap;
+  }
+
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+    font-size: 12.5px;
+    font-weight: 550;
+    padding: 4px 12px;
+    border-radius: 20px;
+  }
+
+  .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+  .tri {
+    width: 0; height: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-bottom: 7px solid currentColor;
+    display: inline-block;
+  }
+  .sq { width: 7px; height: 7px; display: inline-block; }
+
+  /* ---------- Components: buttons ---------- */
+  .btn {
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 7px 14px;
+    border-radius: 7px;
+    cursor: pointer;
+    border: 1px solid transparent;
+  }
+  .btn-primary { background: var(--accent); color: #fff; border: 0; }
+  .btn-secondary { background: rgba(255,255,255,0.03); border-color: var(--border-2); color: var(--text-dim); }
+  .btn-ghost { background: transparent; border: 0; color: var(--text-faint); font-weight: 550; font-size: 10.5px; padding: 4px 6px; }
+
+  /* ---------- Components: segmented control ---------- */
+  .segmented {
+    display: inline-flex;
+    gap: 3px;
+    padding: 3px;
+    border-radius: 9px;
+    background: #101014;
+  }
+  .segmented .seg-opt {
+    display: inline-flex;
+    align-items: center;
+    height: 28px;
+    padding: 0 12px;
+    border-radius: 7px;
+    font-size: 13px;
+    color: #6b6b76;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .segmented .seg-opt.is-selected {
+    background: rgba(59,137,255,0.16);
+    color: var(--accent-soft);
+    font-weight: 500;
+  }
+
+  /* ---------- Components: select menu ---------- */
+  .select-trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    height: 34px;
+    padding: 0 11px 0 12px;
+    border: 1px solid #2a2a33;
+    border-radius: 8px;
+    background: #131318;
+    color: #e9e9ee;
+    font-size: 14px;
+    width: 200px;
+  }
+  .select-trigger .chev { color: #8a8a96; font-size: 11px; }
+
+  /* ---------- Components: card & table ---------- */
+  .sample-card {
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--panel);
+    padding: 16px 18px;
+  }
+  .sample-card h4 {
+    margin: 0 0 4px;
+    font-size: 13px;
+    font-weight: 650;
+  }
+  .sample-card p {
+    margin: 0;
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+
+  .setting-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 18px;
+    padding: 15px 17px;
+    border: 1px solid var(--border);
+    border-radius: 11px;
+    background: rgba(255, 255, 255, 0.018);
+  }
+  .setting-card h4 { margin: 0 0 3px; font-size: 12.5px; font-weight: 600; }
+  .setting-card p { margin: 0; font-size: 11.5px; color: var(--text-faint); }
+
+  .ribbon {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-height: 64px;
+    padding: 0 20px;
+    border-radius: 12px;
+    border: 1px solid rgba(20,110,245,0.3);
+    background: linear-gradient(90deg, rgba(20,110,245,0.16), rgba(20,110,245,0.05));
+  }
+  .ribbon-icon {
+    display: inline-flex;
+    width: 22px; height: 22px;
+    align-items: center; justify-content: center;
+    border-radius: 6px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 12px;
+    flex: none;
+  }
+  .ribbon-label {
+    color: var(--accent-soft);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    flex: none;
+  }
+  .ribbon-msg { color: #d6d6de; font-size: 14px; margin: 0; }
+  .ribbon-msg strong { color: #fff; }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+
+  @media (max-width: 720px) {
+    .wrap { padding: 32px 18px 64px; }
+    .grid-2, .grid-3 { grid-template-columns: 1fr; }
+    .type-row { flex-direction: column; align-items: flex-start; gap: 6px; }
+    .type-meta { width: auto; }
+  }
+
+  .footnote {
+    margin-top: 6px;
+    color: var(--text-faint);
+    font-size: 11px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="page-head">
+    <h1>Design System</h1>
+    <p>A visual reference of the dark-theme tokens and components used across the Performance Dashboard app — sourced from <code class="mono">globals.css</code> and <code class="mono">lib/ui.ts</code>. Static reference only; not wired to live app state.</p>
+  </header>
+
+  <!-- COLOR PALETTE -->
+  <section class="block">
+    <h2>Color palette</h2>
+    <p class="lede">Neutral surfaces build the dark UI shell; a small accent set (blue, violet, green, amber, red) carries status, priority, and trend meaning throughout the app.</p>
+
+    <h3 style="font-size:13px;color:var(--text-muted);font-weight:600;margin:0 0 10px;">Surfaces</h3>
+    <div class="swatch-grid" style="margin-bottom:28px;">
+      <div class="swatch"><div class="swatch-color" style="background:#0B0B0C;"></div><div class="swatch-meta"><p class="swatch-name">bg</p><p class="swatch-hex">#0B0B0C</p></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#0E0E10;"></div><div class="swatch-meta"><p class="swatch-name">bg-elev</p><p class="swatch-hex">#0E0E10</p></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#131315;"></div><div class="swatch-meta"><p class="swatch-name">panel</p><p class="swatch-hex">#131315</p></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#161619;"></div><div class="swatch-meta"><p class="swatch-name">panel-2</p><p class="swatch-hex">#161619</p></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#1E1E22;"></div><div class="swatch-meta"><p class="swatch-name">border</p><p class="swatch-hex">#1E1E22</p></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#26262A;"></div><div class="swatch-meta"><p class="swatch-name">border-2</p><p class="swatch-hex">#26262A</p></div></div>
+    </div>
+
+    <h3 style="font-size:13px;color:var(--text-muted);font-weight:600;margin:0 0 10px;">Text</h3>
+    <div class="swatch-grid" style="margin-bottom:28px;">
+      <div class="swatch"><div class="swatch-color" style="background:#F4F4F5;"></div><div class="swatch-meta"><p class="swatch-name">text</p><p class="swatch-hex">#F4F4F5</p></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#C4C4C8;"></div><div class="swatch-meta"><p class="swatch-name">text-dim</p><p class="swatch-hex">#C4C4C8</p></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#8A8A90;"></div><div class="swatch-meta"><p class="swatch-name">text-muted</p><p class="swatch-hex">#8A8A90</p></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#6C6C72;"></div><div class="swatch-meta"><p class="swatch-name">text-faint</p><p class="swatch-hex">#6C6C72</p></div></div>
+    </div>
+
+    <h3 style="font-size:13px;color:var(--text-muted);font-weight:600;margin:0 0 10px;">Accent &amp; status</h3>
+    <div class="swatch-grid">
+      <div class="swatch"><div class="swatch-color" style="background:#146EF5;"></div><div class="swatch-meta"><p class="swatch-name">accent (blue)</p><p class="swatch-hex">#146EF5</p></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#3B89FF;"></div><div class="swatch-meta"><p class="swatch-name">accent-bright</p><p class="swatch-hex">#3B89FF</p></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#5EA0FF;"></div><div class="swatch-meta"><p class="swatch-name">accent-soft</p><p class="swatch-hex">#5EA0FF</p></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#8A5CF6;"></div><div class="swatch-meta"><p class="swatch-name">violet</p><p class="swatch-hex">#8A5CF6</p></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#B79CFF;"></div><div class="swatch-meta"><p class="swatch-name">violet-soft</p><p class="swatch-hex">#B79CFF</p></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#35D07F;"></div><div class="swatch-meta"><p class="swatch-name">green (good)</p><p class="swatch-hex">#35D07F</p></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#FF9A3D;"></div><div class="swatch-meta"><p class="swatch-name">amber (warn)</p><p class="swatch-hex">#FF9A3D</p></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#FF5C6C;"></div><div class="swatch-meta"><p class="swatch-name">red (bad)</p><p class="swatch-hex">#FF5C6C</p></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#FF9A9F;"></div><div class="swatch-meta"><p class="swatch-name">red-soft</p><p class="swatch-hex">#FF9A9F</p></div></div>
+    </div>
+  </section>
+
+  <!-- SPACING SYSTEM -->
+  <section class="block">
+    <h2>Spacing system</h2>
+    <p class="lede">The app doesn't use a strict token scale — it uses a consistent set of small pixel steps for gaps, padding, and layout rhythm. The most common values observed across components:</p>
+    <div class="card">
+      <div class="spacing-row"><span class="spacing-label">xs · 4</span><div class="spacing-bar-track"><div class="spacing-bar" style="width:4px;"></div></div><span class="spacing-px">4px</span></div>
+      <div class="spacing-row"><span class="spacing-label">sm · 6</span><div class="spacing-bar-track"><div class="spacing-bar" style="width:6px;"></div></div><span class="spacing-px">6px</span></div>
+      <div class="spacing-row"><span class="spacing-label">7</span><div class="spacing-bar-track"><div class="spacing-bar" style="width:7px;"></div></div><span class="spacing-px">7px</span></div>
+      <div class="spacing-row"><span class="spacing-label">8</span><div class="spacing-bar-track"><div class="spacing-bar" style="width:8px;"></div></div><span class="spacing-px">8px</span></div>
+      <div class="spacing-row"><span class="spacing-label">md · 10</span><div class="spacing-bar-track"><div class="spacing-bar" style="width:10px;"></div></div><span class="spacing-px">10px</span></div>
+      <div class="spacing-row"><span class="spacing-label">12</span><div class="spacing-bar-track"><div class="spacing-bar" style="width:12px;"></div></div><span class="spacing-px">12px</span></div>
+      <div class="spacing-row"><span class="spacing-label">14</span><div class="spacing-bar-track"><div class="spacing-bar" style="width:14px;"></div></div><span class="spacing-px">14px</span></div>
+      <div class="spacing-row"><span class="spacing-label">lg · 16</span><div class="spacing-bar-track"><div class="spacing-bar" style="width:16px;"></div></div><span class="spacing-px">16px</span></div>
+      <div class="spacing-row"><span class="spacing-label">18</span><div class="spacing-bar-track"><div class="spacing-bar" style="width:18px;"></div></div><span class="spacing-px">18px</span></div>
+      <div class="spacing-row"><span class="spacing-label">20</span><div class="spacing-bar-track"><div class="spacing-bar" style="width:20px;"></div></div><span class="spacing-px">20px</span></div>
+      <div class="spacing-row"><span class="spacing-label">xl · 24</span><div class="spacing-bar-track"><div class="spacing-bar" style="width:24px;"></div></div><span class="spacing-px">24px</span></div>
+      <div class="spacing-row"><span class="spacing-label">2xl · 40</span><div class="spacing-bar-track"><div class="spacing-bar" style="width:40px;"></div></div><span class="spacing-px">40px</span></div>
+    </div>
+    <p class="footnote">Page shells typically use 18–40px outer padding (mobile → desktop); cards use 15–20px internal padding; inline gaps between related elements are 4–10px; section rhythm is 14–24px.</p>
+
+    <h3 style="font-size:13px;color:var(--text-muted);font-weight:600;margin:28px 0 10px;">Corner radius</h3>
+    <div class="radius-grid">
+      <div class="radius-sample"><div class="radius-box" style="border-radius:5px;"></div><span class="radius-name">5px · badges</span></div>
+      <div class="radius-sample"><div class="radius-box" style="border-radius:7px;"></div><span class="radius-name">7px · buttons</span></div>
+      <div class="radius-sample"><div class="radius-box" style="border-radius:8px;"></div><span class="radius-name">8px · inputs</span></div>
+      <div class="radius-sample"><div class="radius-box" style="border-radius:11px;"></div><span class="radius-name">11px · setting cards</span></div>
+      <div class="radius-sample"><div class="radius-box" style="border-radius:14px;"></div><span class="radius-name">14px · panels</span></div>
+      <div class="radius-sample"><div class="radius-box" style="border-radius:20px;"></div><span class="radius-name">20px · pills</span></div>
+    </div>
+  </section>
+
+  <!-- TYPOGRAPHY -->
+  <section class="block">
+    <h2>Typography</h2>
+    <p class="lede">Brand typeface is WF Visual Sans (variable), falling back to system UI fonts. This reference uses the system fallback stack since the font file isn't bundled here.</p>
+    <div class="card">
+      <div class="type-row"><span class="type-meta">Page title · 24–30px / 650</span><span class="type-sample" style="font-size:28px;font-weight:650;letter-spacing:-0.02em;">Performance Dashboard</span></div>
+      <div class="type-row"><span class="type-meta">Section heading · 20px / 650</span><span class="type-sample" style="font-size:20px;font-weight:650;">Watched pages</span></div>
+      <div class="type-row"><span class="type-meta">Body · 13–14px / 450</span><span class="type-sample" style="font-size:14px;font-weight:450;color:var(--text-dim);">Lighthouse and CrUX evidence combined into one verdict.</span></div>
+      <div class="type-row"><span class="type-meta">Muted / caption · 11.5–12px</span><span class="type-sample" style="font-size:12px;color:var(--text-muted);">Absent from two consecutive diagnostic captures.</span></div>
+      <div class="type-row"><span class="type-meta">Label / badge · 10.5px / 650</span><span class="type-sample" style="font-size:10.5px;font-weight:650;color:var(--accent-soft);letter-spacing:0.02em;">ACTIVE FIELD ISSUE</span></div>
+    </div>
+  </section>
+
+  <!-- COMPONENTS -->
+  <section class="block">
+    <h2>Components</h2>
+    <p class="lede">Representative components pulled from the shared component library (badges, status pills, segmented controls, select menus, cards, buttons, and the watcher ribbon banner).</p>
+
+    <div class="grid-2">
+      <div class="sample-card">
+        <h4 style="margin-bottom:10px;">Status badges</h4>
+        <div class="row-wrap">
+          <span class="badge" style="color:#FF9A9F;background:rgba(255,92,108,0.13);">Returned</span>
+          <span class="badge" style="color:#35D07F;background:rgba(53,208,127,0.13);">Resolved</span>
+          <span class="badge" style="color:#5EA0FF;background:rgba(59,137,255,0.13);">Verifying fix</span>
+          <span class="badge" style="color:#FF9A3D;background:rgba(255,154,61,0.13);">Active</span>
+        </div>
+      </div>
+
+      <div class="sample-card">
+        <h4 style="margin-bottom:10px;">Status pills (shape + color)</h4>
+        <div class="row-wrap">
+          <span class="status-pill" style="color:#35D07F;background:rgba(53,208,127,0.13);"><span class="dot" style="background:#35D07F;"></span>Improving</span>
+          <span class="status-pill" style="color:#FF9A3D;background:rgba(255,154,61,0.13);"><span class="tri" style="color:#FF9A3D;"></span>Regressing</span>
+          <span class="status-pill" style="color:#8A8A90;background:rgba(255,255,255,0.06);"><span class="sq" style="background:#8A8A90;"></span>Stable</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid-2" style="margin-top:14px;">
+      <div class="sample-card">
+        <h4 style="margin-bottom:10px;">Buttons</h4>
+        <div class="row-wrap">
+          <button class="btn btn-primary">Run diagnostics</button>
+          <button class="btn btn-secondary">View inbox</button>
+          <button class="btn btn-ghost">Reset</button>
+        </div>
+      </div>
+
+      <div class="sample-card">
+        <h4 style="margin-bottom:10px;">Segmented control</h4>
+        <div class="segmented">
+          <span class="seg-opt is-selected">All</span>
+          <span class="seg-opt">Regressions</span>
+          <span class="seg-opt">Low performance</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid-2" style="margin-top:14px;">
+      <div class="sample-card">
+        <h4 style="margin-bottom:10px;">Select menu</h4>
+        <div class="select-trigger"><span>Last 28 days</span><span class="chev">▾</span></div>
+      </div>
+
+      <div class="sample-card">
+        <h4 style="margin-bottom:10px;">Evidence chips</h4>
+        <div class="row-wrap">
+          <span class="badge" style="color:#5EA0FF;background:rgba(59,137,255,0.12);">LCP · 25%</span>
+          <span class="badge" style="color:#B79CFF;background:rgba(138,92,246,0.12);">Render-blocking CSS</span>
+          <span class="badge" style="color:#FF9A3D;background:rgba(255,154,61,0.13);">Needs fix</span>
+        </div>
+      </div>
+    </div>
+
+    <h3 style="font-size:13px;color:var(--text-muted);font-weight:600;margin:28px 0 10px;">Setting card</h3>
+    <div class="setting-card">
+      <div>
+        <h4>Slow LCP threshold</h4>
+        <p>Pages slower than this are flagged as low performance.</p>
+      </div>
+      <button class="btn btn-secondary" style="padding:6px 12px;font-size:12px;">2.5 s</button>
+    </div>
+
+    <h3 style="font-size:13px;color:var(--text-muted);font-weight:600;margin:28px 0 10px;">Watcher ribbon banner</h3>
+    <div class="ribbon">
+      <span class="ribbon-icon">✓</span>
+      <span class="ribbon-label">Watching</span>
+      <p class="ribbon-msg"><strong>3 pages</strong> improved since last capture</p>
+      <div style="margin-left:auto;display:flex;gap:12px;">
+        <button class="btn btn-secondary" style="padding:6px 12px;font-size:12px;">Inbox</button>
+        <button class="btn btn-primary" style="padding:6px 12px;font-size:12px;">Review</button>
+      </div>
+    </div>
+
+    <h3 style="font-size:13px;color:var(--text-muted);font-weight:600;margin:28px 0 10px;">Device status cards</h3>
+    <div class="grid-3">
+      <div style="display:flex;flex-direction:column;gap:14px;padding:11px;border:1px solid #35D07F;border-radius:10px;color:#35D07F;background:rgba(53,208,127,0.13);">
+        <span style="font-size:12px;font-weight:700;">Desktop</span>
+        <span style="display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:650;"><span class="dot" style="background:#35D07F;"></span>Improving</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:14px;padding:11px;border:1px solid #FF9A3D;border-radius:10px;color:#FF9A3D;background:rgba(255,154,61,0.13);">
+        <span style="font-size:12px;font-weight:700;">Mobile</span>
+        <span style="display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:650;"><span class="tri" style="color:#FF9A3D;"></span>Regressing</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:14px;padding:11px;border:1px solid #8A8A90;border-radius:10px;color:#8A8A90;background:rgba(255,255,255,0.06);">
+        <span style="font-size:12px;font-weight:700;">Tablet</span>
+        <span style="display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:650;"><span class="sq" style="background:#8A8A90;"></span>Stable</span>
+      </div>
+    </div>
+  </section>
+
+  <p class="footnote">Generated as a static reference from <code class="mono">src/app/globals.css</code> and <code class="mono">src/lib/ui.ts</code>. Open directly in a browser; no build step required.</p>
+</div>
+</body>
+</html>

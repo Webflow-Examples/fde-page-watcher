@@ -2,14 +2,14 @@ import type { PagePerformanceThresholdOverrides, PerformanceThresholds, WatchPag
 
 export const DEFAULT_PERFORMANCE_THRESHOLDS: PerformanceThresholds = {
   lowPerformance: 60,
-  regression: 8,
+  regression: 15,
   improvement: 5,
   confirmationRuns: 1,
   devicePolicy: "either",
   accessibility: 90,
   bestPractices: 90,
   seo: 90,
-  regressionFloor: 100,
+  regressionFloor: 95,
   agentReadiness: 100,
   newPageGraceRuns: 2,
   minimumFindingRuns: 1,

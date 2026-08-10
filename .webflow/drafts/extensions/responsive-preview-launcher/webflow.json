@@ -1,0 +1,31 @@
+{
+  "manifestVersion": 1,
+  "packageType": "extension",
+  "id": "responsive-preview-launcher",
+  "name": "responsive-preview-launcher",
+  "version": "1.0.0",
+  "displayName": "Responsive Preview Launcher",
+  "hostEnvironments": [
+    "desktop"
+  ],
+  "entrypoints": {
+    "logic": "src/extension.ts"
+  },
+  "capabilities": [],
+  "network": {
+    "access": "none"
+  },
+  "contributes": {
+    "extensionUi": [
+      {
+        "id": "responsive-preview-launcher.view",
+        "title": "Responsive Preview Launcher",
+        "entry": "view.html",
+        "activationEvents": [],
+        "requiredCapabilities": []
+      }
+    ],
+    "tools": [],
+    "commands": []
+  }
+}

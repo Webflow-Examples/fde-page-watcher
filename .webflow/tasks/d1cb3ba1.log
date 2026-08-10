@@ -1,0 +1,83 @@
+
+> fde-page-watcher@0.1.0 dev
+> next dev
+
+⚠ Port 3000 is in use by process 71143, using available port 3001 instead.
+▲ Next.js 16.2.10 (Turbopack)
+- Local:         http://localhost:3001
+- Network:       http://192.168.1.169:3001
+✓ Ready in 531ms
+
+ GET / 307 in 290ms (next.js: 102ms, application-code: 188ms)
+ GET /dashboard 200 in 166ms (next.js: 19ms, application-code: 147ms)
+ GET /pages 200 in 389ms (next.js: 372ms, application-code: 17ms)
+ GET /inbox 200 in 36ms (next.js: 19ms, application-code: 17ms)
+ GET /tasks 200 in 31ms (next.js: 16ms, application-code: 15ms)
+ GET /dashboard 200 in 13ms (next.js: 3ms, application-code: 10ms)
+ GET /pages/home?tab=opportunities 200 in 342ms (next.js: 327ms, application-code: 15ms)
+ GET /dashboard 200 in 19ms (next.js: 4ms, application-code: 15ms)
+ GET /dashboard 200 in 185ms (next.js: 5ms, application-code: 180ms)
+ GET /dashboard 200 in 117ms (next.js: 6ms, application-code: 111ms)
+ GET /dashboard 200 in 134ms (next.js: 1768µs, application-code: 133ms)
+ GET /dashboard 200 in 82ms (next.js: 1805µs, application-code: 80ms)
+ GET /pages 200 in 31ms (next.js: 6ms, application-code: 25ms)
+ GET /dashboard 200 in 137ms (next.js: 4ms, application-code: 133ms)
+ GET /dashboard 200 in 86ms (next.js: 3ms, application-code: 83ms)
+ GET /dashboard 200 in 151ms (next.js: 1424µs, application-code: 150ms)
+ GET /dashboard 200 in 114ms (next.js: 7ms, application-code: 108ms)
+ GET /dashboard 200 in 153ms (next.js: 7ms, application-code: 145ms)
+ GET /dashboard 200 in 100ms (next.js: 1815µs, application-code: 98ms)
+ GET /pages 200 in 17ms (next.js: 4ms, application-code: 13ms)
+ GET /pages 200 in 96ms (next.js: 2ms, application-code: 94ms)
+ GET /inbox 200 in 13ms (next.js: 3ms, application-code: 10ms)
+ GET /inbox 200 in 70ms (next.js: 1609µs, application-code: 68ms)
+ GET /dashboard 200 in 152ms (next.js: 4ms, application-code: 148ms)
+ GET /dashboard 200 in 105ms (next.js: 1480µs, application-code: 104ms)
+ GET /pages 200 in 18ms (next.js: 3ms, application-code: 15ms)
+ GET /pages 200 in 106ms (next.js: 1917µs, application-code: 104ms)
+✓ Compiled in 152ms
+ GET /dashboard 200 in 141ms (next.js: 6ms, application-code: 135ms)
+ GET /dashboard 200 in 99ms (next.js: 4ms, application-code: 95ms)
+ GET /dashboard 200 in 213ms (next.js: 34ms, application-code: 179ms)
+ GET /dashboard 200 in 116ms (next.js: 5ms, application-code: 111ms)
+ GET / 307 in 108ms (next.js: 13ms, application-code: 95ms)
+ GET /dashboard 200 in 63ms (next.js: 1266µs, application-code: 61ms)
+ GET /pages/home?tab=opportunities 200 in 58ms (next.js: 37ms, application-code: 21ms)
+ GET /dashboard 200 in 85ms (next.js: 5ms, application-code: 79ms)
+ GET /escalations 200 in 102ms (next.js: 86ms, application-code: 16ms)
+ GET /watchlist 200 in 36ms (next.js: 23ms, application-code: 13ms)
+ GET /settings 200 in 40ms (next.js: 27ms, application-code: 13ms)
+ GET /api/settings/webflow 503 in 67ms (next.js: 59ms, application-code: 8ms)
+⚠ Fast Refresh had to perform a full reload when ./src/lib/performanceThresholds.ts changed. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ GET /settings 200 in 46ms (next.js: 17ms, application-code: 29ms)
+ GET /settings 200 in 126ms (next.js: 1674µs, application-code: 125ms)
+ GET /settings 200 in 265ms (next.js: 70ms, application-code: 195ms)
+ GET /settings 200 in 249ms (next.js: 58ms, application-code: 191ms)
+ GET /api/settings/webflow 503 in 7ms (next.js: 3ms, application-code: 4ms)
+ POST /api/settings/performance-thresholds 200 in 71ms (next.js: 43ms, application-code: 27ms)
+ GET /dashboard 200 in 19ms (next.js: 5ms, application-code: 14ms)
+ GET /settings 200 in 44ms (next.js: 11ms, application-code: 33ms)
+ GET /api/settings/webflow 503 in 7ms (next.js: 2ms, application-code: 5ms)
+⚠ Fast Refresh had to perform a full reload when ./src/lib/performanceThresholds.ts changed. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ GET /settings 200 in 157ms (next.js: 12ms, application-code: 144ms)
+ GET /settings 200 in 191ms (next.js: 14ms, application-code: 177ms)
+ GET /settings 200 in 105ms (next.js: 20ms, application-code: 85ms)
+ GET /settings 200 in 33ms (next.js: 8ms, application-code: 24ms)
+ GET /settings 200 in 177ms (next.js: 1631µs, application-code: 176ms)
+ GET /api/settings/webflow 503 in 5ms (next.js: 2ms, application-code: 3ms)
+ POST /api/settings/performance-thresholds 200 in 26ms (next.js: 4ms, application-code: 22ms)
+✓ Compiled in 90ms
+✓ Compiled in 249ms
+ GET /api/settings/webflow 503 in 43ms (next.js: 21ms, application-code: 22ms)
+ GET /dashboard 200 in 35ms (next.js: 13ms, application-code: 23ms)
+ GET /api/settings/webflow 503 in 4ms (next.js: 1434µs, application-code: 2ms)
+ GET /watchlist 200 in 35ms (next.js: 11ms, application-code: 24ms)
+ GET /escalations 200 in 17ms (next.js: 6ms, application-code: 11ms)
+ GET /dashboard 200 in 118ms (next.js: 1184µs, application-code: 117ms)
+ GET /dashboard 200 in 66ms (next.js: 3ms, application-code: 64ms)
+ GET /escalations 200 in 17ms (next.js: 5ms, application-code: 13ms)
+ GET /watchlist 200 in 15ms (next.js: 4ms, application-code: 11ms)
+ GET /settings 200 in 16ms (next.js: 6ms, application-code: 10ms)
+ GET /api/settings/webflow 503 in 6ms (next.js: 1349µs, application-code: 5ms)
+ GET /api/settings/webflow 503 in 4ms (next.js: 1081µs, application-code: 3ms)
+[?25h
