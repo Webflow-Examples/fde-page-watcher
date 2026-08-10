@@ -58,6 +58,25 @@ function collectionResult(jobId: string, schemaVersion: 1 | 2 = 1): CollectionRe
       mobile: [{ auditId: "dom-size", title: "DOM structure", facts: [{ key: "nodes", label: "DOM nodes", value: 1_240, unit: "count" }], sampleRuns: 4 }],
     },
     nativeElements: nativeElementScan('<div class="w-background-video" data-video-urls="hero.mp4,hero.webm"></div>'),
+    kitesurf: {
+      schemaVersion: 1,
+      engine: "kitesurf",
+      status: "available",
+      capturedAt: "2026-07-20T10:02:30Z",
+      rawReportKey: `run-${jobId}-kitesurf`,
+      document: {
+        domNodes: 1_240,
+        textCharacters: 4_300,
+        headings: 8,
+        links: 24,
+        buttons: 3,
+        forms: 1,
+        images: 10,
+        iframes: 0,
+        serializedHtmlCharacters: 92_000,
+        htmlRetained: true,
+      },
+    },
   };
 }
 
@@ -103,6 +122,11 @@ describe("durable collection jobs", () => {
     expect(committed.pages[0].history[0].nativeElements).toMatchObject({
       status: "available",
       findings: [expect.objectContaining({ id: "webflow-background-video", count: 1 })],
+    });
+    expect(committed.pages[0].history[0].kitesurf).toMatchObject({
+      engine: "kitesurf",
+      status: "available",
+      document: { domNodes: 1_240 },
     });
     expect(committed.pages[0].history[0].culpritEvidence?.mobile).toEqual([
       expect.objectContaining({ auditId: "dom-size", facts: [expect.objectContaining({ value: 1_240 })] }),

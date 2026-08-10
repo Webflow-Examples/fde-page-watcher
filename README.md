@@ -62,7 +62,13 @@ Put these in `.env.local`.
   otherwise the Workflow sleeps durably and retries up to twice at one-hour
   intervals.
   Recommendations require a strict-majority Lighthouse finding across those
-  eligible runs. The Workflow also scans agent readiness and commits the
+  eligible runs. The Workflow also scans agent readiness and runs one fail-open
+  Kitesurf rendered-page probe. Kitesurf retains compact DOM, accessibility,
+  network, runtime-error, and diagnostic navigation evidence while staging the
+  rendered HTML and accessibility snapshot in R2. Its non-Chromium timings never
+  affect Lighthouse/CrUX scores, baselines, status, or collection success. The
+  rendered HTML improves native-element detection when available; the existing
+  HTTP scan remains the fallback. The Workflow commits the
   completed result directly into FDE storage. The SSO-protected Webflow app
   only makes authenticated outbound requests; the Worker never has to call
   into the Webflow Access tenant. Retries are durable, duplicates coalesce,
@@ -123,7 +129,8 @@ HTTP Basic layer and no `FDE_ACCESS_*` configuration. Non-interactive nightly
 and collector result endpoints remain protected by `CRON_SECRET`.
 
 1. Apply `migrations/` to the FDE-owned `page-watcher-fde` database, then deploy
-   `collector-worker/wrangler.jsonc`. The Worker needs `PAGESPEED_API_KEY`,
+   `collector-worker/wrangler.jsonc`. The Worker uses its `BROWSER` binding for
+   Kitesurf and needs `PAGESPEED_API_KEY`,
    `CRUX_API_KEY`, `CRON_SECRET`, and a base64-encoded 32-byte
    `WEBFLOW_TOKEN_ENCRYPTION_KEY` generated with `openssl rand -base64 32`.
    Its D1, R2, Workflow, 15-minute due-page/Webflow-activity scheduler, Monday

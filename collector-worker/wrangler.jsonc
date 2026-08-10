@@ -29,6 +29,9 @@
       "class_name": "CollectorWorkflow"
     }
   ],
+  "browser": {
+    "binding": "BROWSER"
+  },
   "d1_databases": [
     {
       "binding": "DB",
