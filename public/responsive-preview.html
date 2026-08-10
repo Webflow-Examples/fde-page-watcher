@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Responsive Preview — Desktop &amp; Mobile</title>
+<style>
+  :root {
+    --bg: #f4f5f7;
+    --panel-bg: #ffffff;
+    --border: #d8dbe0;
+    --text: #1b1f24;
+    --muted: #6b7280;
+    --accent: #146ef5;
+    --accent-hover: #0f5bd1;
+    --ok: #16a34a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 12px 16px;
+    background: var(--panel-bg);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  header h1 {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0;
+    white-space: nowrap;
+  }
+  .url-form {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1 1 320px;
+    min-width: 240px;
+  }
+  .url-form input[type="text"] {
+    flex: 1;
+    padding: 7px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 13px;
+    color: var(--text);
+    background: #fafbfc;
+  }
+  .url-form input[type="text"]:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: -1px;
+  }
+  button {
+    padding: 7px 14px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--panel-bg);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  button:hover { background: #f0f1f3; }
+  button.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  button.primary:hover { background: var(--accent-hover); }
+  button.toggle[aria-pressed="true"] {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  .auto-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .sync-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .sync-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--border);
+    display: inline-block;
+  }
+  .sync-dot.live { background: var(--ok); }
+  main {
+    display: flex;
+    gap: 16px;
+    padding: 16px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .pane {
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 480px;
+  }
+  .pane-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    background: #fafbfc;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .pane-header .label {
+    font-weight: 600;
+    color: var(--text);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    font-size: 11px;
+  }
+  .frame-wrap {
+    display: flex;
+    justify-content: center;
+    background: #eceef1;
+    padding: 16px;
+  }
+  .frame-wrap.desktop { min-height: 640px; }
+  .frame-wrap.mobile { min-height: 700px; }
+  iframe {
+    border: 1px solid var(--border);
+    background: #fff;
+    border-radius: 4px;
+  }
+  #desktopFrame {
+    width: 100%;
+    max-width: 1280px;
+    height: 640px;
+  }
+  #mobileFrame {
+    width: 390px;
+    height: 700px;
+  }
+  footer {
+    padding: 6px 16px 16px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  code {
+    background: #eceef1;
+    padding: 1px 5px;
+    border-radius: 4px;
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Responsive Preview</h1>
+  <form class="url-form" id="urlForm">
+    <input type="text" id="urlInput" value="/dashboard" spellcheck="false" aria-label="Preview path or URL" />
+    <button type="submit" class="primary">Load</button>
+    <button type="button" id="refreshBtn" title="Reload both panes">Refresh</button>
+  </form>
+  <button type="button" class="toggle" id="navSyncToggle" aria-pressed="true">Sync navigation</button>
+  <button type="button" class="toggle" id="scrollSyncToggle" aria-pressed="true">Sync scroll</button>
+  <label class="auto-toggle">
+    <input type="checkbox" id="autoRefresh" />
+    Auto-refresh every
+  </label>
+  <select id="autoInterval" style="padding:6px;border-radius:6px;border:1px solid var(--border);font-size:13px;">
+    <option value="2000">2s</option>
+    <option value="5000" selected>5s</option>
+    <option value="10000">10s</option>
+    <option value="30000">30s</option>
+  </select>
+  <span class="sync-status"><span class="sync-dot" id="syncDot"></span><span id="syncLabel">watching…</span></span>
+</header>
+
+<main>
+  <section class="pane">
+    <div class="pane-header">
+      <span class="label">Desktop</span>
+      <span id="desktopSize">1280 × 640</span>
+    </div>
+    <div class="frame-wrap desktop">
+      <iframe id="desktopFrame" title="Desktop preview"></iframe>
+    </div>
+  </section>
+
+  <section class="pane" style="flex: 0 0 auto;">
+    <div class="pane-header">
+      <span class="label">Mobile</span>
+      <span id="mobileSize">390 × 700</span>
+    </div>
+    <div class="frame-wrap mobile">
+      <iframe id="mobileFrame" title="Mobile preview"></iframe>
+    </div>
+  </section>
+</main>
+
+<footer>
+  Served from the same origin as your dev server, so navigation and scroll position stay mirrored between panes.
+  Type a path (e.g. <code>/dashboard</code>) or a full URL and click Load.
+</footer>
+
+<script>
+  var desktopFrame = document.getElementById('desktopFrame');
+  var mobileFrame = document.getElementById('mobileFrame');
+  var urlForm = document.getElementById('urlForm');
+  var urlInput = document.getElementById('urlInput');
+  var refreshBtn = document.getElementById('refreshBtn');
+  var autoRefresh = document.getElementById('autoRefresh');
+  var autoInterval = document.getElementById('autoInterval');
+  var navSyncToggle = document.getElementById('navSyncToggle');
+  var scrollSyncToggle = document.getElementById('scrollSyncToggle');
+  var syncDot = document.getElementById('syncDot');
+  var syncLabel = document.getElementById('syncLabel');
+  var timer = null;
+
+  var navSyncEnabled = true;
+  var scrollSyncEnabled = true;
+
+  // Tracks last-known pathname+search per frame so we can detect in-app navigation.
+  var lastPath = { desktop: null, mobile: null };
+  // Guards against feedback loops while we are programmatically syncing.
+  var suppressNav = { desktop: false, mobile: false };
+  var suppressScroll = { desktop: false, mobile: false };
+  var rafPending = { desktop: false, mobile: false };
+
+  function resolveUrl(value) {
+    var trimmed = (value || '').trim();
+    if (!trimmed) return '/';
+    if (trimmed.charAt(0) === '/' || trimmed.indexOf('http') === 0) return trimmed;
+    return '/' + trimmed;
+  }
+
+  function loadUrl(value) {
+    var resolved = resolveUrl(value);
+    lastPath.desktop = null;
+    lastPath.mobile = null;
+    desktopFrame.src = resolved;
+    mobileFrame.src = resolved;
+    setSyncLive(false);
+  }
+
+  function reload() {
+    var current = desktopFrame.src;
+    desktopFrame.src = current;
+    mobileFrame.src = current;
+  }
+
+  function setSyncLive(isLive) {
+    syncDot.classList.toggle('live', isLive);
+    syncLabel.textContent = isLive ? 'synced' : 'watching…';
+  }
+
+  function otherKey(key) { return key === 'desktop' ? 'mobile' : 'desktop'; }
+  function frameByKey(key) { return key === 'desktop' ? desktopFrame : mobileFrame; }
+
+  function currentPath(win) {
+    try {
+      return win.location.pathname + win.location.search + win.location.hash;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function attachFrameSync(frame, key) {
+    frame.addEventListener('load', function () {
+      var win;
+      try {
+        win = frame.contentWindow;
+      } catch (e) {
+        return; // cross-origin navigation (e.g. left localhost); nothing we can sync.
+      }
+      if (!win) return;
+
+      lastPath[key] = currentPath(win);
+      setSyncLive(true);
+
+      // Poll for client-side (pushState/replaceState) navigation, since those
+      // don't fire the iframe's load event.
+      var pollId = win.__responsivePreviewPoll;
+      if (pollId) clearInterval(pollId);
+      pollId = setInterval(function () {
+        if (suppressNav[key]) return;
+        var path = currentPath(win);
+        if (path !== null && path !== lastPath[key]) {
+          lastPath[key] = path;
+          if (navSyncEnabled) mirrorNav(key, path);
+        }
+      }, 400);
+      win.__responsivePreviewPoll = pollId;
+
+      // Scroll sync: listen on the framed document.
+      try {
+        win.addEventListener('scroll', function () {
+          if (!scrollSyncEnabled || suppressScroll[key]) return;
+          if (rafPending[key]) return;
+          rafPending[key] = true;
+          requestAnimationFrame(function () {
+            rafPending[key] = false;
+            mirrorScroll(key, win);
+          });
+        }, { passive: true });
+      } catch (e) {
+        // ignore if we cannot attach (shouldn't happen same-origin)
+      }
+    });
+  }
+
+  function mirrorNav(sourceKey, path) {
+    var targetKey = otherKey(sourceKey);
+    var targetFrame = frameByKey(targetKey);
+    var targetWin;
+    try {
+      targetWin = targetFrame.contentWindow;
+    } catch (e) {
+      return;
+    }
+    if (!targetWin) return;
+    var targetPath = currentPath(targetWin);
+    if (targetPath === path) return;
+
+    suppressNav[targetKey] = true;
+    try {
+      targetWin.location.replace(path);
+    } catch (e) {
+      // fall back to setting src on the iframe element directly
+      targetFrame.src = path;
+    }
+    lastPath[targetKey] = path;
+    setTimeout(function () { suppressNav[targetKey] = false; }, 200);
+  }
+
+  function mirrorScroll(sourceKey, sourceWin) {
+    var targetKey = otherKey(sourceKey);
+    var targetFrame = frameByKey(targetKey);
+    var targetWin;
+    try {
+      targetWin = targetFrame.contentWindow;
+    } catch (e) {
+      return;
+    }
+    if (!targetWin) return;
+
+    // Scale scroll position proportionally between the two document heights,
+    // since desktop and mobile layouts have different total scroll extents.
+    var sourceDoc = sourceWin.document.documentElement;
+    var targetDoc = targetWin.document.documentElement;
+    var sourceMax = Math.max(1, sourceDoc.scrollHeight - sourceWin.innerHeight);
+    var targetMax = Math.max(1, targetDoc.scrollHeight - targetWin.innerHeight);
+    var ratio = sourceWin.scrollY / sourceMax;
+    var targetY = Math.round(ratio * targetMax);
+
+    suppressScroll[targetKey] = true;
+    targetWin.scrollTo(0, targetY);
+    setTimeout(function () { suppressScroll[targetKey] = false; }, 100);
+  }
+
+  attachFrameSync(desktopFrame, 'desktop');
+  attachFrameSync(mobileFrame, 'mobile');
+
+  urlForm.addEventListener('submit', function (e) {
+    e.preventDefault();
+    loadUrl(urlInput.value);
+  });
+
+  refreshBtn.addEventListener('click', function () {
+    reload();
+  });
+
+  navSyncToggle.addEventListener('click', function () {
+    navSyncEnabled = !navSyncEnabled;
+    navSyncToggle.setAttribute('aria-pressed', String(navSyncEnabled));
+  });
+
+  scrollSyncToggle.addEventListener('click', function () {
+    scrollSyncEnabled = !scrollSyncEnabled;
+    scrollSyncToggle.setAttribute('aria-pressed', String(scrollSyncEnabled));
+  });
+
+  function updateTimer() {
+    if (timer) {
+      clearInterval(timer);
+      timer = null;
+    }
+    if (autoRefresh.checked) {
+      var ms = parseInt(autoInterval.value, 10) || 5000;
+      timer = setInterval(reload, ms);
+    }
+  }
+
+  autoRefresh.addEventListener('change', updateTimer);
+  autoInterval.addEventListener('change', updateTimer);
+
+  // Initial load.
+  loadUrl(urlInput.value);
+</script>
+</body>
+</html>

@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Responsive Preview (Desktop + Mobile)</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-size: 13px;
+        color: #1f2328;
+        background: #f6f7f9;
+      }
+      .toolbar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 12px;
+        background: #ffffff;
+        border-bottom: 1px solid #e2e4e8;
+        flex-wrap: wrap;
+      }
+      .toolbar label {
+        font-weight: 600;
+        color: #444;
+      }
+      .toolbar input {
+        font: inherit;
+        padding: 5px 8px;
+        border: 1px solid #d0d3d9;
+        border-radius: 6px;
+        min-width: 90px;
+      }
+      .toolbar input[data-path] {
+        min-width: 200px;
+        flex: 1 1 200px;
+      }
+      .toolbar button {
+        font: inherit;
+        padding: 6px 12px;
+        border: 1px solid #3b5bfd;
+        background: #3b5bfd;
+        color: #fff;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+      .toolbar button:hover {
+        background: #2f4bde;
+      }
+      .status {
+        margin-left: auto;
+        color: #767c87;
+        font-size: 12px;
+      }
+      .panes {
+        display: flex;
+        gap: 16px;
+        align-items: flex-start;
+        justify-content: center;
+        padding: 20px;
+        overflow: auto;
+      }
+      .pane {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        background: #ffffff;
+        border: 1px solid #e2e4e8;
+        border-radius: 10px;
+        padding: 12px;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+      }
+      .pane h2 {
+        margin: 0;
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #6b7280;
+      }
+      .pane .dims {
+        font-weight: 400;
+        text-transform: none;
+        color: #9aa0ab;
+        letter-spacing: normal;
+      }
+      .frame-shell {
+        border: 1px solid #d7dae0;
+        border-radius: 8px;
+        overflow: hidden;
+        background: #fff;
+      }
+      iframe {
+        display: block;
+        border: 0;
+        background: #fff;
+      }
+      #desktop-frame {
+        width: 1280px;
+        height: 800px;
+      }
+      #mobile-frame {
+        width: 390px;
+        height: 800px;
+      }
+      .empty-hint {
+        padding: 40px 20px;
+        text-align: center;
+        color: #9aa0ab;
+        max-width: 480px;
+        margin: 0 auto;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="toolbar">
+      <label for="port">Port</label>
+      <input id="port" type="text" inputmode="numeric" value="3000" data-port />
+      <label for="path">Path</label>
+      <input id="path" type="text" value="/dashboard" data-path />
+      <button type="button" data-load>Load</button>
+      <button type="button" data-reload>Reload both</button>
+      <span class="status" data-status></span>
+    </div>
+    <div class="panes" data-panes hidden>
+      <div class="pane">
+        <h2>Desktop <span class="dims">1280 × 800</span></h2>
+        <div class="frame-shell">
+          <iframe id="desktop-frame" title="Desktop preview"></iframe>
+        </div>
+      </div>
+      <div class="pane">
+        <h2>Mobile <span class="dims">390 × 800</span></h2>
+        <div class="frame-shell">
+          <iframe id="mobile-frame" title="Mobile preview"></iframe>
+        </div>
+      </div>
+    </div>
+    <div class="empty-hint" data-empty>
+      Enter your dev server port and path, then click Load. Both panes navigate
+      together so you can compare desktop and mobile layouts side by side.
+    </div>
+    <script data-webflow-view-entry="src/view.ts">
+(() => {
+  // src/view.ts
+  var portInput = document.querySelector("[data-port]");
+  var pathInput = document.querySelector("[data-path]");
+  var loadButton = document.querySelector("[data-load]");
+  var reloadButton = document.querySelector("[data-reload]");
+  var statusEl = document.querySelector("[data-status]");
+  var panesEl = document.querySelector("[data-panes]");
+  var emptyEl = document.querySelector("[data-empty]");
+  var desktopFrame = document.querySelector("#desktop-frame");
+  var mobileFrame = document.querySelector("#mobile-frame");
+  var DEFAULT_PORT = "3000";
+  var DEFAULT_PATH = "/dashboard";
+  function normalizedPath(raw) {
+    const trimmed = raw.trim();
+    if (!trimmed) return DEFAULT_PATH;
+    return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+  }
+  function buildUrl() {
+    const port = (portInput?.value ?? "").trim() || DEFAULT_PORT;
+    if (!/^\d{1,5}$/.test(port)) {
+      setStatus("Port must be numeric.");
+      return null;
+    }
+    const path = normalizedPath(pathInput?.value ?? "/");
+    return `http://localhost:${port}${path}`;
+  }
+  function setStatus(message) {
+    if (statusEl) statusEl.textContent = message;
+  }
+  function loadPreview() {
+    const url = buildUrl();
+    if (!url || !desktopFrame || !mobileFrame) return;
+    desktopFrame.src = url;
+    mobileFrame.src = url;
+    if (panesEl) panesEl.hidden = false;
+    if (emptyEl) emptyEl.hidden = true;
+    setStatus(`Loaded ${url}`);
+  }
+  function reloadPreview() {
+    if (desktopFrame?.src) {
+      desktopFrame.src = desktopFrame.src;
+    }
+    if (mobileFrame?.src) {
+      mobileFrame.src = mobileFrame.src;
+    }
+    setStatus("Reloaded both panes.");
+  }
+  loadButton?.addEventListener("click", loadPreview);
+  reloadButton?.addEventListener("click", reloadPreview);
+  portInput?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") loadPreview();
+  });
+  pathInput?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") loadPreview();
+  });
+})();
+</script>
+  </body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "files": [],
+  "references": [
+    {
+      "path": "./types/tsconfig.logic.json"
+    },
+    {
+      "path": "./types/tsconfig.view.json"
+    },
+    {
+      "path": "./types/tsconfig.block.json"
+    }
+  ]
+}

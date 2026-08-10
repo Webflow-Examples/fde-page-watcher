@@ -1,0 +1,31 @@
+{
+  "manifestVersion": 1,
+  "packageType": "extension",
+  "id": "design-system-inventory",
+  "name": "design-system-inventory",
+  "version": "1.0.0",
+  "displayName": "Design System Inventory",
+  "hostEnvironments": [
+    "desktop"
+  ],
+  "entrypoints": {
+    "logic": "src/extension.ts"
+  },
+  "capabilities": [],
+  "network": {
+    "access": "none"
+  },
+  "contributes": {
+    "extensionUi": [
+      {
+        "id": "design-system-inventory.view",
+        "title": "Design System Inventory",
+        "entry": "view.html",
+        "activationEvents": [],
+        "requiredCapabilities": []
+      }
+    ],
+    "tools": [],
+    "commands": []
+  }
+}

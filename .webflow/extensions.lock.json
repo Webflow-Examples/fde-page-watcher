@@ -1,0 +1,67 @@
+{
+  "$schema": "https://webflow.com/schemas/extensions-lockfile.v1.json",
+  "extensions": {
+    "design-system-inventory": {
+      "enabled": true,
+      "requestedCapabilities": [],
+      "review": {
+        "reasons": [],
+        "required": "none",
+        "state": "trusted"
+      },
+      "source": {
+        "path": ".webflow/extensions/design-system-inventory",
+        "type": "site"
+      },
+      "trust": {
+        "generatedDescriptorHash": "sha256:4131d57995937cc6053e6aae758eb82623166e883685e19ddec56a1f018d2c5d",
+        "logicArtifact": {
+          "path": "build/logic.mjs"
+        },
+        "packageFilesHash": "sha256:4cca0600e2b4067293b2582ad512cf593c2c9c150662ae158c80b97698877a9e"
+      }
+    },
+    "responsive-preview-dual": {
+      "enabled": true,
+      "requestedCapabilities": [],
+      "review": {
+        "reasons": [],
+        "required": "none",
+        "state": "trusted"
+      },
+      "source": {
+        "path": ".webflow/extensions/responsive-preview-dual",
+        "type": "site"
+      },
+      "trust": {
+        "generatedDescriptorHash": "sha256:96f7b51249c51817d6d2b024af0c881e969e870796d442149d8860a0b3e23701",
+        "logicArtifact": {
+          "path": "build/logic.mjs"
+        },
+        "packageFilesHash": "sha256:a92cb60ea61e0defc94eb951a052a09838f4f973825891508b29e47769fef4d8"
+      }
+    },
+    "responsive-preview-launcher": {
+      "enabled": true,
+      "requestedCapabilities": [],
+      "review": {
+        "reasons": [],
+        "required": "none",
+        "state": "trusted"
+      },
+      "source": {
+        "path": ".webflow/extensions/responsive-preview-launcher",
+        "type": "site"
+      },
+      "trust": {
+        "generatedDescriptorHash": "sha256:f6f7732cbb5f6113fbae2148db47c22cc53e56d69fc9fd1a9974376878ac4737",
+        "logicArtifact": {
+          "path": "build/logic.mjs"
+        },
+        "packageFilesHash": "sha256:0d8a913ea7e868d4b228daa94602da5e990ccaf8e5aa11def4107da0fe98df2a"
+      }
+    }
+  },
+  "hashAlgorithm": "sha256",
+  "lockfileVersion": 1
+}

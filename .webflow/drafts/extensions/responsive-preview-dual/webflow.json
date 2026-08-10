@@ -1,0 +1,31 @@
+{
+  "manifestVersion": 1,
+  "packageType": "extension",
+  "id": "responsive-preview-dual",
+  "name": "responsive-preview-dual",
+  "version": "1.0.0",
+  "displayName": "Responsive Preview (Desktop + Mobile)",
+  "hostEnvironments": [
+    "desktop"
+  ],
+  "entrypoints": {
+    "logic": "src/extension.ts"
+  },
+  "capabilities": [],
+  "network": {
+    "access": "none"
+  },
+  "contributes": {
+    "extensionUi": [
+      {
+        "id": "responsive-preview-dual.view",
+        "title": "Responsive Preview (Desktop + Mobile)",
+        "entry": "view.html",
+        "activationEvents": [],
+        "requiredCapabilities": []
+      }
+    ],
+    "tools": [],
+    "commands": []
+  }
+}

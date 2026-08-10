@@ -704,8 +704,8 @@ function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
               value={preferredStrategy}
               onChange={setPreferredStrategy}
               options={[
-                { value: "desktop", label: "Desktop first" },
-                { value: "mobile", label: "Mobile first" },
+                { value: "desktop", label: "Desktop" },
+                { value: "mobile", label: "Mobile" },
               ]}
             />
           </div>
