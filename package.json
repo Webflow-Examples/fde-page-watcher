@@ -18,6 +18,10 @@
     "collector:check": "tsc -p collector-worker/tsconfig.json",
     "collector:dry-run": "wrangler deploy --dry-run --config collector-worker/wrangler.jsonc",
     "collector:deploy": "wrangler deploy --config collector-worker/wrangler.jsonc",
+    "gateway:typegen": "wrangler types --config auth-gateway/wrangler.jsonc auth-gateway/worker-configuration.d.ts",
+    "gateway:check": "tsc -p auth-gateway/tsconfig.json",
+    "gateway:dry-run": "wrangler deploy --dry-run --config auth-gateway/wrangler.jsonc",
+    "gateway:deploy": "wrangler deploy --config auth-gateway/wrangler.jsonc",
     "test": "vitest run"
   },
   "dependencies": {

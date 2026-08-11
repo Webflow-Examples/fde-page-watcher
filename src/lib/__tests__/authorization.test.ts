@@ -28,4 +28,12 @@ describe("role resolution", () => {
     expect(accessFromRegistryState({ email: "added@webflow.com", source: "development" }, state).isAppAdmin).toBe(true);
     expect(accessFromRegistryState({ email: "other@webflow.com", source: "development" }, state).isAppAdmin).toBe(false);
   });
+
+  it("authenticates an uninvited email without granting application access", () => {
+    expect(accessFromRegistryState({ email: "uninvited@example.com", source: "cloudflare-access" }, buildInitialState("live"))).toEqual({
+      email: "uninvited@example.com",
+      isAppAdmin: false,
+      projectRoles: {},
+    });
+  });
 });

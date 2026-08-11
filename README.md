@@ -124,24 +124,27 @@ Put these in `.env.local`.
 
 ## Production setup
 
-The interactive app is protected by a Cloudflare Access self-hosted
-application using Email OTP. The Next server verifies the signed
-`Cf-Access-Jwt-Assertion` (RS256, issuer, application audience, activation and
-expiry) and then checks the email against the role registry on every request.
+The interactive app is reached through the
+[`auth-gateway/`](auth-gateway/README.md) Worker. A Cloudflare Access
+self-hosted application protects that Worker using Email OTP. The gateway
+forwards the signed `Cf-Access-Jwt-Assertion` to the Webflow Cloud origin, and
+the Next server verifies its RS256 signature, issuer, application audience,
+activation, and expiry before checking the email against the role registry on
+every request. The public Webflow origin remains fail-closed without a valid
+assertion.
 Local storage keeps only the last opened project ID; D1 remains authoritative
 for all app-admin and project membership decisions. Revoking a role therefore
 takes effect immediately even if the Access session is still valid.
 
-Create a dedicated Cloudflare Access group for Page Watch and use that group
-in the application's Allow policy with Email OTP. Configure
-`CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD`, `CF_ACCOUNT_ID`,
-`CF_ACCESS_GROUP_ID`, and the secret `CF_ACCESS_API_TOKEN`. The token needs
-Access Groups write permission so inviting or removing a user keeps the
-dedicated group aligned with the app's authoritative registry. The Access
-hosted login page supplies the email and authentication-code screens; no
-invitation email is sent by Page Watch. The inviter shares the app link.
-Seed the group with the three bootstrap admins before the first deployment;
-subsequent membership changes synchronize the complete authorized email list.
+Deploy `fde-page-watcher-gateway` and select that Worker as the destination of
+the Access application. Use an Email OTP Allow policy for all authenticated
+users. Access proves the email identity; the app's D1 role registry decides
+whether that email is an app administrator, project administrator, project
+viewer, or has no access. Configure `CF_ACCESS_TEAM_DOMAIN` and
+`CF_ACCESS_AUD` in Webflow Cloud. The Access-hosted login page supplies the
+email and authentication-code screens; no invitation email is sent by Page
+Watch. The inviter shares the app link. An authenticated but uninvited email
+sees the no-project-access screen and cannot read or mutate project data.
 
 The immutable bootstrap app administrators are `matthew@webflow.com`,
 `ben@webflow.com`, and `diego.rangel@webflow.com`. Additional app admins must

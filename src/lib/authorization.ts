@@ -1,4 +1,3 @@
-import { getEnv } from "./env";
 import { identityFromRequest, isBootstrapAppAdmin, normalizeEmail, validEmail, type Identity } from "./identity";
 import { getStore } from "./store";
 import type { AppAdminGrant, AppState, ProjectMembership, ProjectRole } from "./types";
@@ -116,7 +115,6 @@ export async function addAppAdmin(emailInput: string, actor: string): Promise<Ap
       draft.appAdmins.push({ email, invitedBy: normalizeEmail(actor), invitedAt: new Date().toISOString() });
     }
   });
-  await syncCloudflareAccessGroup();
   return listAppAdmins();
 }
 
@@ -126,7 +124,6 @@ export async function removeAppAdmin(emailInput: string): Promise<AppAdminView[]
   await getStore(ADMIN_REGISTRY_TENANT).updateState((draft) => {
     draft.appAdmins = validAppAdmins(draft).filter((grant) => grant.email !== email);
   });
-  await syncCloudflareAccessGroup();
   return listAppAdmins();
 }
 
@@ -161,7 +158,6 @@ export async function setProjectMember(input: {
       invitedAt: new Date().toISOString(),
     });
   });
-  await syncCloudflareAccessGroup();
   return listProjectMembers(input.projectId);
 }
 
@@ -177,44 +173,5 @@ export async function removeProjectMember(projectId: string, emailInput: string,
     }
     draft.projectMemberships = draft.projectMemberships.filter((membership) => membership !== target);
   });
-  await syncCloudflareAccessGroup();
   return listProjectMembers(projectId);
-}
-
-async function allAuthorizedEmails(): Promise<string[]> {
-  const state = await registryState();
-  return [...new Set([
-    "matthew@webflow.com",
-    "ben@webflow.com",
-    "diego.rangel@webflow.com",
-    ...validAppAdmins(state).map(({ email }) => email),
-    ...validMemberships(state).map(({ email }) => email),
-  ])].sort();
-}
-
-/** Keep a dedicated Access group aligned with the authoritative role registry. */
-async function syncCloudflareAccessGroup(): Promise<void> {
-  const accountId = getEnv("CF_ACCOUNT_ID")?.trim();
-  const groupId = getEnv("CF_ACCESS_GROUP_ID")?.trim();
-  const apiToken = getEnv("CF_ACCESS_API_TOKEN")?.trim();
-  if (!accountId || !groupId || !apiToken) {
-    if (process.env.NODE_ENV === "production") throw new Error("Cloudflare Access group synchronization is not configured");
-    return;
-  }
-  const endpoint = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/access/groups/${encodeURIComponent(groupId)}`;
-  const current = await fetch(endpoint, { headers: { authorization: `Bearer ${apiToken}` } });
-  const payload = await current.json().catch(() => null) as { success?: boolean; result?: { name?: string; exclude?: unknown[]; require?: unknown[] } } | null;
-  if (!current.ok || !payload?.success || !payload.result?.name) throw new Error("Could not read the Cloudflare Access group");
-  const updated = await fetch(endpoint, {
-    method: "PUT",
-    headers: { authorization: `Bearer ${apiToken}`, "content-type": "application/json" },
-    body: JSON.stringify({
-      name: payload.result.name,
-      include: (await allAuthorizedEmails()).map((email) => ({ email: { email } })),
-      exclude: payload.result.exclude ?? [],
-      require: payload.result.require ?? [],
-    }),
-  });
-  const result = await updated.json().catch(() => null) as { success?: boolean } | null;
-  if (!updated.ok || !result?.success) throw new Error("Could not update the Cloudflare Access group");
 }
