@@ -1,15 +1,16 @@
 import { NextResponse, after } from "next/server";
 import { startCollection } from "@/lib/startCollection";
+import { projectStore } from "@/lib/projects";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 20;
 
 /** Queue a baseline capture through the same durable collection path as runs. */
-export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   try {
-    const result = await startCollection(id, "baseline", after);
+    const result = await startCollection(id, "baseline", after, projectStore(req));
     return NextResponse.json(
       { state: result.state, queued: result.queued, coalesced: result.coalesced, jobId: result.jobId },
       { status: 202 },

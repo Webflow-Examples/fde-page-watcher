@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
-import { getStore } from "@/lib/store";
+import { projectStore } from "@/lib/projects";
 import { resolveMarkerIndex, scheduleFollowUps } from "@/lib/followups";
 import { isoDate, normalizeISODate } from "@/lib/ui";
 import type { TaskStatus } from "@/lib/types";
@@ -38,7 +38,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   };
 
   try {
-    const state = await getStore().addMarker(id, marker, (draft, committed) => {
+    const state = await projectStore(req).addMarker(id, marker, (draft, committed) => {
       if (body.recKey) {
         const rec = draft.recs.find((item) => item.key === body.recKey);
         if (!rec) throw new Error(`task ${body.recKey} not found`);
@@ -81,7 +81,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ error: "marker id, text, and a valid ISO date are required" }, { status: 400 });
   }
   try {
-    const store = getStore();
+    const store = projectStore(req);
     const state = await store.updateState((draft) => {
       const page = draft.pages.find((item) => item.id === id);
       if (!page) throw new Error(`page ${id} not found`);
@@ -115,7 +115,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
     return NextResponse.json({ error: "marker id is required" }, { status: 400 });
   }
   try {
-    const state = await getStore().updateState((draft) => {
+    const state = await projectStore(req).updateState((draft) => {
       const page = draft.pages.find((item) => item.id === id);
       if (!page) throw new Error(`page ${id} not found`);
       const marker = page.markers.find((item) => item.id === body.markerId);

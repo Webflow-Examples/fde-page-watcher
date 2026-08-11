@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { setAgentIgnore } from "@/lib/mutations";
 import type { AgentIgnoreOverrideMode, AgentIgnoreScope } from "@/lib/types";
+import { projectStore } from "@/lib/projects";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,7 +27,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   try {
-    const state = await setAgentIgnore(id, body.scope, value, validMode ? body.mode! : body.ignored!);
+    const state = await setAgentIgnore(id, body.scope, value, validMode ? body.mode! : body.ignored!, projectStore(req));
     return NextResponse.json({ state });
   } catch (error) {
     const message = String(error);

@@ -1,11 +1,18 @@
-import { launch } from "@cloudflare/playwright";
+import { launch, type SessionlessBrowser } from "@cloudflare/playwright";
 import { createFdeStore } from "./dataStore";
-import { safeKitesurfDetail, summarizeAriaSnapshot } from "../src/lib/kitesurfEvidence";
+import {
+  KITESURF_OPERATION_TIMEOUTS,
+  runKitesurfOperation,
+  safeKitesurfDetail,
+  summarizeAriaSnapshot,
+  type KitesurfOperationEvent,
+} from "../src/lib/kitesurfEvidence";
 import { nativeElementScan } from "../src/lib/nativeElements";
 import { normalizeUrl } from "../src/lib/psiCore";
 import type { KitesurfEvidence, NativeElementScan } from "../src/lib/types";
 
 const MAX_RETAINED_HTML_CHARACTERS = 2_000_000;
+const RENDERED_HTML_SCRIPT = `document.documentElement?.outerHTML || ""`;
 
 interface EvaluatedPageMetrics {
   domNodes: number;
@@ -98,12 +105,31 @@ export async function captureAndStoreKitesurfEvidence(
   env: Env,
   input: { tenant: string; pageId: string; runId: string; url: string },
 ): Promise<KitesurfCaptureResult> {
-  const browser = await launch(env.BROWSER, { browser: "kitesurf" });
+  const logOperation = (event: KitesurfOperationEvent) => console.log(JSON.stringify({
+    message: "Kitesurf operation",
+    pageId: input.pageId,
+    runId: input.runId,
+    ...event,
+  }));
+  const runOperation = <T>(operation: string, timeoutMs: number, capture: () => Promise<T>) =>
+    runKitesurfOperation(operation, timeoutMs, capture, logOperation);
+  let browser: SessionlessBrowser | undefined;
   try {
-    const context = await browser.newContext({
-      viewport: { width: 1440, height: 900 },
-    });
-    const page = await context.newPage();
+    browser = await runOperation(
+      "launch browser",
+      KITESURF_OPERATION_TIMEOUTS.launch,
+      () => launch(env.BROWSER, { browser: "kitesurf" }),
+    );
+    const context = await runOperation(
+      "create context",
+      KITESURF_OPERATION_TIMEOUTS.context,
+      () => browser!.newContext({ viewport: { width: 1440, height: 900 } }),
+    );
+    const page = await runOperation(
+      "create page",
+      KITESURF_OPERATION_TIMEOUTS.page,
+      () => context.newPage(),
+    );
     page.setDefaultTimeout(10_000);
 
     let requests = 0;
@@ -137,30 +163,54 @@ export async function captureAndStoreKitesurfEvidence(
     });
 
     const startedAt = Date.now();
-    const navigationResponse = await page.goto(target.toString(), {
-      waitUntil: "domcontentloaded",
-      timeout: 45_000,
-    });
+    const navigationResponse = await runOperation(
+      "navigate",
+      KITESURF_OPERATION_TIMEOUTS.navigation,
+      () => page.goto(target.toString(), { waitUntil: "domcontentloaded", timeout: 45_000 }),
+    );
     try {
-      await page.waitForLoadState("networkidle", { timeout: 10_000 });
+      await runOperation(
+        "wait for network idle",
+        KITESURF_OPERATION_TIMEOUTS.networkIdle,
+        () => page.waitForLoadState("networkidle", { timeout: 10_000 }),
+      );
     } catch {
       // Long-polling and analytics requests should not make the rendered probe fail.
     }
-    await page.waitForTimeout(500);
+    await runOperation(
+      "settle page",
+      KITESURF_OPERATION_TIMEOUTS.settle,
+      () => page.waitForTimeout(500),
+    );
 
-    const metricsJson = await page.evaluate<string>(pageMetricsScript());
+    const metricsJson = await runOperation(
+      "read page metrics",
+      KITESURF_OPERATION_TIMEOUTS.metrics,
+      () => page.evaluate<string>(pageMetricsScript()),
+    );
     const metrics = evaluatedPageMetrics(JSON.parse(metricsJson) as unknown);
-    const title = await page.title();
+    const title = await runOperation(
+      "read title",
+      KITESURF_OPERATION_TIMEOUTS.title,
+      () => page.title(),
+    );
+    const renderedHtml = metrics.serializedHtmlCharacters <= MAX_RETAINED_HTML_CHARACTERS
+      ? await runOperation(
+        "read rendered HTML",
+        KITESURF_OPERATION_TIMEOUTS.renderedHtml,
+        () => page.evaluate<string>(RENDERED_HTML_SCRIPT),
+      )
+      : undefined;
     let ariaSnapshot: string | undefined;
     try {
-      ariaSnapshot = await page.locator("body").ariaSnapshot({ timeout: 10_000 });
+      ariaSnapshot = await runOperation(
+        "read accessibility snapshot",
+        KITESURF_OPERATION_TIMEOUTS.accessibility,
+        () => page.locator("body").ariaSnapshot({ timeout: 10_000 }),
+      );
     } catch {
-      // The rest of the rendered probe remains useful if the beta AX path fails.
+      // Accessibility is independently bounded and optional; rendered HTML is already safe to retain.
     }
-
-    const renderedHtml = metrics.serializedHtmlCharacters <= MAX_RETAINED_HTML_CHARACTERS
-      ? await page.content()
-      : undefined;
     const [renderedContentHash, accessibilityHash] = await Promise.all([
       renderedHtml ? sha256(renderedHtml) : Promise.resolve(undefined),
       ariaSnapshot ? sha256(ariaSnapshot) : Promise.resolve(undefined),
@@ -207,24 +257,36 @@ export async function captureAndStoreKitesurfEvidence(
       },
     };
     const nativeElements = renderedHtml ? nativeElementScan(renderedHtml) : undefined;
-    await createFdeStore(input.tenant, env).putReport(input.pageId, rawReportKey, {
-      schemaVersion: 1,
-      engine: "kitesurf",
-      evidence,
-      renderedHtml,
-      renderedHtmlOmitted: renderedHtml === undefined,
-      accessibilitySnapshot: ariaSnapshot,
-      nativeElements,
-    });
+    await runOperation(
+      "store rendered report",
+      KITESURF_OPERATION_TIMEOUTS.store,
+      () => createFdeStore(input.tenant, env).putReport(input.pageId, rawReportKey, {
+        schemaVersion: 1,
+        engine: "kitesurf",
+        evidence,
+        renderedHtml,
+        renderedHtmlOmitted: renderedHtml === undefined,
+        accessibilitySnapshot: ariaSnapshot,
+        nativeElements,
+      }),
+    );
     return { evidence, nativeElements };
   } finally {
-    try {
-      await browser.close();
-    } catch (error) {
-      console.warn(JSON.stringify({
-        message: "Kitesurf browser close failed",
-        error: safeKitesurfDetail(error),
-      }));
+    if (browser) {
+      try {
+        await runOperation(
+          "close browser",
+          KITESURF_OPERATION_TIMEOUTS.close,
+          () => browser!.close(),
+        );
+      } catch (error) {
+        console.warn(JSON.stringify({
+          message: "Kitesurf browser close failed",
+          pageId: input.pageId,
+          runId: input.runId,
+          error: safeKitesurfDetail(error),
+        }));
+      }
     }
   }
 }

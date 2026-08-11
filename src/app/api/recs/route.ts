@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { advanceTask, setRecStatus } from "@/lib/mutations";
 import type { TaskStatus } from "@/lib/types";
+import { projectStore } from "@/lib/projects";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,16 +21,17 @@ interface Body {
  *                task also removes its conditional marker and follow-ups.
  */
 export async function POST(req: Request) {
+  const dataStore = projectStore(req);
   const body = (await req.json().catch(() => ({}))) as Body;
   if (!body.key) return NextResponse.json({ error: "key is required" }, { status: 400 });
   try {
-    if (body.action === "save") return NextResponse.json({ state: await setRecStatus(body.key, "task") });
-    if (body.action === "ignore") return NextResponse.json({ state: await setRecStatus(body.key, "ignored") });
+    if (body.action === "save") return NextResponse.json({ state: await setRecStatus(body.key, "task", dataStore) });
+    if (body.action === "ignore") return NextResponse.json({ state: await setRecStatus(body.key, "ignored", dataStore) });
     if (body.action === "advance") {
       if (body.to !== "todo" && body.to !== "in-progress") {
         return NextResponse.json({ error: "advance 'to' must be 'todo' or 'in-progress'" }, { status: 400 });
       }
-      return NextResponse.json({ state: await advanceTask(body.key, body.to) });
+      return NextResponse.json({ state: await advanceTask(body.key, body.to, dataStore) });
     }
     return NextResponse.json({ error: "unknown action" }, { status: 400 });
   } catch (err) {

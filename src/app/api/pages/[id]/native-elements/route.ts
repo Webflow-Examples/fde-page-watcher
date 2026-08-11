@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { setNativeElementDisposition } from "@/lib/mutations";
 import type { NativeElementDisposition } from "@/lib/types";
+import { projectStore } from "@/lib/projects";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,7 +21,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   try {
-    const state = await setNativeElementDisposition(id, findingId, body.disposition ?? null);
+    const state = await setNativeElementDisposition(id, findingId, body.disposition ?? null, projectStore(req));
     return NextResponse.json({ state });
   } catch (error) {
     const message = String(error);

@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useStore } from "./store";
 import { C } from "@/lib/ui";
 import { normalizeCollectionSchedule } from "@/lib/collectionSchedule";
 import { ClockIcon, DashboardIcon, EyeIcon, InboxIcon, PagesIcon, TasksIcon } from "./icons";
-import { GearIcon, MegaphoneIcon } from "@phosphor-icons/react";
+import { GearIcon, MegaphoneIcon, ShieldCheckIcon } from "@phosphor-icons/react";
 import { isFieldRecommendationActionable } from "@/lib/fieldOnlyRecommendations";
+import { SelectMenu } from "./select-menu";
 import webflowSocialLogo from "../../public/webflow-social.png";
 
 const navItems = [
@@ -23,7 +24,18 @@ const navItems = [
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { pages, recs, productEscalations, pathFor, collectionSchedule } = useStore();
+  const router = useRouter();
+  const {
+    pages,
+    recs,
+    productEscalations,
+    pathFor,
+    collectionSchedule,
+    projects,
+    project,
+    projectSwitching,
+    switchProject,
+  } = useStore();
   const inboxCount = recs.filter((r) => r.status === "inbox" && isFieldRecommendationActionable(r)).length;
   const taskCount = recs.filter((r) => r.status === "task").length;
   const watchlistCount = pages.length;
@@ -56,9 +68,23 @@ export function Sidebar() {
           unoptimized
           style={{ borderRadius: 7 }}
         />
-        <div className="sidebar-brand-text" style={{ lineHeight: 1.15 }}>
+        <div className="sidebar-brand-text" style={{ lineHeight: 1.15, minWidth: 0, flex: 1 }}>
           <div style={{ fontSize: 14.5, fontWeight: 600 }}>Page Watch</div>
-          <div style={{ fontSize: 11, color: C.muted }}>Brand Studio</div>
+          <SelectMenu
+            className="sidebar-project-menu"
+            ariaLabel="Switch project"
+            value={project.id}
+            options={projects.map((item) => ({ value: item.id, label: item.name }))}
+            disabled={projects.length < 2}
+            loading={projectSwitching}
+            triggerWidth="100%"
+            menuWidth={200}
+            onChange={async (nextProjectId) => {
+              const switched = await switchProject(nextProjectId);
+              if (!switched) throw new Error("Project switch failed");
+              router.push(pathFor("/dashboard"));
+            }}
+          />
         </div>
       </div>
 
@@ -115,7 +141,7 @@ export function Sidebar() {
         })}
       </nav>
 
-      <div className="sidebar-schedule" style={{ marginTop: "auto", padding: "26px 20px 22px" }}>
+      <div className="sidebar-schedule" style={{ marginTop: "auto", padding: "26px 20px 12px" }}>
         <div style={{ fontSize: 10.5, fontWeight: 550, letterSpacing: "0.06em", color: C.faint, textTransform: "uppercase", marginBottom: 10 }}>
           Next nightly run
         </div>
@@ -128,6 +154,27 @@ export function Sidebar() {
             Up to 5 independent runs per strategy via PSI, plus one agent-readiness scan.
           </div>
         </div>
+      </div>
+      <div className="sidebar-admin" style={{ padding: "0 12px 18px" }}>
+        <Link
+          href={pathFor("/admin")}
+          className="sidebar-admin-link"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            padding: "9px 10px",
+            borderRadius: 7,
+            color: pathname === pathFor("/admin") ? C.text : C.muted,
+            background: pathname === pathFor("/admin") ? "rgba(255,255,255,0.07)" : "transparent",
+            textDecoration: "none",
+            fontSize: 12.5,
+            fontWeight: 500,
+          }}
+        >
+          <ShieldCheckIcon size={16} />
+          <span>Admin</span>
+        </Link>
       </div>
     </aside>
   );

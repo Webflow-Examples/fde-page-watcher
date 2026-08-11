@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getStore } from "@/lib/store";
+import { projectStore } from "@/lib/projects";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,9 +10,9 @@ export const dynamic = "force-dynamic";
  * "Report" modal reads this instead of fabricating a payload (audit: audit
  * trail).
  */
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string; key: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ id: string; key: string }> }) {
   const { id, key } = await params;
-  const payload = await getStore().getReport(id, decodeURIComponent(key));
+  const payload = await projectStore(req).getReport(id, decodeURIComponent(key));
   if (payload == null) {
     return NextResponse.json({ error: "no stored report for this night" }, { status: 404 });
   }

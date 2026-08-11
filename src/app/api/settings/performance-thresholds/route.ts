@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { setPerformanceThresholds } from "@/lib/mutations";
 import { performanceThresholdsAreValid } from "@/lib/performanceThresholds";
 import type { PerformanceThresholds } from "@/lib/types";
+import { projectStore } from "@/lib/projects";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,7 +17,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const state = await setPerformanceThresholds(body);
+    const state = await setPerformanceThresholds(body, projectStore(req));
     return NextResponse.json({ state });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });

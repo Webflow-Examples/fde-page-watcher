@@ -1,4 +1,5 @@
 import { relayWebflowCollector, requestWebflowCollector } from "@/lib/webflowConnectionServer";
+import { projectForRequest } from "@/lib/projects";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,9 +11,9 @@ async function unavailable(error: unknown): Promise<Response> {
   );
 }
 
-export async function GET(): Promise<Response> {
+export async function GET(request: Request): Promise<Response> {
   try {
-    return relayWebflowCollector(await requestWebflowCollector("connection"));
+    return relayWebflowCollector(await requestWebflowCollector("connection", {}, fetch, projectForRequest(request).tenant));
   } catch (error) {
     return unavailable(error);
   }
@@ -48,15 +49,15 @@ export async function POST(request: Request): Promise<Response> {
         siteId: (input as { siteId: string }).siteId,
         token: (input as { token: string }).token,
       }),
-    }));
+    }, fetch, projectForRequest(request).tenant));
   } catch (error) {
     return unavailable(error);
   }
 }
 
-export async function DELETE(): Promise<Response> {
+export async function DELETE(request: Request): Promise<Response> {
   try {
-    return relayWebflowCollector(await requestWebflowCollector("connection", { method: "DELETE" }));
+    return relayWebflowCollector(await requestWebflowCollector("connection", { method: "DELETE" }, fetch, projectForRequest(request).tenant));
   } catch (error) {
     return unavailable(error);
   }

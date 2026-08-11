@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { removePage, setPageTitle } from "@/lib/mutations";
+import { projectStore } from "@/lib/projects";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,7 +21,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ error: "title must be 120 characters or fewer" }, { status: 400 });
   }
   try {
-    const state = await setPageTitle(id, title);
+    const state = await setPageTitle(id, title, projectStore(req));
     return NextResponse.json({ state });
   } catch (err) {
     const message = String(err);
@@ -32,10 +33,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 }
 
 /** Remove a page from the watchlist (and its recs / follow-ups). */
-export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   try {
-    const state = await removePage(id);
+    const state = await removePage(id, projectStore(req));
     return NextResponse.json({ state });
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });

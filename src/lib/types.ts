@@ -703,6 +703,14 @@ export interface ProductEscalation {
   evidence: EscalationEvidenceSnapshot;
 }
 
+/** Server-owned project metadata persisted in the private admin tenant. */
+export interface ManagedProjectRecord {
+  id: string;
+  name: string;
+  tenant: string;
+  createdAt: string;
+}
+
 /** The full application state — the single source of truth persisted per tenant. */
 export interface AppState {
   pages: WatchPage[];
@@ -721,6 +729,8 @@ export interface AppState {
   jobs?: CollectionJob[];
   followUps?: FollowUp[];
   watcherNote?: WatcherNote;
+  /** Present only in the private admin registry state, never in project state. */
+  managedProjects?: ManagedProjectRecord[];
 }
 
 export const TENANT = "brand-studio" as const;

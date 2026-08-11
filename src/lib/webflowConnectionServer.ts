@@ -19,12 +19,13 @@ export async function requestWebflowCollector(
   action: "connection" | "sync",
   init: RequestInit = {},
   fetchFn: typeof fetch = fetch,
+  tenant: string = deploymentTenant(),
 ): Promise<Response> {
   const headers = new Headers(init.headers);
   headers.set("authorization", `Bearer ${collectorSecret()}`);
   if (init.body !== undefined) headers.set("content-type", "application/json");
   return fetchFn(
-    `${collectorBaseUrl()}/data/${encodeURIComponent(deploymentTenant())}/webflow/${action}`,
+    `${collectorBaseUrl()}/data/${encodeURIComponent(tenant)}/webflow/${action}`,
     {
       ...init,
       headers,
