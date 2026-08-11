@@ -1,8 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+  KITESURF_OPERATION_TIMEOUTS,
   KITESURF_WORKFLOW_STEP_CONFIG,
+  runKitesurfOperation,
   safeKitesurfDetail,
   summarizeAriaSnapshot,
+  type KitesurfOperationEvent,
   unavailableKitesurfEvidence,
   withUnavailableKitesurfFallback,
 } from "../kitesurfEvidence";
@@ -58,5 +61,44 @@ describe("Kitesurf evidence", () => {
       reason: "WorkflowTimeoutError: Execution timed out after 90000ms",
     });
     expect(unavailable).toEqual(["WorkflowTimeoutError: Execution timed out after 90000ms"]);
+  });
+
+  it("records successful browser operations", async () => {
+    const events: KitesurfOperationEvent[] = [];
+    const result = await runKitesurfOperation("read rendered HTML", 100, async () => "<html></html>", (event) => events.push(event));
+
+    expect(result).toBe("<html></html>");
+    expect(events).toEqual([expect.objectContaining({
+      operation: "read rendered HTML",
+      outcome: "succeeded",
+    })]);
+  });
+
+  it("bounds experimental operations independently and records their errors", async () => {
+    vi.useFakeTimers();
+    try {
+      const events: KitesurfOperationEvent[] = [];
+      const operation = runKitesurfOperation(
+        "read accessibility snapshot",
+        25,
+        () => new Promise<never>(() => undefined),
+        (event) => events.push(event),
+      );
+      const rejection = expect(operation).rejects.toThrow(
+        "Kitesurf read accessibility snapshot timed out after 25ms",
+      );
+
+      await vi.advanceTimersByTimeAsync(25);
+      await rejection;
+      expect(KITESURF_OPERATION_TIMEOUTS.accessibility).toBe(12_000);
+      expect(events).toEqual([{
+        operation: "read accessibility snapshot",
+        outcome: "failed",
+        durationMs: 25,
+        error: "Kitesurf read accessibility snapshot timed out after 25ms",
+      }]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

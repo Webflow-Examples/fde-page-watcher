@@ -45,3 +45,10 @@
  GET /dashboard 200 in 62ms (next.js: 3ms, application-code: 58ms)
  GET / 307 in 66ms (next.js: 7ms, application-code: 59ms)
  GET /dashboard 200 in 56ms (next.js: 3ms, application-code: 53ms)
+ GET / 307 in 68ms (next.js: 8ms, application-code: 60ms)
+ GET /dashboard 200 in 61ms (next.js: 3ms, application-code: 58ms)
+ GET / 307 in 70ms (next.js: 14ms, application-code: 56ms)
+ GET /dashboard 200 in 64ms (next.js: 7ms, application-code: 57ms)
+ GET / 307 in 71ms (next.js: 14ms, application-code: 56ms)
+ GET /dashboard 200 in 80ms (next.js: 9ms, application-code: 71ms)
+[?25h
