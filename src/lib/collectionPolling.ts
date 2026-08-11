@@ -25,6 +25,31 @@ export interface CollectionPollerOptions {
   intervalMs?: number;
 }
 
+export interface CollectionRequestResult {
+  state?: AppState;
+  queued?: boolean;
+  coalesced?: boolean;
+  jobId?: string;
+}
+
+/** Describe what the server actually did instead of optimistically claiming a new run. */
+export function collectionRequestMessage(
+  pageTitle: string,
+  requestedKind: "run" | "baseline",
+  result: CollectionRequestResult,
+): string {
+  if (result.coalesced || result.queued === false) {
+    const job = result.state?.jobs?.find((item) => item.id === result.jobId);
+    if (job?.state === "waiting_for_evidence") {
+      return `Collection for ${pageTitle} is waiting for evidence and will retry automatically`;
+    }
+    return `Collection already in progress for ${pageTitle}`;
+  }
+  return requestedKind === "baseline"
+    ? `Baseline queued for ${pageTitle} — collecting in the background…`
+    : `Run started for ${pageTitle} — collecting in the background…`;
+}
+
 /**
  * Start one immediate, self-terminating reconciliation loop. The caller owns
  * state, so the loop survives route changes as long as the provider remains

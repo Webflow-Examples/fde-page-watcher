@@ -16,6 +16,7 @@ import type { NativeElementDisposition } from "./types";
 import type { ProductEscalationStatus } from "./types";
 import { buildProductEscalation, createEscalationEvidence, isProductEscalationStatus } from "./escalations";
 import { alertWebhookUrlIsValid } from "./webhook";
+import { COLLECTION_JOB_STALE_AFTER_MS, collectionJobIsStale } from "./collectionRetry";
 
 /**
  * Server-side domain mutations. Each executes inside the store's atomic
@@ -360,21 +361,39 @@ export function markRunFinished(id: string, runId: string, error?: string, dataS
 export function recoverStaleRuns(dataStore: DataStore = getStore(), now: Date = new Date()): Promise<AppState> {
   return withState((state) => {
     for (const page of state.pages) {
-      if (!page.runState || page.runState === "failed") continue;
-      const age = page.startedAt ? now.getTime() - Date.parse(page.startedAt) : Number.POSITIVE_INFINITY;
-      const durableJob = (state.jobs ?? []).some((item) => item.runId === page.runId && item.state === "running");
-      const staleAfter = durableJob ? 30 * 60 * 1000 : RUN_STALE_AFTER_MS;
-      if (!Number.isFinite(age) || age > staleAfter) {
+      const job = (state.jobs ?? []).find((item) =>
+        item.runId === page.runId
+        && (item.state === "queued"
+          || item.state === "dispatching"
+          || item.state === "running"
+          || item.state === "waiting_for_evidence"));
+      if (job && !collectionJobIsStale(job, now)) {
+        // The durable job is authoritative. This also repairs page records
+        // incorrectly failed by the legacy 15-minute page-only timeout while
+        // a Workflow was sleeping until its next PSI evidence retry.
+        page.runState = job.state as Exclude<WatchPage["runState"], "failed" | undefined>;
+        page.startedAt = page.startedAt ?? job.startedAt ?? job.createdAt;
+        delete page.lastError;
+        continue;
+      }
+      if (job) {
         page.runState = "failed";
         page.lastRunAt = now.toISOString();
-        page.lastError = `Run ${page.runId ?? "unknown"} exceeded the ${Math.round(staleAfter / 60_000)} minute stale limit`;
-        const job = (state.jobs ?? []).find((item) => item.runId === page.runId);
-        if (job && (job.state === "queued" || job.state === "dispatching" || job.state === "running")) {
-          job.state = "failed";
-          job.error = page.lastError;
-          job.updatedAt = now.toISOString();
-          job.completedAt = now.toISOString();
-        }
+        page.lastError = job.nextRetryAt
+          ? "Job did not resume after its scheduled PSI evidence retry"
+          : `Run ${page.runId ?? "unknown"} exceeded the ${Math.round(COLLECTION_JOB_STALE_AFTER_MS / 60_000)} minute stale limit`;
+        job.state = "failed";
+        job.error = page.lastError;
+        job.updatedAt = now.toISOString();
+        job.completedAt = now.toISOString();
+        continue;
+      }
+      if (!page.runState || page.runState === "failed") continue;
+      const age = page.startedAt ? now.getTime() - Date.parse(page.startedAt) : Number.POSITIVE_INFINITY;
+      if (!Number.isFinite(age) || age > RUN_STALE_AFTER_MS) {
+        page.runState = "failed";
+        page.lastRunAt = now.toISOString();
+        page.lastError = `Run ${page.runId ?? "unknown"} exceeded the ${Math.round(RUN_STALE_AFTER_MS / 60_000)} minute stale limit`;
       }
     }
   }, dataStore);

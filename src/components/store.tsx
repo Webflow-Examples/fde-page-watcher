@@ -5,7 +5,7 @@ import { DEFAULT_RANGE_DAYS } from "@/lib/types";
 import type { AgentIgnoreOverrideMode, AgentIgnoreScope, AppState, CategoryKey, CollectionSchedule, Flag, NativeElementDisposition, PagePerformanceThresholdOverrides, PerformanceThresholds, ProductEscalationStatus, RangeDays, ScoreByCategory, Strategy } from "@/lib/types";
 import type { CruxPageEvidence } from "@/lib/crux";
 import { updateAgentIgnoreOverride, updateAgentIgnoreSettings } from "@/lib/agentScoring";
-import { collectionSettlementMessage, hasActiveCollections, startCollectionPolling } from "@/lib/collectionPolling";
+import { collectionRequestMessage, collectionSettlementMessage, hasActiveCollections, startCollectionPolling, type CollectionRequestResult } from "@/lib/collectionPolling";
 import { effectivePerformanceThresholds, normalizePerformanceThresholdOverrides, normalizePerformanceThresholds } from "@/lib/performanceThresholds";
 import { localISODate } from "@/lib/ui";
 import { withBasePath } from "@/lib/paths";
@@ -788,12 +788,14 @@ export function StoreProvider({
     (id: string) => {
       const cur = dataRef.current;
       const p = cur.pages.find((x) => x.id === id);
-      flash(`Run started for ${p ? p.title : "this page"} — collecting in the background…`);
+      const title = p?.title ?? "this page";
+      flash(`Starting run for ${title}…`);
       fetch(pathFor(`/api/pages/${id}/run`), { method: "POST" })
         .then(async (r) => {
           if (!r.ok) throw new Error(`HTTP ${r.status}`);
-          const res = (await r.json().catch(() => null)) as { state?: AppState } | null;
+          const res = (await r.json().catch(() => null)) as CollectionRequestResult | null;
           if (res?.state) apply(res.state);
+          if (res) flash(collectionRequestMessage(title, "run", res));
         })
         .catch(() => flash("Couldn't start the run — try again"));
     },
@@ -803,12 +805,14 @@ export function StoreProvider({
   const captureBaseline = useCallback(
     (id: string) => {
       const page = dataRef.current.pages.find((item) => item.id === id);
-      flash(`Baseline queued for ${page?.title ?? "this page"} — collecting in the background…`);
+      const title = page?.title ?? "this page";
+      flash(`Starting baseline for ${title}…`);
       fetch(pathFor(`/api/pages/${id}/baseline`), { method: "POST" })
         .then(async (r) => {
           if (!r.ok) throw new Error(`HTTP ${r.status}`);
-          const res = (await r.json().catch(() => null)) as { state?: AppState } | null;
+          const res = (await r.json().catch(() => null)) as CollectionRequestResult | null;
           if (res?.state) apply(res.state);
+          if (res) flash(collectionRequestMessage(title, "baseline", res));
         })
         .catch(() => flash("Baseline capture failed"));
     },
