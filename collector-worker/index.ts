@@ -55,7 +55,11 @@ import {
 } from "./crux";
 import { syncConfiguredWebflowSite } from "./webflow";
 import { ensureScheduledDailyDigest, processDailyDigests } from "../src/lib/dailyDigest";
-import { unavailableKitesurfEvidence } from "../src/lib/kitesurfEvidence";
+import {
+  KITESURF_WORKFLOW_STEP_CONFIG,
+  unavailableKitesurfEvidence,
+  withUnavailableKitesurfFallback,
+} from "../src/lib/kitesurfEvidence";
 import { captureAndStoreKitesurfEvidence, type KitesurfCaptureResult } from "./kitesurf";
 
 const NIGHTLY_COLLECTION_CRON = "*/15 * * * *";
@@ -554,31 +558,28 @@ export class CollectorWorkflow extends WorkflowEntrypoint<Env, DispatchPayload> 
         }
 
         if (!kitesurf) {
-          kitesurf = await step.do(
-            "capture Kitesurf rendered evidence",
-            { timeout: "2 minutes" },
-            async (): Promise<KitesurfCaptureResult> => {
-              if (!payload.tenant) {
-                return { evidence: unavailableKitesurfEvidence("tenant scope unavailable") };
-              }
-              try {
+          kitesurf = await withUnavailableKitesurfFallback(
+            () => step.do(
+              "capture Kitesurf rendered evidence",
+              KITESURF_WORKFLOW_STEP_CONFIG,
+              async (): Promise<KitesurfCaptureResult> => {
+                if (!payload.tenant) {
+                  return { evidence: unavailableKitesurfEvidence("tenant scope unavailable") };
+                }
                 return await captureAndStoreKitesurfEvidence(this.env, {
                   tenant: payload.tenant,
                   pageId: payload.pageId,
                   runId: payload.runId,
                   url: payload.url,
                 });
-              } catch (error) {
-                const unavailable = unavailableKitesurfEvidence(error);
-                console.warn(JSON.stringify({
-                  message: "Kitesurf rendered probe unavailable",
-                  jobId: payload.jobId,
-                  pageId: payload.pageId,
-                  error: unavailable.reason,
-                }));
-                return { evidence: unavailable };
-              }
-            },
+              },
+            ),
+            (unavailable) => console.warn(JSON.stringify({
+              message: "Kitesurf rendered probe unavailable",
+              jobId: payload.jobId,
+              pageId: payload.pageId,
+              error: unavailable.reason,
+            })),
           );
         }
 
