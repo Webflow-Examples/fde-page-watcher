@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { projectStore } from "@/lib/projects";
+import { isProjectAccessError, projectStore } from "@/lib/projects";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,7 +12,15 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(req: Request, { params }: { params: Promise<{ id: string; key: string }> }) {
   const { id, key } = await params;
-  const payload = await projectStore(req).getReport(id, decodeURIComponent(key));
+  let payload: unknown;
+  try {
+    payload = await (await projectStore(req)).getReport(id, decodeURIComponent(key));
+  } catch (error) {
+    if (isProjectAccessError(error)) {
+      return NextResponse.json({ error: "Project not found" }, { status: 404 });
+    }
+    throw error;
+  }
   if (payload == null) {
     return NextResponse.json({ error: "no stored report for this night" }, { status: 404 });
   }

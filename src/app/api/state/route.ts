@@ -1,7 +1,8 @@
 import { NextResponse, after } from "next/server";
 import { finalizeCollectionJob, reconcileCollectionJobs } from "@/lib/collectionJobs";
 import { recoverStaleRuns } from "@/lib/mutations";
-import { projectStore } from "@/lib/projects";
+import { isProjectAccessError, projectStore } from "@/lib/projects";
+import type { DataStore } from "@/lib/store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,7 +16,15 @@ export const dynamic = "force-dynamic";
 // (audit High #2). The client polls this endpoint for the authoritative state.
 
 export async function GET(request: Request) {
-  const dataStore = projectStore(request);
+  let dataStore: DataStore;
+  try {
+    dataStore = await projectStore(request);
+  } catch (error) {
+    if (isProjectAccessError(error)) {
+      return NextResponse.json({ error: "Project not found" }, { status: 404 });
+    }
+    throw error;
+  }
   await reconcileCollectionJobs({ dataStore });
   const recovered = await recoverStaleRuns(dataStore);
   const now = new Date();

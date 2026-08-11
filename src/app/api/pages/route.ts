@@ -15,7 +15,7 @@ interface Body {
 
 /** Add a watched page (server-side domain mutation; replaces whole-state PUT). */
 export async function POST(req: Request) {
-  const dataStore = projectStore(req);
+  const dataStore = await projectStore(req);
   const body = (await req.json().catch(() => ({}))) as Body;
   if (!body.title?.trim() || !body.url?.trim()) {
     return NextResponse.json({ error: "title and url are required" }, { status: 400 });

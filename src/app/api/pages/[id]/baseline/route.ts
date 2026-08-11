@@ -10,7 +10,7 @@ export const maxDuration = 20;
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   try {
-    const result = await startCollection(id, "baseline", after, projectStore(req));
+    const result = await startCollection(id, "baseline", after, await projectStore(req));
     return NextResponse.json(
       { state: result.state, queued: result.queued, coalesced: result.coalesced, jobId: result.jobId },
       { status: 202 },

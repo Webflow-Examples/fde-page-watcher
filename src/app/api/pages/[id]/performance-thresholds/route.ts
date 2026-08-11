@@ -13,7 +13,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
   try {
     const { id } = await params;
-    return NextResponse.json({ state: await setPagePerformanceThresholdOverrides(id, body, projectStore(req)) });
+    return NextResponse.json({ state: await setPagePerformanceThresholdOverrides(id, body, await projectStore(req)) });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 400 });
   }

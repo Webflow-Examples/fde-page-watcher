@@ -21,7 +21,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ error: "title must be 120 characters or fewer" }, { status: 400 });
   }
   try {
-    const state = await setPageTitle(id, title, projectStore(req));
+    const state = await setPageTitle(id, title, await projectStore(req));
     return NextResponse.json({ state });
   } catch (err) {
     const message = String(err);
@@ -36,7 +36,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   try {
-    const state = await removePage(id, projectStore(req));
+    const state = await removePage(id, await projectStore(req));
     return NextResponse.json({ state });
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });

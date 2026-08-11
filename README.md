@@ -124,9 +124,29 @@ Put these in `.env.local`.
 
 ## Production setup
 
-The interactive app relies on the enclosing site's SSO. There is no second
-HTTP Basic layer and no `FDE_ACCESS_*` configuration. Non-interactive nightly
-and collector result endpoints remain protected by `CRON_SECRET`.
+The interactive app is protected by a Cloudflare Access self-hosted
+application using Email OTP. The Next server verifies the signed
+`Cf-Access-Jwt-Assertion` (RS256, issuer, application audience, activation and
+expiry) and then checks the email against the role registry on every request.
+Local storage keeps only the last opened project ID; D1 remains authoritative
+for all app-admin and project membership decisions. Revoking a role therefore
+takes effect immediately even if the Access session is still valid.
+
+Create a dedicated Cloudflare Access group for Page Watch and use that group
+in the application's Allow policy with Email OTP. Configure
+`CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD`, `CF_ACCOUNT_ID`,
+`CF_ACCESS_GROUP_ID`, and the secret `CF_ACCESS_API_TOKEN`. The token needs
+Access Groups write permission so inviting or removing a user keeps the
+dedicated group aligned with the app's authoritative registry. The Access
+hosted login page supplies the email and authentication-code screens; no
+invitation email is sent by Page Watch. The inviter shares the app link.
+Seed the group with the three bootstrap admins before the first deployment;
+subsequent membership changes synchronize the complete authorized email list.
+
+The immutable bootstrap app administrators are `matthew@webflow.com`,
+`ben@webflow.com`, and `diego.rangel@webflow.com`. Additional app admins must
+also use `@webflow.com`. Non-interactive nightly and collector result endpoints
+remain protected separately by `CRON_SECRET`.
 
 1. Apply `migrations/` to the FDE-owned `page-watcher-fde` database, then deploy
    `collector-worker/wrangler.jsonc`. The Worker uses its `BROWSER` binding for
@@ -139,7 +159,7 @@ and collector result endpoints remain protected by `CRON_SECRET`.
 2. Deploy the Webflow app code with `STORAGE_DRIVER` still unset. The app keeps
    reading and writing its existing Webflow-provisioned D1/R2 bindings at this
    stage.
-3. While signed into the app through SSO, make this same-origin request from
+3. While signed into the app as an app administrator, make this same-origin request from
    the browser console:
 
    ```js
@@ -179,7 +199,6 @@ so switching modes is reversible and never overwrites the demo dataset.
 
 ## Deferred integrations
 
-- Per-user identity and role-based authorization
 - Automated page remediation
 
 ## Product decisions

@@ -3,6 +3,7 @@ import { createCfStore, getLocalCloudflareBindings } from "@/lib/store/cfStore";
 import { deploymentTenant } from "@/lib/store";
 import { getEnv } from "@/lib/env";
 import type { AppState } from "@/lib/types";
+import { requireAppAdmin } from "@/lib/authorization";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -89,6 +90,7 @@ async function copyReports(url: string, tenant: string): Promise<number> {
  * supplied explicitly. The source bindings are never mutated or deleted.
  */
 export async function POST(request: Request) {
+  await requireAppAdmin(request);
   if (request.headers.get("x-page-watcher-migration") !== "copy-to-fde") {
     return NextResponse.json({ error: "missing migration confirmation header" }, { status: 400 });
   }

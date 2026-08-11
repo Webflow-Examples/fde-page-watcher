@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { escalationMarkdown } from "@/lib/escalations";
-import { projectStore } from "@/lib/projects";
+import { isProjectAccessError, projectStore } from "@/lib/projects";
+import type { AppState } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,7 +13,15 @@ function filename(value: string): string {
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const state = await projectStore(req).getState();
+  let state: AppState;
+  try {
+    state = await (await projectStore(req)).getState();
+  } catch (error) {
+    if (isProjectAccessError(error)) {
+      return NextResponse.json({ error: "Project not found" }, { status: 404 });
+    }
+    throw error;
+  }
   const escalation = (state.productEscalations ?? []).find((item) => item.id === id);
   if (!escalation) return NextResponse.json({ error: "escalation not found" }, { status: 404 });
   const format = new URL(req.url).searchParams.get("format");

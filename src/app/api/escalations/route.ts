@@ -17,7 +17,7 @@ interface Body {
 }
 
 export async function POST(req: Request) {
-  const dataStore = projectStore(req);
+  const dataStore = await projectStore(req);
   const body = (await req.json().catch(() => ({}))) as Body;
   try {
     if (body.action === "create") {

@@ -11,7 +11,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "visible must be a boolean" }, { status: 400 });
   }
   try {
-    return NextResponse.json({ state: await setVisitorExperienceVisible(body.visible, projectStore(req)) });
+    return NextResponse.json({ state: await setVisitorExperienceVisible(body.visible, await projectStore(req)) });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }

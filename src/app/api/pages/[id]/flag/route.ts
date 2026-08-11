@@ -18,7 +18,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: "flag must be 'priority', 'watching', or 'paused'" }, { status: 400 });
   }
   try {
-    const state = await setPageFlag(id, body.flag, projectStore(req));
+    const state = await setPageFlag(id, body.flag, await projectStore(req));
     return NextResponse.json({ state });
   } catch (err) {
     const message = String(err);

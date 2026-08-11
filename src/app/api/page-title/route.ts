@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { discoverPageTitle, PageTitleError } from "@/lib/pageTitle";
+import { authorizedProjectForRequest } from "@/lib/projects";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,6 +10,7 @@ interface Body {
 }
 
 export async function POST(req: Request) {
+  await authorizedProjectForRequest(req, "admin");
   const body = (await req.json().catch(() => ({}))) as Body;
   if (!body.url?.trim()) {
     return NextResponse.json({ error: "url is required" }, { status: 400 });

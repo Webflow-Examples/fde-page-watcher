@@ -17,7 +17,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const state = await setPerformanceThresholds(body, projectStore(req));
+    const state = await setPerformanceThresholds(body, await projectStore(req));
     return NextResponse.json({ state });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });

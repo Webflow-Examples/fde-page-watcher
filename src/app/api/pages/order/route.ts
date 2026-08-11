@@ -16,7 +16,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "pageIds must be an array of page ids" }, { status: 400 });
   }
   try {
-    const state = await setPageOrder(body.pageIds, projectStore(req));
+    const state = await setPageOrder(body.pageIds, await projectStore(req));
     return NextResponse.json({ state });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 400 });

@@ -23,11 +23,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: access.message }, { status: access.status });
   }
   try {
+    const dataStore = getStore();
+    const projectState = await dataStore.getState();
+    if (projectState.projectArchivedAt) {
+      return NextResponse.json({ ok: true, skipped: "project-archived", queued: 0, coalesced: 0, failed: [] });
+    }
     if (!getEnv("COLLECTOR_URL") && process.env.NODE_ENV !== "production") {
       const result = await runNightly();
       return NextResponse.json({ ok: true, local: true, ...result });
     }
-    const dataStore = getStore();
     const snapshot = await reconcileCollectionJobs({
       dataStore,
       onCommitted: (jobId) => after(() => finalizeCollectionJob(jobId, dataStore).catch((error) => {

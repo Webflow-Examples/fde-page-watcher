@@ -39,7 +39,7 @@ function ActionButtons({ t, advance }: { t: Rec; advance: (key: string, to: Task
 export default function TasksPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { pages, recs, visitorExperience, productEscalations = [], taskGroup, setTaskGroup, taskDescriptions, setTaskDescriptions, taskView, setTaskView, taskSort, sortTask, advanceTask, pathFor } = useStore();
+  const { pages, recs, visitorExperience, productEscalations = [], taskGroup, setTaskGroup, taskDescriptions, setTaskDescriptions, taskView, setTaskView, taskSort, sortTask, advanceTask, pathFor, canManageProject } = useStore();
   const dragKey = useRef<string | null>(null);
 
   const tasks = recs.filter((r) => r.status === "task");
@@ -188,7 +188,7 @@ export default function TasksPage() {
                     <div style={{ textAlign: "right", fontSize: 13, fontWeight: 600, color: C.amber }}>{t.savings}</div>
                     <div style={{ textAlign: "right", fontSize: 13, fontWeight: 600, color: C.dim }}>{effortLabel(t)}</div>
                     <div style={{ justifySelf: "end", display: "flex", alignItems: "center", gap: 8 }}>
-                      <ActionButtons t={t} advance={advanceTask} />
+                      {canManageProject ? <ActionButtons t={t} advance={advanceTask} /> : <span style={{ fontSize: 11.5, color: C.muted }}>Read only</span>}
                     </div>
                   </div>
                 ))}
@@ -211,10 +211,10 @@ export default function TasksPage() {
                     return (
                       <div
                         key={col.status}
-                        onDragOver={(e) => e.preventDefault()}
+                        onDragOver={(e) => { if (canManageProject) e.preventDefault(); }}
                         onDrop={(e) => {
                           e.preventDefault();
-                          if (dragKey.current) advanceTask(dragKey.current, col.status);
+                          if (canManageProject && dragKey.current) advanceTask(dragKey.current, col.status);
                           dragKey.current = null;
                         }}
                         style={{ background: "#0F0F11", border: `1px solid ${C.border}`, borderRadius: 14, padding: 14 }}
@@ -228,7 +228,7 @@ export default function TasksPage() {
                           {items.map((t) => (
                             <div
                               key={t.key}
-                              draggable
+                              draggable={canManageProject}
                               onDragStart={(e) => {
                                 dragKey.current = t.key;
                                 e.dataTransfer.effectAllowed = "move";
@@ -259,10 +259,10 @@ export default function TasksPage() {
                                       <CheckIcon size={13} style={{ color: C.green }} />
                                       Done {t.doneDate}
                                     </span>
-                                    <button onClick={() => advanceTask(t.key, "in-progress")} style={{ marginLeft: "auto", border: `1px solid ${C.border2}`, background: "rgba(255,255,255,0.03)", color: C.faint2, fontSize: 11.5, fontWeight: 500, padding: "6px 10px", borderRadius: 7, cursor: "pointer" }}>Reopen</button>
+                                    {canManageProject && <button onClick={() => advanceTask(t.key, "in-progress")} style={{ marginLeft: "auto", border: `1px solid ${C.border2}`, background: "rgba(255,255,255,0.03)", color: C.faint2, fontSize: 11.5, fontWeight: 500, padding: "6px 10px", borderRadius: 7, cursor: "pointer" }}>Reopen</button>}
                                   </>
                                 ) : (
-                                  <ActionButtons t={t} advance={advanceTask} />
+                                  canManageProject ? <ActionButtons t={t} advance={advanceTask} /> : null
                                 )}
                               </div>
                             </div>
