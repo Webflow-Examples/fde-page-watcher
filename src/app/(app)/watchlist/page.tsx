@@ -651,7 +651,10 @@ function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
         ) : (
           <>
 
-        <WebflowConnection connectionUrl={pathFor("/api/settings/webflow")} />
+        <WebflowConnection
+          connectionUrl={pathFor("/api/settings/webflow")}
+          syncUrl={pathFor("/api/settings/webflow/sync")}
+        />
 
         <section aria-labelledby="alert-webhook-heading" style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 14, padding: "20px", marginBottom: 16 }}>
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 24 }}>

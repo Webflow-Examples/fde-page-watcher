@@ -26,7 +26,7 @@ async function responseJson<T>(response: Response): Promise<T> {
   return value as T;
 }
 
-export function WebflowConnection({ connectionUrl }: { connectionUrl: string }) {
+export function WebflowConnection({ connectionUrl, syncUrl }: { connectionUrl: string; syncUrl: string }) {
   const [status, setStatus] = useState<WebflowConnectionStatus | null>(null);
   const [siteId, setSiteId] = useState("");
   const [token, setToken] = useState("");
@@ -74,7 +74,7 @@ export function WebflowConnection({ connectionUrl }: { connectionUrl: string }) 
     setBusy("sync");
     setError(null);
     try {
-      await responseJson(await fetch(`${connectionUrl}/sync`, { method: "POST" }));
+      await responseJson(await fetch(syncUrl, { method: "POST" }));
       await loadStatus();
     } catch (syncError) {
       setError(syncError instanceof Error ? syncError.message : "Could not sync Webflow activity");

@@ -14,6 +14,7 @@ import { applyWatchlistPageOrder, changePageFlagOrder } from "@/lib/watchlistOrd
 import { isTaskMarker, removeTaskMarker, taskMarkerText } from "@/lib/taskMarkers";
 import { recommendationNeedsEscalation } from "@/lib/escalations";
 import { pageTrend } from "@/lib/scoring";
+import type { Project } from "@/lib/projects";
 
 type SortDir = "asc" | "desc";
 interface SortState {
@@ -37,6 +38,12 @@ interface StoreValue extends AppState {
   visitorExperience: CruxPageEvidence[];
   basePath: string;
   pathFor: (path: string) => string;
+  projects: Project[];
+  project: Project;
+  projectSwitching: boolean;
+  switchProject: (id: string) => Promise<boolean>;
+  projectCreating: boolean;
+  createProject: (name: string) => Promise<Project | null>;
   // global strategy toggle
   strategy: Strategy;
   setStrategy: (s: Strategy) => void;
@@ -155,11 +162,15 @@ export function StoreProvider({
   initial,
   initialVisitorExperience = [],
   basePath = "",
+  projects: initialProjects,
+  initialProjectId,
   children,
 }: {
   initial: AppState;
   initialVisitorExperience?: CruxPageEvidence[];
   basePath?: string;
+  projects: Project[];
+  initialProjectId: string;
   children: React.ReactNode;
 }) {
   const [data, setData] = useState<AppState>(initial);
@@ -195,7 +206,22 @@ export function StoreProvider({
   const [form, setFormState] = useState<AddForm>({ title: "", url: "" });
   const [markerText, setMarkerText] = useState("");
   const [markerDate, setMarkerDate] = useState("");
-  const pathFor = useCallback((path: string) => withBasePath(basePath, path), [basePath]);
+  const [projectId, setProjectId] = useState(initialProjectId);
+  const [projectSwitching, setProjectSwitching] = useState(false);
+  const [projectCreating, setProjectCreating] = useState(false);
+  const [projects, setProjects] = useState(initialProjects);
+  const project = projects.find(({ id }) => id === projectId) ?? projects[0];
+  if (!project) throw new Error("StoreProvider requires at least one project");
+
+  const projectPathFor = useCallback((id: string, path: string) => {
+    const resolved = withBasePath(basePath, path);
+    if (!path.startsWith("/api/")) return resolved;
+    const hashIndex = resolved.indexOf("#");
+    const beforeHash = hashIndex === -1 ? resolved : resolved.slice(0, hashIndex);
+    const hash = hashIndex === -1 ? "" : resolved.slice(hashIndex);
+    return `${beforeHash}${beforeHash.includes("?") ? "&" : "?"}project=${encodeURIComponent(id)}${hash}`;
+  }, [basePath]);
+  const pathFor = useCallback((path: string) => projectPathFor(projectId, path), [projectId, projectPathFor]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -257,6 +283,62 @@ export function StoreProvider({
     toastTimer.current = setTimeout(() => setToast(null), 2800);
   }, []);
   useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
+
+  const switchProject = useCallback(async (nextId: string): Promise<boolean> => {
+    if (nextId === projectId || projectSwitching || !projects.some(({ id }) => id === nextId)) return false;
+    setProjectSwitching(true);
+    // Prevent an older mutation response from reconciling over the next project.
+    mutationSequenceRef.current += 1;
+    try {
+      const response = await fetch(projectPathFor(nextId, "/api/state"), { cache: "no-store" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const body = (await response.json().catch(() => null)) as {
+        state?: AppState;
+        visitorExperience?: CruxPageEvidence[];
+      } | null;
+      if (!body?.state) throw new Error("Project state unavailable");
+      apply(body.state);
+      setVisitorExperience(body.visitorExperience ?? []);
+      setProjectId(nextId);
+      setModal(null);
+      setReport(null);
+      setToast(null);
+      return true;
+    } catch {
+      flash("Couldn't switch projects — try again");
+      return false;
+    } finally {
+      setProjectSwitching(false);
+    }
+  }, [apply, flash, projectId, projectPathFor, projectSwitching, projects]);
+
+  const createProject = useCallback(async (name: string): Promise<Project | null> => {
+    if (projectCreating) return null;
+    setProjectCreating(true);
+    try {
+      const response = await fetch(pathFor("/api/admin/projects"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      const body = (await response.json().catch(() => null)) as {
+        project?: Project;
+        projects?: Project[];
+        error?: string;
+      } | null;
+      if (!response.ok || !body?.project || !body.projects) {
+        throw new Error(body?.error || `HTTP ${response.status}`);
+      }
+      setProjects(body.projects);
+      flash(`${body.project.name} created`);
+      return body.project;
+    } catch (error) {
+      flash(error instanceof Error ? error.message : "Couldn't create the project");
+      return null;
+    } finally {
+      setProjectCreating(false);
+    }
+  }, [flash, pathFor, projectCreating]);
 
   const hasActiveCollection = hasActiveCollections(data);
   useEffect(() => {
@@ -853,6 +935,12 @@ export function StoreProvider({
     visitorExperience,
     basePath,
     pathFor,
+    projects,
+    project,
+    projectSwitching,
+    switchProject,
+    projectCreating,
+    createProject,
     strategy,
     setStrategy,
     preferredStrategy,

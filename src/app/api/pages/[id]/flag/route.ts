@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { setPageFlag } from "@/lib/mutations";
 import type { Flag } from "@/lib/types";
+import { projectStore } from "@/lib/projects";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,7 +18,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: "flag must be 'priority', 'watching', or 'paused'" }, { status: 400 });
   }
   try {
-    const state = await setPageFlag(id, body.flag);
+    const state = await setPageFlag(id, body.flag, projectStore(req));
     return NextResponse.json({ state });
   } catch (err) {
     const message = String(err);

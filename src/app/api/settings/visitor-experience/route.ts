@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { setVisitorExperienceVisible } from "@/lib/mutations";
+import { projectStore } from "@/lib/projects";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,7 +11,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "visible must be a boolean" }, { status: 400 });
   }
   try {
-    return NextResponse.json({ state: await setVisitorExperienceVisible(body.visible) });
+    return NextResponse.json({ state: await setVisitorExperienceVisible(body.visible, projectStore(req)) });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }

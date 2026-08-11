@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { setAlertWebhookUrl } from "@/lib/mutations";
 import { alertWebhookUrlIsValid } from "@/lib/webhook";
+import { projectStore } from "@/lib/projects";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,7 +19,7 @@ export async function POST(req: Request) {
     );
   }
   try {
-    return NextResponse.json({ state: await setAlertWebhookUrl(url) });
+    return NextResponse.json({ state: await setAlertWebhookUrl(url, projectStore(req)) });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { setDefaultAgentIgnore } from "@/lib/mutations";
 import type { AgentIgnoreScope } from "@/lib/types";
+import { projectStore } from "@/lib/projects";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,7 +24,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const state = await setDefaultAgentIgnore(body.scope, value, body.ignored);
+    const state = await setDefaultAgentIgnore(body.scope, value, body.ignored, projectStore(req));
     return NextResponse.json({ state });
   } catch (error) {
     const message = String(error);

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { escalationMarkdown } from "@/lib/escalations";
-import { getStore } from "@/lib/store";
+import { projectStore } from "@/lib/projects";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,7 +12,7 @@ function filename(value: string): string {
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const state = await getStore().getState();
+  const state = await projectStore(req).getState();
   const escalation = (state.productEscalations ?? []).find((item) => item.id === id);
   if (!escalation) return NextResponse.json({ error: "escalation not found" }, { status: 404 });
   const format = new URL(req.url).searchParams.get("format");

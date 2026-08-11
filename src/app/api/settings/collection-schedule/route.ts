@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { collectionScheduleIsValid } from "@/lib/collectionSchedule";
 import { setCollectionSchedule } from "@/lib/mutations";
 import type { CollectionSchedule } from "@/lib/types";
+import { projectStore } from "@/lib/projects";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,7 +16,7 @@ export async function POST(req: Request) {
     );
   }
   try {
-    const state = await setCollectionSchedule(body);
+    const state = await setCollectionSchedule(body, projectStore(req));
     return NextResponse.json({ state });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });

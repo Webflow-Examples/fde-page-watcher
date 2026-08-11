@@ -1,7 +1,7 @@
 import { NextResponse, after } from "next/server";
 import { finalizeCollectionJob, reconcileCollectionJobs } from "@/lib/collectionJobs";
 import { recoverStaleRuns } from "@/lib/mutations";
-import { getStore } from "@/lib/store";
+import { projectStore } from "@/lib/projects";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,8 +14,8 @@ export const dynamic = "force-dynamic";
 // stale client can never overwrite data collected by a concurrent nightly run
 // (audit High #2). The client polls this endpoint for the authoritative state.
 
-export async function GET() {
-  const dataStore = getStore();
+export async function GET(request: Request) {
+  const dataStore = projectStore(request);
   await reconcileCollectionJobs({ dataStore });
   const recovered = await recoverStaleRuns(dataStore);
   const now = new Date();

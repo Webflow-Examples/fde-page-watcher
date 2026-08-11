@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createProductEscalation, updateProductEscalation } from "@/lib/mutations";
 import type { ProductEscalationStatus } from "@/lib/types";
+import { projectStore } from "@/lib/projects";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,11 +17,12 @@ interface Body {
 }
 
 export async function POST(req: Request) {
+  const dataStore = projectStore(req);
   const body = (await req.json().catch(() => ({}))) as Body;
   try {
     if (body.action === "create") {
       if (!body.recKey) return NextResponse.json({ error: "recKey is required" }, { status: 400 });
-      return NextResponse.json({ state: await createProductEscalation(body.recKey) });
+      return NextResponse.json({ state: await createProductEscalation(body.recKey, dataStore) });
     }
     if (body.action === "update") {
       if (!body.id) return NextResponse.json({ error: "id is required" }, { status: 400 });
@@ -29,7 +31,7 @@ export async function POST(req: Request) {
         owner: body.owner,
         notes: body.notes,
         refreshEvidence: body.refreshEvidence,
-      }) });
+      }, dataStore) });
     }
     return NextResponse.json({ error: "unknown action" }, { status: 400 });
   } catch (error) {
