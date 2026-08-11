@@ -21,7 +21,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   try {
-    const state = await setNativeElementDisposition(id, findingId, body.disposition ?? null, projectStore(req));
+    const state = await setNativeElementDisposition(id, findingId, body.disposition ?? null, await projectStore(req));
     return NextResponse.json({ state });
   } catch (error) {
     const message = String(error);

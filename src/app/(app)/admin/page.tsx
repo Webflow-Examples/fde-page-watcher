@@ -1,68 +1,227 @@
 "use client";
 
-import { useState } from "react";
-import { FolderSimpleIcon, PlusIcon } from "@phosphor-icons/react";
+import { useEffect, useState } from "react";
+import { FolderSimpleIcon, PlusIcon, TrashIcon, UserCircleIcon } from "@phosphor-icons/react";
 import { useStore } from "@/components/store";
+import type { Project } from "@/lib/projects";
 
 export default function AdminPage() {
-  const { projects, project, createProject, projectCreating } = useStore();
+  const {
+    adminProjects,
+    projects,
+    project,
+    createProject,
+    projectCreating,
+    projectUpdating,
+    renameProject,
+    archiveProject,
+    restoreProject,
+    pathFor,
+    flash,
+  } = useStore();
   const [name, setName] = useState("");
+  const [customer, setCustomer] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState("");
+  const [editingCustomer, setEditingCustomer] = useState("");
+  const [appAdmins, setAppAdmins] = useState<Array<{ email: string; bootstrap: boolean; invitedBy?: string }>>([]);
+  const [adminEmail, setAdminEmail] = useState("");
+  const [adminBusy, setAdminBusy] = useState(false);
   const trimmedName = name.trim();
+  const activeProjects = adminProjects.filter((item) => !item.archivedAt);
+  const archivedProjects = adminProjects.filter((item) => !!item.archivedAt);
+  const activeCount = projects.length;
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetch(pathFor("/api/admin/app-admins"), { cache: "no-store" }).then(async (response) => {
+      const body = await response.json().catch(() => null) as { appAdmins?: typeof appAdmins; error?: string } | null;
+      if (!response.ok || !body?.appAdmins) throw new Error(body?.error ?? "Could not load app administrators");
+      if (!cancelled) setAppAdmins(body.appAdmins);
+    }).catch((error) => { if (!cancelled) flash(error instanceof Error ? error.message : "Could not load app administrators"); });
+    return () => { cancelled = true; };
+  }, [flash, pathFor]);
+
+  const inviteAppAdmin = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!adminEmail.trim() || adminBusy) return;
+    setAdminBusy(true);
+    try {
+      const response = await fetch(pathFor("/api/admin/app-admins"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: adminEmail }) });
+      const body = await response.json().catch(() => null) as { appAdmins?: typeof appAdmins; error?: string } | null;
+      if (!response.ok || !body?.appAdmins) throw new Error(body?.error ?? "Could not invite app administrator");
+      setAppAdmins(body.appAdmins);
+      flash(`${adminEmail.trim().toLowerCase()} is now an app administrator`);
+      setAdminEmail("");
+    } catch (error) {
+      flash(error instanceof Error ? error.message : "Could not invite app administrator");
+    } finally {
+      setAdminBusy(false);
+    }
+  };
+
+  const removeAppAdmin = async (email: string) => {
+    if (!window.confirm(`Remove app administrator access for ${email}?`)) return;
+    setAdminBusy(true);
+    try {
+      const response = await fetch(pathFor("/api/admin/app-admins"), { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ email }) });
+      const body = await response.json().catch(() => null) as { appAdmins?: typeof appAdmins; error?: string } | null;
+      if (!response.ok || !body?.appAdmins) throw new Error(body?.error ?? "Could not remove app administrator");
+      setAppAdmins(body.appAdmins);
+      flash(`${email} is no longer an app administrator`);
+    } catch (error) {
+      flash(error instanceof Error ? error.message : "Could not remove app administrator");
+    } finally {
+      setAdminBusy(false);
+    }
+  };
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!trimmedName || projectCreating) return;
-    const created = await createProject(trimmedName);
-    if (created) setName("");
+    const created = await createProject(trimmedName, customer.trim());
+    if (created) {
+      setName("");
+      setCustomer("");
+    }
   };
+
+  const beginEdit = (item: Project) => {
+    setEditingId(item.id);
+    setEditingName(item.name);
+    setEditingCustomer(item.customer ?? "");
+  };
+
+  const saveProject = async (id: string) => {
+    const nextName = editingName.trim();
+    if (!nextName || projectUpdating) return;
+    if (await renameProject(id, nextName, editingCustomer.trim())) setEditingId(null);
+  };
+
+  const renderProjectRows = (items: Project[], emptyMessage: string) => (
+    <div className="admin-project-list">
+      {items.length === 0 ? <div className="admin-project-list__empty">{emptyMessage}</div> : items.map((item) => {
+        const current = item.id === project.id;
+        const archived = !!item.archivedAt;
+        const editing = editingId === item.id;
+        return (
+          <div className={`admin-project-row${archived ? " admin-project-row--archived" : ""}`} key={item.id}>
+            <span className="admin-project-row__icon" aria-hidden="true">
+              <FolderSimpleIcon size={18} weight="fill" />
+            </span>
+            <div className="admin-project-row__name">
+              {editing ? (
+                <div className="admin-project-row__fields">
+                  <input
+                    aria-label={`Project name for ${item.name}`}
+                    value={editingName}
+                    onChange={(event) => setEditingName(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") void saveProject(item.id);
+                      if (event.key === "Escape") setEditingId(null);
+                    }}
+                    maxLength={120}
+                    autoFocus
+                  />
+                  <input
+                    aria-label={`Customer for ${item.name}`}
+                    value={editingCustomer}
+                    onChange={(event) => setEditingCustomer(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") void saveProject(item.id);
+                      if (event.key === "Escape") setEditingId(null);
+                    }}
+                    maxLength={120}
+                    placeholder="Customer"
+                  />
+                </div>
+              ) : <strong>{item.name}</strong>}
+              <span>
+                {item.customer ? `Customer: ${item.customer}` : "Customer not set"}
+                {` · ${archived ? "All pages paused" : current ? "Currently viewing" : "Available to switch"}`}
+              </span>
+            </div>
+            <div className="admin-project-row__actions">
+              {editing ? (
+                <>
+                  <button type="button" onClick={() => void saveProject(item.id)} disabled={!editingName.trim() || projectUpdating}>Save</button>
+                  <button type="button" onClick={() => setEditingId(null)} disabled={projectUpdating}>Cancel</button>
+                </>
+              ) : (
+                <>
+                  <span className={`admin-project-row__status${current ? " admin-project-row__status--current" : ""}${archived ? " admin-project-row__status--archived" : ""}`}>
+                    {archived ? "Archived" : current ? "Current" : "Active"}
+                  </span>
+                  <button type="button" onClick={() => beginEdit(item)} disabled={projectUpdating}>Edit</button>
+                  {archived ? (
+                    <button type="button" onClick={() => void restoreProject(item.id)} disabled={projectUpdating}>Restore</button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="admin-project-row__archive"
+                      onClick={() => {
+                        if (window.confirm(`Archive ${item.name}? Its pages will be paused and its history retained.`)) {
+                          void archiveProject(item.id);
+                        }
+                      }}
+                      disabled={projectUpdating || activeCount <= 1}
+                      title={activeCount <= 1 ? "At least one project must remain active" : undefined}
+                    >Archive</button>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 
   return (
     <div className="admin-page">
       <header className="admin-page__header">
         <div>
-          <div className="admin-page__eyebrow">Workspace administration</div>
+          <div className="admin-page__eyebrow">Administration</div>
           <h1>Projects</h1>
-          <p>View every Page Watch project and create a new, empty project.</p>
+          <p>Manage project ownership, archive inactive work, or create a new empty project.</p>
         </div>
-        <div className="admin-page__count" aria-label={`${projects.length} projects`}>
-          <strong>{projects.length}</strong>
-          <span>{projects.length === 1 ? "project" : "projects"}</span>
+        <div className="admin-page__count" aria-label={`${activeCount} active projects, ${adminProjects.length} total`}>
+          <strong>{activeCount}</strong>
+          <span>active · {adminProjects.length} total</span>
         </div>
       </header>
 
       <div className="admin-page__grid">
-        <section className="admin-card" aria-labelledby="existing-projects-heading">
-          <div className="admin-card__heading">
-            <div>
-              <h2 id="existing-projects-heading">Existing projects</h2>
-              <p>All projects available in this Page Watch workspace.</p>
+        <div className="admin-project-groups">
+          <section className="admin-card" aria-labelledby="active-projects-heading">
+            <div className="admin-card__heading">
+              <div>
+                <h2 id="active-projects-heading">Active projects</h2>
+                <p>Projects available in the workspace and project switcher.</p>
+              </div>
+              <span className="admin-card__heading-count">{activeProjects.length}</span>
             </div>
-          </div>
-          <div className="admin-project-list">
-            {projects.map((item) => {
-              const current = item.id === project.id;
-              return (
-                <div className="admin-project-row" key={item.id}>
-                  <span className="admin-project-row__icon" aria-hidden="true">
-                    <FolderSimpleIcon size={18} weight="fill" />
-                  </span>
-                  <div className="admin-project-row__name">
-                    <strong>{item.name}</strong>
-                    <span>{current ? "Currently viewing" : "Available to switch"}</span>
-                  </div>
-                  <span className={`admin-project-row__status${current ? " admin-project-row__status--current" : ""}`}>
-                    {current ? "Current" : "Active"}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </section>
+            {renderProjectRows(activeProjects, "No active projects.")}
+          </section>
 
+          <section className="admin-card admin-card--archived" aria-labelledby="archived-projects-heading">
+            <div className="admin-card__heading">
+              <div>
+                <h2 id="archived-projects-heading">Archived projects</h2>
+                <p>History is retained and every page remains paused until restoration.</p>
+              </div>
+              <span className="admin-card__heading-count">{archivedProjects.length}</span>
+            </div>
+            {renderProjectRows(archivedProjects, "No archived projects.")}
+          </section>
+        </div>
+
+        <div className="admin-page__sidebar">
         <section className="admin-card admin-card--create" aria-labelledby="create-project-heading">
-          <span className="admin-card__create-icon" aria-hidden="true"><PlusIcon size={18} weight="bold" /></span>
-          <h2 id="create-project-heading">Create a project</h2>
-          <p>New projects start empty and appear immediately in the project selector.</p>
+          <div className="admin-card__create-heading">
+            <span className="admin-card__create-icon" aria-hidden="true"><PlusIcon size={18} weight="bold" /></span>
+            <h2 id="create-project-heading">Create a project</h2>
+          </div>
           <form onSubmit={submit}>
             <label htmlFor="new-project-name">Project name</label>
             <input
@@ -73,12 +232,48 @@ export default function AdminPage() {
               placeholder="e.g. Marketing site"
               autoComplete="off"
             />
+            <label htmlFor="new-project-customer">Customer</label>
+            <input
+              id="new-project-customer"
+              value={customer}
+              onChange={(event) => setCustomer(event.target.value)}
+              maxLength={120}
+              placeholder="e.g. Acme Inc."
+              autoComplete="organization"
+            />
             <button type="submit" disabled={!trimmedName || projectCreating}>
               <PlusIcon size={15} weight="bold" />
               {projectCreating ? "Creating…" : "Create project"}
             </button>
           </form>
         </section>
+
+        <section className="admin-card admin-card--app-admins" aria-labelledby="app-admins-heading">
+        <div className="admin-card__heading">
+          <div>
+            <h2 id="app-admins-heading">App administrators</h2>
+            <p>App admins can access every project and all workspace settings. New admins must use a @webflow.com email.</p>
+          </div>
+          <span className="admin-card__heading-count">{appAdmins.length}</span>
+        </div>
+        <form className="admin-app-admin-form" onSubmit={inviteAppAdmin}>
+          <input type="email" required value={adminEmail} onChange={(event) => setAdminEmail(event.target.value)} placeholder="name@webflow.com" aria-label="New app administrator email" />
+          <button type="submit" disabled={adminBusy || !adminEmail.trim()}><PlusIcon size={14} weight="bold" /> Invite app admin</button>
+        </form>
+        <div className="admin-project-list">
+          {appAdmins.map((admin) => (
+            <div className="admin-project-row" key={admin.email}>
+              <span className="admin-project-row__icon" aria-hidden="true"><UserCircleIcon size={19} weight="fill" /></span>
+              <div className="admin-project-row__name"><strong>{admin.email}</strong><span>{admin.bootstrap ? "Permanent admin" : `Invited by ${admin.invitedBy ?? "an app administrator"}`}</span></div>
+              <div className="admin-project-row__actions">
+                <span className="admin-project-row__status admin-project-row__status--current">App admin</span>
+                {!admin.bootstrap && <button type="button" aria-label={`Remove ${admin.email}`} onClick={() => void removeAppAdmin(admin.email)} disabled={adminBusy}><TrashIcon size={14} /> Remove</button>}
+              </div>
+            </div>
+          ))}
+        </div>
+        </section>
+        </div>
       </div>
     </div>
   );

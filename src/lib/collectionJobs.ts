@@ -69,6 +69,7 @@ export async function enqueueCollectionJob(
   let queued = true;
   let recoveredStale = false;
   const state = await dataStore.updateState((draft) => {
+    if (draft.projectArchivedAt) throw new Error("Collection is unavailable for an archived project");
     draft.jobs = draft.jobs ?? [];
     const page = draft.pages.find((item) => item.id === pageId);
     if (!page) throw new Error(`enqueueCollectionJob: page ${pageId} not found`);

@@ -7,17 +7,23 @@ import { useStore } from "./store";
 import { C } from "@/lib/ui";
 import { normalizeCollectionSchedule } from "@/lib/collectionSchedule";
 import { ClockIcon, DashboardIcon, EyeIcon, InboxIcon, PagesIcon, TasksIcon } from "./icons";
-import { GearIcon, MegaphoneIcon, ShieldCheckIcon } from "@phosphor-icons/react";
+import { GearIcon, ShieldCheckIcon } from "@phosphor-icons/react";
 import { isFieldRecommendationActionable } from "@/lib/fieldOnlyRecommendations";
 import { SelectMenu } from "./select-menu";
 import webflowSocialLogo from "../../public/webflow-social.png";
+import { useState } from "react";
 
-const navItems = [
-  { href: "/dashboard", label: "Dashboard", Icon: DashboardIcon, badge: null as "inbox" | "tasks" | "escalations" | "watchlist" | null },
+const primaryNavItems = [
+  { href: "/dashboard", label: "Dashboard", Icon: DashboardIcon, badge: null as "inbox" | "tasks" | "watchlist" | null },
   { href: "/pages", label: "Pages", Icon: PagesIcon, badge: null },
+];
+
+const activityNavItems = [
   { href: "/inbox", label: "Inbox", Icon: InboxIcon, badge: "inbox" as const },
   { href: "/tasks", label: "Tasks", Icon: TasksIcon, badge: "tasks" as const },
-  { href: "/escalations", label: "Escalations", Icon: MegaphoneIcon, badge: "escalations" as const },
+];
+
+const managementNavItems = [
   { href: "/watchlist", label: "Watchlist", Icon: EyeIcon, badge: "watchlist" as const },
   { href: "/settings", label: "Settings", Icon: GearIcon, badge: null },
 ];
@@ -28,20 +34,24 @@ export function Sidebar() {
   const {
     pages,
     recs,
-    productEscalations,
     pathFor,
     collectionSchedule,
     projects,
     project,
     projectSwitching,
     switchProject,
+    user,
+    canManageProject,
   } = useStore();
+  const [devEmail, setDevEmail] = useState(user.email);
   const inboxCount = recs.filter((r) => r.status === "inbox" && isFieldRecommendationActionable(r)).length;
   const taskCount = recs.filter((r) => r.status === "task").length;
   const watchlistCount = pages.length;
-  const escalationCount = (productEscalations ?? []).filter((item) => item.status !== "resolved").length;
 
   const schedule = normalizeCollectionSchedule(collectionSchedule);
+  const navGroups = canManageProject
+    ? [primaryNavItems, activityNavItems, managementNavItems]
+    : [primaryNavItems, activityNavItems];
 
   return (
     <aside
@@ -58,43 +68,46 @@ export function Sidebar() {
         height: "100vh",
       }}
     >
-      <div className="sidebar-brand" style={{ display: "flex", alignItems: "center", gap: 10, padding: "22px 22px 20px" }}>
-        <Image
-          src={webflowSocialLogo}
-          alt="Webflow"
-          width={30}
-          height={30}
-          priority
-          unoptimized
-          style={{ borderRadius: 7 }}
-        />
-        <div className="sidebar-brand-text" style={{ lineHeight: 1.15, minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: 14.5, fontWeight: 600 }}>Page Watch</div>
-          <SelectMenu
-            className="sidebar-project-menu"
-            ariaLabel="Switch project"
-            value={project.id}
-            options={projects.map((item) => ({ value: item.id, label: item.name }))}
-            disabled={projects.length < 2}
-            loading={projectSwitching}
-            triggerWidth="100%"
-            menuWidth={200}
-            onChange={async (nextProjectId) => {
-              const switched = await switchProject(nextProjectId);
-              if (!switched) throw new Error("Project switch failed");
-              router.push(pathFor("/dashboard"));
-            }}
+      <div className="sidebar-brand">
+        <div className="sidebar-brand__identity">
+          <Image
+            src={webflowSocialLogo}
+            alt="Webflow"
+            width={30}
+            height={30}
+            priority
+            unoptimized
+            style={{ borderRadius: 7 }}
           />
+          <div className="sidebar-brand__product-name">Page Watch</div>
         </div>
+        <SelectMenu
+          className="sidebar-project-menu"
+          ariaLabel="Switch project"
+          value={project.id}
+          options={projects.map((item) => ({ value: item.id, label: item.name }))}
+          triggerDescription={project.customer || "Customer not set"}
+          disabled={projects.length < 2}
+          loading={projectSwitching}
+          triggerWidth="100%"
+          menuWidth={200}
+          onChange={async (nextProjectId) => {
+            const switched = await switchProject(nextProjectId);
+            if (!switched) throw new Error("Project switch failed");
+            router.push(pathFor("/dashboard"));
+          }}
+        />
       </div>
 
       <nav className="sidebar-nav" style={{ display: "flex", flexDirection: "column", gap: 3, padding: "6px 12px" }}>
-        {navItems.map(({ href, label, Icon, badge }) => {
+        {navGroups.map((group, groupIndex) => <div key={groupIndex} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+        {groupIndex > 0 && <hr style={{ width: "100%", margin: "7px 0", border: 0, borderTop: `1px solid ${C.border}` }} />}
+        {group.map(({ href, label, Icon, badge }) => {
           const resolvedHref = pathFor(href);
           const active = pathname === resolvedHref
             || (href === "/dashboard" && pathname === pathFor("/"))
             || (href === "/pages" && pathname.startsWith(`${resolvedHref}/`));
-          const count = badge === "inbox" ? inboxCount : badge === "tasks" ? taskCount : badge === "escalations" ? escalationCount : badge === "watchlist" ? watchlistCount : 0;
+          const count = badge === "inbox" ? inboxCount : badge === "tasks" ? taskCount : badge === "watchlist" ? watchlistCount : 0;
           return (
             <Link
               key={href}
@@ -121,13 +134,11 @@ export function Sidebar() {
                     marginLeft: "auto",
                     fontSize: 11,
                     fontWeight: 600,
-                    color: badge === "inbox" ? C.accentSoft : badge === "tasks" ? C.green : badge === "escalations" ? C.amber : "inherit",
+                    color: badge === "inbox" ? C.accentSoft : badge === "tasks" ? C.green : "inherit",
                     background: badge === "inbox"
                       ? "rgba(59,137,255,0.16)"
                       : badge === "tasks"
                         ? "rgba(53,208,127,0.16)"
-                        : badge === "escalations"
-                          ? "rgba(255,154,61,0.16)"
                         : "transparent",
                     padding: "1px 8px",
                     borderRadius: 20,
@@ -139,9 +150,11 @@ export function Sidebar() {
             </Link>
           );
         })}
+        </div>)}
+        <hr style={{ width: "100%", margin: "7px 0 0", border: 0, borderTop: `1px solid ${C.border}` }} />
       </nav>
 
-      <div className="sidebar-schedule" style={{ marginTop: "auto", padding: "26px 20px 12px" }}>
+      <div className="sidebar-schedule" style={{ marginTop: 8, padding: "12px 20px" }}>
         <div style={{ fontSize: 10.5, fontWeight: 550, letterSpacing: "0.06em", color: C.faint, textTransform: "uppercase", marginBottom: 10 }}>
           Next nightly run
         </div>
@@ -150,13 +163,10 @@ export function Sidebar() {
             <ClockIcon size={15} style={{ color: C.accentBright }} />
             Daily · {schedule.localTime} {schedule.timeZone}
           </div>
-          <div style={{ fontSize: 11.5, color: C.muted, marginTop: 6, lineHeight: 1.5 }}>
-            Up to 5 independent runs per strategy via PSI, plus one agent-readiness scan.
-          </div>
         </div>
       </div>
-      <div className="sidebar-admin" style={{ padding: "0 12px 18px" }}>
-        <Link
+      <div className="sidebar-admin" style={{ marginTop: "auto", padding: "0 12px 18px" }}>
+        {user.isAppAdmin && <Link
           href={pathFor("/admin")}
           className="sidebar-admin-link"
           style={{
@@ -175,6 +185,34 @@ export function Sidebar() {
           <ShieldCheckIcon size={16} />
           <span>Admin</span>
         </Link>
+        }
+        <div style={{ borderTop: `1px solid ${C.border}`, marginTop: 8, padding: "12px 10px 0", fontSize: 11.5, color: C.muted }}>
+          <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.email}</div>
+          <div style={{ marginTop: 3, color: C.faint }}>{user.isAppAdmin ? "App admin" : project.accessRole === "project_admin" ? "Project admin" : "Project viewer"}</div>
+          {user.development && (
+            <form
+              style={{ display: "flex", gap: 6, marginTop: 10 }}
+              onSubmit={async (event) => {
+                event.preventDefault();
+                const response = await fetch(pathFor("/api/dev/session"), {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({ email: devEmail }),
+                });
+                if (response.ok) window.location.reload();
+              }}
+            >
+              <input
+                aria-label="Development user email"
+                type="email"
+                value={devEmail}
+                onChange={(event) => setDevEmail(event.target.value)}
+                style={{ minWidth: 0, width: "100%", border: `1px solid ${C.border}`, borderRadius: 6, background: C.panel, color: C.text, padding: "6px 7px", fontSize: 10.5 }}
+              />
+              <button type="submit" style={{ border: `1px solid ${C.border}`, borderRadius: 6, background: C.panel2, color: C.text, padding: "0 8px", cursor: "pointer" }}>Use</button>
+            </form>
+          )}
+        </div>
       </div>
     </aside>
   );

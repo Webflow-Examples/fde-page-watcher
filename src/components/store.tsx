@@ -35,15 +35,22 @@ export interface ReportData {
 }
 
 interface StoreValue extends AppState {
+  user: { email: string; isAppAdmin: boolean; development: boolean };
+  canManageProject: boolean;
   visitorExperience: CruxPageEvidence[];
   basePath: string;
   pathFor: (path: string) => string;
   projects: Project[];
+  adminProjects: Project[];
   project: Project;
   projectSwitching: boolean;
   switchProject: (id: string) => Promise<boolean>;
   projectCreating: boolean;
-  createProject: (name: string) => Promise<Project | null>;
+  createProject: (name: string, customer?: string) => Promise<Project | null>;
+  projectUpdating: boolean;
+  renameProject: (id: string, name: string, customer?: string) => Promise<boolean>;
+  archiveProject: (id: string) => Promise<boolean>;
+  restoreProject: (id: string) => Promise<boolean>;
   // global strategy toggle
   strategy: Strategy;
   setStrategy: (s: Strategy) => void;
@@ -125,6 +132,7 @@ const Ctx = createContext<StoreValue | null>(null);
 const STRATEGY_PREFERENCE_KEY = "page-watcher:preferred-strategy";
 const INBOX_DESCRIPTIONS_PREFERENCE_KEY = "page-watcher:inbox-descriptions";
 const TASK_DESCRIPTIONS_PREFERENCE_KEY = "page-watcher:task-descriptions";
+const LAST_PROJECT_KEY = "page-watcher:last-project";
 
 export function useStore(): StoreValue {
   const v = useContext(Ctx);
@@ -163,14 +171,18 @@ export function StoreProvider({
   initialVisitorExperience = [],
   basePath = "",
   projects: initialProjects,
+  adminProjects: initialAdminProjects,
   initialProjectId,
+  user,
   children,
 }: {
   initial: AppState;
   initialVisitorExperience?: CruxPageEvidence[];
   basePath?: string;
   projects: Project[];
+  adminProjects: Project[];
   initialProjectId: string;
+  user: { email: string; isAppAdmin: boolean; development: boolean };
   children: React.ReactNode;
 }) {
   const [data, setData] = useState<AppState>(initial);
@@ -209,9 +221,12 @@ export function StoreProvider({
   const [projectId, setProjectId] = useState(initialProjectId);
   const [projectSwitching, setProjectSwitching] = useState(false);
   const [projectCreating, setProjectCreating] = useState(false);
+  const [projectUpdating, setProjectUpdating] = useState(false);
   const [projects, setProjects] = useState(initialProjects);
+  const [adminProjects, setAdminProjects] = useState(initialAdminProjects);
   const project = projects.find(({ id }) => id === projectId) ?? projects[0];
   if (!project) throw new Error("StoreProvider requires at least one project");
+  const canManageProject = user.isAppAdmin || project.accessRole === "project_admin";
 
   const projectPathFor = useCallback((id: string, path: string) => {
     const resolved = withBasePath(basePath, path);
@@ -300,6 +315,11 @@ export function StoreProvider({
       apply(body.state);
       setVisitorExperience(body.visitorExperience ?? []);
       setProjectId(nextId);
+      try {
+        window.localStorage.setItem(LAST_PROJECT_KEY, nextId);
+      } catch {
+        // The selected project still applies for this session.
+      }
       setModal(null);
       setReport(null);
       setToast(null);
@@ -312,24 +332,45 @@ export function StoreProvider({
     }
   }, [apply, flash, projectId, projectPathFor, projectSwitching, projects]);
 
-  const createProject = useCallback(async (name: string): Promise<Project | null> => {
+  const restoredProjectRef = useRef(false);
+  useEffect(() => {
+    if (restoredProjectRef.current) return;
+    restoredProjectRef.current = true;
+    let saved: string | null = null;
+    try {
+      saved = window.localStorage.getItem(LAST_PROJECT_KEY);
+    } catch {
+      // Storage can be disabled; the first accessible project remains selected.
+    }
+    if (!saved || saved === projectId || !projects.some(({ id }) => id === saved)) return;
+    const timer = window.setTimeout(() => { void switchProject(saved!); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [projectId, projects, switchProject]);
+
+  const createProject = useCallback(async (name: string, customer?: string): Promise<Project | null> => {
+    if (!user.isAppAdmin) {
+      flash("App administrator access is required");
+      return null;
+    }
     if (projectCreating) return null;
     setProjectCreating(true);
     try {
       const response = await fetch(pathFor("/api/admin/projects"), {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name, customer }),
       });
       const body = (await response.json().catch(() => null)) as {
         project?: Project;
         projects?: Project[];
+        adminProjects?: Project[];
         error?: string;
       } | null;
-      if (!response.ok || !body?.project || !body.projects) {
+      if (!response.ok || !body?.project || !body.projects || !body.adminProjects) {
         throw new Error(body?.error || `HTTP ${response.status}`);
       }
       setProjects(body.projects);
+      setAdminProjects(body.adminProjects);
       flash(`${body.project.name} created`);
       return body.project;
     } catch (error) {
@@ -338,7 +379,55 @@ export function StoreProvider({
     } finally {
       setProjectCreating(false);
     }
-  }, [flash, pathFor, projectCreating]);
+  }, [flash, pathFor, projectCreating, user.isAppAdmin]);
+
+  const updateProject = useCallback(async (
+    id: string,
+    action: "rename" | "archive" | "restore",
+    name?: string,
+    customer?: string,
+  ): Promise<boolean> => {
+    if (!user.isAppAdmin) {
+      flash("App administrator access is required");
+      return false;
+    }
+    if (projectUpdating) return false;
+    setProjectUpdating(true);
+    try {
+      const response = await fetch(pathFor("/api/admin/projects"), {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id, action, ...(name !== undefined ? { name } : {}), ...(customer !== undefined ? { customer } : {}) }),
+      });
+      const body = (await response.json().catch(() => null)) as {
+        project?: Project;
+        projects?: Project[];
+        adminProjects?: Project[];
+        error?: string;
+      } | null;
+      if (!response.ok || !body?.project || !body.projects || !body.adminProjects) {
+        throw new Error(body?.error || `HTTP ${response.status}`);
+      }
+      if (action === "archive" && id === projectId) {
+        window.location.reload();
+        return true;
+      }
+      setProjects(body.projects);
+      setAdminProjects(body.adminProjects);
+      const verb = action === "rename" ? "renamed" : action === "archive" ? "archived" : "restored";
+      flash(`${body.project.name} ${verb}`);
+      return true;
+    } catch (error) {
+      flash(error instanceof Error ? error.message : `Couldn't ${action} the project`);
+      return false;
+    } finally {
+      setProjectUpdating(false);
+    }
+  }, [flash, pathFor, projectId, projectUpdating, user.isAppAdmin]);
+
+  const renameProject = useCallback((id: string, name: string, customer?: string) => updateProject(id, "rename", name, customer), [updateProject]);
+  const archiveProject = useCallback((id: string) => updateProject(id, "archive"), [updateProject]);
+  const restoreProject = useCallback((id: string) => updateProject(id, "restore"), [updateProject]);
 
   const hasActiveCollection = hasActiveCollections(data);
   useEffect(() => {
@@ -370,6 +459,10 @@ export function StoreProvider({
       req: { url: string; method?: string; body?: unknown },
       msg: { success?: string; failure: string },
     ) => {
+      if (!canManageProject) {
+        flash("Viewer access is read-only");
+        return;
+      }
       const prev = dataRef.current;
       const sequence = ++mutationSequenceRef.current;
       apply(optimistic);
@@ -396,7 +489,7 @@ export function StoreProvider({
           flash(msg.failure);
         });
     },
-    [apply, flash, pathFor],
+    [apply, canManageProject, flash, pathFor],
   );
 
   // ── mutations ────────────────────────────────────────────────────────
@@ -666,6 +759,10 @@ export function StoreProvider({
 
   const createEscalation = useCallback(
     (key: string) => {
+      if (!canManageProject) {
+        flash("Viewer access is read-only");
+        return;
+      }
       const rec = dataRef.current.recs.find((item) => item.key === key);
       if (!rec) return;
       flash(`Creating product escalation for ${rec.pageTitle}…`);
@@ -680,7 +777,7 @@ export function StoreProvider({
         flash("Product escalation created — assign and export it from Escalations");
       }).catch(() => flash("Couldn't create the product escalation — try again"));
     },
-    [apply, flash, pathFor],
+    [apply, canManageProject, flash, pathFor],
   );
 
   const triageRec = useCallback(
@@ -868,6 +965,10 @@ export function StoreProvider({
 
   const runPage = useCallback(
     (id: string) => {
+      if (!canManageProject) {
+        flash("Viewer access is read-only");
+        return;
+      }
       const cur = dataRef.current;
       const p = cur.pages.find((x) => x.id === id);
       const title = p?.title ?? "this page";
@@ -881,11 +982,15 @@ export function StoreProvider({
         })
         .catch(() => flash("Couldn't start the run — try again"));
     },
-    [flash, apply, pathFor],
+    [flash, apply, pathFor, canManageProject],
   );
 
   const captureBaseline = useCallback(
     (id: string) => {
+      if (!canManageProject) {
+        flash("Viewer access is read-only");
+        return;
+      }
       const page = dataRef.current.pages.find((item) => item.id === id);
       const title = page?.title ?? "this page";
       flash(`Starting baseline for ${title}…`);
@@ -898,23 +1003,31 @@ export function StoreProvider({
         })
         .catch(() => flash("Baseline capture failed"));
     },
-    [flash, apply, pathFor],
+    [flash, apply, pathFor, canManageProject],
   );
 
   const sortDash = useCallback((col: string) => setDashSort((p) => toggleSort(p, col)), []);
   const sortInbox = useCallback((col: string) => setInboxSort((p) => toggleSort(p, col)), []);
   const sortTask = useCallback((col: string) => setTaskSort((p) => toggleSort(p, col)), []);
   const openAdd = useCallback(() => {
+    if (!canManageProject) {
+      flash("Viewer access is read-only");
+      return;
+    }
     setFormState({ title: "", url: "" });
     setModal("add");
-  }, []);
+  }, [canManageProject, flash]);
   const openMarker = useCallback((pageId: string) => {
+    if (!canManageProject) {
+      flash("Viewer access is read-only");
+      return;
+    }
     setMarkerPageId(pageId);
     setMarkerEditingId(null);
     setMarkerText("");
     setMarkerDate(localISODate());
     setModal("marker");
-  }, []);
+  }, [canManageProject, flash]);
   const editMarker = useCallback((pageId: string, markerId: string) => {
     const marker = dataRef.current.pages.find((page) => page.id === pageId)?.markers.find((item) => item.id === markerId);
     if (!marker || isTaskMarker(marker)) return;
@@ -932,15 +1045,22 @@ export function StoreProvider({
 
   const value: StoreValue = {
     ...data,
+    user,
+    canManageProject,
     visitorExperience,
     basePath,
     pathFor,
     projects,
+    adminProjects,
     project,
     projectSwitching,
     switchProject,
     projectCreating,
     createProject,
+    projectUpdating,
+    renameProject,
+    archiveProject,
+    restoreProject,
     strategy,
     setStrategy,
     preferredStrategy,

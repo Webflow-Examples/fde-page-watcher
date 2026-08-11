@@ -114,6 +114,7 @@ async function markWorkflowRunning(env: Env, payload: DispatchPayload): Promise<
   if (!payload.tenant) return;
   const store = createFdeStore(payload.tenant, env);
   await store.updateState((draft) => {
+    if (draft.projectArchivedAt) throw new Error("Project archived");
     const job = (draft.jobs ?? []).find((item) => item.id === payload.jobId);
     const page = draft.pages.find((item) => item.id === payload.pageId);
     if (!job || !page || job.runId !== payload.runId || page.runId !== payload.runId) {
@@ -150,9 +151,11 @@ async function markWorkflowEvidenceProgress(
   if (!payload.tenant) return;
   const store = createFdeStore(payload.tenant, env);
   await store.updateState((draft) => {
+    if (draft.projectArchivedAt) throw new Error("Project archived");
     const job = (draft.jobs ?? []).find((item) => item.id === payload.jobId);
     const page = draft.pages.find((item) => item.id === payload.pageId);
     if (!job || !page || job.state === "succeeded" || job.state === "inconclusive") return;
+    if (job.state === "failed") throw new Error(job.error ?? "Collection job was cancelled");
     if (progress.waiting !== undefined) {
       job.state = progress.waiting ? "waiting_for_evidence" : "running";
       if (page.runId === payload.runId) {
@@ -262,8 +265,11 @@ async function commitWorkflowStrategy(
   if (!payload.tenant) return;
   const store = createFdeStore(payload.tenant, env);
   const strategyReportKey = `run-${payload.runId}-${summary.strategy}`;
+  const snapshot = await store.getState();
+  if (snapshot.projectArchivedAt) throw new Error("Project archived");
   await store.putReport(payload.pageId, strategyReportKey, await stagedReport(env, payload.jobId, summary.strategy));
   await store.updateState((draft) => {
+    if (draft.projectArchivedAt) throw new Error("Project archived");
     const job = (draft.jobs ?? []).find((item) => item.id === payload.jobId);
     const page = draft.pages.find((item) => item.id === payload.pageId);
     if (!job || !page || job.runId !== payload.runId || page.runId !== payload.runId) {
@@ -305,6 +311,7 @@ async function commitWorkflowAgent(
   if (!payload.tenant) return;
   const store = createFdeStore(payload.tenant, env);
   await store.updateState((draft) => {
+    if (draft.projectArchivedAt) throw new Error("Project archived");
     const job = (draft.jobs ?? []).find((item) => item.id === payload.jobId);
     const page = draft.pages.find((item) => item.id === payload.pageId);
     if (!job || !page || job.runId !== payload.runId || page.runId !== payload.runId) {
@@ -341,6 +348,7 @@ async function commitWorkflowResult(env: Env, payload: DispatchPayload, result: 
   if (!payload.tenant) return;
   const store = createFdeStore(payload.tenant, env);
   const snapshot = await store.getState();
+  if (snapshot.projectArchivedAt) throw new Error("Project archived");
   const job = (snapshot.jobs ?? []).find((item) => item.id === payload.jobId);
   if (!job) throw new Error(`Collection job ${payload.jobId} not found in FDE state`);
   if (job.state === "succeeded") return;
@@ -355,6 +363,7 @@ async function commitWorkflowResult(env: Env, payload: DispatchPayload, result: 
   await store.putReport(payload.pageId, `run-${payload.runId}`, { strategies: { mobile, desktop } });
 
   await store.updateState((draft) => {
+    if (draft.projectArchivedAt) throw new Error("Project archived");
     const currentJob = (draft.jobs ?? []).find((item) => item.id === payload.jobId);
     const page = draft.pages.find((item) => item.id === payload.pageId);
     if (!currentJob || !page) throw new Error("Collection target disappeared during FDE commit");
@@ -454,7 +463,7 @@ async function markWorkflowInconclusive(env: Env, payload: DispatchPayload, erro
   await store.updateState((draft) => {
     const job = (draft.jobs ?? []).find((item) => item.id === payload.jobId);
     const page = draft.pages.find((item) => item.id === payload.pageId);
-    if (!job || job.state === "succeeded") return;
+    if (!job || job.state === "succeeded" || job.state === "failed") return;
     const completedAt = new Date().toISOString();
     job.state = "inconclusive";
     delete job.nextRetryAt;
@@ -501,7 +510,7 @@ async function failWorkflowJob(env: Env, payload: DispatchPayload, error: unknow
   await store.updateState((draft) => {
     const job = (draft.jobs ?? []).find((item) => item.id === payload.jobId);
     const page = draft.pages.find((item) => item.id === payload.pageId);
-    if (!job || job.state === "succeeded") return;
+    if (!job || job.state === "succeeded" || job.state === "failed") return;
     const completedAt = new Date().toISOString();
     job.state = "failed";
     delete job.nextRetryAt;
@@ -1043,7 +1052,11 @@ const worker = {
       : kind === "crux" ? CRUX_SCHEDULER_STATUS_KEY : NIGHTLY_SCHEDULER_STATUS_KEY;
     try {
       let response: unknown;
-      if (kind === "audit") {
+      const tenant = env.NIGHTLY_TENANT || "brand-studio:live";
+      const archivedAt = (await createFdeStore(tenant, env).getState()).projectArchivedAt;
+      if (archivedAt) {
+        response = { skipped: "project-archived", archivedAt };
+      } else if (kind === "audit") {
         const audit = await runWeeklyDataAudit(env, new Date(controller.scheduledTime));
         response = { auditId: audit.auditId, health: audit.health, totals: audit.totals };
       } else if (kind === "crux") {
@@ -1051,7 +1064,7 @@ const worker = {
       } else {
         let webflow: unknown = null;
         try {
-          webflow = await syncConfiguredWebflowSite(env, env.NIGHTLY_TENANT || "brand-studio:live");
+          webflow = await syncConfiguredWebflowSite(env, tenant);
         } catch (error) {
           webflow = {
             ok: false,
@@ -1059,18 +1072,18 @@ const worker = {
           };
           console.error(JSON.stringify({
             message: "Webflow activity sync failed",
-            tenant: env.NIGHTLY_TENANT || "brand-studio:live",
+            tenant,
             error: webflow,
           }));
         }
         const confirmation = await dispatchFdeNightly(env, { confirmationOnly: true });
         const nightly = await dispatchFdeNightly(env, { dueOnly: true });
-        const store = createFdeStore(env.NIGHTLY_TENANT || "brand-studio:live", env);
+        const store = createFdeStore(tenant, env);
         await ensureScheduledDailyDigest(store, new Date(controller.scheduledTime));
         const digests = await processDailyDigests(store, new Date(controller.scheduledTime));
         response = { webflow, confirmation, nightly, digests };
       }
-      const cruxResponse = kind === "crux" ? response as CruxCollectionResult : null;
+      const cruxResponse = kind === "crux" && !archivedAt ? response as CruxCollectionResult : null;
       const record = {
         status: cruxResponse && !cruxResponse.ok ? "partial" : "succeeded",
         cron: controller.cron,

@@ -20,7 +20,7 @@ interface Group {
 
 export default function InboxPage() {
   const router = useRouter();
-  const { pages, recs, visitorExperience, inboxGroup, setInboxGroup, inboxDescriptions, setInboxDescriptions, inboxSort, sortInbox, triageRec, ignoreRec, pathFor } = useStore();
+  const { pages, recs, visitorExperience, inboxGroup, setInboxGroup, inboxDescriptions, setInboxDescriptions, inboxSort, sortInbox, triageRec, ignoreRec, pathFor, canManageProject } = useStore();
   const categoryChip = (category: string) => (
     <span style={{ fontSize: 11, fontWeight: 500, color: C.faint2, background: "rgba(255,255,255,0.04)", padding: "2px 8px", borderRadius: 5 }}>{category}</span>
   );
@@ -172,8 +172,8 @@ export default function InboxPage() {
                     <div style={{ textAlign: "right", fontSize: 14, fontWeight: 600, color: C.amber }}>{it.savings}</div>
                     <div style={{ textAlign: "right", fontSize: 13, fontWeight: 600, color: C.dim }}>{effortLabel(it)}</div>
                     <div style={{ justifySelf: "end", display: "flex", gap: 8 }}>
-                      <button onClick={() => triageRec(it.key)} style={{ border: "none", background: C.accent, color: "#fff", fontSize: 12, fontWeight: 550, padding: "7px 13px", borderRadius: 7, cursor: "pointer", whiteSpace: "nowrap" }}>{triageActionLabel(it)}</button>
-                      <button onClick={() => ignoreRec(it.key)} style={{ border: `1px solid ${C.border2}`, background: "rgba(255,255,255,0.03)", color: C.dim, fontSize: 12, fontWeight: 500, padding: "7px 13px", borderRadius: 7, cursor: "pointer", whiteSpace: "nowrap" }}>Ignore</button>
+                      {canManageProject && <button onClick={() => triageRec(it.key)} style={{ border: "none", background: C.accent, color: "#fff", fontSize: 12, fontWeight: 550, padding: "7px 13px", borderRadius: 7, cursor: "pointer", whiteSpace: "nowrap" }}>{triageActionLabel(it)}</button>}
+                      {canManageProject && <button onClick={() => ignoreRec(it.key)} style={{ border: `1px solid ${C.border2}`, background: "rgba(255,255,255,0.03)", color: C.dim, fontSize: 12, fontWeight: 500, padding: "7px 13px", borderRadius: 7, cursor: "pointer", whiteSpace: "nowrap" }}>Ignore</button>}
                       <button onClick={() => router.push(pathFor(`/pages/${it.pageId}`))} title="Open page" style={{ border: `1px solid ${C.border2}`, background: "rgba(255,255,255,0.03)", padding: "7px 9px", borderRadius: 7, cursor: "pointer", display: "flex", alignItems: "center" }}>
                         <ExternalIcon size={15} style={{ color: C.dim }} />
                       </button>

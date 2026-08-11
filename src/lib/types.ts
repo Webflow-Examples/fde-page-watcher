@@ -707,12 +707,34 @@ export interface ProductEscalation {
 export interface ManagedProjectRecord {
   id: string;
   name: string;
+  customer?: string;
   tenant: string;
   createdAt: string;
+  archivedAt?: string;
+}
+
+export type ProjectRole = "project_admin" | "project_viewer";
+
+/** Mutable app-admin grants. Bootstrap admins live in code and never appear here. */
+export interface AppAdminGrant {
+  email: string;
+  invitedBy: string;
+  invitedAt: string;
+}
+
+/** One email's explicit access to one project. App admins do not need records. */
+export interface ProjectMembership {
+  projectId: string;
+  email: string;
+  role: ProjectRole;
+  invitedBy: string;
+  invitedAt: string;
 }
 
 /** The full application state — the single source of truth persisted per tenant. */
 export interface AppState {
+  /** Project-level archive marker. Archived tenants retain data but reject collection work. */
+  projectArchivedAt?: string;
   pages: WatchPage[];
   recs: Rec[];
   productEscalations?: ProductEscalation[];
@@ -731,6 +753,10 @@ export interface AppState {
   watcherNote?: WatcherNote;
   /** Present only in the private admin registry state, never in project state. */
   managedProjects?: ManagedProjectRecord[];
+  /** Present only in the private admin registry state. */
+  appAdmins?: AppAdminGrant[];
+  /** Present only in the private admin registry state. */
+  projectMemberships?: ProjectMembership[];
 }
 
 export const TENANT = "brand-studio" as const;

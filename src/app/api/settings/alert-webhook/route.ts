@@ -19,7 +19,7 @@ export async function POST(req: Request) {
     );
   }
   try {
-    return NextResponse.json({ state: await setAlertWebhookUrl(url, projectStore(req)) });
+    return NextResponse.json({ state: await setAlertWebhookUrl(url, await projectStore(req)) });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }

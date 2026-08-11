@@ -49,6 +49,7 @@ export async function dispatchFdeNightly(
   const queued: CollectionJob[] = [];
   let coalesced = 0;
   const state = await store.updateState((draft) => {
+    if (draft.projectArchivedAt) return;
     draft.jobs = draft.jobs ?? [];
     ensureCollectionOffsets(draft.pages);
     const incident = draft.measurementIncident;

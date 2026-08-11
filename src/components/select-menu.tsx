@@ -31,6 +31,7 @@ export interface SelectMenuProps<T extends SelectMenuValue> {
   loading?: boolean;
   menuWidth?: number;
   triggerWidth?: number | string;
+  triggerDescription?: string;
 }
 
 interface MenuPosition {
@@ -53,6 +54,7 @@ export function SelectMenu<T extends SelectMenuValue>({
   loading = false,
   menuWidth = 196,
   triggerWidth,
+  triggerDescription,
 }: SelectMenuProps<T>) {
   const generatedId = useId().replace(/:/g, "");
   const listboxId = `select-menu-${generatedId}`;
@@ -236,7 +238,10 @@ export function SelectMenu<T extends SelectMenuValue>({
           setShowFocusRing(false);
         }}
       >
-        <span className="select-menu__label">{selectedOption?.label ?? String(displayValue)}</span>
+        <span className={`select-menu__label${triggerDescription ? " select-menu__label--stacked" : ""}`}>
+          <span className="select-menu__label-primary">{selectedOption?.label ?? String(displayValue)}</span>
+          {triggerDescription && <span className="select-menu__label-secondary">{triggerDescription}</span>}
+        </span>
         {isLoading ? (
           <SpinnerGap className="select-menu__spinner" size={15} weight="bold" aria-hidden="true" />
         ) : open ? (

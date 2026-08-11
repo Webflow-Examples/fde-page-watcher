@@ -21,7 +21,7 @@ interface Body {
  *                task also removes its conditional marker and follow-ups.
  */
 export async function POST(req: Request) {
-  const dataStore = projectStore(req);
+  const dataStore = await projectStore(req);
   const body = (await req.json().catch(() => ({}))) as Body;
   if (!body.key) return NextResponse.json({ error: "key is required" }, { status: 400 });
   try {

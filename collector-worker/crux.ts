@@ -324,6 +324,19 @@ export async function collectCruxEvidence(
   const attemptedAt = (options.now ?? new Date()).toISOString();
   const fetchFn = options.fetchFn ?? fetch;
   const state = await createFdeStore(tenant, env).getState();
+  if (state.projectArchivedAt) {
+    return {
+      ok: true,
+      tenant,
+      pages: 0,
+      targets: 0,
+      available: 0,
+      partial: 0,
+      insufficient: 0,
+      errors: 0,
+      snapshotsUpserted: 0,
+    };
+  }
   const requestedPageIds = options.pageIds ? new Set(options.pageIds) : null;
   const pages = state.pages.filter((page) =>
     isPageActivelyMonitored(page) && (!requestedPageIds || requestedPageIds.has(page.id)));

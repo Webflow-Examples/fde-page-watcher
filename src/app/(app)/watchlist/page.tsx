@@ -29,10 +29,12 @@ function EditablePageTitle({
   pageId,
   title,
   onSave,
+  disabled = false,
 }: {
   pageId: string;
   title: string;
   onSave: (id: string, title: string) => void;
+  disabled?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(title);
@@ -100,6 +102,7 @@ function EditablePageTitle({
       aria-label={`Edit page name: ${title}`}
       title="Click to edit page name"
       onClick={beginEdit}
+      disabled={disabled}
       style={{
         display: "block",
         width: "100%",
@@ -333,6 +336,7 @@ function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
     updateAlertWebhookUrl,
     visitorExperienceVisible,
     setVisitorExperienceVisible,
+    canManageProject,
   } = useStore();
   const orderedPages = useMemo(() => sortWatchlistPages(pages), [pages]);
   const defaultIgnores = normalizeAgentIgnoreSettings(agentIgnoreDefaults);
@@ -481,7 +485,7 @@ function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
               : "Configure how Page Watch displays performance, evaluates changes, schedules collections, and calculates agent-readiness."}
           </p>
         </div>
-        {mode === "watchlist" && (
+        {mode === "watchlist" && canManageProject && (
           <button
             onClick={openAdd}
             style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", border: "none", borderRadius: 8, background: C.accent, color: "#fff", fontSize: 13, fontWeight: 550, cursor: "pointer" }}
@@ -534,6 +538,7 @@ function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
                 aria-describedby="watchlist-reorder-instructions"
                 aria-pressed={keyboardDragging}
                 title={`Drag to reorder within ${p.flag}`}
+                disabled={!canManageProject}
                 onMouseDown={(event) => {
                   if (event.button !== 0) return;
                   event.preventDefault();
@@ -587,7 +592,7 @@ function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
                 <DotsSixVerticalIcon size={17} weight="bold" aria-hidden="true" />
               </button>
               <div style={{ minWidth: 0, paddingRight: 16 }}>
-                <EditablePageTitle pageId={p.id} title={p.title} onSave={renamePage} />
+                <EditablePageTitle pageId={p.id} title={p.title} onSave={renamePage} disabled={!canManageProject} />
                 <div
                   aria-label={`Locked URL for ${p.title}: ${p.url}`}
                   title="The watched URL is locked"
@@ -602,9 +607,9 @@ function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
                   value={p.flag}
                   onChange={(f) => setFlag(p.id, f)}
                   options={[
-                    { value: "priority", label: "Priority", tone: PRIORITY_CHIP.fg, selectedBackground: PRIORITY_CHIP.bg, disabled: p.flag !== "priority" && !!priorityError, title: p.flag !== "priority" ? priorityError ?? undefined : undefined },
-                    { value: "watching", label: "Watching", disabled: p.flag !== "watching" && !!watchingError, title: p.flag !== "watching" ? watchingError ?? undefined : undefined },
-                    { value: "paused", label: "Paused", tone: PAUSED_CHIP.fg, selectedBackground: PAUSED_CHIP.bg, disabled: p.flag !== "paused" && pauseBlocked, title: pauseBlocked ? "Wait for the current collection to finish before pausing" : undefined },
+                    { value: "priority", label: "Priority", tone: PRIORITY_CHIP.fg, selectedBackground: PRIORITY_CHIP.bg, disabled: !canManageProject || (p.flag !== "priority" && !!priorityError), title: p.flag !== "priority" ? priorityError ?? undefined : undefined },
+                    { value: "watching", label: "Watching", disabled: !canManageProject || (p.flag !== "watching" && !!watchingError), title: p.flag !== "watching" ? watchingError ?? undefined : undefined },
+                    { value: "paused", label: "Paused", tone: PAUSED_CHIP.fg, selectedBackground: PAUSED_CHIP.bg, disabled: !canManageProject || (p.flag !== "paused" && pauseBlocked), title: pauseBlocked ? "Wait for the current collection to finish before pausing" : undefined },
                   ]}
                 />
               </div>
@@ -636,13 +641,13 @@ function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
                 >
                   View
                 </button>
-                <button
+                {canManageProject && <button
                   onClick={() => removePage(p.id)}
                   title="Remove from watchlist"
                   style={{ border: `1px solid ${C.border2}`, background: "rgba(255,255,255,0.03)", padding: "6px 9px", borderRadius: 7, cursor: "pointer", display: "flex", alignItems: "center" }}
                 >
                   <TrashIcon size={15} style={{ color: C.red }} />
-                </button>
+                </button>}
               </div>
             </div>
           );})}
@@ -1068,6 +1073,12 @@ function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
 }
 
 export default function WatchlistPage() {
+  const { canManageProject, pathFor } = useStore();
+  const router = useRouter();
+  useEffect(() => {
+    if (!canManageProject) router.replace(pathFor("/dashboard"));
+  }, [canManageProject, pathFor, router]);
+  if (!canManageProject) return null;
   return <WatchlistContent mode="watchlist" />;
 }
 

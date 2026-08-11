@@ -27,7 +27,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   try {
-    const state = await setAgentIgnore(id, body.scope, value, validMode ? body.mode! : body.ignored!, projectStore(req));
+    const state = await setAgentIgnore(id, body.scope, value, validMode ? body.mode! : body.ignored!, await projectStore(req));
     return NextResponse.json({ state });
   } catch (error) {
     const message = String(error);
