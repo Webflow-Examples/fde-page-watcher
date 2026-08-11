@@ -130,6 +130,34 @@ describe("run identity and recovery", () => {
     expect(replacement.queued).toBe(true);
     expect(replacement.runId).toBe("replacement");
   });
+
+  it("preserves and repairs a Workflow waiting for its scheduled evidence retry", async () => {
+    const store = await dataStore();
+    await store.updateState((state) => {
+      const page = state.pages[0];
+      page.runId = "waiting-job";
+      page.runState = "failed";
+      page.startedAt = "2026-08-03T09:00:00.000Z";
+      page.lastError = "Run waiting-job exceeded the 15 minute stale limit";
+      state.jobs = [{
+        id: "waiting-job",
+        runId: "waiting-job",
+        pageId: page.id,
+        kind: "baseline",
+        state: "waiting_for_evidence",
+        attempts: 1,
+        createdAt: "2026-08-03T09:00:00.000Z",
+        updatedAt: "2026-08-03T09:20:00.000Z",
+        nextRetryAt: "2026-08-03T12:20:00.000Z",
+      }];
+    });
+
+    const recovered = await recoverStaleRuns(store, new Date("2026-08-03T12:30:00.000Z"));
+
+    expect(recovered.pages[0].runState).toBe("waiting_for_evidence");
+    expect(recovered.pages[0].lastError).toBeUndefined();
+    expect(recovered.jobs?.[0].state).toBe("waiting_for_evidence");
+  });
 });
 
 describe("bounded nightly collection", () => {
