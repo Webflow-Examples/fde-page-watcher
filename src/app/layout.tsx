@@ -5,7 +5,7 @@ const title = "Page Watch · Brand Studio";
 const description = "Nightly Lighthouse and agent-readiness monitoring for active pages.";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://page-watcher.wf.app"),
+  metadataBase: new URL("https://page-watcher.webflow.io"),
   title,
   description,
   applicationName: "Page Watch",

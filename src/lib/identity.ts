@@ -1,4 +1,14 @@
 import { getEnv } from "./env";
+import { DEVELOPMENT_SESSION_COOKIE, PRODUCTION_SESSION_COOKIE, verifySessionToken } from "./session";
+import {
+  AuthenticationError,
+  normalizeEmail,
+  validEmail,
+  verifyAccessJwt as verifyAccessJwtWithOptions,
+  type AccessIdentity,
+} from "./accessJwt";
+
+export { AuthenticationError, normalizeEmail, validEmail } from "./accessJwt";
 
 export const BOOTSTRAP_APP_ADMINS = [
   "matthew@webflow.com",
@@ -7,65 +17,15 @@ export const BOOTSTRAP_APP_ADMINS = [
 ] as const;
 
 const BOOTSTRAP_SET = new Set<string>(BOOTSTRAP_APP_ADMINS);
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export interface Identity {
   email: string;
   subject?: string;
-  source: "cloudflare-access" | "development";
-}
-
-interface AccessPayload {
-  aud?: string | string[];
-  email?: string;
-  exp?: number;
-  iss?: string;
-  nbf?: number;
-  sub?: string;
-  type?: string;
-}
-
-interface AccessHeader {
-  alg?: string;
-  kid?: string;
-}
-
-interface JwksResponse {
-  keys?: Array<JsonWebKey & { kid?: string }>;
-  public_certs?: Array<{ kid?: string; cert?: string }>;
-}
-
-export class AuthenticationError extends Error {
-  readonly status: number;
-
-  constructor(message: string, status = 401) {
-    super(message);
-    this.name = "AuthenticationError";
-    this.status = status;
-  }
-}
-
-export function normalizeEmail(value: string): string {
-  return value.trim().toLowerCase();
-}
-
-export function validEmail(value: string): boolean {
-  const email = normalizeEmail(value);
-  return email.length <= 254 && EMAIL.test(email);
+  source: "cloudflare-access" | "session" | "development";
 }
 
 export function isBootstrapAppAdmin(email: string): boolean {
   return BOOTSTRAP_SET.has(normalizeEmail(email));
-}
-
-function decodeSegment<T>(segment: string): T {
-  try {
-    const normalized = segment.replace(/-/g, "+").replace(/_/g, "/");
-    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
-    return JSON.parse(Buffer.from(padded, "base64").toString("utf8")) as T;
-  } catch {
-    throw new AuthenticationError("Cloudflare Access token is malformed");
-  }
 }
 
 function accessTeamDomain(): string {
@@ -81,63 +41,16 @@ function configuredAudiences(): string[] {
   return raw.split(",").map((value) => value.trim()).filter(Boolean);
 }
 
-function audienceMatches(actual: string | string[] | undefined, expected: string[]): boolean {
-  const values = Array.isArray(actual) ? actual : actual ? [actual] : [];
-  return values.some((value) => expected.includes(value));
-}
-
 export async function verifyAccessJwt(
   token: string,
   options: { teamDomain?: string; audiences?: string[]; now?: number; fetcher?: typeof fetch } = {},
-): Promise<Identity> {
-  const [encodedHeader, encodedPayload, encodedSignature, ...extra] = token.split(".");
-  if (!encodedHeader || !encodedPayload || !encodedSignature || extra.length) {
-    throw new AuthenticationError("Cloudflare Access token is malformed");
-  }
-  const header = decodeSegment<AccessHeader>(encodedHeader);
-  const payload = decodeSegment<AccessPayload>(encodedPayload);
-  if (header.alg !== "RS256" || !header.kid) {
-    throw new AuthenticationError("Cloudflare Access token uses an unsupported signature");
-  }
-
-  const teamDomain = (options.teamDomain ?? accessTeamDomain()).replace(/\/$/, "");
-  const fetcher = options.fetcher ?? fetch;
-  const response = await fetcher(`${teamDomain}/cdn-cgi/access/certs`, { cache: "force-cache" });
-  if (!response.ok) throw new AuthenticationError("Cloudflare Access signing keys are unavailable", 503);
-  const jwks = await response.json() as JwksResponse;
-  const key = jwks.keys?.find((candidate) => candidate.kid === header.kid);
-  if (!key) throw new AuthenticationError("Cloudflare Access signing key was not found");
-  const cryptoKey = await crypto.subtle.importKey(
-    "jwk",
-    key,
-    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-    false,
-    ["verify"],
-  );
-  const signature = Uint8Array.from(Buffer.from(encodedSignature.replace(/-/g, "+").replace(/_/g, "/"), "base64"));
-  const valid = await crypto.subtle.verify(
-    "RSASSA-PKCS1-v1_5",
-    cryptoKey,
-    signature,
-    new TextEncoder().encode(`${encodedHeader}.${encodedPayload}`),
-  );
-  if (!valid) throw new AuthenticationError("Cloudflare Access token signature is invalid");
-
-  const now = options.now ?? Math.floor(Date.now() / 1000);
-  if (!payload.exp || payload.exp <= now || (payload.nbf !== undefined && payload.nbf > now + 60)) {
-    throw new AuthenticationError("Cloudflare Access token has expired or is not active");
-  }
-  if (payload.type !== "app") throw new AuthenticationError("Cloudflare Access token type is invalid");
-  if (payload.iss?.replace(/\/$/, "") !== teamDomain) {
-    throw new AuthenticationError("Cloudflare Access token issuer is invalid");
-  }
-  const audiences = options.audiences ?? configuredAudiences();
-  if (!audienceMatches(payload.aud, audiences)) {
-    throw new AuthenticationError("Cloudflare Access token audience is invalid");
-  }
-  const email = normalizeEmail(payload.email ?? "");
-  if (!validEmail(email)) throw new AuthenticationError("Cloudflare Access token has no valid email");
-  return { email, ...(payload.sub ? { subject: payload.sub } : {}), source: "cloudflare-access" };
+): Promise<AccessIdentity> {
+  return verifyAccessJwtWithOptions(token, {
+    teamDomain: options.teamDomain ?? accessTeamDomain(),
+    audiences: options.audiences ?? configuredAudiences(),
+    ...(options.now === undefined ? {} : { now: options.now }),
+    ...(options.fetcher ? { fetcher: options.fetcher } : {}),
+  });
 }
 
 function cookieValue(headers: Headers, name: string): string | undefined {
@@ -151,7 +64,7 @@ function cookieValue(headers: Headers, name: string): string | undefined {
 }
 
 export async function identityFromHeaders(headers: Headers): Promise<Identity> {
-  if (process.env.NODE_ENV !== "production") {
+  if (process.env.NODE_ENV !== "production" && getEnv("AUTH_MODE") !== "native") {
     const candidate = cookieValue(headers, "page-watch-dev-email")
       ?? headers.get("x-page-watch-dev-email")
       ?? getEnv("DEV_USER_EMAIL")
@@ -164,8 +77,17 @@ export async function identityFromHeaders(headers: Headers): Promise<Identity> {
   if (headers.has("x-page-watch-dev-email") || cookieValue(headers, "page-watch-dev-email")) {
     throw new AuthenticationError("Development identity overrides are disabled");
   }
+  const session = cookieValue(headers, PRODUCTION_SESSION_COOKIE) ?? cookieValue(headers, DEVELOPMENT_SESSION_COOKIE);
+  if (session) {
+    try {
+      const payload = await verifySessionToken(session);
+      return { email: payload.email, subject: payload.sid, source: "session" };
+    } catch {
+      throw new AuthenticationError("Your session is invalid or has expired");
+    }
+  }
   const token = headers.get("cf-access-jwt-assertion");
-  if (!token) throw new AuthenticationError("Sign in with Cloudflare Access");
+  if (!token) throw new AuthenticationError("Sign in to Page Watch");
   return verifyAccessJwt(token);
 }
 

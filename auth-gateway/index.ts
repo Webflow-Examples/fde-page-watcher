@@ -1,8 +1,18 @@
+import { AuthenticationError, verifyAccessJwt } from "../src/lib/accessJwt";
+import { createAuthHandoff, validLoginState } from "../src/lib/authHandoff";
+
 const ACCESS_ASSERTION_HEADER = "cf-access-jwt-assertion";
 const ACCESS_COOKIE = "CF_Authorization";
 const HEALTH_PATH = "/__gateway/health";
+const BROKER_PATH = "/__auth/broker";
 
-type GatewayEnv = Pick<Env, "ORIGIN_URL">;
+export interface GatewayEnv {
+  ORIGIN_URL: string;
+  AUTH_CALLBACK_URL: string;
+  AUTH_HANDOFF_SECRET: string;
+  CF_ACCESS_TEAM_DOMAIN: string;
+  CF_ACCESS_AUD: string;
+}
 type GatewayFetch = (request: Request) => Promise<Response>;
 
 function configuredOrigin(value: string): URL | null {
@@ -66,6 +76,69 @@ function gatewayResponse(message: string, status: number, requestId: string | nu
   );
 }
 
+function configuredHttpsUrl(value: string): URL | null {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" || url.username || url.password || url.hash) return null;
+    return url;
+  } catch {
+    return null;
+  }
+}
+
+async function brokerResponse(
+  publicUrl: URL,
+  assertion: string,
+  env: GatewayEnv,
+  fetcher: GatewayFetch,
+  requestId: string | null,
+): Promise<Response> {
+  const state = publicUrl.searchParams.get("state") ?? "";
+  if (!validLoginState(state)) return gatewayResponse("The login request is invalid or expired", 400, requestId);
+  const callback = configuredHttpsUrl(env.AUTH_CALLBACK_URL);
+  const teamDomain = configuredHttpsUrl(env.CF_ACCESS_TEAM_DOMAIN);
+  const audiences = env.CF_ACCESS_AUD.split(",").map((value) => value.trim()).filter(Boolean);
+  if (!callback || callback.pathname !== "/api/auth/callback" || callback.search || audiences.length === 0
+    || !teamDomain || teamDomain.pathname !== "/" || teamDomain.search) {
+    return gatewayResponse("Authentication gateway is not configured", 503, requestId);
+  }
+
+  try {
+    const identity = await verifyAccessJwt(assertion, {
+      teamDomain: teamDomain.origin,
+      audiences,
+      fetcher: (input, init) => fetcher(new Request(input, init)),
+    });
+    const token = await createAuthHandoff({
+      audience: callback.origin,
+      email: identity.email,
+      state,
+      ...(identity.subject ? { subject: identity.subject } : {}),
+    }, env.AUTH_HANDOFF_SECRET);
+    callback.searchParams.set("token", token);
+    return new Response(null, {
+      status: 303,
+      headers: {
+        location: callback.toString(),
+        "cache-control": "no-store",
+        pragma: "no-cache",
+      },
+    });
+  } catch (error) {
+    const status = error instanceof AuthenticationError ? error.status : 503;
+    console.error(JSON.stringify({
+      message: "Page Watch identity handoff failed",
+      error: error instanceof Error ? error.message : "Unknown error",
+      requestId,
+    }));
+    return gatewayResponse(
+      status === 503 ? "Authentication is temporarily unavailable" : "Cloudflare Access authentication is invalid",
+      status,
+      requestId,
+    );
+  }
+}
+
 export async function handleGatewayRequest(
   request: Request,
   env: GatewayEnv,
@@ -75,10 +148,14 @@ export async function handleGatewayRequest(
   const assertion = request.headers.get(ACCESS_ASSERTION_HEADER);
   if (!assertion) return gatewayResponse("Cloudflare Access authentication is required", 401, requestId);
 
+  const publicUrl = new URL(request.url);
+  if (publicUrl.pathname === BROKER_PATH && request.method === "GET") {
+    return brokerResponse(publicUrl, assertion, env, fetcher, requestId);
+  }
+
   const origin = configuredOrigin(env.ORIGIN_URL);
   if (!origin) return gatewayResponse("Authentication gateway is not configured", 503, requestId);
 
-  const publicUrl = new URL(request.url);
   if (publicUrl.pathname === HEALTH_PATH) {
     return Response.json(
       { ok: true, authenticated: true, origin: origin.host },

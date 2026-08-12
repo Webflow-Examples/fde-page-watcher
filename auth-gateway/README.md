@@ -1,13 +1,13 @@
-# Page Watch authentication gateway
+# Page Watch zero-DNS authentication broker
 
-This Worker is the public authentication boundary for the Webflow Cloud app.
-Cloudflare Access protects the Worker, adds a signed
-`Cf-Access-Jwt-Assertion` header, and the Worker streams the request to
-`https://page-watcher.webflow.io`. The Next.js app remains responsible for
-validating the assertion and enforcing app-admin and project-level roles.
+Cloudflare Access protects this Worker and provides the email one-time-code
+screen. Page Watch uses only `GET /__auth/broker` for login: the Worker
+validates Access's signed JWT, issues a one-minute HMAC handoff bound to the
+browser's login state, and redirects to the fixed Webflow Cloud callback. The
+user then stays on `https://page-watcher.webflow.io` under a host-only session.
 
-The Webflow origin remains fail-closed: requests that bypass the gateway do
-not contain a valid Access assertion and cannot reach project data.
+The legacy reverse-proxy behavior remains temporarily for rollback, but users
+should receive the Webflow URL—not the Worker URL.
 
 ## Deploy
 
@@ -31,10 +31,10 @@ Default URL: <https://fde-page-watcher-gateway.fde-webflow.workers.dev>
    identity; Page Watch's D1 role registry remains authoritative for app and
    project access.
 4. Copy the Access team domain and application audience tag into the Webflow
-   Cloud variables `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD`.
-5. Share the gateway URL, not the `webflow.io` origin URL, with users. An
-   authenticated but uninvited email reaches the no-project-access screen and
-   cannot read or mutate project data.
+   Worker variables `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD`.
+5. Set the same random `AUTH_HANDOFF_SECRET` on this Worker and Webflow Cloud.
+6. Share `https://page-watcher.webflow.io` with users. An authenticated but
+   uninvited email is rejected by the app's D1 role registry.
 
 After Access is enabled, an unauthenticated request should redirect to the
 Access login flow. Once authenticated, `GET /__gateway/health` returns a JSON
