@@ -39,6 +39,7 @@ AUTH_BROKER_URL=https://fde-page-watcher-gateway.fde-webflow.workers.dev
 AUTH_PUBLIC_ORIGIN=https://page-watcher.webflow.io
 AUTH_HANDOFF_SECRET=<first generated value>
 AUTH_SESSION_SECRET=<second generated value>
+CF_ACCESS_TEAM_DOMAIN=https://autumn-wind-f943.cloudflareaccess.com
 ```
 
 Set the first generated value on the gateway Worker:
@@ -50,6 +51,11 @@ npx wrangler secret put AUTH_HANDOFF_SECRET --config auth-gateway/wrangler.jsonc
 The gateway config already contains the production callback, Access team
 domain, and Access application audience. Deploy the gateway, then deploy the
 Webflow app.
+
+Sign-out clears the Page Watch session and browser preferences, then visits
+both documented Access logout endpoints in a short-lived top-level window.
+This clears the gateway application cookie and the team-domain global session,
+so the next login can use a different email.
 
 ## Production verification
 
