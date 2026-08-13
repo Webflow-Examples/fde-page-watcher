@@ -2,7 +2,8 @@ import { createFdeStore, type FdeStoreBindings } from "./dataStore";
 import type { CollectionJob, CollectionJobState } from "../src/lib/types";
 import { isPageActivelyMonitored } from "../src/lib/watchCapacity";
 import { ensureCollectionOffsets, PAGE_COLLECTION_SPACING_MINUTES, pageScheduleDue } from "../src/lib/collectionSchedule";
-import { collectionJobIsStale } from "../src/lib/collectionRetry";
+import { BATCH_COLLECTION_STAGGER_MINUTES, collectionJobIsStale } from "../src/lib/collectionRetry";
+import { normalizePsiRuns } from "../src/lib/psiCore";
 
 const ACTIVE = new Set<CollectionJobState>(["queued", "dispatching", "running", "waiting_for_evidence"]);
 const STALE_AFTER_MS = 30 * 60 * 1000;
@@ -128,7 +129,7 @@ export async function dispatchFdeNightly(
   });
 
   if (queued.length === 0) return { ok: true, tenant, queued: 0, coalesced, failed: [] };
-  const runs = Math.max(1, Math.min(5, Number(env.PSI_RUNS) || 5));
+  const runs = normalizePsiRuns(env.PSI_RUNS);
   const payloads: DispatchPayload[] = queued.map((job, index) => {
     const page = state.pages.find((item) => item.id === job.pageId);
     if (!page) throw new Error(`Nightly page ${job.pageId} disappeared during reservation`);
@@ -142,7 +143,7 @@ export async function dispatchFdeNightly(
       cohortId: job.cohortId,
       startDelayMinutes: options.confirmationOnly
         ? index * PAGE_COLLECTION_SPACING_MINUTES
-        : undefined,
+        : queued.length > 1 ? index * BATCH_COLLECTION_STAGGER_MINUTES : undefined,
     };
   });
 

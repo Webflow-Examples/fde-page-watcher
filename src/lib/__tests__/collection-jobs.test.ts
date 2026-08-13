@@ -4,13 +4,24 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { createFsStore, type DataStore } from "../store/fsStore";
 import { pendingPage } from "../mutations";
-import { commitCollectionResult, enqueueCollectionJob, failCollectionJob, markCollectionJob, reconcileCollectionJobs } from "../collectionJobs";
+import {
+  commitCollectionResult,
+  dispatchCollectionJobs,
+  enqueueCollectionJob,
+  failCollectionJob,
+  markCollectionJob,
+  reconcileCollectionJobs,
+} from "../collectionJobs";
 import type { CategoryScore, CollectionResult, NightScores } from "../types";
 import { nativeElementScan } from "../nativeElements";
 import type { CruxPageEvidence } from "../crux";
 
 const roots: string[] = [];
-afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))));
+afterEach(async () => {
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+});
 
 const score = (value: number): CategoryScore => ({ m: value, lo: value - 2, hi: value + 2 });
 const scores = (perf: number): NightScores => ({ perf: score(perf), a11y: score(91), bp: score(95), seo: score(98) });
@@ -94,6 +105,30 @@ async function store(): Promise<DataStore> {
 }
 
 describe("durable collection jobs", () => {
+  it("stagger-dispatches baseline batches with the minimum trusted PSI sample count", async () => {
+    const dataStore = await store();
+    await dataStore.updateState((state) => {
+      state.pages.push(pendingPage("page-two", "Pricing", "https://webflow.com/pricing", "watch"));
+    });
+    await enqueueCollectionJob("page", "baseline", { dataStore, id: "batch-one" });
+    await enqueueCollectionJob("page-two", "baseline", { dataStore, id: "batch-two" });
+    vi.stubEnv("COLLECTOR_URL", "https://collector.example.test/jobs");
+    vi.stubEnv("CRON_SECRET", "shared-secret");
+    vi.stubEnv("PSI_RUNS", "");
+    const fetchFn = vi.fn(async () => Response.json({ workflowIds: ["batch-one", "batch-two"] }, { status: 202 }));
+    vi.stubGlobal("fetch", fetchFn);
+
+    await dispatchCollectionJobs(["batch-one", "batch-two"], dataStore);
+
+    const request = fetchFn.mock.calls[0][1] as RequestInit;
+    expect(JSON.parse(String(request.body))).toMatchObject({
+      jobs: [
+        { jobId: "batch-one", runs: 3, startDelayMinutes: 0 },
+        { jobId: "batch-two", runs: 3, startDelayMinutes: 2 },
+      ],
+    });
+  });
+
   it("does not enqueue collections for paused pages", async () => {
     const dataStore = await store();
     await dataStore.updateState((state) => {

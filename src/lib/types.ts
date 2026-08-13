@@ -735,6 +735,8 @@ export interface ProjectMembership {
 export interface AppState {
   /** Project-level archive marker. Archived tenants retain data but reject collection work. */
   projectArchivedAt?: string;
+  /** Monitoring flags captured before archiving so restore can reinstate the watchlist exactly. */
+  projectArchivePageFlags?: Record<string, Flag>;
   pages: WatchPage[];
   recs: Rec[];
   productEscalations?: ProductEscalation[];

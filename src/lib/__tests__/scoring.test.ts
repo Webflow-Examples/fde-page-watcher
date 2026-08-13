@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { median, range, noiseBand, classifyStatus, categoryTrendSeries, hasPersistentRegression, historyForPreviousRange, historyForRange, historyForStrategy, pageHistoryForRange, pagePreviousPeriodMedian, pageRangeLatestNightForStrategy, pageRangeSeries, pageRangeTrend, pageRecordedHistoryForRange, previousPeriodMedian, rangeComparison, DROP_THRESHOLD } from "../scoring";
+import { median, range, noiseBand, classifyStatus, categoryTrendSeries, hasPersistentRegression, historyForPreviousRange, historyForRange, historyForStrategy, pageAgentHistoryForRange, pageAgentSnapshotForRange, pageHistoryForRange, pagePreviousPeriodMedian, pageRangeLatestNightForStrategy, pageRangeSeries, pageRangeTrend, pageRecordedHistoryForRange, previousPeriodMedian, rangeComparison, DROP_THRESHOLD } from "../scoring";
 import type { CategoryScore, Night, NightScores, ScoreByCategory, StrategyScores, WatchPage } from "../types";
 
 const cat = (m: number): CategoryScore => ({ m, lo: m - 2, hi: m + 2 });
@@ -127,6 +127,32 @@ describe("selected range comparisons", () => {
 
     expect(pageHistoryForRange(page, 3, now).map((item) => item.i)).toEqual([0]);
     expect(pageRecordedHistoryForRange(page, 3, now).map((item) => item.i)).toEqual([0, 1]);
+  });
+
+  it("shows retained agent and audit history before a PSI baseline exists", () => {
+    const now = Date.parse("2026-08-12T00:00:00.000Z");
+    const checks = [{ name: "robots.txt", group: "Discovery", pass: true }];
+    const page: WatchPage = {
+      id: "agent-only",
+      title: "Agent only",
+      url: "https://example.com",
+      flag: "watching",
+      status: "pending",
+      current: { mobile: { perf: 0, a11y: 0, bp: 0, seo: 0 }, desktop: { perf: 0, a11y: 0, bp: 0, seo: 0 } },
+      history: [{
+        ...night(0, 0),
+        iso: "2026-08-11T19:00:00.000Z",
+        availableStrategies: [],
+        agent: checks,
+      }],
+      markers: [],
+      agent: checks,
+    };
+
+    expect(pageHistoryForRange(page, 7, now)).toEqual([]);
+    expect(pageRecordedHistoryForRange(page, 7, now).map((item) => item.i)).toEqual([0]);
+    expect(pageAgentHistoryForRange(page, 7, now).map((item) => item.i)).toEqual([0]);
+    expect(pageAgentSnapshotForRange(page, 7, now)).toEqual({ checks, date: "d0" });
   });
 
   it("keeps independently completed PSI devices out of each other's series", () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildInitialState } from "../seed";
-import { parseProjectConfiguration, pauseProjectForArchive } from "../projects";
+import { parseProjectConfiguration, pauseProjectForArchive, resumeProjectAfterArchive } from "../projects";
 
 describe("project configuration", () => {
   it("parses an ordered project allowlist", () => {
@@ -37,6 +37,7 @@ describe("project archiving", () => {
   it("pauses pages and active jobs without removing historical data", () => {
     const state = buildInitialState("demo");
     const page = state.pages[0];
+    const flag = page.flag;
     const history = structuredClone(page.history);
     const archivedAt = "2026-08-11T12:00:00.000Z";
     state.jobs = [{
@@ -64,11 +65,40 @@ describe("project archiving", () => {
     pauseProjectForArchive(state, archivedAt);
 
     expect(state.projectArchivedAt).toBe(archivedAt);
+    expect(state.projectArchivePageFlags?.[page.id]).toBe(flag);
     expect(state.pages.every((candidate) => candidate.flag === "paused")).toBe(true);
     expect(page.history).toEqual(history);
     expect(page.runState).toBeUndefined();
     expect(page.runId).toBeUndefined();
     expect(state.jobs[0]).toMatchObject({ state: "failed", error: "Project archived", completedAt: archivedAt });
     expect(state.jobs[1].state).toBe("succeeded");
+  });
+
+  it("restores every page flag and retained history after an archive round trip", () => {
+    const state = buildInitialState("demo");
+    state.pages[0].flag = "priority";
+    state.pages[1].flag = "watching";
+    state.pages[2].flag = "paused";
+    const flags = Object.fromEntries(state.pages.map((page) => [page.id, page.flag]));
+    const history = Object.fromEntries(state.pages.map((page) => [page.id, structuredClone(page.history)]));
+
+    pauseProjectForArchive(state, "2026-08-11T12:00:00.000Z");
+    resumeProjectAfterArchive(state);
+
+    expect(state.projectArchivedAt).toBeUndefined();
+    expect(state.projectArchivePageFlags).toBeUndefined();
+    expect(Object.fromEntries(state.pages.map((page) => [page.id, page.flag]))).toEqual(flags);
+    for (const page of state.pages) expect(page.history).toEqual(history[page.id]);
+  });
+
+  it("safely restores legacy archives that did not retain page flags", () => {
+    const state = buildInitialState("demo");
+    state.projectArchivedAt = "2026-08-11T12:00:00.000Z";
+    state.pages.forEach((page) => { page.flag = "paused"; });
+
+    resumeProjectAfterArchive(state);
+
+    expect(state.projectArchivedAt).toBeUndefined();
+    expect(state.pages.every((page) => page.flag === "paused")).toBe(true);
   });
 });

@@ -24,10 +24,14 @@ import type {
 import { isPageActivelyMonitored } from "./watchCapacity";
 import { mergeStrategyOpportunities, promotedDiagnostics } from "./diagnostics";
 import { nativeRecommendationOpportunities } from "./nativeElements";
-import { summarizePsiMeasurements } from "./psiCore";
+import { normalizePsiRuns, summarizePsiMeasurements } from "./psiCore";
 import { summarizeCulpritEvidence } from "./culpritEvidence";
 import { reconcileFieldOnlyRecommendations } from "./fieldOnlyRecommendations";
-import { COLLECTION_JOB_STALE_AFTER_MS, collectionJobIsStale } from "./collectionRetry";
+import {
+  BATCH_COLLECTION_STAGGER_MINUTES,
+  COLLECTION_JOB_STALE_AFTER_MS,
+  collectionJobIsStale,
+} from "./collectionRetry";
 
 export const JOB_STALE_AFTER_MS = COLLECTION_JOB_STALE_AFTER_MS;
 const ACTIVE_STATES = new Set<CollectionJobState>([
@@ -325,6 +329,7 @@ export interface DispatchPayload {
   url: string;
   runs: number;
   tenant?: string;
+  startDelayMinutes?: number;
 }
 
 interface CollectorConfig {
@@ -366,8 +371,8 @@ function collectorHeaders(secret: string): HeadersInit {
 }
 
 function dispatchPayloads(state: AppState, jobIds: string[], tenant?: string): DispatchPayload[] {
-  const runs = Math.max(1, Math.min(5, Number(getEnv("PSI_RUNS")) || 5));
-  return jobIds.map((jobId) => {
+  const runs = normalizePsiRuns(getEnv("PSI_RUNS"));
+  return jobIds.map((jobId, index) => {
     const job = (state.jobs ?? []).find((item) => item.id === jobId);
     const page = job && state.pages.find((item) => item.id === job.pageId);
     if (!job || !page) throw new Error(`Collection job ${jobId} not found`);
@@ -378,6 +383,7 @@ function dispatchPayloads(state: AppState, jobIds: string[], tenant?: string): D
       url: page.url,
       runs,
       tenant,
+      startDelayMinutes: jobIds.length > 1 ? index * BATCH_COLLECTION_STAGGER_MINUTES : undefined,
     };
   });
 }

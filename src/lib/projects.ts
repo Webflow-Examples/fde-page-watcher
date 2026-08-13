@@ -312,6 +312,7 @@ const ACTIVE_JOB_STATES = new Set(["queued", "dispatching", "running", "waiting_
 
 export function pauseProjectForArchive(state: AppState, archivedAt: string): void {
   state.projectArchivedAt = archivedAt;
+  state.projectArchivePageFlags = Object.fromEntries(state.pages.map((page) => [page.id, page.flag]));
   for (const page of state.pages) {
     page.flag = "paused";
     delete page.runState;
@@ -327,6 +328,23 @@ export function pauseProjectForArchive(state: AppState, archivedAt: string): voi
     delete job.nextRetryAt;
     delete job.finalizationStartedAt;
   }
+}
+
+function isFlag(value: unknown): value is AppState["pages"][number]["flag"] {
+  return value === "priority" || value === "watching" || value === "paused";
+}
+
+/** Reactivate an archived project without losing its pre-archive watchlist configuration. */
+export function resumeProjectAfterArchive(state: AppState): void {
+  const archivedFlags = state.projectArchivePageFlags;
+  if (archivedFlags && typeof archivedFlags === "object") {
+    for (const page of state.pages) {
+      const priorFlag = archivedFlags[page.id];
+      if (isFlag(priorFlag)) page.flag = priorFlag;
+    }
+  }
+  delete state.projectArchivePageFlags;
+  delete state.projectArchivedAt;
 }
 
 export async function archiveProject(id: string) {
@@ -351,7 +369,7 @@ export async function restoreProject(id: string) {
   if (!project) throw new UnknownProjectError(id);
   if (!project.archivedAt) throw new Error("Project is not archived");
   await getStore(project.tenant).updateState((draft) => {
-    delete draft.projectArchivedAt;
+    resumeProjectAfterArchive(draft);
   });
   await getStore(ADMIN_REGISTRY_TENANT).updateState((draft) => {
     draft.managedProjects = validManagedProjects(draft);
