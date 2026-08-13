@@ -15,6 +15,7 @@ import { isTaskMarker, removeTaskMarker, taskMarkerText } from "@/lib/taskMarker
 import { recommendationNeedsEscalation } from "@/lib/escalations";
 import { pageTrend } from "@/lib/scoring";
 import type { Project } from "@/lib/projects";
+import { LAST_PROJECT_KEY } from "@/lib/projectSelection";
 
 type SortDir = "asc" | "desc";
 interface SortState {
@@ -132,7 +133,6 @@ const Ctx = createContext<StoreValue | null>(null);
 const STRATEGY_PREFERENCE_KEY = "page-watcher:preferred-strategy";
 const INBOX_DESCRIPTIONS_PREFERENCE_KEY = "page-watcher:inbox-descriptions";
 const TASK_DESCRIPTIONS_PREFERENCE_KEY = "page-watcher:task-descriptions";
-const LAST_PROJECT_KEY = "page-watcher:last-project";
 
 export function useStore(): StoreValue {
   const v = useContext(Ctx);
@@ -302,6 +302,9 @@ export function StoreProvider({
   const switchProject = useCallback(async (nextId: string): Promise<boolean> => {
     if (nextId === projectId || projectSwitching || !projects.some(({ id }) => id === nextId)) return false;
     setProjectSwitching(true);
+    setModal(null);
+    setReport(null);
+    setToast(null);
     // Prevent an older mutation response from reconciling over the next project.
     mutationSequenceRef.current += 1;
     try {
@@ -320,9 +323,6 @@ export function StoreProvider({
       } catch {
         // The selected project still applies for this session.
       }
-      setModal(null);
-      setReport(null);
-      setToast(null);
       return true;
     } catch {
       flash("Couldn't switch projects — try again");
@@ -331,21 +331,6 @@ export function StoreProvider({
       setProjectSwitching(false);
     }
   }, [apply, flash, projectId, projectPathFor, projectSwitching, projects]);
-
-  const restoredProjectRef = useRef(false);
-  useEffect(() => {
-    if (restoredProjectRef.current) return;
-    restoredProjectRef.current = true;
-    let saved: string | null = null;
-    try {
-      saved = window.localStorage.getItem(LAST_PROJECT_KEY);
-    } catch {
-      // Storage can be disabled; the first accessible project remains selected.
-    }
-    if (!saved || saved === projectId || !projects.some(({ id }) => id === saved)) return;
-    const timer = window.setTimeout(() => { void switchProject(saved!); }, 0);
-    return () => window.clearTimeout(timer);
-  }, [projectId, projects, switchProject]);
 
   const createProject = useCallback(async (name: string, customer?: string): Promise<Project | null> => {
     if (!user.isAppAdmin) {

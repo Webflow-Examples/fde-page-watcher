@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildInitialState } from "../seed";
-import { parseProjectConfiguration, pauseProjectForArchive, resumeProjectAfterArchive } from "../projects";
+import { parseProjectConfiguration, pauseProjectForArchive, resumeProjectAfterArchive, selectAccessibleProject } from "../projects";
 
 describe("project configuration", () => {
   it("parses an ordered project allowlist", () => {
@@ -30,6 +30,40 @@ describe("project configuration", () => {
     expect(() => parseProjectConfiguration(JSON.stringify([
       { id: "unsafe", name: "Unsafe", tenant: "../../other" },
     ]))).toThrow("tenant is invalid");
+  });
+
+  it("selects the remembered project before the catalog default", () => {
+    const projects = parseProjectConfiguration(JSON.stringify([
+      { id: "brand-studio", name: "Brand Studio", tenant: "brand-studio:live" },
+      { id: "major-brands", name: "Major Brands", tenant: "major-brands:live" },
+    ]));
+
+    expect(selectAccessibleProject(projects, { email: "admin@example.com", isAppAdmin: true, projectRoles: {} }, "major-brands")?.id)
+      .toBe("major-brands");
+  });
+
+  it("never selects a remembered project without access", () => {
+    const projects = parseProjectConfiguration(JSON.stringify([
+      { id: "brand-studio", name: "Brand Studio", tenant: "brand-studio:live" },
+      { id: "major-brands", name: "Major Brands", tenant: "major-brands:live" },
+    ]));
+
+    expect(selectAccessibleProject(projects, {
+      email: "viewer@example.com",
+      isAppAdmin: false,
+      projectRoles: { "major-brands": "project_viewer" },
+    }, "brand-studio")?.id).toBe("major-brands");
+  });
+
+  it("falls back safely when the remembered project was archived", () => {
+    const projects = parseProjectConfiguration(JSON.stringify([
+      { id: "brand-studio", name: "Brand Studio", tenant: "brand-studio:live" },
+      { id: "major-brands", name: "Major Brands", tenant: "major-brands:live" },
+    ]));
+    projects[1].archivedAt = "2026-08-13T12:00:00.000Z";
+
+    expect(selectAccessibleProject(projects, { email: "admin@example.com", isAppAdmin: true, projectRoles: {} }, "major-brands")?.id)
+      .toBe("brand-studio");
   });
 });
 

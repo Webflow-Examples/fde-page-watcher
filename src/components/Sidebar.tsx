@@ -136,7 +136,7 @@ export function Sidebar() {
             >
               <Icon size={17} />
               <span className="sidebar-link-label">{label}</span>
-              {badge && count > 0 && (
+              {badge && !projectSwitching && count > 0 && (
                 <span
                   style={{
                     marginLeft: "auto",
@@ -169,7 +169,7 @@ export function Sidebar() {
         <div style={{ border: `1px solid ${C.border}`, background: C.panel, borderRadius: 9, padding: "13px 14px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: C.text, fontWeight: 500 }}>
             <ClockIcon size={15} style={{ color: C.accentBright }} />
-            Daily · {schedule.localTime} {schedule.timeZone}
+            {projectSwitching ? "Loading project…" : `Daily · ${schedule.localTime} ${schedule.timeZone}`}
           </div>
         </div>
       </div>

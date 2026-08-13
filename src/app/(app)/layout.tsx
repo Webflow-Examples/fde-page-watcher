@@ -13,6 +13,10 @@ import { accessibleProjects, defaultAccessibleProject } from "@/lib/projects";
 import { DevIdentityForm } from "@/components/DevIdentityForm";
 import { withBasePath } from "@/lib/paths";
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
+import { PROJECT_SELECTION_COOKIE } from "@/lib/projectSelection";
+import { ProjectSelectionBootstrap } from "@/components/ProjectSelectionBootstrap";
+import { ProjectContent } from "@/components/ProjectContent";
 
 // The store reads/writes the local filesystem; force Node.js so that's
 // actually available (some hosts default unannotated segments to an
@@ -30,8 +34,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     throw error;
   }
   const access = await accessForIdentity(identity);
-  const project = await defaultAccessibleProject(access);
-  if (!project) {
+  const [projects, allProjects] = await Promise.all([
+    accessibleProjects(access),
+    access.isAppAdmin ? adminProjects() : Promise.resolve([]),
+  ]);
+  if (projects.length === 0) {
     return (
       <main style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "#0b0b0c", color: "#f4f4f5", padding: 24 }}>
         <section style={{ width: "min(520px, 100%)", border: "1px solid #28282c", borderRadius: 14, background: "#141416", padding: 28 }}>
@@ -45,10 +52,27 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       </main>
     );
   }
-  const [projects, allProjects] = await Promise.all([
-    accessibleProjects(access),
-    access.isAppAdmin ? adminProjects() : Promise.resolve([]),
-  ]);
+  const rememberedProjectId = (await cookies()).get(PROJECT_SELECTION_COOKIE)?.value;
+  const rememberedProjectIsAccessible = !!rememberedProjectId && projects.some(({ id }) => id === rememberedProjectId);
+  if (projects.length > 1 && !rememberedProjectIsAccessible) {
+    return (
+      <ProjectSelectionBootstrap
+        endpoint={withBasePath(basePath, "/api/projects/selection")}
+        projectIds={projects.map(({ id }) => id)}
+        fallbackProjectId={projects[0].id}
+      />
+    );
+  }
+  const project = await defaultAccessibleProject(access, rememberedProjectId ?? projects[0].id);
+  if (!project || (rememberedProjectIsAccessible && project.id !== rememberedProjectId)) {
+    return (
+      <ProjectSelectionBootstrap
+        endpoint={withBasePath(basePath, "/api/projects/selection")}
+        projectIds={projects.map(({ id }) => id)}
+        fallbackProjectId={projects[0].id}
+      />
+    );
+  }
   const dataStore = getStore(project.tenant);
   const [state, visitorExperience] = await Promise.all([
     dataStore.getState(),
@@ -66,7 +90,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     >
       <div className="app-shell" style={{ display: "flex", minHeight: "100vh" }}>
         <Sidebar />
-        <main className="app-main" style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>{children}</main>
+        <ProjectContent>{children}</ProjectContent>
       </div>
       <ChromeOverlays />
     </StoreProvider>
