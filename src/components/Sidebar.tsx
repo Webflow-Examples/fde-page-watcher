@@ -12,6 +12,13 @@ import { isFieldRecommendationActionable } from "@/lib/fieldOnlyRecommendations"
 import { SelectMenu } from "./select-menu";
 import webflowSocialLogo from "../../public/webflow-social.png";
 import { useState } from "react";
+import { clearPageWatchBrowserState } from "@/lib/clientLogout";
+
+const ACCESS_LOGOUT_STEP_MS = 1_500;
+
+function wait(duration: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, duration));
+}
 
 const primaryNavItems = [
   { href: "/dashboard", label: "Dashboard", Icon: DashboardIcon, badge: null as "inbox" | "tasks" | "watchlist" | null },
@@ -44,6 +51,7 @@ export function Sidebar() {
     canManageProject,
   } = useStore();
   const [devEmail, setDevEmail] = useState(user.email);
+  const [signingOut, setSigningOut] = useState(false);
   const inboxCount = recs.filter((r) => r.status === "inbox" && isFieldRecommendationActionable(r)).length;
   const taskCount = recs.filter((r) => r.status === "task").length;
   const watchlistCount = pages.length;
@@ -216,14 +224,46 @@ export function Sidebar() {
             <button
               type="button"
               className="sidebar-sign-out"
+              disabled={signingOut}
               onClick={async () => {
-                const response = await fetch(pathFor("/api/auth/logout"), { method: "POST" });
-                const body = await response.json().catch(() => ({})) as { redirectTo?: string };
-                window.location.assign(pathFor(body.redirectTo ?? "/login"));
+                setSigningOut(true);
+                const accessWindow = window.open("", "page-watch-secure-logout", "popup,width=480,height=360");
+                if (accessWindow) {
+                  accessWindow.document.title = "Signing out of Page Watch";
+                  accessWindow.document.body.textContent = "Completing secure sign-out…";
+                }
+                clearPageWatchBrowserState(window.localStorage, window.sessionStorage);
+                try {
+                  const response = await fetch(pathFor("/api/auth/logout"), { method: "POST" });
+                  const body = await response.json().catch(() => ({})) as {
+                    redirectTo?: string;
+                    accessLogoutUrls?: string[];
+                  };
+                  if (!response.ok) throw new Error("Sign out failed");
+                  const logoutUrls = Array.isArray(body.accessLogoutUrls) ? body.accessLogoutUrls : [];
+                  if (accessWindow && logoutUrls.length) {
+                    for (const logoutUrl of logoutUrls) {
+                      if (accessWindow.closed) break;
+                      accessWindow.location.replace(logoutUrl);
+                      await wait(ACCESS_LOGOUT_STEP_MS);
+                    }
+                    accessWindow.close();
+                    window.location.replace(pathFor(body.redirectTo ?? "/login?signedOut=1"));
+                    return;
+                  }
+                  if (logoutUrls[0]) {
+                    window.location.replace(logoutUrls[0]);
+                    return;
+                  }
+                  window.location.replace(pathFor(body.redirectTo ?? "/login?signedOut=1"));
+                } catch {
+                  accessWindow?.close();
+                  setSigningOut(false);
+                }
               }}
             >
               <SignOutIcon size={14} />
-              Sign out
+              {signingOut ? "Signing out…" : "Sign out"}
             </button>
           )}
         </div>

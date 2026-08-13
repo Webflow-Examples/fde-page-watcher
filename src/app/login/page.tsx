@@ -8,7 +8,7 @@ import { normalizeBasePath, withBasePath } from "@/lib/paths";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export default async function LoginPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ error?: string; signedOut?: string }> }) {
   let authenticated = false;
   try {
     await identityFromHeaders(new Headers(await headers()));
@@ -18,6 +18,6 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   }
   if (authenticated) redirect("/dashboard");
   const basePath = normalizeBasePath(getEnv("BASE_URL"));
-  const { error } = await searchParams;
-  return <LoginForm startHref={withBasePath(basePath, "/api/auth/start")} error={error} />;
+  const { error, signedOut } = await searchParams;
+  return <LoginForm startHref={withBasePath(basePath, "/api/auth/start")} error={error} signedOut={signedOut === "1"} />;
 }

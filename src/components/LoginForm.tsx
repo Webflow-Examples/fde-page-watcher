@@ -7,7 +7,7 @@ const ERRORS: Record<string, string> = {
   handoff: "That login attempt expired or could not be verified. Please try again.",
 };
 
-export function LoginForm({ startHref, error }: { startHref: string; error?: string }) {
+export function LoginForm({ startHref, error, signedOut = false }: { startHref: string; error?: string; signedOut?: boolean }) {
 
   return (
     <main className="login-page">
@@ -22,6 +22,7 @@ export function LoginForm({ startHref, error }: { startHref: string; error?: str
           <p>Continue to the secure email-code login. Use the email address that was invited to Page Watch.</p>
         </div>
         <a className="login-primary-action" href={startHref}>Continue with email</a>
+        {signedOut && <p className="login-message" role="status">You’re signed out. You can now continue with a different email.</p>}
         {error && <p className="login-error" role="alert">{ERRORS[error] ?? ERRORS.handoff}</p>}
       </section>
     </main>
