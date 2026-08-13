@@ -75,7 +75,9 @@ export async function verifyAccessJwt(
   }
 
   const teamDomain = options.teamDomain.replace(/\/$/, "");
-  const response = await (options.fetcher ?? fetch)(`${teamDomain}/cdn-cgi/access/certs`, { cache: "force-cache" });
+  // Workers only supports `no-store` and `no-cache`; browser-oriented modes
+  // such as `force-cache` throw before this subrequest is sent.
+  const response = await (options.fetcher ?? fetch)(`${teamDomain}/cdn-cgi/access/certs`);
   if (!response.ok) throw new AuthenticationError("Cloudflare Access signing keys are unavailable", 503);
   const jwks = await response.json() as JwksResponse;
   const key = jwks.keys?.find((candidate) => candidate.kid === header.kid);
