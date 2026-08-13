@@ -95,6 +95,7 @@ describe("authentication gateway", () => {
     const { token: accessToken, jwk } = await signedAccessToken();
     const fetcher = vi.fn(async (request: Request) => {
       expect(request.url).toBe(`${env.CF_ACCESS_TEAM_DOMAIN}/cdn-cgi/access/certs`);
+      expect(request.cache).toBe("default");
       return Response.json({ keys: [jwk] });
     });
     const response = await handleGatewayRequest(new Request(`https://gateway.example.com/__auth/broker?state=${state}`, {
