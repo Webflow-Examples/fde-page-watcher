@@ -148,9 +148,18 @@ export async function accessibleProjects(access: UserAccess, includeArchived = f
     }));
 }
 
-export async function defaultAccessibleProject(access: UserAccess): Promise<ConfiguredProject | null> {
-  return (await projectCatalog()).find((project) =>
-    !project.archivedAt && (access.isAppAdmin || !!access.projectRoles[project.id])) ?? null;
+export function selectAccessibleProject(
+  projects: ConfiguredProject[],
+  access: UserAccess,
+  preferredId?: string,
+): ConfiguredProject | null {
+  const accessible = projects.filter((project) =>
+    !project.archivedAt && (access.isAppAdmin || !!access.projectRoles[project.id]));
+  return accessible.find((project) => project.id === preferredId) ?? accessible[0] ?? null;
+}
+
+export async function defaultAccessibleProject(access: UserAccess, preferredId?: string): Promise<ConfiguredProject | null> {
+  return selectAccessibleProject(await projectCatalog(), access, preferredId);
 }
 
 export async function defaultAvailableProject(): Promise<ConfiguredProject> {

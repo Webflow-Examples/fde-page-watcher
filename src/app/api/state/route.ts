@@ -3,6 +3,7 @@ import { finalizeCollectionJob, reconcileCollectionJobs } from "@/lib/collection
 import { recoverStaleRuns } from "@/lib/mutations";
 import { isProjectAccessError, projectStore } from "@/lib/projects";
 import type { DataStore } from "@/lib/store";
+import { PROJECT_SELECTION_COOKIE, projectSelectionCookieOptions } from "@/lib/projectSelection";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -57,5 +58,10 @@ export async function GET(request: Request) {
     });
   }
   const visitorExperience = await dataStore.getCruxEvidence().catch(() => []);
-  return NextResponse.json({ state, visitorExperience });
+  const response = NextResponse.json({ state, visitorExperience });
+  const requestedProjectId = new URL(request.url).searchParams.get("project");
+  if (requestedProjectId) {
+    response.cookies.set(PROJECT_SELECTION_COOKIE, requestedProjectId, projectSelectionCookieOptions());
+  }
+  return response;
 }

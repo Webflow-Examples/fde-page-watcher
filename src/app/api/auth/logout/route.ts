@@ -3,6 +3,7 @@ import { accessLogoutUrls } from "@/lib/accessLogout";
 import { LOGIN_STATE_COOKIE_DEVELOPMENT, LOGIN_STATE_COOKIE_PRODUCTION } from "@/lib/authHandoff";
 import { getEnv } from "@/lib/env";
 import { DEVELOPMENT_SESSION_COOKIE, PRODUCTION_SESSION_COOKIE } from "@/lib/session";
+import { PROJECT_SELECTION_COOKIE } from "@/lib/projectSelection";
 
 export async function POST() {
   const response = NextResponse.json({
@@ -20,6 +21,7 @@ export async function POST() {
     DEVELOPMENT_SESSION_COOKIE,
     LOGIN_STATE_COOKIE_PRODUCTION,
     LOGIN_STATE_COOKIE_DEVELOPMENT,
+    PROJECT_SELECTION_COOKIE,
   ]) {
     response.cookies.set(name, "", {
       httpOnly: true,
