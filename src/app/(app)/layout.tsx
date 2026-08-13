@@ -7,10 +7,12 @@ import { adminProjects } from "@/lib/projects";
 import { getStore } from "@/lib/store";
 import { headers } from "next/headers";
 import { identityFromHeaders } from "@/lib/identity";
+import { AuthenticationError } from "@/lib/identity";
 import { accessForIdentity } from "@/lib/authorization";
 import { accessibleProjects, defaultAccessibleProject } from "@/lib/projects";
 import { DevIdentityForm } from "@/components/DevIdentityForm";
 import { withBasePath } from "@/lib/paths";
+import { redirect } from "next/navigation";
 
 // The store reads/writes the local filesystem; force Node.js so that's
 // actually available (some hosts default unannotated segments to an
@@ -19,9 +21,15 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const identity = await identityFromHeaders(new Headers(await headers()));
-  const access = await accessForIdentity(identity);
   const basePath = normalizeBasePath(getEnv("BASE_URL"));
+  let identity;
+  try {
+    identity = await identityFromHeaders(new Headers(await headers()));
+  } catch (error) {
+    if (error instanceof AuthenticationError) redirect(withBasePath(basePath, "/login"));
+    throw error;
+  }
+  const access = await accessForIdentity(identity);
   const project = await defaultAccessibleProject(access);
   if (!project) {
     return (

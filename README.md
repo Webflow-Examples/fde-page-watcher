@@ -47,6 +47,10 @@ All are optional for local development — the app runs without them.
 | `ANTHROPIC_API_KEY`          | Enables post-commit recommendation explanations and Watcher narratives on the app.                           |
 | `ANTHROPIC_MOCK`             | Uses deterministic placeholder AI text without making Anthropic requests.                                    |
 | `WEBFLOW_TOKEN_ENCRYPTION_KEY` | Collector-only base64 AES-256 key used to encrypt tenant Webflow site tokens before D1 persistence.         |
+| `AUTH_BROKER_URL`            | Access-protected gateway origin used only for the email-code identity step.                                   |
+| `AUTH_PUBLIC_ORIGIN`         | Fixed public app origin used as the signed handoff audience and callback origin.                              |
+| `AUTH_HANDOFF_SECRET`        | HMAC key shared only by the gateway and Webflow Cloud; use at least 32 random characters.                     |
+| `AUTH_SESSION_SECRET`        | Webflow-only HMAC key for host-only login sessions; use an independent random value of at least 32 characters.|
 
 Put these in `.env.local`.
 
@@ -124,27 +128,15 @@ Put these in `.env.local`.
 
 ## Production setup
 
-The interactive app is reached through the
-[`auth-gateway/`](auth-gateway/README.md) Worker. A Cloudflare Access
-self-hosted application protects that Worker using Email OTP. The gateway
-forwards the signed `Cf-Access-Jwt-Assertion` to the Webflow Cloud origin, and
-the Next server verifies its RS256 signature, issuer, application audience,
-activation, and expiry before checking the email against the role registry on
-every request. The public Webflow origin remains fail-closed without a valid
-assertion.
-Local storage keeps only the last opened project ID; D1 remains authoritative
-for all app-admin and project membership decisions. Revoking a role therefore
-takes effect immediately even if the Access session is still valid.
-
-Deploy `fde-page-watcher-gateway` and select that Worker as the destination of
-the Access application. Use an Email OTP Allow policy for all authenticated
-users. Access proves the email identity; the app's D1 role registry decides
-whether that email is an app administrator, project administrator, project
-viewer, or has no access. Configure `CF_ACCESS_TEAM_DOMAIN` and
-`CF_ACCESS_AUD` in Webflow Cloud. The Access-hosted login page supplies the
-email and authentication-code screens; no invitation email is sent by Page
-Watch. The inviter shares the app link. An authenticated but uninvited email
-sees the no-project-access screen and cannot read or mutate project data.
+The interactive app is served directly from `https://page-watcher.webflow.io`.
+Its login button briefly sends the browser to the existing Access-protected
+gateway for Cloudflare's email-code authentication. The gateway validates the
+Access JWT, signs a one-minute state-bound handoff, and returns the browser to
+the Webflow hostname, which creates a signed host-only session cookie. No
+custom email sender or DNS access is required. The app's role registry remains
+authoritative for app-admin and project-level access, including after login.
+Local storage keeps only the last opened project ID. See
+[docs/native-auth.md](docs/native-auth.md) for deployment and cutover steps.
 
 The immutable bootstrap app administrators are `matthew@webflow.com`,
 `ben@webflow.com`, and `diego.rangel@webflow.com`. Additional app admins must

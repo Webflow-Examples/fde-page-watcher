@@ -7,7 +7,7 @@ import { useStore } from "./store";
 import { C } from "@/lib/ui";
 import { normalizeCollectionSchedule } from "@/lib/collectionSchedule";
 import { ClockIcon, DashboardIcon, EyeIcon, InboxIcon, PagesIcon, TasksIcon } from "./icons";
-import { GearIcon, ShieldCheckIcon } from "@phosphor-icons/react";
+import { GearIcon, ShieldCheckIcon, SignOutIcon } from "@phosphor-icons/react";
 import { isFieldRecommendationActionable } from "@/lib/fieldOnlyRecommendations";
 import { SelectMenu } from "./select-menu";
 import webflowSocialLogo from "../../public/webflow-social.png";
@@ -211,6 +211,20 @@ export function Sidebar() {
               />
               <button type="submit" style={{ border: `1px solid ${C.border}`, borderRadius: 6, background: C.panel2, color: C.text, padding: "0 8px", cursor: "pointer" }}>Use</button>
             </form>
+          )}
+          {!user.development && (
+            <button
+              type="button"
+              className="sidebar-sign-out"
+              onClick={async () => {
+                const response = await fetch(pathFor("/api/auth/logout"), { method: "POST" });
+                const body = await response.json().catch(() => ({})) as { redirectTo?: string };
+                window.location.assign(pathFor(body.redirectTo ?? "/login"));
+              }}
+            >
+              <SignOutIcon size={14} />
+              Sign out
+            </button>
           )}
         </div>
       </div>
