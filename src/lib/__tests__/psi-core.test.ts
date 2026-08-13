@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { collectPsi, PsiRequestError, runPsiOnce, summarizePsiMeasurements } from "../psiCore";
+import {
+  classifyPsiFailure,
+  collectPsi,
+  PsiLighthouseRuntimeError,
+  PsiRequestError,
+  PsiResponseError,
+  runPsiOnce,
+  summarizePsiMeasurements,
+} from "../psiCore";
 
 function psiResponse(warnings: string[] = [], perf = 0.8, fetchTime?: string) {
   return {
@@ -27,6 +35,36 @@ function psiResponse(warnings: string[] = [], perf = 0.8, fetchTime?: string) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("PSI collection quality", () => {
+  it("defaults to the three independent runs required for a trusted quorum", async () => {
+    const fetchFn = vi.fn(async () => Response.json(psiResponse()));
+    vi.stubGlobal("fetch", fetchFn);
+
+    await collectPsi("https://example.com", "mobile");
+
+    expect(fetchFn).toHaveBeenCalledTimes(3);
+  });
+
+  it("classifies quota, target, and transient failures before retrying", () => {
+    expect(classifyPsiFailure(new PsiRequestError("quota", 429))).toBe("quota");
+    expect(classifyPsiFailure(new PsiRequestError("bad target", 400))).toBe("target");
+    expect(classifyPsiFailure(new PsiResponseError("invalid response"))).toBe("target");
+    expect(classifyPsiFailure(new PsiLighthouseRuntimeError("NO_FCP"))).toBe("target");
+    expect(classifyPsiFailure(new PsiRequestError("provider unavailable", 500))).toBe("transient");
+    expect(classifyPsiFailure(new Error("network reset"))).toBe("transient");
+  });
+
+  it("does not multiply requests after a quota or target failure", async () => {
+    const fetchFn = vi.fn(async () => Response.json({
+      error: { code: 429, message: "Quota exceeded" },
+    }, { status: 429 }));
+    vi.stubGlobal("fetch", fetchFn);
+
+    await expect(collectPsi("https://example.com", "mobile", { runs: 5 })).rejects.toThrow(
+      "PSI collection failed for mobile",
+    );
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
   it("summarizes all five scored lab sub-metrics across runs", () => {
     const raw = (offset: number) => ({
       lighthouseResult: {

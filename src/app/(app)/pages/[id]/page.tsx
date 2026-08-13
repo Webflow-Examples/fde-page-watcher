@@ -9,7 +9,7 @@ import type { AgentCheck, CategoryKey, CollectionJob, DevicePolicy, KitesurfEvid
 import { agentCheckKey, agentIgnoreOverrideMode, isAgentCheckIgnored, isAgentGroupIgnored, normalizeAgentIgnoreSettings, summarizeAgentChecks } from "@/lib/agentScoring";
 import { agentReadinessHistoryPoints } from "@/lib/agentHistory";
 import { effectivePerformanceThresholds } from "@/lib/performanceThresholds";
-import { deltaMeta, historyForStrategy, nightHasStrategy, pageAgentSnapshotForRange, pageHistoryForRange, pagePreviousPeriodMedian, pageRangeComparison, pageRangeLatestNightForStrategy, pageRangeSeries, pageRangeTrend, pageRecordedHistoryForRange, scoreMeta, statusMeta } from "@/lib/scoring";
+import { deltaMeta, historyForStrategy, nightHasStrategy, pageAgentHistoryForRange, pageAgentSnapshotForRange, pageHistoryForRange, pagePreviousPeriodMedian, pageRangeComparison, pageRangeLatestNightForStrategy, pageRangeSeries, pageRangeTrend, pageRecordedHistoryForRange, scoreMeta, statusMeta } from "@/lib/scoring";
 import { auditsFor } from "@/lib/audits";
 import { C, taskLabel } from "@/lib/ui";
 import { AgentReadinessChart, HistoryChart, Sparkline } from "@/components/charts";
@@ -634,6 +634,7 @@ function HistoryTab({
   const router = useRouter();
   const rangeHistory = pageHistoryForRange(page, rangeDays);
   const recordedRangeHistory = pageRecordedHistoryForRange(page, rangeDays);
+  const agentRangeHistory = pageAgentHistoryForRange(page, rangeDays);
   const excludedHistory = recordedRangeHistory.filter((night) => night.evidenceStatus === "provider-anomaly");
   // The table is an audit trail, so it shows every recorded collection. The
   // chart/status/readiness paths above continue to use trusted history only.
@@ -665,7 +666,7 @@ function HistoryTab({
   }));
   const thresholds = effectivePerformanceThresholds(store.performanceThresholds, page);
   const readinessHistory = agentReadinessHistoryPoints(
-    rangeHistory,
+    agentRangeHistory,
     page.agentIgnores,
     store.agentIgnoreDefaults,
     page.agentIgnoreRestores,
@@ -813,7 +814,7 @@ function HistoryTab({
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: "50%", background: C.accentSoft }} />Newly ignored</span>
               </div>
               <AgentReadinessChart
-                history={rangeHistory}
+                history={agentRangeHistory}
                 threshold={thresholds.agentReadiness}
                 ignores={page.agentIgnores}
                 defaults={store.agentIgnoreDefaults}
@@ -1373,7 +1374,7 @@ function AgentTab({
   const restores = normalizeAgentIgnoreSettings(page.agentIgnoreRestores);
   const defaults = normalizeAgentIgnoreSettings(store.agentIgnoreDefaults);
   const allApplicableUnavailable = checks.length > 0 && pass === 0 && fail === 0 && unavailable > 0;
-  const latestKitesurf = [...pageHistoryForRange(page, rangeDays)].reverse().find((night) => night.kitesurf)?.kitesurf ?? null;
+  const latestKitesurf = [...pageAgentHistoryForRange(page, rangeDays)].reverse().find((night) => night.kitesurf)?.kitesurf ?? null;
   return (
     <div>
       <KitesurfProbeCard evidence={latestKitesurf} />

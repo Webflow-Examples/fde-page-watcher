@@ -19,6 +19,12 @@ import {
 import { median, range } from "./scoring";
 
 const PSI_ENDPOINT = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed";
+export const DEFAULT_PSI_RUNS = 3;
+
+export function normalizePsiRuns(value: unknown): number {
+  const parsed = Number(value);
+  return Math.max(1, Math.min(5, Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_PSI_RUNS));
+}
 
 export interface RunResult {
   scores: ScoreByCategory;
@@ -52,6 +58,32 @@ export class PsiRequestError extends Error {
     super(message);
     this.name = "PsiRequestError";
   }
+}
+
+export class PsiResponseError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PsiResponseError";
+  }
+}
+
+export class PsiLighthouseRuntimeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PsiLighthouseRuntimeError";
+  }
+}
+
+export type PsiFailureKind = "quota" | "target" | "transient";
+
+/** Classify failures before deciding whether another provider request is useful. */
+export function classifyPsiFailure(error: unknown): PsiFailureKind {
+  if (error instanceof PsiRequestError) {
+    if (error.status === 429) return "quota";
+    if (error.status >= 400 && error.status < 500) return "target";
+  }
+  if (error instanceof PsiResponseError || error instanceof PsiLighthouseRuntimeError) return "target";
+  return "transient";
 }
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -141,12 +173,20 @@ export async function runPsiOnce(
 
   if (json.error) {
     const detail = json.error.message ? `: ${safeProviderDetail(json.error.message)}` : "";
-    throw new Error(`PSI provider error ${json.error.code ?? "unknown"}${detail}`);
+    const status = json.error.code;
+    if (typeof status === "number") {
+      throw new PsiRequestError(`PSI provider error ${status}${detail}`, status);
+    }
+    throw new PsiResponseError(`PSI provider error unknown${detail}`);
   }
   const runtimeError = lighthouseRuntimeError(json);
-  if (runtimeError) throw new Error(`Lighthouse runtime error: ${safeProviderDetail(runtimeError)}`);
+  if (runtimeError) {
+    throw new PsiLighthouseRuntimeError(`Lighthouse runtime error: ${safeProviderDetail(runtimeError)}`);
+  }
   const scores = lighthouseScores(json);
-  if (!scores) throw new Error("PSI response is missing one or more requested Lighthouse category scores");
+  if (!scores) {
+    throw new PsiResponseError("PSI response is missing one or more requested Lighthouse category scores");
+  }
   return {
     scores,
     evidence: extractLighthouseRunEvidence(json, 0),
@@ -155,20 +195,14 @@ export async function runPsiOnce(
   };
 }
 
-async function withRetry(url: string, strategy: Strategy, apiKey: string | undefined, attempts = 2): Promise<RunResult> {
-  let lastError: unknown;
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 70_000);
-    try {
-      return await runPsiOnce(url, strategy, { apiKey, signal: controller.signal });
-    } catch (error) {
-      lastError = error;
-    } finally {
-      clearTimeout(timer);
-    }
+async function runPsiWithTimeout(url: string, strategy: Strategy, apiKey: string | undefined): Promise<RunResult> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 70_000);
+  try {
+    return await runPsiOnce(url, strategy, { apiKey, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
   }
-  throw lastError;
 }
 
 /** Collect a median/range from multiple successful PSI samples. */
@@ -219,20 +253,29 @@ export async function collectPsi(
   strategy: Strategy,
   options: { apiKey?: string; runs?: number } = {},
 ): Promise<CollectResult> {
-  const runsRequested = Math.max(1, Math.min(5, options.runs ?? 5));
+  const runsRequested = normalizePsiRuns(options.runs);
   // Keep requests sequential. Concurrent identical PSI requests can return the
   // same cached Lighthouse measurement and create false five-run confidence.
   const settled: PromiseSettledResult<RunResult>[] = [];
   for (let index = 0; index < runsRequested; index += 1) {
-    settled.push(await withRetry(url, strategy, options.apiKey)
-      .then((value): PromiseSettledResult<RunResult> => ({ status: "fulfilled", value }))
-      .catch((reason): PromiseSettledResult<RunResult> => ({ status: "rejected", reason })));
+    try {
+      settled.push({ status: "fulfilled", value: await runPsiWithTimeout(url, strategy, options.apiKey) });
+    } catch (reason) {
+      settled.push({ status: "rejected", reason });
+      if (classifyPsiFailure(reason) !== "transient") break;
+    }
   }
   const runs = settled
     .flatMap((result, index): RunResult[] =>
       result.status === "fulfilled"
         ? [{ ...result.value, evidence: { ...result.value.evidence, run: index + 1 } }]
         : []);
-  if (runs.length === 0) throw new Error(`PSI collection failed for ${strategy}`);
+  if (runs.length === 0) {
+    const latest = settled.at(-1);
+    const detail = latest?.status === "rejected"
+      ? `: ${latest.reason instanceof Error ? latest.reason.message : String(latest.reason)}`
+      : "";
+    throw new Error(`PSI collection failed for ${strategy}${detail}`);
+  }
   return aggregatePsiRuns(runs, runsRequested, runs.map((run) => run.raw));
 }

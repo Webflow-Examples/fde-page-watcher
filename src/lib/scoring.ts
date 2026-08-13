@@ -328,8 +328,13 @@ export function pageHistoryForRange(page: WatchPage, days: RangeDays, now = Date
  * calculations must continue to use pageHistoryForRange.
  */
 export function pageRecordedHistoryForRange(page: WatchPage, days: RangeDays, now = Date.now()): Night[] {
-  if (!page.baseline || !page.baselineCapturedAt) return [];
-  return historyForRange(postBaselineHistory(page, true), days, now);
+  return historyForRange(page.history, days, now);
+}
+
+/** Independent agent/readiness evidence does not require a successful PSI baseline. */
+export function pageAgentHistoryForRange(page: WatchPage, days: RangeDays, now = Date.now()): Night[] {
+  return historyForRange(page.history, days, now).filter((night) =>
+    Array.isArray(night.agent) || !!night.agentReadiness || !!night.kitesurf);
 }
 
 /** Previous-period chart reference for one device and metric. */
@@ -386,7 +391,7 @@ export function pageAgentSnapshotForRange(
   days: RangeDays,
   now = Date.now(),
 ): PageAgentSnapshot | null {
-  const rangeHistory = pageHistoryForRange(page, days, now);
+  const rangeHistory = pageAgentHistoryForRange(page, days, now);
   const night = [...rangeHistory].reverse().find((entry) => Array.isArray(entry.agent));
   if (night) return { checks: night.agent ?? [], date: night.date };
 

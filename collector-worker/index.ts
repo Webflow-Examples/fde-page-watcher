@@ -1,12 +1,11 @@
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
-import { NonRetryableError } from "cloudflare:workflows";
 import {
   aggregatePsiRuns,
-  PsiRequestError,
+  classifyPsiFailure,
   runPsiOnce,
   summarizePsiMeasurements,
 } from "../src/lib/psiCore";
-import type { CompactRunResult } from "../src/lib/psiCore";
+import type { CompactRunResult, PsiFailureKind } from "../src/lib/psiCore";
 import { scanPageContent } from "../src/lib/agentReadiness";
 import { captureAgentReadiness } from "../src/lib/agentScoring";
 import { costBand } from "../src/lib/cost";
@@ -39,6 +38,7 @@ import { CATEGORIES, STRATEGIES } from "../src/lib/types";
 import {
   EVIDENCE_RETRY_DELAY,
   EVIDENCE_RETRY_MAX_CYCLES,
+  PSI_ATTEMPT_SPACING,
   evidenceRetryAt,
 } from "../src/lib/collectionRetry";
 import { createFdeStore } from "./dataStore";
@@ -88,6 +88,10 @@ interface AgentSummary {
 interface CruxSummary {
   capturedAt: string;
 }
+
+type PsiAttemptOutcome =
+  | { ok: true; run: CompactRunResult }
+  | { ok: false; kind: PsiFailureKind; error: string };
 
 function reportKey(jobId: string, strategy: Strategy): string {
   return `collector-jobs/${jobId}/${strategy}.json`;
@@ -344,7 +348,12 @@ async function commitWorkflowAgent(
   });
 }
 
-async function commitWorkflowResult(env: Env, payload: DispatchPayload, result: CollectionResult): Promise<void> {
+async function commitWorkflowResult(
+  env: Env,
+  payload: DispatchPayload,
+  result: CollectionResult,
+  auxiliary: { cruxError?: string; agentError?: string } = {},
+): Promise<void> {
   if (!payload.tenant) return;
   const store = createFdeStore(payload.tenant, env);
   const snapshot = await store.getState();
@@ -441,15 +450,17 @@ async function commitWorkflowResult(env: Env, payload: DispatchPayload, result: 
     currentJob.completedStrategies = [...STRATEGIES];
     delete currentJob.nextRetryAt;
     delete currentJob.strategyErrors;
-    delete currentJob.cruxError;
-    delete currentJob.agentError;
+    if (auxiliary.cruxError) currentJob.cruxError = auxiliary.cruxError;
+    else delete currentJob.cruxError;
+    if (auxiliary.agentError) currentJob.agentError = auxiliary.agentError;
+    else delete currentJob.agentError;
     currentJob.updatedAt = completedAt.toISOString();
     currentJob.completedAt = completedAt.toISOString();
     delete currentJob.error;
     if (page.runId === currentJob.runId) {
       page.runState = undefined;
       page.lastRunAt = completedAt.toISOString();
-      page.lastCollectionStatus = "trusted";
+      page.lastCollectionStatus = auxiliary.cruxError || auxiliary.agentError ? "partial" : "trusted";
       delete page.lastError;
     }
     if (result.cohortId) evaluateCohortAnomaly(draft, result.cohortId, completedAt);
@@ -629,15 +640,15 @@ export class CollectorWorkflow extends WorkflowEntrypoint<Env, DispatchPayload> 
               && aggregatePsiRuns(currentRuns, payload.runs).quality.status === "reliable"
             ) break;
             if (attempts[strategy] > 0 && slot > 0) {
-              await step.sleep(`space ${strategy} attempt ${attempts[strategy] + 1}`, "1 minute");
+              await step.sleep(`space ${strategy} attempt ${attempts[strategy] + 1}`, PSI_ATTEMPT_SPACING);
             }
             attempts[strategy] += 1;
             const attempt = attempts[strategy];
             try {
-              const compact = await step.do(
+              const outcome = await step.do(
                 `collect ${strategy} attempt ${attempt}`,
-                { retries: { limit: 1, delay: "30 seconds" }, timeout: "2 minutes" },
-                async (): Promise<CompactRunResult> => {
+                { retries: { limit: 0, delay: "1 second" }, timeout: "2 minutes" },
+                async (): Promise<PsiAttemptOutcome> => {
                   const controller = new AbortController();
                   const timeout = setTimeout(() => controller.abort(), 105_000);
                   try {
@@ -660,29 +671,35 @@ export class CollectorWorkflow extends WorkflowEntrypoint<Env, DispatchPayload> 
                       },
                     );
                     return {
-                      scores: result.scores,
-                      evidence: { ...result.evidence, run: attempt },
-                      sampleKey: result.sampleKey,
+                      ok: true,
+                      run: {
+                        scores: result.scores,
+                        evidence: { ...result.evidence, run: attempt },
+                        sampleKey: result.sampleKey,
+                      },
                     };
                   } catch (error) {
-                    // A second immediate request cannot repair quota/auth/client
-                    // errors. Preserve the error and let the three-hour cycle retry.
-                    if (error instanceof PsiRequestError && error.status >= 400 && error.status < 500) {
-                      throw new NonRetryableError(error.message);
-                    }
-                    throw error;
+                    return {
+                      ok: false,
+                      kind: classifyPsiFailure(error),
+                      error: (error instanceof Error ? error.message : String(error)).slice(0, 200),
+                    };
                   } finally {
                     clearTimeout(timeout);
                   }
                 },
               );
-              currentRuns.push(compact);
-              delete lastErrors[strategy];
+              if (outcome.ok) {
+                currentRuns.push(outcome.run);
+                delete lastErrors[strategy];
+              } else {
+                lastErrors[strategy] = `${outcome.kind}: ${outcome.error}`;
+                // Quota and target failures cannot be repaired by another
+                // immediate request. The durable evidence cycle retries later.
+                if (outcome.kind !== "transient") break;
+              }
             } catch (error) {
               lastErrors[strategy] = (error instanceof Error ? error.message : String(error)).slice(0, 200);
-              if (error instanceof NonRetryableError || (error instanceof Error && error.name === "NonRetryableError")) {
-                break;
-              }
             }
           }
 
@@ -734,7 +751,7 @@ export class CollectorWorkflow extends WorkflowEntrypoint<Env, DispatchPayload> 
             agentCompletedAt: agent?.capturedAt,
             agentError,
           }));
-        if (completedStrategies.length === STRATEGIES.length && crux && agent) break;
+        if (completedStrategies.length === STRATEGIES.length) break;
 
         if (cycle < EVIDENCE_RETRY_MAX_CYCLES - 1) {
           const nextRetryAt = await step.do(`schedule evidence retry ${cycle + 1}`, async () => evidenceRetryAt());
@@ -776,25 +793,15 @@ export class CollectorWorkflow extends WorkflowEntrypoint<Env, DispatchPayload> 
             + `${eligible} unique warning-free measurements${detail}`;
         }).join("; "));
       }
-      if (!agent) {
-        throw new InconclusiveEvidenceError(
-          `agent readiness inconclusive after ${EVIDENCE_RETRY_MAX_CYCLES} attempts`
-          + `${agentError ? `; latest error: ${agentError}` : ""}`,
-        );
-      }
-      if (!crux) {
-        throw new InconclusiveEvidenceError(
-          `CrUX inconclusive after ${EVIDENCE_RETRY_MAX_CYCLES} attempts`
-          + `${cruxError ? `; latest error: ${cruxError}` : ""}`,
-        );
-      }
-
       // Only compact summaries cross the Workflow persistence boundary. Full
       // Lighthouse payloads are staged in R2 as soon as each device is reliable.
       const mobile = retained.mobile!;
       const desktop = retained.desktop!;
       const capturedAt = await step.do("record capture time", async () =>
-        [mobile.capturedAt, desktop.capturedAt, crux.capturedAt, agent.capturedAt].sort().at(-1)!,
+        [mobile.capturedAt, desktop.capturedAt, crux?.capturedAt, agent?.capturedAt]
+          .filter((value): value is string => !!value)
+          .sort()
+          .at(-1)!,
       );
       const scores = { mobile: mobile.scores, desktop: desktop.scores } satisfies StrategyScores;
       const result = {
@@ -805,9 +812,9 @@ export class CollectorWorkflow extends WorkflowEntrypoint<Env, DispatchPayload> 
         capturedAt,
         scores,
         samples: { mobile: mobile.sampleSize, desktop: desktop.sampleSize },
-        agent: agent.checks,
-        nativeElements: agent.nativeElements,
-        kitesurf: agent.kitesurf,
+        agent: agent?.checks ?? [],
+        nativeElements: agent?.nativeElements,
+        kitesurf: agent?.kitesurf,
         opportunities: mobile.opportunities,
         opportunitiesByStrategy: {
           mobile: mobile.opportunities,
@@ -831,7 +838,7 @@ export class CollectorWorkflow extends WorkflowEntrypoint<Env, DispatchPayload> 
       await step.do(
         "commit result to FDE storage",
         { retries: { limit: 5, delay: "5 seconds", backoff: "exponential" }, timeout: "2 minutes" },
-        async () => commitWorkflowResult(this.env, payload, result),
+        async () => commitWorkflowResult(this.env, payload, result, { cruxError, agentError }),
       );
       return result;
     } catch (error) {
