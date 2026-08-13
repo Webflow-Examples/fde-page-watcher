@@ -9,7 +9,7 @@
   "vars": {
     "ORIGIN_URL": "https://page-watcher.webflow.io",
     "AUTH_CALLBACK_URL": "https://page-watcher.webflow.io/api/auth/callback",
-    "CF_ACCESS_TEAM_DOMAIN": "https://webflow-fde.cloudflareaccess.com",
+    "CF_ACCESS_TEAM_DOMAIN": "https://fde-webflow.cloudflareaccess.com",
     "CF_ACCESS_AUD": "69dba8551a2d8eb477453d86c1e8c9179389869faa68cc7ae52ac219c9204995"
   },
   "secrets": {
