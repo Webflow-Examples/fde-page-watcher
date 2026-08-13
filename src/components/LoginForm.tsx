@@ -22,7 +22,7 @@ export function LoginForm({ startHref, error, signedOut = false }: { startHref: 
           <p>Continue to the secure email-code login. Use the email address that was invited to Page Watch.</p>
         </div>
         <a className="login-primary-action" href={startHref}>Continue with email</a>
-        {signedOut && <p className="login-message" role="status">You’re signed out. You can now continue with a different email.</p>}
+        {signedOut && <p className="login-message" role="status">You’re signed out.</p>}
         {error && <p className="login-error" role="alert">{ERRORS[error] ?? ERRORS.handoff}</p>}
       </section>
     </main>
