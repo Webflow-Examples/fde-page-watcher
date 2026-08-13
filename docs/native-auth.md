@@ -39,7 +39,7 @@ AUTH_BROKER_URL=https://fde-page-watcher-gateway.fde-webflow.workers.dev
 AUTH_PUBLIC_ORIGIN=https://page-watcher.webflow.io
 AUTH_HANDOFF_SECRET=<first generated value>
 AUTH_SESSION_SECRET=<second generated value>
-CF_ACCESS_TEAM_DOMAIN=https://autumn-wind-f943.cloudflareaccess.com
+CF_ACCESS_TEAM_DOMAIN=https://webflow-fde.cloudflareaccess.com
 ```
 
 Set the first generated value on the gateway Worker:
