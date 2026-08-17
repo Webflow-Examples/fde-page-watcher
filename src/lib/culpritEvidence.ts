@@ -148,6 +148,7 @@ function extractOne(raw: unknown): CulpritEvidence[] {
     if (auditId === "dom-size") facts = domEvidence(details);
     else if (auditId === "unused-css-rules" || auditId === "unused-javascript" || auditId === "unminified-javascript" || auditId === "legacy-javascript" || auditId === "uses-responsive-images" || auditId === "uses-optimized-images") {
       facts = bytesEvidence(details, items);
+      sources = sourcesFor(items);
       const resourceLabel = auditId.startsWith("uses-") ? "Affected images" : auditId.includes("javascript") ? "Affected scripts" : "Affected stylesheets";
       facts.unshift({ key: "resources", label: resourceLabel, value: items.filter((item) => typeof item.url === "string").length, unit: "count" });
     } else if (auditId === "third-party-summary") {

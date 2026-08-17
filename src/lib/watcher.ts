@@ -13,6 +13,7 @@ import { isPageActivelyMonitored } from "./watchCapacity";
 import type { CruxPageEvidence } from "./crux";
 import { pageFieldPriority, recommendationEvidenceSignal } from "./fieldPrioritization";
 import { isFieldRecommendationActionable } from "./fieldOnlyRecommendations";
+import { recommendationIsCustomerActionable } from "./webflowPerformance";
 
 /** "A" · "A and B" · "A, B and C". */
 function listJoin(names: string[]): string {
@@ -288,6 +289,7 @@ export function buildWatcher(
         && r.status !== "ignored"
         && r.taskStatus !== "done")
       .filter(isFieldRecommendationActionable)
+      .filter(recommendationIsCustomerActionable)
       .sort((a, b) => {
         const aSignal = recommendationEvidenceSignal(a, focus, visitorEvidence);
         const bSignal = recommendationEvidenceSignal(b, focus, visitorEvidence);

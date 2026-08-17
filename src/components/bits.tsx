@@ -71,6 +71,15 @@ export function WebflowClassificationChips({
   showCulprit?: boolean;
 }) {
   const tone = remediationTone(classification.remediation);
+  const actionability = classification.actionability
+    ?? (classification.remediation === "available" ? "direct"
+      : classification.remediation === "partial" ? "workaround"
+        : classification.remediation === "unknown" ? "review"
+          : "none");
+  const actionLabel = actionability === "direct" ? "Action available"
+    : actionability === "workaround" ? "Workaround available"
+      : actionability === "review" ? "Needs review"
+        : "No direct action";
   return (
     <span style={{ display: "inline-flex", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
       {showMetric && classification.metric !== "other" && (
@@ -84,10 +93,10 @@ export function WebflowClassificationChips({
         </span>
       )}
       <span
-        title={classification.guidance}
+        title={actionLabel}
         style={{ fontSize: 10.5, fontWeight: 650, color: tone.color, background: tone.background, padding: "2px 7px", borderRadius: 5, whiteSpace: "nowrap" }}
       >
-        {classification.remediationLabel}
+        {actionLabel}
       </span>
     </span>
   );

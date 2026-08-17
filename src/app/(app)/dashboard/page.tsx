@@ -22,7 +22,7 @@ import { combinedDashboardSignals } from "@/lib/dashboardVerdict";
 import { normalizeCollectionSchedule } from "@/lib/collectionSchedule";
 import { evidenceForPage, visitorExperienceTrend } from "@/lib/visitorExperience";
 import { performanceIssueCounts, siteCulpritRollups, sitePerformanceIssues } from "@/lib/performanceIssues";
-import { remediationTone, triageActionLabel, webflowClassificationFor } from "@/lib/webflowPerformance";
+import { customerActionabilityFor, recommendationIsCustomerActionable, remediationTone, triageActionLabel, webflowClassificationFor } from "@/lib/webflowPerformance";
 import { siteNativeElementRollups } from "@/lib/nativeElements";
 import { compareLabAndField } from "@/lib/labFieldComparison";
 import { fieldPriorityRankForRec, recommendationEvidenceSignal } from "@/lib/fieldPrioritization";
@@ -152,6 +152,7 @@ function DashboardContent({
       rec.status === "inbox"
       && rec.taskStatus !== "done"
       && isFieldRecommendationActionable(rec)
+      && recommendationIsCustomerActionable(rec)
       && (!rec.strategies?.length || rec.strategies.includes(strategy)))
     .sort((left, right) => {
       const priority = { available: 0, partial: 1, unknown: 2, blocked: 3 } as const;
@@ -421,12 +422,7 @@ function DashboardContent({
               <>
                 Investigate <strong>{topRibbonRec.pageTitle}</strong> — {topRibbonRec.title} is the clearest next step because exact-URL visitor evidence is outside the good range while Lighthouse did not reproduce or explain it.
               </>
-            ) : topRibbonClassification.remediation === "blocked" ? (
-              <>
-                Product gap on <strong>{topRibbonRec.pageTitle}</strong> — {topRibbonRec.title} is associated with an estimated{" "}
-                <strong>{topRibbonRec.savings}</strong> of load time. Track it for escalation.{topRibbonEvidence?.priority === "corroborated" ? " Visitor evidence corroborates the affected metric." : topRibbonEvidence?.priority === "field-only" ? " Visitor evidence is worse than the controlled test." : ""}
-              </>
-            ) : topRibbonClassification.remediation === "partial" ? (
+            ) : customerActionabilityFor(topRibbonRec) === "workaround" ? (
               <>
                 Work around <strong>{topRibbonRec.pageTitle}</strong> — {topRibbonRec.title} could recover about{" "}
                 <strong>{topRibbonRec.savings}</strong> of load time.{topRibbonEvidence?.priority === "corroborated" ? " Visitor evidence corroborates the affected metric." : topRibbonEvidence?.priority === "field-only" ? " Visitor evidence is worse than the controlled test." : ""}
@@ -638,9 +634,8 @@ function DashboardContent({
                           {metric.metric} · {metric.metricWeight}%
                         </span>
                       ))}
-                      {rollup.remediationCounts.blocked > 0 && <span style={{ fontSize: 10.5, fontWeight: 650, color: C.redSoft, background: "rgba(255,92,108,0.13)", padding: "2px 7px", borderRadius: 5 }}>{rollup.remediationCounts.blocked} product</span>}
-                      {rollup.remediationCounts.partial > 0 && <span style={{ fontSize: 10.5, fontWeight: 650, color: C.amber, background: "rgba(255,154,61,0.13)", padding: "2px 7px", borderRadius: 5 }}>{rollup.remediationCounts.partial} partial</span>}
-                      {rollup.remediationCounts.available > 0 && <span style={{ fontSize: 10.5, fontWeight: 650, color: C.green, background: "rgba(53,208,127,0.13)", padding: "2px 7px", borderRadius: 5 }}>{rollup.remediationCounts.available} fixable</span>}
+                      {rollup.remediationCounts.partial + rollup.remediationCounts.blocked > 0 && <span style={{ fontSize: 10.5, fontWeight: 650, color: C.amber, background: "rgba(255,154,61,0.13)", padding: "2px 7px", borderRadius: 5 }}>{rollup.remediationCounts.partial + rollup.remediationCounts.blocked} workaround</span>}
+                      {rollup.remediationCounts.available > 0 && <span style={{ fontSize: 10.5, fontWeight: 650, color: C.green, background: "rgba(53,208,127,0.13)", padding: "2px 7px", borderRadius: 5 }}>{rollup.remediationCounts.available} actionable</span>}
                       {rollup.regressedCount > 0 && <span style={{ fontSize: 10.5, fontWeight: 650, color: C.redSoft, padding: "2px 2px" }}>{rollup.regressedCount} returned</span>}
                     </div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 12 }}>

@@ -57,8 +57,8 @@ function finding(
 const BACKGROUND_VIDEO: DetectionDefinition = {
   id: "webflow-background-video",
   element: "background-video",
-  title: "Webflow Background Video loads eagerly",
-  detail: (count) => `${count} Background Video ${count === 1 ? "element" : "elements"} detected. Webflow has no native poster-first or lazy-load control.`,
+  title: "Background video loads eagerly",
+  detail: (count) => `${count} background video ${count === 1 ? "element" : "elements"} detected without poster-first or lazy-load behavior.`,
   confidence: "high",
   signals: ["w-background-video"],
 };
@@ -84,8 +84,8 @@ const VIDEO_EMBED_DUPLICATE: DetectionDefinition = {
 const LOTTIE: DetectionDefinition = {
   id: "webflow-lottie-eager",
   element: "lottie",
-  title: "Webflow Lottie has no native lazy loading",
-  detail: (count) => `${count} Lottie ${count === 1 ? "element" : "elements"} detected in the published HTML.`,
+  title: "Lottie animation loads eagerly",
+  detail: (count) => `${count} Lottie ${count === 1 ? "element" : "elements"} detected without lazy-load behavior.`,
   confidence: "high",
   signals: ["data-animation-type=lottie"],
 };
@@ -93,8 +93,8 @@ const LOTTIE: DetectionDefinition = {
 const SPLINE: DetectionDefinition = {
   id: "webflow-spline-eager",
   element: "spline",
-  title: "Webflow Spline has no native lazy loading",
-  detail: (count) => `${count} Spline ${count === 1 ? "scene" : "scenes"} detected in the published HTML.`,
+  title: "Spline scene loads eagerly",
+  detail: (count) => `${count} Spline ${count === 1 ? "scene" : "scenes"} detected without lazy-load behavior.`,
   confidence: "high",
   signals: ["data-animation-type=spline"],
 };
@@ -102,10 +102,10 @@ const SPLINE: DetectionDefinition = {
 const UNRESPONSIVE_IMAGE: DetectionDefinition = {
   id: "webflow-image-unresponsive",
   element: "image",
-  title: "Webflow-hosted raster images lack responsive candidates",
-  detail: (count) => `${count} Webflow-hosted raster ${count === 1 ? "image has" : "images have"} no srcset candidates and may download oversized originals.`,
+  title: "Hosted raster images lack responsive candidates",
+  detail: (count) => `${count} hosted raster ${count === 1 ? "image has" : "images have"} no srcset candidates and may download oversized originals.`,
   confidence: "medium",
-  signals: ["Webflow asset host", "raster image", "missing srcset"],
+  signals: ["hosted asset", "raster image", "missing srcset"],
 };
 
 const NATIVE_ELEMENT_IDS = new Set([
@@ -225,7 +225,7 @@ export function detectNativeWebflowElements(html: string): NativeElementFinding[
     return webflowHosted && raster && !responsive && !trackingPixel;
   });
   if (unresponsiveImages.length > 0) findings.push(finding(UNRESPONSIVE_IMAGE, unresponsiveImages.length, undefined, [
-    { label: "Webflow-hosted raster images", count: unresponsiveImages.length },
+    { label: "hosted raster images", count: unresponsiveImages.length },
     { label: "without responsive candidates", count: unresponsiveImages.length },
   ]));
 
@@ -236,8 +236,33 @@ export function unavailableNativeElementScan(reason: string): NativeElementScan 
   return { status: "unavailable", findings: [], reason };
 }
 
+/** Detect Webflow-generated documents without retaining site/page identifiers. */
+export function webflowDocumentSignals(html: string): Array<"data-wf-site" | "data-wf-page"> {
+  const root = /<html\b[^>]*>/i.exec(html)?.[0] ?? "";
+  return (["data-wf-site", "data-wf-page"] as const).filter((attributeName) =>
+    new RegExp(`\\b${attributeName}(?:\\s*=|\\s|>)`, "i").test(root));
+}
+
+export function hasWebflowOptimizeSignal(html: string): boolean {
+  const root = /<html\b[^>]*>/i.exec(html)?.[0] ?? "";
+  return /\bdata-wf-intellimize-customer-id(?:\s*=|\s|>)/i.test(root);
+}
+
+export function isWebflowGenerated(scan: NativeElementScan | undefined): boolean {
+  return scan?.platform?.name === "webflow" && scan.platform.confidence === "high";
+}
+
 export function nativeElementScan(html: string): NativeElementScan {
-  return { status: "available", findings: detectNativeWebflowElements(html) };
+  const signals = webflowDocumentSignals(html);
+  const optimize = hasWebflowOptimizeSignal(html);
+  return {
+    status: "available",
+    findings: detectNativeWebflowElements(html),
+    platform: signals.length ? { name: "webflow", confidence: "high", signals } : undefined,
+    variationRisk: optimize
+      ? { source: "webflow-optimize", confidence: "high", signals: ["data-wf-intellimize-customer-id"] }
+      : undefined,
+  };
 }
 
 /** Preserve server-HTML findings while adding anything visible only after rendering. */
@@ -267,7 +292,18 @@ export function mergeNativeElementScans(...scans: Array<NativeElementScan | unde
       });
     }
   }
-  return { status: "available", findings: [...findings.values()] };
+  const platformSignals = [...new Set(available.flatMap((scan) => scan.platform?.signals ?? []))];
+  const optimize = available.some((scan) => scan.variationRisk?.source === "webflow-optimize");
+  return {
+    status: "available",
+    findings: [...findings.values()],
+    platform: platformSignals.length
+      ? { name: "webflow", confidence: "high", signals: platformSignals }
+      : undefined,
+    variationRisk: optimize
+      ? { source: "webflow-optimize", confidence: "high", signals: ["data-wf-intellimize-customer-id"] }
+      : undefined,
+  };
 }
 
 export interface NativeElementLifecycle extends NativeElementFinding {

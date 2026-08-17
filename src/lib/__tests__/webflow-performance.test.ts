@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   classifyWebflowPerformance,
+  classificationForPage,
   culpritGroupLabel,
   effortLabel,
   formatDiagnosticImpact,
@@ -50,9 +51,20 @@ describe("Webflow performance taxonomy", () => {
   it("uses remediation-aware impact, effort, and triage labels", () => {
     expect(formatDiagnosticImpact({ savingsMs: 0, savingsBytes: 0 })).toBe("Detected");
     expect(formatDiagnosticImpact({ savingsMs: 0, savingsBytes: 65_536 })).toBe("64 KB");
-    expect(effortLabel({ id: "unused-css-rules", estTime: "2 days" })).toBe("Product gap");
-    expect(triageActionLabel({ id: "unused-css-rules" })).toBe("Create escalation");
-    expect(triageActionLabel({ id: "dom-size" })).toBe("Escalate workaround");
-    expect(triageActionLabel({ id: "uses-responsive-images" })).toBe("Save fix as task");
+    expect(effortLabel({ id: "unused-css-rules", estTime: "2 days" })).toBe("2 days");
+    expect(triageActionLabel({ id: "unused-css-rules" })).toBe("Add workaround to tasks");
+    expect(triageActionLabel({ id: "dom-size" })).toBe("Add workaround to tasks");
+    expect(triageActionLabel({ id: "uses-responsive-images" })).toBe("Add to tasks");
+  });
+
+  it("keeps platform ownership separate from neutral customer guidance", () => {
+    expect(classificationForPage({ id: "render-blocking-resources" }, true)).toMatchObject({
+      actionability: "none",
+      remediationLabel: "No direct action",
+    });
+    expect(classificationForPage({ id: "render-blocking-resources" }, false)).toMatchObject({
+      actionability: "workaround",
+    });
+    expect(classifyWebflowPerformance("unused-javascript").guidance).not.toMatch(/Webflow|product|escalat/i);
   });
 });

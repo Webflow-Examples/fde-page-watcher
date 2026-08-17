@@ -7,7 +7,7 @@ import type { Rec, TaskStatus } from "@/lib/types";
 import { C, costValue, savingsValue, taskAccent, taskLabel } from "@/lib/ui";
 import { FieldEvidenceChip, FieldRecommendationStatusBadge, SegToggle, SortHeader, WebflowClassificationChips } from "@/components/bits";
 import { CheckIcon } from "@/components/icons";
-import { culpritGroupLabel, effortLabel, webflowClassificationFor } from "@/lib/webflowPerformance";
+import { culpritGroupLabel, effortLabel, recommendationIsCustomerActionable, webflowClassificationFor } from "@/lib/webflowPerformance";
 import { recommendationEvidenceSignal } from "@/lib/fieldPrioritization";
 
 const LIST_GRID = "24px minmax(220px,1fr) 92px 92px 240px";
@@ -39,10 +39,10 @@ function ActionButtons({ t, advance }: { t: Rec; advance: (key: string, to: Task
 export default function TasksPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { pages, recs, visitorExperience, productEscalations = [], taskGroup, setTaskGroup, taskDescriptions, setTaskDescriptions, taskView, setTaskView, taskSort, sortTask, advanceTask, pathFor, canManageProject } = useStore();
+  const { pages, recs, visitorExperience, taskGroup, setTaskGroup, taskDescriptions, setTaskDescriptions, taskView, setTaskView, taskSort, sortTask, advanceTask, pathFor, canManageProject } = useStore();
   const dragKey = useRef<string | null>(null);
 
-  const tasks = recs.filter((r) => r.status === "task");
+  const tasks = recs.filter((r) => r.status === "task" && recommendationIsCustomerActionable(r));
   const linkedTaskKey = searchParams.get("task");
   useEffect(() => {
     if (!linkedTaskKey) return;
@@ -63,15 +63,6 @@ export default function TasksPage() {
   }
 
   const openPage = (pageId: string) => router.push(pathFor(`/pages/${pageId}`));
-  const escalationByRec = new Map(productEscalations.map((item) => [item.recKey, item]));
-  const escalationChip = (task: Rec) => {
-    const escalation = escalationByRec.get(task.key);
-    return escalation ? (
-      <button type="button" onClick={(event) => { event.stopPropagation(); router.push(pathFor("/escalations")); }} style={{ border: "1px solid rgba(255,154,61,0.24)", background: "rgba(255,154,61,0.10)", color: C.amber, fontSize: 10.5, fontWeight: 600, padding: "2px 7px", borderRadius: 5, cursor: "pointer" }}>
-        Escalation · {escalation.status}
-      </button>
-    ) : null;
-  };
   const pageChip = (t: Rec) => (
     <button
       type="button"
@@ -179,7 +170,6 @@ export default function TasksPage() {
                         <WebflowClassificationChips classification={webflowClassificationFor(t)} />
                       </div>
                       {t.source === "crux-field-only" && <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>{fieldEvidenceChip(t)}<FieldRecommendationStatusBadge rec={t} /></div>}
-                      <div style={{ marginTop: 6 }}>{escalationChip(t)}</div>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
                         {pageChip(t)}
                         <span style={{ fontSize: 11.5, fontWeight: 550, color: taskAccent(t.taskStatus) }}>{taskLabel(t.taskStatus)}</span>
@@ -247,7 +237,6 @@ export default function TasksPage() {
                                 <WebflowClassificationChips classification={webflowClassificationFor(t)} />
                               </div>
                               {t.source === "crux-field-only" && <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>{fieldEvidenceChip(t)}<FieldRecommendationStatusBadge rec={t} /></div>}
-                              <div style={{ marginTop: 6 }}>{escalationChip(t)}</div>
                               <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 11 }}>
                                 <span style={{ fontSize: 11, fontWeight: 600, color: C.amber, background: "rgba(255,154,61,0.13)", padding: "2px 8px", borderRadius: 5 }}>{t.source === "crux-field-only" ? "Visitor investigation" : `${t.savings} saved`}</span>
                                 <span style={{ fontSize: 11, fontWeight: 600, color: C.dim, background: "rgba(255,255,255,0.06)", padding: "2px 8px", borderRadius: 5 }}>{effortLabel(t)}</span>

@@ -6,7 +6,7 @@ import type { Rec } from "@/lib/types";
 import { C, costValue, savingsValue } from "@/lib/ui";
 import { FieldEvidenceChip, FieldRecommendationStatusBadge, SegToggle, SortHeader, WebflowClassificationChips } from "@/components/bits";
 import { CheckIcon, ExternalIcon } from "@/components/icons";
-import { culpritGroupLabel, effortLabel, triageActionLabel, webflowClassificationFor } from "@/lib/webflowPerformance";
+import { culpritGroupLabel, effortLabel, recommendationIsCustomerActionable, triageActionLabel, webflowClassificationFor } from "@/lib/webflowPerformance";
 import { fieldPriorityRankForRec, recommendationEvidenceSignal } from "@/lib/fieldPrioritization";
 import { isFieldRecommendationActionable } from "@/lib/fieldOnlyRecommendations";
 
@@ -25,7 +25,7 @@ export default function InboxPage() {
     <span style={{ fontSize: 11, fontWeight: 500, color: C.faint2, background: "rgba(255,255,255,0.04)", padding: "2px 8px", borderRadius: 5 }}>{category}</span>
   );
 
-  let items = recs.filter((r) => r.status === "inbox" && isFieldRecommendationActionable(r));
+  let items = recs.filter((r) => r.status === "inbox" && isFieldRecommendationActionable(r) && recommendationIsCustomerActionable(r));
   if (inboxSort.col) {
     const dir = inboxSort.dir === "asc" ? 1 : -1;
     const key = (r: Rec) => (inboxSort.col === "rec" ? r.title.toLowerCase() : inboxSort.col === "savings" ? savingsValue(r) : costValue(r));

@@ -48,7 +48,7 @@ function rec(id = "unused-javascript"): Rec {
     category: "Performance",
     strategies: ["mobile"],
     savings: "1.8 s",
-    estTime: "Product gap",
+    estTime: "2 days",
     status: "inbox",
     taskStatus: "todo",
     added: "Aug 3",

@@ -5,7 +5,7 @@ import { useParams, usePathname, useRouter, useSearchParams } from "next/navigat
 import { ArrowUpRightIcon, CircleIcon } from "@phosphor-icons/react";
 import { useStore } from "@/components/store";
 import { CATEGORIES } from "@/lib/types";
-import type { AgentCheck, CategoryKey, CollectionJob, DevicePolicy, KitesurfEvidence, Night, PagePerformanceThresholdOverrides, PageStatus, RangeDays, Rec, WatchPage, WebflowRemediationLevel } from "@/lib/types";
+import type { AgentCheck, CategoryKey, CollectionJob, CustomerActionability, DevicePolicy, KitesurfEvidence, Night, PagePerformanceThresholdOverrides, PageStatus, RangeDays, Rec, WatchPage } from "@/lib/types";
 import { agentCheckKey, agentIgnoreOverrideMode, isAgentCheckIgnored, isAgentGroupIgnored, normalizeAgentIgnoreSettings, summarizeAgentChecks } from "@/lib/agentScoring";
 import { agentReadinessHistoryPoints } from "@/lib/agentHistory";
 import { effectivePerformanceThresholds } from "@/lib/performanceThresholds";
@@ -31,10 +31,10 @@ import {
 import type { VisitorMetricKey } from "@/lib/visitorExperience";
 import { opportunitiesForNight } from "@/lib/diagnostics";
 import { formatLabMetric, LAB_METRICS, labMetricRating, labMetricSeries } from "@/lib/labMetrics";
-import { remediationTone, triageActionLabel, webflowClassificationFor } from "@/lib/webflowPerformance";
+import { actionabilityTone, classificationForPage, customerActionabilityFor, recommendationIsCustomerActionable, triageActionLabel, webflowClassificationFor } from "@/lib/webflowPerformance";
 import { performanceIssueCounts, performanceIssuesForPage } from "@/lib/performanceIssues";
 import type { PerformanceIssueLifecycle, PerformanceIssueStatus } from "@/lib/performanceIssues";
-import { nativeElementDisposition, nativeElementIssuesForPage } from "@/lib/nativeElements";
+import { isWebflowGenerated, nativeElementDisposition, nativeElementIssuesForPage } from "@/lib/nativeElements";
 import type { NativeElementLifecycle } from "@/lib/nativeElements";
 import { culpritEvidenceTrends, formatEvidenceValue } from "@/lib/culpritEvidence";
 import { recommendationEvidenceSignal } from "@/lib/fieldPrioritization";
@@ -71,6 +71,7 @@ export default function PageDetail() {
   }
 
   const latestRangeNight = pageRangeLatestNightForStrategy(page, rangeDays, strategy);
+  const experimentVariationDetected = latestRangeNight?.nativeElements?.variationRisk?.source === "webflow-optimize";
   const agentSnapshot = pageAgentSnapshotForRange(page, rangeDays);
   const agentChecks = agentSnapshot?.checks ?? [];
   const agentSummary = summarizeAgentChecks(agentChecks, page.agentIgnores, store.agentIgnoreDefaults, page.agentIgnoreRestores);
@@ -185,6 +186,14 @@ export default function PageDetail() {
       </header>
 
       <div className="detail-content" style={{ padding: "28px 40px 56px" }}>
+        {experimentVariationDetected && (
+          <div style={{ marginBottom: 18, padding: "12px 15px", borderRadius: 9, border: "1px solid rgba(124,156,255,0.30)", background: "rgba(124,156,255,0.08)" }}>
+            <div style={{ fontSize: 12.5, fontWeight: 600, color: C.accentBright }}>Experiment variation detected</div>
+            <div style={{ fontSize: 11.5, color: C.muted, marginTop: 3 }}>
+              This page may serve different experiment variants across repeated measurements. Compare trends and retained evidence before treating a single-run change as a regression.
+            </div>
+          </div>
+        )}
         {page.flag === "paused" && (
           <div style={{ marginBottom: 18, padding: "12px 15px", borderRadius: 9, border: "1px solid rgba(255,154,61,0.30)", background: "rgba(255,154,61,0.08)", color: C.muted, fontSize: 12.5 }}>
             This page is paused. Its history and baseline are retained, but it will not collect new data until it is changed to Watching or Priority.
@@ -372,7 +381,9 @@ function OverviewTab({
   store: ReturnType<typeof useStore>;
 }) {
   const pageRecs = recs.filter((r) =>
-    r.pageId === page.id && (!r.strategies?.length || r.strategies.includes(strategy)));
+    r.pageId === page.id
+    && recommendationIsCustomerActionable(r)
+    && (!r.strategies?.length || r.strategies.includes(strategy)));
   const secondaryStrategy = strategy === "mobile" ? "desktop" : "mobile";
   const secondaryNight = pageRangeLatestNightForStrategy(page, rangeDays, secondaryStrategy);
   return (
@@ -1136,7 +1147,7 @@ function NativeElementsPanel({ page }: { page: WatchPage }) {
                   {issue.evidence.map((item) => <span key={item.label} style={{ fontSize: 10.5, color: C.dim, background: "rgba(255,255,255,0.045)", border: `1px solid ${C.border2}`, padding: "2px 7px", borderRadius: 5 }}><strong>{item.count}</strong> {item.label}</span>)}
                 </div>
               )}
-              <div style={{ marginTop: 7, fontSize: 11.5, color: C.muted, lineHeight: 1.45 }}><span style={{ color: C.faint2, fontWeight: 600 }}>Webflow guidance:</span> {issue.webflow.guidance}</div>
+              <div style={{ marginTop: 7, fontSize: 11.5, color: C.muted, lineHeight: 1.45 }}><span style={{ color: C.faint2, fontWeight: 600 }}>Recommended action:</span> {webflowClassificationFor(issue).guidance}</div>
               <div style={{ marginTop: 5, fontSize: 11.5, color: C.faint }}>{nativeLifecycleEvidence(issue)}</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginTop: 10 }}>
                 {nativeElementDisposition(page.nativeElementControls, issue.id) === "acknowledged" ? (
@@ -1198,15 +1209,16 @@ function OpportunitiesTab({ page, latest, strategy }: { page: WatchPage; latest:
     { key: "verifying", label: "verifying" },
     { key: "resolved", label: "resolved" },
   ];
-  const remediationCounts = audits.reduce<Record<WebflowRemediationLevel, number>>((counts, audit) => {
-    counts[audit.webflow.remediation] += 1;
+  const webflowGenerated = isWebflowGenerated(latest?.nativeElements);
+  const remediationCounts = audits.reduce<Record<CustomerActionability, number>>((counts, audit) => {
+    counts[customerActionabilityFor({ ...audit, webflow: classificationForPage(audit, webflowGenerated) })] += 1;
     return counts;
-  }, { blocked: 0, partial: 0, available: 0, unknown: 0 });
-  const remediationSummary: { key: WebflowRemediationLevel; label: string }[] = [
-    { key: "available", label: "fixable in Webflow" },
-    { key: "partial", label: "partial remediation" },
-    { key: "blocked", label: "product gaps" },
-    { key: "unknown", label: "need review" },
+  }, { direct: 0, workaround: 0, none: 0, review: 0 });
+  const remediationSummary: { key: CustomerActionability; label: string }[] = [
+    { key: "direct", label: "actionable" },
+    { key: "workaround", label: "workarounds" },
+    { key: "none", label: "no direct action" },
+    { key: "review", label: "need review" },
   ];
   return (
     <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, overflow: "hidden" }}>
@@ -1229,7 +1241,7 @@ function OpportunitiesTab({ page, latest, strategy }: { page: WatchPage; latest:
       {audits.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 14, padding: "12px 22px", borderBottom: `1px solid ${C.border}`, background: C.panel2 }}>
           {remediationSummary.filter(({ key }) => remediationCounts[key] > 0).map(({ key, label }) => {
-            const tone = remediationTone(key);
+            const tone = actionabilityTone(key);
             return (
               <span key={key} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11.5, color: tone.color }}>
                 <span style={{ width: 7, height: 7, borderRadius: "50%", background: tone.color }} />
@@ -1254,13 +1266,13 @@ function OpportunitiesTab({ page, latest, strategy }: { page: WatchPage; latest:
             <div style={{ fontSize: 12.5, color: C.faint2, marginTop: 4, lineHeight: 1.5 }}>{a.desc}</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginTop: 9 }}>
               {issueById.get(a.id) && <PerformanceIssueStatusBadge status={issueById.get(a.id)!.status} />}
-              <WebflowClassificationChips classification={a.webflow} />
+              <WebflowClassificationChips classification={classificationForPage(a, webflowGenerated)} />
               <span style={{ display: "inline-block", fontSize: 11, fontWeight: 500, color: C.dim, background: "rgba(255,255,255,0.06)", padding: "2px 9px", borderRadius: 5 }}>{a.category}</span>
               {a.evidence && <span style={{ display: "inline-block", fontSize: 11, color: C.accentSoft, background: "rgba(59,137,255,0.12)", padding: "2px 9px", borderRadius: 5 }}>{a.evidence}</span>}
               {a.confidence && <span style={{ display: "inline-block", fontSize: 11, color: C.faint2, padding: "2px 2px", textTransform: "capitalize" }}>{a.confidence} confidence</span>}
             </div>
             <div style={{ fontSize: 11.5, color: C.muted, marginTop: 9, lineHeight: 1.45 }}>
-              <span style={{ color: C.faint2, fontWeight: 600 }}>Webflow guidance:</span> {a.webflow.guidance}
+              <span style={{ color: C.faint2, fontWeight: 600 }}>Recommended action:</span> {classificationForPage(a, webflowGenerated).guidance}
             </div>
             {issueById.get(a.id) && (
               <div style={{ fontSize: 11.5, color: C.faint, marginTop: 5, lineHeight: 1.45 }}>
