@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { createCfStore, getLocalCloudflareBindings } from "@/lib/store/cfStore";
-import { deploymentTenant } from "@/lib/store";
 import { getEnv } from "@/lib/env";
 import type { AppState } from "@/lib/types";
 import { requireAppAdmin } from "@/lib/authorization";
+import { projectForRequest } from "@/lib/projects";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -96,7 +96,7 @@ export async function POST(request: Request) {
   }
   const input = await request.json().catch(() => ({})) as { replace?: boolean };
   try {
-    const tenant = deploymentTenant();
+    const tenant = (await projectForRequest(request)).tenant;
     const url = destinationBase();
     const source = await createCfStore(tenant).getState();
     const sourceChecksum = await checksum(source);

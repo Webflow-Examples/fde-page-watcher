@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { authorizeInternalRequest } from "@/lib/internalAccess";
-import { getStore } from "@/lib/store";
+import { authorizeInternalRequest, internalProjectStore } from "@/lib/internalAccess";
 import type { Strategy } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -21,7 +20,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "runId, strategy, and result are required" }, { status: 400 });
   }
   try {
-    const dataStore = getStore();
+    const dataStore = await internalProjectStore(request);
     const state = await dataStore.getState();
     const job = (state.jobs ?? []).find((item) => item.id === id);
     if (!job || job.runId !== body.runId) return NextResponse.json({ error: "job not found" }, { status: 404 });

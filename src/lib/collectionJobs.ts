@@ -328,7 +328,7 @@ export interface DispatchPayload {
   pageId: string;
   url: string;
   runs: number;
-  tenant?: string;
+  tenant: string;
   startDelayMinutes?: number;
 }
 
@@ -370,7 +370,7 @@ function collectorHeaders(secret: string): HeadersInit {
   return { authorization: `Bearer ${secret}`, "content-type": "application/json" };
 }
 
-function dispatchPayloads(state: AppState, jobIds: string[], tenant?: string): DispatchPayload[] {
+function dispatchPayloads(state: AppState, jobIds: string[], tenant: string): DispatchPayload[] {
   const runs = normalizePsiRuns(getEnv("PSI_RUNS"));
   return jobIds.map((jobId, index) => {
     const job = (state.jobs ?? []).find((item) => item.id === jobId);
@@ -557,7 +557,7 @@ export async function reconcileCollectionJobs(options: ReconcileCollectionOption
 
       const [mobile, desktop] = await Promise.all(STRATEGIES.map((strategy) => collectorJson(
         fetchFn,
-        `${baseUrl}/jobs/${encodeURIComponent(workflowId)}/reports/${strategy}`,
+        `${baseUrl}/jobs/${encodeURIComponent(workflowId)}/reports/${strategy}?tenant=${encodeURIComponent(dataStore.tenant)}`,
         config.collectorSecret,
       )));
       await commitCollectionResult(statusValue.output, { strategies: { mobile, desktop } }, dataStore);
@@ -565,7 +565,7 @@ export async function reconcileCollectionJobs(options: ReconcileCollectionOption
 
       // The result now exists in the app's R2 bucket. Collector staging data is
       // best-effort cleanup; a cleanup outage must not undo a successful run.
-      await fetchFn(`${baseUrl}/jobs/${encodeURIComponent(workflowId)}/reports`, {
+      await fetchFn(`${baseUrl}/jobs/${encodeURIComponent(workflowId)}/reports?tenant=${encodeURIComponent(dataStore.tenant)}`, {
         method: "DELETE",
         headers: collectorHeaders(config.collectorSecret),
       }).catch(() => undefined);

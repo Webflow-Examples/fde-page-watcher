@@ -17,6 +17,10 @@ export interface WeeklyAuditEnvironment extends FdeStoreBindings {
   NIGHTLY_TENANT: string;
 }
 
+export function tenantWeeklyAuditLatestKey(tenant: string): string {
+  return `${tenant}/${WEEKLY_AUDIT_LATEST_KEY}`;
+}
+
 function objectRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
@@ -66,8 +70,9 @@ async function storedReport(
 export async function runWeeklyDataAudit(
   env: WeeklyAuditEnvironment,
   scheduledAt = new Date(),
+  options: { tenant?: string } = {},
 ): Promise<WeeklyDataAudit> {
-  const tenant = env.NIGHTLY_TENANT || "brand-studio:live";
+  const tenant = options.tenant ?? (env.NIGHTLY_TENANT || "brand-studio:live");
   const periodEnd = new Date(scheduledAt);
   const periodStart = new Date(periodEnd.getTime() - WEEK_MS);
   const store = createFdeStore(tenant, env);
@@ -93,13 +98,13 @@ export async function runWeeklyDataAudit(
     jobs: state.jobs ?? [],
   });
   const body = JSON.stringify(audit);
-  const datedKey = `audits/weekly/${audit.periodEnd.slice(0, 10)}.json`;
+  const datedKey = `${tenant}/audits/weekly/${audit.periodEnd.slice(0, 10)}.json`;
   await Promise.all([
     env.REPORTS.put(datedKey, body, {
       httpMetadata: { contentType: "application/json" },
       customMetadata: { auditId: audit.auditId, health: audit.health },
     }),
-    env.REPORTS.put(WEEKLY_AUDIT_LATEST_KEY, body, {
+    env.REPORTS.put(tenantWeeklyAuditLatestKey(tenant), body, {
       httpMetadata: { contentType: "application/json" },
       customMetadata: { auditId: audit.auditId, health: audit.health },
     }),

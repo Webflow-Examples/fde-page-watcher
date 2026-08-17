@@ -7,6 +7,12 @@ import { mediansOf, pageTrend } from "../scoring";
 import { resolveMarkerIndex } from "../followups";
 import type { DataStore } from "./fsStore";
 import { normalizeState } from "./normalize";
+import {
+  HISTORY_STORAGE_VERSION,
+  hydrateTableHistory,
+  stateWithoutEmbeddedHistory,
+  type StoredHistoryRow,
+} from "./historyState";
 import { getEnv } from "../env";
 import {
   cruxEvidenceFromRows,
@@ -45,20 +51,60 @@ class CfDataStore implements DataStore {
     this.tenant = tenant;
   }
 
+  private async materializedState(DB: D1Database, value: AppState): Promise<AppState> {
+    const state = normalizeState(value);
+    if (state.historyStorageVersion !== HISTORY_STORAGE_VERSION) return state;
+    const history = await DB.prepare(
+      "SELECT page_id, i, night_json FROM history WHERE tenant = ? ORDER BY page_id, i",
+    ).bind(this.tenant).all<StoredHistoryRow>();
+    return normalizeState(hydrateTableHistory(state, history.results));
+  }
+
+  private async syncHistory(before: AppState, after: AppState): Promise<void> {
+    const { DB } = getLocalCloudflareBindings();
+    const beforeRows = new Map(before.pages.flatMap((page) => page.history.map((night) => [
+      `${page.id}:${night.i}`,
+      JSON.stringify(night),
+    ])));
+    const afterKeys = new Set(after.pages.flatMap((page) => page.history.map((night) => `${page.id}:${night.i}`)));
+    const stored = await DB.prepare(
+      "SELECT page_id, i, night_json FROM history WHERE tenant = ?",
+    ).bind(this.tenant).all<StoredHistoryRow>();
+    const statements: D1PreparedStatement[] = [];
+    for (const page of after.pages) {
+      for (const night of page.history) {
+        if (beforeRows.get(`${page.id}:${night.i}`) === JSON.stringify(night)) continue;
+        statements.push(DB.prepare(
+          "INSERT INTO history (tenant, page_id, i, night_json) VALUES (?, ?, ?, ?) " +
+          "ON CONFLICT(tenant, page_id, i) DO UPDATE SET night_json = excluded.night_json",
+        ).bind(this.tenant, page.id, night.i, JSON.stringify(night)));
+      }
+    }
+    for (const row of stored.results) {
+      if (afterKeys.has(`${row.page_id}:${row.i}`)) continue;
+      statements.push(DB.prepare("DELETE FROM history WHERE tenant = ? AND page_id = ? AND i = ?")
+        .bind(this.tenant, row.page_id, row.i));
+    }
+    for (const statement of statements) await statement.run();
+  }
+
   async getState(): Promise<AppState> {
     const { DB } = getLocalCloudflareBindings();
     const row = await DB.prepare("SELECT json FROM state WHERE tenant = ?").bind(this.tenant).first<StateRow>();
     if (!row) {
       const seeded = buildInitialState(getEnv("DATASET_MODE"));
       const now = new Date().toISOString();
-      await DB.prepare(
+      const inserted = await DB.prepare(
         "INSERT INTO state (tenant, json, version, updated_at) VALUES (?, ?, 0, ?) ON CONFLICT(tenant) DO NOTHING",
       )
-        .bind(this.tenant, JSON.stringify(seeded), now)
+        .bind(this.tenant, JSON.stringify(stateWithoutEmbeddedHistory(seeded)), now)
         .run();
+      if ((inserted.meta.rows_written ?? 0) > 0) {
+        await this.syncHistory({ pages: [], recs: [] }, seeded);
+      }
       return this.getState();
     }
-    return normalizeState(JSON.parse(row.json) as AppState);
+    return this.materializedState(DB, JSON.parse(row.json) as AppState);
   }
 
   async getCruxEvidence(): Promise<CruxPageEvidence[]> {
@@ -94,26 +140,29 @@ class CfDataStore implements DataStore {
         const result = await DB.prepare(
           "INSERT INTO state (tenant, json, version, updated_at) VALUES (?, ?, 0, ?) ON CONFLICT(tenant) DO NOTHING",
         )
-          .bind(this.tenant, JSON.stringify(state), now)
+          .bind(this.tenant, JSON.stringify(stateWithoutEmbeddedHistory(state)), now)
           .run();
         if ((result.meta.rows_written ?? 0) > 0) {
           await this.syncJobs([], state.jobs ?? []);
+          await this.syncHistory({ pages: [], recs: [] }, state);
           return structuredClone(state);
         }
         continue;
       }
 
-      const state = normalizeState(JSON.parse(row.json) as AppState);
+      const state = await this.materializedState(DB, JSON.parse(row.json) as AppState);
+      const stateBefore = structuredClone(state);
       const jobsBefore = structuredClone(state.jobs ?? []);
       const markersBefore = new Set(state.pages.flatMap((page) => page.markers.map((marker) => `${page.id}:${marker.id}`)));
       await mutate(state);
       const result = await DB.prepare(
         "UPDATE state SET json = ?, version = version + 1, updated_at = ? WHERE tenant = ? AND version = ?",
       )
-        .bind(JSON.stringify(state), now, this.tenant, row.version)
+        .bind(JSON.stringify(stateWithoutEmbeddedHistory(state)), now, this.tenant, row.version)
         .run();
       if ((result.meta.rows_written ?? 0) > 0) {
         await this.syncJobs(jobsBefore, state.jobs ?? []);
+        await this.syncHistory(stateBefore, state);
         const { DB } = getLocalCloudflareBindings();
         const markerStatements = state.pages.flatMap((page) => page.markers.map((marker) =>
           DB.prepare("INSERT OR REPLACE INTO markers (tenant, page_id, id, marker_json) VALUES (?, ?, ?, ?)")
@@ -181,10 +230,6 @@ class CfDataStore implements DataStore {
     });
 
     if (commit.night) {
-      const { DB } = getLocalCloudflareBindings();
-      await DB.prepare("INSERT OR IGNORE INTO history (tenant, page_id, i, night_json) VALUES (?, ?, ?, ?)")
-        .bind(this.tenant, pageId, commit.night.i, JSON.stringify(commit.night))
-        .run();
       if (rawReport !== undefined) {
         await this.putReport(pageId, commit.night.rawReportKey!, {
           ...((rawReport && typeof rawReport === "object") ? rawReport : { payload: rawReport }),

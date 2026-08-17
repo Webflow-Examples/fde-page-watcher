@@ -8,9 +8,9 @@ import { getEnv } from "../env";
 export type { DataStore } from "./fsStore";
 
 /**
- * Return the single tenant-scoped data-access layer (REQ-001). Rejects an empty
- * scope (REQ-031). In v1 the tenant is a hardcoded brand-studio constant
- * (REQ-003); swapping to a session-supplied value later is a one-line change here.
+ * Return a tenant-scoped data-access layer (REQ-001). Rejects an empty scope
+ * (REQ-031). Request handlers resolve the tenant from the authorized project;
+ * the default remains only for deployment bootstrap and local compatibility.
  *
  * Selects the Cloudflare-backed adapter when running on Workers (D1 + R2
  * bindings present), otherwise falls back to the filesystem adapter used by
@@ -64,7 +64,7 @@ export function getStoreDiagnostics(): StoreDiagnostics {
   }
 }
 
-/** Convenience accessor bound to the v1 hardcoded tenant. */
+/** Convenience accessor bound to the deployment-default tenant. */
 export function store(): DataStore {
   return getStore();
 }

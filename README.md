@@ -150,7 +150,9 @@ remain protected separately by `CRON_SECRET`.
    `WEBFLOW_TOKEN_ENCRYPTION_KEY` generated with `openssl rand -base64 32`.
    Its D1, R2, Workflow, 15-minute due-page/Webflow-activity scheduler, Monday
    05:30 UTC audit, and Tuesday 06:15 UTC CrUX Cron bindings are declared in
-   that config.
+   that config. Each schedule resolves the shared project registry and runs
+   every active tenant independently; one project's failure does not block the
+   remaining projects.
 2. Deploy the Webflow app code with `STORAGE_DRIVER` still unset. The app keeps
    reading and writing its existing Webflow-provisioned D1/R2 bindings at this
    stage.
@@ -168,7 +170,8 @@ remain protected separately by `CRON_SECRET`.
    }).then((response) => response.json()).then(console.log)
    ```
 
-   The endpoint copies the selected `DATASET_MODE` tenant and all of its raw
+   The endpoint copies the tenant selected by the request's `project` query
+   parameter (or the first active project when omitted) and all of its raw
    reports outward, verifies a SHA-256 state checksum, and never mutates the
    source. It refuses to overwrite differing destination state unless the body
    explicitly contains `{ "replace": true }`.
@@ -178,9 +181,10 @@ remain protected separately by `CRON_SECRET`.
 5. Call `/api/health`; `storage.driver` should be `remote`. Run one page or send
    an authenticated `POST /nightly` to the FDE Worker, then verify the new
    history entry before relying on the next scheduled run. After the first
-   weekly audit, an authenticated `GET /audits/weekly/latest` on the collector
-   returns its privacy-safe health summary; the public collector `/health`
-   response exposes only its status, audit ID, and update time. Before relying
+   weekly audit, an authenticated
+   `GET /audits/weekly/latest?tenant=<tenant>` on the collector returns that
+   project's privacy-safe health summary; the public collector `/health`
+   response exposes only aggregate status and project counts. Before relying
    on the CrUX Cron, send one authenticated `POST /crux/collect` and verify the
    `crux_snapshots` and `crux_status` rows plus the public `/health` summary.
 

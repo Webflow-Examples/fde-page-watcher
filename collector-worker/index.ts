@@ -44,7 +44,11 @@ import {
 import { createFdeStore } from "./dataStore";
 import { handleDataPlaneRequest } from "./dataPlane";
 import { dispatchFdeNightly, type DispatchPayload } from "./nightly";
-import { runWeeklyDataAudit, WEEKLY_AUDIT_CRON, WEEKLY_AUDIT_LATEST_KEY } from "./weeklyAudit";
+import {
+  runWeeklyDataAudit,
+  tenantWeeklyAuditLatestKey,
+  WEEKLY_AUDIT_CRON,
+} from "./weeklyAudit";
 import { evaluateCohortAnomaly } from "../src/lib/cohortAnomaly";
 import { reconcileFieldOnlyRecommendationsInState } from "../src/lib/fieldOnlyRecommendations";
 import {
@@ -61,10 +65,25 @@ import {
   withUnavailableKitesurfFallback,
 } from "../src/lib/kitesurfEvidence";
 import { captureAndStoreKitesurfEvidence, type KitesurfCaptureResult } from "./kitesurf";
+import {
+  activeProjectTenants,
+  runTenantTasks,
+  tenantAllowed,
+  tenantSchedulerStatusKey,
+  type TenantTaskResult,
+} from "./tenants";
 
 const NIGHTLY_COLLECTION_CRON = "*/15 * * * *";
 const NIGHTLY_SCHEDULER_STATUS_KEY = "scheduler/latest.json";
 const AUDIT_SCHEDULER_STATUS_KEY = "scheduler/audit-latest.json";
+
+type SchedulerKind = "nightly" | "crux" | "audit";
+
+interface SchedulerBatch<T> {
+  ok: boolean;
+  tenants: number;
+  projects: Array<TenantTaskResult<T>>;
+}
 
 interface StrategySummary {
   strategy: Strategy;
@@ -93,11 +112,19 @@ type PsiAttemptOutcome =
   | { ok: true; run: CompactRunResult }
   | { ok: false; kind: PsiFailureKind; error: string };
 
-function reportKey(jobId: string, strategy: Strategy): string {
+function reportKey(tenant: string, jobId: string, strategy: Strategy): string {
+  return `collector-jobs/${tenant}/${jobId}/${strategy}.json`;
+}
+
+function attemptReportKey(tenant: string, jobId: string, strategy: Strategy, attempt: number): string {
+  return `collector-jobs/${tenant}/${jobId}/${strategy}-attempt-${attempt}.json`;
+}
+
+function legacyReportKey(jobId: string, strategy: Strategy): string {
   return `collector-jobs/${jobId}/${strategy}.json`;
 }
 
-function attemptReportKey(jobId: string, strategy: Strategy, attempt: number): string {
+function legacyAttemptReportKey(jobId: string, strategy: Strategy, attempt: number): string {
   return `collector-jobs/${jobId}/${strategy}-attempt-${attempt}.json`;
 }
 
@@ -115,7 +142,6 @@ async function sameValue(left: string, right: string): Promise<boolean> {
 }
 
 async function markWorkflowRunning(env: Env, payload: DispatchPayload): Promise<void> {
-  if (!payload.tenant) return;
   const store = createFdeStore(payload.tenant, env);
   await store.updateState((draft) => {
     if (draft.projectArchivedAt) throw new Error("Project archived");
@@ -152,7 +178,6 @@ async function markWorkflowEvidenceProgress(
     nextRetryAt?: string;
   },
 ): Promise<void> {
-  if (!payload.tenant) return;
   const store = createFdeStore(payload.tenant, env);
   await store.updateState((draft) => {
     if (draft.projectArchivedAt) throw new Error("Project archived");
@@ -181,8 +206,9 @@ async function markWorkflowEvidenceProgress(
   });
 }
 
-async function stagedReport(env: Env, jobId: string, strategy: Strategy): Promise<unknown> {
-  const report = await env.REPORTS.get(reportKey(jobId, strategy));
+async function stagedReport(env: Env, tenant: string, jobId: string, strategy: Strategy): Promise<unknown> {
+  const report = await env.REPORTS.get(reportKey(tenant, jobId, strategy))
+    ?? await env.REPORTS.get(legacyReportKey(jobId, strategy));
   if (!report) throw new Error(`Staged ${strategy} report is missing`);
   return report.json();
 }
@@ -266,12 +292,11 @@ async function commitWorkflowStrategy(
   payload: DispatchPayload,
   summary: StrategySummary,
 ): Promise<void> {
-  if (!payload.tenant) return;
   const store = createFdeStore(payload.tenant, env);
   const strategyReportKey = `run-${payload.runId}-${summary.strategy}`;
   const snapshot = await store.getState();
   if (snapshot.projectArchivedAt) throw new Error("Project archived");
-  await store.putReport(payload.pageId, strategyReportKey, await stagedReport(env, payload.jobId, summary.strategy));
+  await store.putReport(payload.pageId, strategyReportKey, await stagedReport(env, payload.tenant, payload.jobId, summary.strategy));
   await store.updateState((draft) => {
     if (draft.projectArchivedAt) throw new Error("Project archived");
     const job = (draft.jobs ?? []).find((item) => item.id === payload.jobId);
@@ -312,7 +337,6 @@ async function commitWorkflowAgent(
   payload: DispatchPayload,
   summary: AgentSummary,
 ): Promise<void> {
-  if (!payload.tenant) return;
   const store = createFdeStore(payload.tenant, env);
   await store.updateState((draft) => {
     if (draft.projectArchivedAt) throw new Error("Project archived");
@@ -354,7 +378,6 @@ async function commitWorkflowResult(
   result: CollectionResult,
   auxiliary: { cruxError?: string; agentError?: string } = {},
 ): Promise<void> {
-  if (!payload.tenant) return;
   const store = createFdeStore(payload.tenant, env);
   const snapshot = await store.getState();
   if (snapshot.projectArchivedAt) throw new Error("Project archived");
@@ -364,8 +387,8 @@ async function commitWorkflowResult(
   if (job.runId !== payload.runId || job.pageId !== payload.pageId) throw new Error("Collection result identity mismatch");
 
   const [mobile, desktop] = await Promise.all([
-    stagedReport(env, payload.jobId, "mobile"),
-    stagedReport(env, payload.jobId, "desktop"),
+    stagedReport(env, payload.tenant, payload.jobId, "mobile"),
+    stagedReport(env, payload.tenant, payload.jobId, "desktop"),
   ]);
   const completedAt = new Date(result.capturedAt);
   const visitorEvidence = await store.getCruxEvidence().catch(() => []);
@@ -468,7 +491,6 @@ async function commitWorkflowResult(
 }
 
 async function markWorkflowInconclusive(env: Env, payload: DispatchPayload, error: unknown): Promise<void> {
-  if (!payload.tenant) return;
   const store = createFdeStore(payload.tenant, env);
   const message = (error instanceof Error ? error.message : String(error)).slice(0, 500);
   await store.updateState((draft) => {
@@ -502,20 +524,21 @@ class InconclusiveEvidenceError extends Error {
 
 async function stagedAttemptRaws(
   env: Env,
+  tenant: string,
   jobId: string,
   strategy: Strategy,
   attempts: number,
 ): Promise<unknown[]> {
   const raws: unknown[] = [];
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    const object = await env.REPORTS.get(attemptReportKey(jobId, strategy, attempt));
+    const object = await env.REPORTS.get(attemptReportKey(tenant, jobId, strategy, attempt))
+      ?? await env.REPORTS.get(legacyAttemptReportKey(jobId, strategy, attempt));
     if (object) raws.push(await object.json());
   }
   return raws;
 }
 
 async function failWorkflowJob(env: Env, payload: DispatchPayload, error: unknown): Promise<void> {
-  if (!payload.tenant) return;
   const store = createFdeStore(payload.tenant, env);
   const message = (error instanceof Error ? error.message : String(error)).slice(0, 500);
   await store.updateState((draft) => {
@@ -583,9 +606,6 @@ export class CollectorWorkflow extends WorkflowEntrypoint<Env, DispatchPayload> 
               "capture Kitesurf rendered evidence",
               KITESURF_WORKFLOW_STEP_CONFIG,
               async (): Promise<KitesurfCaptureResult> => {
-                if (!payload.tenant) {
-                  return { evidence: unavailableKitesurfEvidence("tenant scope unavailable") };
-                }
                 return await captureAndStoreKitesurfEvidence(this.env, {
                   tenant: payload.tenant,
                   pageId: payload.pageId,
@@ -657,11 +677,12 @@ export class CollectorWorkflow extends WorkflowEntrypoint<Env, DispatchPayload> 
                       signal: controller.signal,
                     });
                     await this.env.REPORTS.put(
-                      attemptReportKey(payload.jobId, strategy, attempt),
+                      attemptReportKey(payload.tenant, payload.jobId, strategy, attempt),
                       JSON.stringify(result.raw),
                       {
                         httpMetadata: { contentType: "application/json" },
                         customMetadata: {
+                          tenant: payload.tenant,
                           jobId: payload.jobId,
                           runId: payload.runId,
                           pageId: payload.pageId,
@@ -708,14 +729,14 @@ export class CollectorWorkflow extends WorkflowEntrypoint<Env, DispatchPayload> 
             `aggregate and stage ${strategy} cycle ${cycle + 1}`,
             { retries: { limit: 3, delay: "5 seconds", backoff: "exponential" }, timeout: "2 minutes" },
             async () => {
-              const raws = await stagedAttemptRaws(this.env, payload.jobId, strategy, attempts[strategy]);
+              const raws = await stagedAttemptRaws(this.env, payload.tenant, payload.jobId, strategy, attempts[strategy]);
               const result = aggregatePsiRuns(compactRuns[strategy], payload.runs, raws);
               const uniqueRaws = result.raws.filter((_, index) =>
                 compactRuns[strategy].findIndex((candidate) =>
                   candidate.sampleKey === compactRuns[strategy][index]?.sampleKey) === index);
-              await this.env.REPORTS.put(reportKey(payload.jobId, strategy), JSON.stringify(result), {
+              await this.env.REPORTS.put(reportKey(payload.tenant, payload.jobId, strategy), JSON.stringify(result), {
                 httpMetadata: { contentType: "application/json" },
-                customMetadata: { jobId: payload.jobId, runId: payload.runId, pageId: payload.pageId, strategy },
+                customMetadata: { tenant: payload.tenant, jobId: payload.jobId, runId: payload.runId, pageId: payload.pageId, strategy },
               });
               return {
                 strategy,
@@ -862,7 +883,7 @@ function validPayload(value: unknown): value is DispatchPayload {
     item.startDelayMinutes !== undefined
     && (!Number.isInteger(item.startDelayMinutes) || item.startDelayMinutes < 0 || item.startDelayMinutes > 240)
   ) return false;
-  if (item.tenant !== undefined && (item.tenant.length > 160 || !/^[A-Za-z0-9:._-]+$/.test(item.tenant))) return false;
+  if (!item.tenant || item.tenant.length > 160 || !/^[A-Za-z0-9:._-]+$/.test(item.tenant)) return false;
   try {
     const pageUrl = new URL(/^https?:\/\//i.test(item.url) ? item.url : `https://${item.url}`);
     return ["http:", "https:"].includes(pageUrl.protocol);
@@ -889,11 +910,135 @@ function noStore(response: Response): Response {
   return response;
 }
 
+function taskValueOk(value: unknown): boolean {
+  if (!value || typeof value !== "object" || !("ok" in value)) return true;
+  return (value as { ok?: unknown }).ok !== false;
+}
+
+function schedulerBatch<T>(projects: Array<TenantTaskResult<T>>): SchedulerBatch<T> {
+  return {
+    ok: projects.every((result) => result.status === "succeeded" && taskValueOk(result.value)),
+    tenants: projects.length,
+    projects,
+  };
+}
+
+async function requestedProjectTenants(request: Request, env: Env): Promise<string[] | null> {
+  const active = await activeProjectTenants(env);
+  const requested = new URL(request.url).searchParams.get("tenant");
+  if (!requested) return active;
+  return tenantAllowed(requested, active) ? [requested] : null;
+}
+
+async function runNightlyAcrossProjects(
+  env: Env,
+  tenants: readonly string[],
+  options: { scheduled: boolean; scheduledAt?: Date },
+) {
+  const projects = await runTenantTasks(tenants, async (tenant) => {
+    const store = createFdeStore(tenant, env);
+    const state = await store.getState();
+    if (state.projectArchivedAt) return { skipped: "project-archived", archivedAt: state.projectArchivedAt };
+
+    let webflow: unknown = null;
+    if (options.scheduled) {
+      try {
+        webflow = await syncConfiguredWebflowSite(env, tenant);
+      } catch (error) {
+        webflow = { ok: false, error: error instanceof Error ? error.message : String(error) };
+        console.error(JSON.stringify({ message: "Webflow activity sync failed", tenant, error: webflow }));
+      }
+    }
+
+    const confirmation = options.scheduled
+      ? await dispatchFdeNightly(env, { confirmationOnly: true, tenant })
+      : null;
+    const nightly = await dispatchFdeNightly(env, {
+      tenant,
+      ...(options.scheduled ? { dueOnly: true } : {}),
+    });
+    if (options.scheduled) await ensureScheduledDailyDigest(store, options.scheduledAt);
+    const digests = await processDailyDigests(store, options.scheduledAt);
+    return { webflow, confirmation, nightly, digests };
+  });
+  return schedulerBatch(projects);
+}
+
+async function runCruxAcrossProjects(env: Env, tenants: readonly string[]) {
+  const projects = await runTenantTasks(tenants, async (tenant) =>
+    collectCruxEvidence(env, { tenant }));
+  return schedulerBatch(projects);
+}
+
+async function runAuditAcrossProjects(env: Env, tenants: readonly string[], scheduledAt: Date) {
+  const projects = await runTenantTasks(tenants, async (tenant) => {
+    const archivedAt = (await createFdeStore(tenant, env).getState()).projectArchivedAt;
+    if (archivedAt) return { skipped: "project-archived", archivedAt };
+    const audit = await runWeeklyDataAudit(env, scheduledAt, { tenant });
+    return { auditId: audit.auditId, health: audit.health, totals: audit.totals };
+  });
+  return schedulerBatch(projects);
+}
+
+async function writeTenantSchedulerStatuses(
+  env: Env,
+  kind: SchedulerKind,
+  scheduledAt: string,
+  observedAt: string,
+  projects: Array<TenantTaskResult<unknown>>,
+): Promise<void> {
+  for (const project of projects) {
+    const status = project.status === "failed"
+      ? "failed"
+      : taskValueOk(project.value) ? "succeeded" : "partial";
+    const record = {
+      status,
+      scheduledAt,
+      observedAt,
+      tenant: project.tenant,
+      ...(project.status === "succeeded" ? { response: project.value } : { message: project.error }),
+    };
+    try {
+      await env.REPORTS.put(tenantSchedulerStatusKey(project.tenant, kind), JSON.stringify(record), {
+        httpMetadata: { contentType: "application/json" },
+      });
+    } catch (error) {
+      console.error(JSON.stringify({
+        message: "tenant scheduler status write failed",
+        tenant: project.tenant,
+        kind,
+        error: error instanceof Error ? error.message : String(error),
+      }));
+    }
+  }
+}
+
+function cruxBatchTotals(batch: SchedulerBatch<CruxCollectionResult>) {
+  const successful = batch.projects.flatMap((project) => project.status === "succeeded" ? [project.value] : []);
+  return successful.reduce((totals, result) => ({
+    available: totals.available + result.available,
+    partial: totals.partial + result.partial,
+    insufficient: totals.insufficient + result.insufficient,
+    errors: totals.errors + result.errors,
+  }), { available: 0, partial: 0, insufficient: 0, errors: 0 });
+}
+
+function auditBatchHealth(batch: SchedulerBatch<unknown>): "healthy" | "degraded" | "failed" {
+  if (batch.projects.some((project) => project.status === "failed")) return "failed";
+  const health = batch.projects.flatMap((project) => {
+    if (project.status !== "succeeded" || !project.value || typeof project.value !== "object") return [];
+    const value = (project.value as { health?: unknown }).health;
+    return value === "healthy" || value === "degraded" || value === "failed" ? [value] : [];
+  });
+  if (health.includes("failed")) return "failed";
+  return health.includes("degraded") ? "degraded" : "healthy";
+}
+
 async function handleRequest(request: Request, env: Env): Promise<Response> {
     const pathname = new URL(request.url).pathname;
     if (request.method === "GET" && pathname === "/health") {
       const [latestAudit, latestCrux] = await Promise.all([
-        env.REPORTS.head(WEEKLY_AUDIT_LATEST_KEY).catch(() => null),
+        env.REPORTS.head(AUDIT_SCHEDULER_STATUS_KEY).catch(() => null),
         env.REPORTS.head(CRUX_SCHEDULER_STATUS_KEY).catch(() => null),
       ]);
       return noStore(Response.json({
@@ -904,9 +1049,10 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         resultTransport: "direct-fde-commit",
         dataAudit: latestAudit
           ? {
-              status: latestAudit.customMetadata?.health ?? "unknown",
-              auditId: latestAudit.customMetadata?.auditId,
+              status: latestAudit.customMetadata?.health ?? latestAudit.customMetadata?.status ?? "unknown",
               updatedAt: latestAudit.uploaded.toISOString(),
+              projects: Number(latestAudit.customMetadata?.projects ?? 0),
+              failed: Number(latestAudit.customMetadata?.failed ?? 0),
             }
           : { status: "pending" },
         crux: latestCrux
@@ -935,14 +1081,17 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     }
 
     if (isNightly) {
-      const result = await dispatchFdeNightly(env);
-      const store = createFdeStore(env.NIGHTLY_TENANT || "brand-studio:live", env);
-      const digests = await processDailyDigests(store);
-      return noStore(Response.json({ ...result, digests }, { status: 202 }));
+      const tenants = await requestedProjectTenants(request, env);
+      if (!tenants) return Response.json({ error: "unknown or archived tenant" }, { status: 404 });
+      return noStore(Response.json(await runNightlyAcrossProjects(env, tenants, { scheduled: false }), { status: 202 }));
     }
     if (isCruxCollection) {
       const observedAt = new Date().toISOString();
-      const result = await collectCruxEvidence(env);
+      const tenants = await requestedProjectTenants(request, env);
+      if (!tenants) return Response.json({ error: "unknown or archived tenant" }, { status: 404 });
+      const result = await runCruxAcrossProjects(env, tenants);
+      await writeTenantSchedulerStatuses(env, "crux", observedAt, observedAt, result.projects);
+      const totals = cruxBatchTotals(result);
       const status = result.ok ? "succeeded" : "partial";
       await env.REPORTS.put(CRUX_SCHEDULER_STATUS_KEY, JSON.stringify({
         status,
@@ -953,16 +1102,21 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         httpMetadata: { contentType: "application/json" },
         customMetadata: {
           status,
-          available: String(result.available),
-          partial: String(result.partial),
-          insufficient: String(result.insufficient),
-          errors: String(result.errors),
+          projects: String(result.tenants),
+          available: String(totals.available),
+          partial: String(totals.partial),
+          insufficient: String(totals.insufficient),
+          errors: String(totals.errors),
         },
       });
       return noStore(Response.json(result));
     }
     if (isAuditLatest) {
-      const audit = await env.REPORTS.get(WEEKLY_AUDIT_LATEST_KEY);
+      const active = await activeProjectTenants(env);
+      const tenant = new URL(request.url).searchParams.get("tenant")
+        ?? (env.NIGHTLY_TENANT || "brand-studio:live");
+      if (!tenantAllowed(tenant, active)) return Response.json({ error: "unknown or archived tenant" }, { status: 404 });
+      const audit = await env.REPORTS.get(tenantWeeklyAuditLatestKey(tenant));
       if (!audit) return Response.json({ error: "audit not found" }, { status: 404 });
       const headers = new Headers({ "content-type": "application/json", "cache-control": "no-store" });
       audit.writeHttpMetadata(headers);
@@ -978,7 +1132,10 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       return noStore(Response.json(await instance.status()));
     }
     if (route && request.method === "GET" && route.strategy) {
-      const report = await env.REPORTS.get(reportKey(route.jobId, route.strategy));
+      const tenants = await requestedProjectTenants(request, env);
+      if (!tenants || tenants.length !== 1) return Response.json({ error: "tenant query parameter is required" }, { status: 400 });
+      const report = await env.REPORTS.get(reportKey(tenants[0], route.jobId, route.strategy))
+        ?? await env.REPORTS.get(legacyReportKey(route.jobId, route.strategy));
       if (!report) return Response.json({ error: "report not found" }, { status: 404 });
       const headers = new Headers({ "content-type": "application/json", "cache-control": "no-store" });
       report.writeHttpMetadata(headers);
@@ -986,7 +1143,14 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       return new Response(report.body, { headers });
     }
     if (route && request.method === "DELETE" && !route.strategy && pathname.endsWith("/reports")) {
-      await env.REPORTS.delete([reportKey(route.jobId, "mobile"), reportKey(route.jobId, "desktop")]);
+      const tenants = await requestedProjectTenants(request, env);
+      if (!tenants || tenants.length !== 1) return Response.json({ error: "tenant query parameter is required" }, { status: 400 });
+      await env.REPORTS.delete([
+        reportKey(tenants[0], route.jobId, "mobile"),
+        reportKey(tenants[0], route.jobId, "desktop"),
+        legacyReportKey(route.jobId, "mobile"),
+        legacyReportKey(route.jobId, "desktop"),
+      ]);
       return noStore(Response.json({ ok: true }));
     }
     if (!isDispatch) return Response.json({ error: "method not allowed" }, { status: 405 });
@@ -997,6 +1161,10 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       : [body];
     if (payloads.length < 1 || payloads.length > 100 || !payloads.every(validPayload)) {
       return Response.json({ error: "invalid job payload" }, { status: 400 });
+    }
+    const activeTenants = await activeProjectTenants(env);
+    if (!payloads.every((payload) => tenantAllowed(payload.tenant, activeTenants))) {
+      return Response.json({ error: "unknown or archived tenant" }, { status: 404 });
     }
     try {
       const options = payloads.map((payload) => ({
@@ -1058,65 +1226,54 @@ const worker = {
       ? AUDIT_SCHEDULER_STATUS_KEY
       : kind === "crux" ? CRUX_SCHEDULER_STATUS_KEY : NIGHTLY_SCHEDULER_STATUS_KEY;
     try {
-      let response: unknown;
-      const tenant = env.NIGHTLY_TENANT || "brand-studio:live";
-      const archivedAt = (await createFdeStore(tenant, env).getState()).projectArchivedAt;
-      if (archivedAt) {
-        response = { skipped: "project-archived", archivedAt };
-      } else if (kind === "audit") {
-        const audit = await runWeeklyDataAudit(env, new Date(controller.scheduledTime));
-        response = { auditId: audit.auditId, health: audit.health, totals: audit.totals };
-      } else if (kind === "crux") {
-        response = await collectCruxEvidence(env);
-      } else {
-        let webflow: unknown = null;
-        try {
-          webflow = await syncConfiguredWebflowSite(env, tenant);
-        } catch (error) {
-          webflow = {
-            ok: false,
-            error: error instanceof Error ? error.message : String(error),
-          };
-          console.error(JSON.stringify({
-            message: "Webflow activity sync failed",
-            tenant,
-            error: webflow,
-          }));
-        }
-        const confirmation = await dispatchFdeNightly(env, { confirmationOnly: true });
-        const nightly = await dispatchFdeNightly(env, { dueOnly: true });
-        const store = createFdeStore(tenant, env);
-        await ensureScheduledDailyDigest(store, new Date(controller.scheduledTime));
-        const digests = await processDailyDigests(store, new Date(controller.scheduledTime));
-        response = { webflow, confirmation, nightly, digests };
-      }
-      const cruxResponse = kind === "crux" && !archivedAt ? response as CruxCollectionResult : null;
+      const scheduledAt = new Date(controller.scheduledTime).toISOString();
+      const tenants = await activeProjectTenants(env);
+      const response = kind === "audit"
+        ? await runAuditAcrossProjects(env, tenants, new Date(controller.scheduledTime))
+        : kind === "crux"
+          ? await runCruxAcrossProjects(env, tenants)
+          : await runNightlyAcrossProjects(env, tenants, {
+            scheduled: true,
+            scheduledAt: new Date(controller.scheduledTime),
+          });
+      await writeTenantSchedulerStatuses(env, kind, scheduledAt, observedAt, response.projects);
+      const cruxTotals = kind === "crux"
+        ? cruxBatchTotals(response as SchedulerBatch<CruxCollectionResult>)
+        : null;
+      const auditHealth = kind === "audit"
+        ? auditBatchHealth(response as SchedulerBatch<unknown>)
+        : null;
+      const failedProjects = response.projects.filter((project) => project.status === "failed").length;
       const record = {
-        status: cruxResponse && !cruxResponse.ok ? "partial" : "succeeded",
+        status: response.ok ? "succeeded" : "partial",
         cron: controller.cron,
-        scheduledAt: new Date(controller.scheduledTime).toISOString(),
+        scheduledAt,
         observedAt,
         response,
       };
       await env.REPORTS.put(statusKey, JSON.stringify(record), {
         httpMetadata: { contentType: "application/json" },
-        ...(cruxResponse ? {
-          customMetadata: {
-            status: record.status,
-            available: String(cruxResponse.available),
-            partial: String(cruxResponse.partial),
-            insufficient: String(cruxResponse.insufficient),
-            errors: String(cruxResponse.errors),
-          },
-        } : {}),
+        customMetadata: {
+          status: record.status,
+          projects: String(response.tenants),
+          failed: String(failedProjects),
+          ...(auditHealth ? { health: auditHealth } : {}),
+          ...(cruxTotals ? {
+            available: String(cruxTotals.available),
+            partial: String(cruxTotals.partial),
+            insufficient: String(cruxTotals.insufficient),
+            errors: String(cruxTotals.errors),
+          } : {}),
+        },
       });
       console.log(JSON.stringify({ message: `${scheduler} scheduler completed`, ...record }));
     } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
       const errorMessage = kind === "audit"
-        ? "Weekly data audit execution failed"
+        ? `Weekly data audit execution failed: ${detail}`
         : kind === "crux"
-          ? "Weekly CrUX collection failed"
-        : error instanceof Error ? error.message : String(error);
+          ? `Weekly CrUX collection failed: ${detail}`
+          : detail;
       const record = {
         status: "failed",
         cron: controller.cron,
@@ -1127,15 +1284,17 @@ const worker = {
       try {
         await env.REPORTS.put(statusKey, JSON.stringify(record), {
           httpMetadata: { contentType: "application/json" },
-          ...(kind === "crux" ? {
-            customMetadata: {
-              status: "failed",
+          customMetadata: {
+            status: "failed",
+            failed: "1",
+            ...(kind === "audit" ? { health: "failed" } : {}),
+            ...(kind === "crux" ? {
               available: "0",
               partial: "0",
               insufficient: "0",
               errors: "1",
-            },
-          } : {}),
+            } : {}),
+          },
         });
       } catch (statusError) {
         console.error(JSON.stringify({

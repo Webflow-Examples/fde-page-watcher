@@ -20,7 +20,7 @@ export interface DispatchPayload {
   pageId: string;
   url: string;
   runs: number;
-  tenant?: string;
+  tenant: string;
   cohortId?: string;
   startDelayMinutes?: number;
 }
@@ -42,9 +42,9 @@ function trimJobs(jobs: CollectionJob[]): CollectionJob[] {
 /** Reserve and dispatch the watchlist entirely inside the FDE account. */
 export async function dispatchFdeNightly(
   env: NightlyEnvironment,
-  options: { dueOnly?: boolean; confirmationOnly?: boolean } = {},
+  options: { dueOnly?: boolean; confirmationOnly?: boolean; tenant?: string } = {},
 ): Promise<NightlyResult> {
-  const tenant = env.NIGHTLY_TENANT || "brand-studio:live";
+  const tenant = options.tenant ?? (env.NIGHTLY_TENANT || "brand-studio:live");
   const store = createFdeStore(tenant, env);
   const now = new Date();
   const queued: CollectionJob[] = [];

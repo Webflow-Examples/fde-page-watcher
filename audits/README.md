@@ -24,18 +24,22 @@ The weekly Worker follows the same policy. It inspects raw reports in memory one
 
 ## Weekly automation
 
-The collector Worker has two schedules:
+The collector Worker resolves the shared project registry for every schedule:
 
 - `*/15 * * * *` — dispatch pages due in their saved local collection window.
 - `30 5 * * 1` — weekly PSI data-accuracy audit, Monday at 05:30 UTC.
 
-Weekly reports are written to:
+Weekly reports are written under each tenant prefix:
 
-- `audits/weekly/YYYY-MM-DD.json` for the dated record;
-- `audits/weekly/latest.json` for monitoring; and
-- `scheduler/audit-latest.json` for scheduler execution status.
+- `<tenant>/audits/weekly/YYYY-MM-DD.json` for the dated record;
+- `<tenant>/audits/weekly/latest.json` for monitoring;
+- `<tenant>/scheduler/audit-latest.json` for per-project scheduler status; and
+- `scheduler/audit-latest.json` for aggregate scheduler execution status.
 
-The authenticated collector route `GET /audits/weekly/latest` returns the latest reduced report.
+The authenticated collector route
+`GET /audits/weekly/latest?tenant=<tenant>` returns the latest reduced report
+for a known active project. Omitting the query retains the deployment-default
+project for backward compatibility.
 
 The weekly health result fails closed:
 

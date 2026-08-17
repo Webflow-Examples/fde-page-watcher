@@ -6,6 +6,12 @@ import { effectivePerformanceThresholds } from "../src/lib/performanceThresholds
 import { normalizeState } from "../src/lib/store/normalize";
 import type { AppState, ChangeMarker, Night } from "../src/lib/types";
 import {
+  HISTORY_STORAGE_VERSION,
+  hydrateTableHistory,
+  stateWithoutEmbeddedHistory,
+  type StoredHistoryRow,
+} from "../src/lib/store/historyState";
+import {
   cruxEvidenceFromRows,
   type CruxPageEvidence,
   type CruxSnapshotRow,
@@ -61,11 +67,20 @@ export class FdeDataStore {
       .first<StateRow>();
   }
 
+  private async materializedState(row: StateRow): Promise<AppState> {
+    const state = normalizeState(JSON.parse(row.json) as AppState);
+    if (state.historyStorageVersion !== HISTORY_STORAGE_VERSION) return state;
+    const history = await this.bindings.DB.prepare(
+      "SELECT page_id, i, night_json FROM history WHERE tenant = ? ORDER BY page_id, i",
+    ).bind(this.tenant).all<StoredHistoryRow>();
+    return normalizeState(hydrateTableHistory(state, history.results));
+  }
+
   async readVersionedState(seed = true): Promise<VersionedState | null> {
     const row = await this.rawState();
     if (row) {
       return {
-        state: copyState(normalizeState(JSON.parse(row.json) as AppState)),
+        state: copyState(await this.materializedState(row)),
         version: row.version,
         updatedAt: row.updated_at,
       };
@@ -98,7 +113,7 @@ export class FdeDataStore {
   async writeVersionedState(state: AppState, expectedVersion: number | null): Promise<StateWriteResult> {
     const normalized = normalizeState(copyState(state));
     const beforeRow = await this.rawState();
-    const before = beforeRow ? normalizeState(JSON.parse(beforeRow.json) as AppState) : emptyState();
+    const before = beforeRow ? await this.materializedState(beforeRow) : emptyState();
     if (expectedVersion === null ? !!beforeRow : !beforeRow || beforeRow.version !== expectedVersion) {
       return {
         conflict: beforeRow ? {
@@ -110,7 +125,7 @@ export class FdeDataStore {
     }
 
     const updatedAt = new Date().toISOString();
-    const json = JSON.stringify(normalized);
+    const json = JSON.stringify(stateWithoutEmbeddedHistory(normalized));
     const result = expectedVersion === null
       ? await this.bindings.DB.prepare(
         "INSERT INTO state (tenant, json, version, updated_at) VALUES (?, ?, 0, ?) ON CONFLICT(tenant) DO NOTHING",
@@ -291,6 +306,11 @@ export class FdeDataStore {
       `${page.id}:${night.runId ?? night.i}`,
       JSON.stringify(night),
     ])));
+    const afterHistoryKeys = new Set(after.pages.flatMap((page) =>
+      page.history.map((night) => `${page.id}:${night.i}`)));
+    const storedHistory = await this.bindings.DB.prepare(
+      "SELECT page_id, i, night_json FROM history WHERE tenant = ?",
+    ).bind(this.tenant).all<StoredHistoryRow>();
     const beforeMarkers = new Map(before.pages.flatMap((page) => page.markers.map((marker) => [`${page.id}:${marker.id}`, JSON.stringify(marker)])));
     const afterMarkerKeys = new Set(after.pages.flatMap((page) => page.markers.map((marker) => `${page.id}:${marker.id}`)));
     for (const page of after.pages) {
@@ -314,6 +334,12 @@ export class FdeDataStore {
       statements.push(this.bindings.DB.prepare(
         "DELETE FROM markers WHERE tenant = ? AND page_id = ? AND id = ?",
       ).bind(this.tenant, key.slice(0, separator), key.slice(separator + 1)));
+    }
+    for (const row of storedHistory.results) {
+      if (afterHistoryKeys.has(`${row.page_id}:${row.i}`)) continue;
+      statements.push(this.bindings.DB.prepare(
+        "DELETE FROM history WHERE tenant = ? AND page_id = ? AND i = ?",
+      ).bind(this.tenant, row.page_id, row.i));
     }
     await this.runStatements(statements);
   }
