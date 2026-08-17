@@ -1,0 +1,21 @@
+
+> fde-page-watcher@0.1.0 dev
+> next dev
+
+▲ Next.js 16.2.10 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.86.32:3000
+✓ Ready in 631ms
+
+ GET / 307 in 37ms (next.js: 1691µs, application-code: 36ms)
+ GET / 307 in 23ms (next.js: 1227µs, application-code: 22ms)
+ GET / 307 in 96ms (next.js: 1879µs, application-code: 94ms)
+ GET /dashboard 200 in 369ms (next.js: 17ms, application-code: 352ms)
+✓ Compiled in 158ms
+ GET /pages/home?tab=opportunities 200 in 668ms (next.js: 646ms, application-code: 22ms)
+ GET /pages/home?tab=opportunities 200 in 17ms (next.js: 4ms, application-code: 13ms)
+ GET /pages/home?tab=opportunities 200 in 145ms (next.js: 3ms, application-code: 142ms)
+ GET /pages/home 200 in 6ms (next.js: 3ms, application-code: 3ms)
+ GET /pages/home 200 in 12ms (next.js: 1566µs, application-code: 11ms)
+ GET /dashboard 200 in 17ms (next.js: 4ms, application-code: 13ms)
+[?25h

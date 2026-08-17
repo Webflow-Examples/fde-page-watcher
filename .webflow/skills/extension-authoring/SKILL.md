@@ -13,7 +13,148 @@ When the user asks to create a skill, call `scaffold_extension_skill_draft` with
 
 ## Local site snapshots
 
-When a requested View must show data found in the local site or project, use `list` to inspect the workspace root and likely source directories, then `read` the identified UTF-8 text files before scaffolding. `search` is limited to a known extension draft and cannot discover normal project source. Read only what the snapshot needs, not an entire large file, and skip anything named or shaped like a secret, such as `.env` files, key material, `.ssh`, `.aws`, or other credential paths; never render that content into a View. Render only a fixed, bounded snapshot of data actually found in those files. Do not inspect Site Browser content, access a provider or network, request `content.*` capabilities, or add refresh behavior for this snapshot. If the data is unavailable locally, ask the user for a source path; never fabricate fallback data.
+When a requested View must show data found in the local site or project files rather than a connected Content Source, use `list` to inspect the workspace root and likely source directories, then `read` the identified UTF-8 text files before scaffolding. `search` is limited to a known extension draft and cannot discover normal project source. Read only what the snapshot needs, not an entire large file, and skip anything named or shaped like a secret, such as `.env` files, key material, `.ssh`, `.aws`, or other credential paths; never render that content into a View. Render only a fixed, bounded snapshot of data actually found in those files. Do not inspect Site Browser content, access a provider or network, request `content.*` capabilities, or add refresh behavior for this snapshot. If the data is unavailable locally, ask the user for a source path; never fabricate fallback data.
+
+## Connected Content Views
+
+A request that names a CMS or content platform, such as "show data from my Sanity CMS", asks for connected project Content rather than a local-file snapshot. Studio owns the provider connection and exposes provider-neutral `content.*` reads, so the same recipe serves every connected provider and no extension ever holds a provider SDK, a raw provider query such as GROQ, credentials, `fetch`, or network access.
+
+Discover before scaffolding:
+
+1. Call `list_content_sources` and match the platform the user named against each Source's `provider` value. When nothing matches, tell the user to connect that Content Source in Studio and stop; never fabricate items or ask for credentials.
+2. Call `list_content_types` for the matched Source when the request names or implies a type. Ask one concise question when several Sources or Types plausibly match.
+3. Call `list_extension_capabilities`, then `get_extension_capability` for every `content.*` method the extension will declare.
+
+Declare the smallest sufficient reads. A list View needs `content.listSources`, `content.listTypes`, and `content.queryItems`. Add `content.getType` only when the UI is driven by the Type's field schema, and `content.getItem` only when the View shows an item's full fields, because `content.queryItems` returns bounded summaries and `content.getItem` is the only full-record read. Never declare a Content write or `selection.set` for this path.
+
+Each read depends on refs returned by the previous call, so this is a multi-step intent: call `scaffold_extension_draft` with `workflows` rather than `operations`, pairing one lower-kebab-case intent id with those capability methods. The host writes the manifest, `src/intents.ts`, `src/extension.ts`, and a runnable View, and generates one agent-owned `src/workflows/<id>.ts` to implement. Keep every `content.*` call in that workflow: the View calls `view.intent(...)` and never touches a capability. Implement a `load-content` workflow like this, changing the provider, Type selection, and returned fields to fit the request.
+
+<!-- connected-content-workflow:start -->
+
+```ts
+import { matchTypedCapabilityResult } from "@webflow/extension-sdk";
+import type { LoadContentInput, LoadContentStudio, WorkflowResult } from "../intents";
+
+/** The platform the user named. `list_content_sources` reports it as `provider`. */
+const REQUESTED_PROVIDER = "sanity";
+
+/**
+ * Reads a connected Content Source through Studio's provider-neutral capabilities.
+ * Every `content.*` call stays here in Extension Logic; the View sees only this result.
+ */
+export async function loadContent(
+  input: LoadContentInput,
+  studio: LoadContentStudio,
+): Promise<WorkflowResult> {
+  const sources = matchTypedCapabilityResult(await studio.content.listSources(), {
+    ok: (outcome) => outcome.data.sources,
+    needs_input: () => null,
+    blocked: () => null,
+    unknown: () => null,
+  });
+  if (!sources) return { status: "blocked", reason: "runtime" };
+
+  // Fail closed on an ambiguous match instead of guessing: a project can have
+  // more than one Source for the same provider, and silently reading the
+  // first one would show real content from the wrong Source.
+  const matchingSources = sources.filter((candidate) => candidate.provider === REQUESTED_PROVIDER);
+  if (matchingSources.length === 0) {
+    return {
+      status: "needs_input",
+      data: { prompt: `Connect a ${REQUESTED_PROVIDER} Content Source to this project first.` },
+    };
+  }
+  const requestedSourceId = typeof input.sourceId === "string" ? input.sourceId : null;
+  const source = requestedSourceId
+    ? matchingSources.find((candidate) => candidate.id === requestedSourceId)
+    : matchingSources.length === 1
+      ? matchingSources[0]
+      : null;
+  if (!source) {
+    return {
+      status: "needs_input",
+      data: {
+        prompt:
+          matchingSources.length > 1
+            ? `More than one ${REQUESTED_PROVIDER} Content Source is connected: ${matchingSources
+                .map((candidate) => candidate.title)
+                .join(", ")}. Which one should this View read?`
+            : `Choose a ${REQUESTED_PROVIDER} Content Source for this View.`,
+        sourceChoices: matchingSources.map((candidate) => ({
+          id: candidate.id,
+          title: candidate.title,
+        })),
+      },
+    };
+  }
+
+  const types = matchTypedCapabilityResult(
+    await studio.content.listTypes({ sourceId: source.id }),
+    {
+      ok: (outcome) => outcome.data.types,
+      needs_input: () => null,
+      blocked: () => null,
+      unknown: () => null,
+    },
+  );
+  if (!types) return { status: "blocked", reason: "runtime" };
+
+  // Same rule for the Type: only skip asking when the caller named one or
+  // exactly one candidate remains.
+  const requestedTypeId = typeof input.typeId === "string" ? input.typeId : null;
+  const type = requestedTypeId
+    ? types.find((candidate) => candidate.id === requestedTypeId)
+    : types.length === 1
+      ? types[0]
+      : null;
+  if (!type) {
+    return {
+      status: "needs_input",
+      data: {
+        prompt:
+          types.length > 1
+            ? `Choose a Content Type in ${source.title}: ${types.map((candidate) => candidate.title).join(", ")}.`
+            : `Choose a Content Type in ${source.title}.`,
+        typeChoices: types.map((candidate) => ({ id: candidate.id, title: candidate.title })),
+      },
+    };
+  }
+
+  const cursor = typeof input.cursor === "string" ? input.cursor : undefined;
+  const page = matchTypedCapabilityResult(
+    await studio.content.queryItems({
+      sourceId: source.id,
+      typeId: type.id,
+      sort: "updated-desc",
+      limit: 20,
+      cursor,
+    }),
+    {
+      ok: (outcome) => outcome.data,
+      needs_input: () => null,
+      blocked: () => null,
+      unknown: () => null,
+    },
+  );
+  if (!page) return { status: "blocked", reason: "runtime" };
+
+  return {
+    status: "ok",
+    data: {
+      sourceTitle: source.title,
+      typeTitle: type.title,
+      items: page.items.map((item) => ({ id: item.ref.itemId, title: item.title })),
+      nextCursor: page.nextCursor ?? null,
+    },
+  };
+}
+```
+
+<!-- connected-content-workflow:end -->
+
+The shape stays the same whether the Source is Sanity or any other connected provider. Give the View what it needs for its loading, empty, error, and needs-input states rather than only the happy path; a `needs_input` result carries the actionable message and candidate ids/titles that the View needs to let the user choose, such as which Content Source to connect.
+
+A `workflows` draft always scaffolds `profile: "plain"`, so its View entry is `src/view.ts`, not the managed `src/view.tsx` default, and the host's generated `view.html` and `src/view.ts` are a generic JSON-input harness: a JSON textarea and a Run button that call the workflow with whatever object the user types. Replace both with the actual list, loading, empty, error, and needs-input UI before promoting; do not ship the JSON harness as the finished Content View.
 
 ## Composed operations
 
@@ -29,7 +170,7 @@ When an Extension View delegates Studio capabilities of one invocation mode, cal
    Keep three things true in a managed draft or its build fails: the scaffolded `data-webflow-extension-ui` element stays in the HTML, the entry keeps mounting its React root into that element, and the UI is built from `@webflow/extension-ui` components rather than bare markup. Studio injects Blueprint styles and theme state into that marked element only, so breaking any of them produces an unstyled surface instead of a visible error.
 5. For an untemplated draft, call `get_extension_capability` before editing every SDK call. It is the host-owned source for capability parameters and outcomes. The vendored `types/*.d.ts` declaration chain remains useful editor support: `types/webflow-extension.d.ts` and `types/webflow-extension-view.d.ts` are entrypoints, while `types/extension.d.ts`, `types/intent-map.d.ts`, `types/capability-contracts.d.ts`, and `types/shared.d.ts` provide local type navigation. `types/metadata.json` records artifact versions and a content digest; it does not define capability shapes.
 6. Call `validate_extension_draft`. Fix every returned diagnostic in authored source, then call it again. Repeat until diagnostics are clean. Managed diagnostic labels use `[check-id] [tier/severity]`: the `check-id` is the stable repair and grading key; `validated` is a machine check, `injected` is host-provided behavior, `instructed` is advisory guidance that never gates a build, and `documented` requires human review rather than automatic enforcement. Validation also returns advisory managed React lifecycle guidance naming the states a `BlockState` never represents; act on it whenever the surface is backed by data that can load, be empty, fail, be withheld, or be read-only, and leave a state out only when the surface genuinely cannot enter it.
-7. Only after validation is clean, choose the host operation by intent. When modifying an existing promoted View, preserve its manifest `id` and call `replace_extension_draft`. When creating an additional View, use a distinct manifest `id` and call the create-only `promote_extension_draft`. Confirm with the user in chat before either call when the draft's manifest requests no capability that needs review and no network access; that combination skips the host's own human-review requirement, so chat confirmation is the only check before the package becomes trusted. Never write `.webflow/extensions/<extension-id>/` or `.webflow/extensions.lock.json` directly; do not write the promoted tree or the lockfile yourself.
+7. Only after validation is clean, choose and call the host operation by intent without asking the user to confirm. When modifying an existing promoted View, preserve its manifest `id` and call `replace_extension_draft`. When creating an additional View, use a distinct manifest `id` and call the create-only `promote_extension_draft`. The host independently blocks promotion when a sensitive draft requires human review. Never write `.webflow/extensions/<extension-id>/` or `.webflow/extensions.lock.json` directly; do not write the promoted tree or the lockfile yourself.
 
 Type errors are advisory warnings for human and lower-level host workflows, not a capability or admission boundary. The Studio assistant's policy is stricter: a draft it authors must have clean diagnostics before replacement or promotion. Scaffold, validation, replacement, and promotion refresh stale host-owned SDK artifacts for the active host version; version skew alone is not an authoring failure.
 
