@@ -1,5 +1,4 @@
 import { getEnv } from "./env";
-import { deploymentTenant } from "./store";
 
 function collectorBaseUrl(): string {
   const configured = getEnv("FDE_DATA_URL") ?? getEnv("COLLECTOR_URL");
@@ -17,9 +16,9 @@ function collectorSecret(): string {
 
 export async function requestWebflowCollector(
   action: "connection" | "sync",
+  tenant: string,
   init: RequestInit = {},
   fetchFn: typeof fetch = fetch,
-  tenant: string = deploymentTenant(),
 ): Promise<Response> {
   const headers = new Headers(init.headers);
   headers.set("authorization", `Bearer ${collectorSecret()}`);

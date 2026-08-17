@@ -58,6 +58,7 @@ function environment(pages = [
               updated_at: "2026-07-27T00:00:00.000Z",
             }
           : null,
+        all: async () => ({ results: [] }),
         run: async () => {
           statements.push({ sql, values });
           return { success: true, meta: { rows_written: 1 } };

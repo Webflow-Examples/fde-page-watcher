@@ -13,7 +13,10 @@ async function unavailable(error: unknown): Promise<Response> {
 
 export async function GET(request: Request): Promise<Response> {
   try {
-    return relayWebflowCollector(await requestWebflowCollector("connection", {}, fetch, (await authorizedProjectForRequest(request, "admin")).tenant));
+    return relayWebflowCollector(await requestWebflowCollector(
+      "connection",
+      (await authorizedProjectForRequest(request, "admin")).tenant,
+    ));
   } catch (error) {
     return unavailable(error);
   }
@@ -43,13 +46,17 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ error: "Site ID and token are required" }, { status: 400 });
   }
   try {
-    return relayWebflowCollector(await requestWebflowCollector("connection", {
+    return relayWebflowCollector(await requestWebflowCollector(
+      "connection",
+      (await authorizedProjectForRequest(request, "admin")).tenant,
+      {
       method: "POST",
       body: JSON.stringify({
         siteId: (input as { siteId: string }).siteId,
         token: (input as { token: string }).token,
       }),
-    }, fetch, (await authorizedProjectForRequest(request, "admin")).tenant));
+      },
+    ));
   } catch (error) {
     return unavailable(error);
   }
@@ -57,7 +64,11 @@ export async function POST(request: Request): Promise<Response> {
 
 export async function DELETE(request: Request): Promise<Response> {
   try {
-    return relayWebflowCollector(await requestWebflowCollector("connection", { method: "DELETE" }, fetch, (await authorizedProjectForRequest(request, "admin")).tenant));
+    return relayWebflowCollector(await requestWebflowCollector(
+      "connection",
+      (await authorizedProjectForRequest(request, "admin")).tenant,
+      { method: "DELETE" },
+    ));
   } catch (error) {
     return unavailable(error);
   }

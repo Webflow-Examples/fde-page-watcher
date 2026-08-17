@@ -733,6 +733,8 @@ export interface ProjectMembership {
 
 /** The full application state — the single source of truth persisted per tenant. */
 export interface AppState {
+  /** Internal persistence marker: page histories are stored in the tenant-keyed history table. */
+  historyStorageVersion?: 1;
   /** Project-level archive marker. Archived tenants retain data but reject collection work. */
   projectArchivedAt?: string;
   /** Monitoring flags captured before archiving so restore can reinstate the watchlist exactly. */

@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { authorizeInternalRequest } from "@/lib/internalAccess";
+import { authorizeInternalRequest, internalProjectStore } from "@/lib/internalAccess";
 import { commitCollectionResult, failCollectionJob } from "@/lib/collectionJobs";
-import { getStore } from "@/lib/store";
 import type { CollectionResult } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -13,7 +12,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const { id } = await params;
   const body = (await request.json().catch(() => ({}))) as { result?: CollectionResult };
   if (!body.result || body.result.jobId !== id) return NextResponse.json({ error: "valid result is required" }, { status: 400 });
-  const dataStore = getStore();
+  const dataStore = await internalProjectStore(request).catch(() => null);
+  if (!dataStore) return NextResponse.json({ error: "known tenant is required" }, { status: 400 });
   try {
     const state = await dataStore.getState();
     const job = (state.jobs ?? []).find((item) => item.id === id);

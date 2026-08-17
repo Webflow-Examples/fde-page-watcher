@@ -6,7 +6,7 @@ afterEach(() => {
 });
 
 describe("Webflow collector proxy", () => {
-  it("keeps collector authentication server-side and scopes requests to the deployment tenant", async () => {
+  it("keeps collector authentication server-side and requires an explicit tenant scope", async () => {
     vi.stubEnv("FDE_DATA_URL", "https://collector.example.test/");
     vi.stubEnv("CRON_SECRET", "internal-only-secret");
     vi.stubEnv("DATASET_MODE", "live");
@@ -20,7 +20,7 @@ describe("Webflow collector proxy", () => {
       return Response.json({ connected: false });
     }) as typeof fetch;
 
-    const response = await requestWebflowCollector("connection", {}, fetchFn);
+    const response = await requestWebflowCollector("connection", "brand-studio:live", {}, fetchFn);
     await expect(response.json()).resolves.toEqual({ connected: false });
   });
 

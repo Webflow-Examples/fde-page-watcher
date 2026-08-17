@@ -261,11 +261,18 @@ describe("durable collection jobs", () => {
     await markCollectionJob("polled-job", "dispatching", { dataStore, workflowId: "polled-job" });
     const fetchFn = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
+      const parsed = new URL(url);
       expect(new Headers(init?.headers).get("authorization")).toBe("Bearer shared-secret");
       if (url.endsWith("/jobs/polled-job")) return Response.json({ status: "complete", output: collectionResult("polled-job", 2) });
-      if (url.endsWith("/reports/mobile")) return Response.json({ strategy: "mobile", raws: [{ id: "mobile-raw" }] });
-      if (url.endsWith("/reports/desktop")) return Response.json({ strategy: "desktop", raws: [{ id: "desktop-raw" }] });
-      if (url.endsWith("/reports") && init?.method === "DELETE") return Response.json({ ok: true });
+      if (parsed.pathname.endsWith("/reports/mobile") && parsed.searchParams.get("tenant") === "jobs-test") {
+        return Response.json({ strategy: "mobile", raws: [{ id: "mobile-raw" }] });
+      }
+      if (parsed.pathname.endsWith("/reports/desktop") && parsed.searchParams.get("tenant") === "jobs-test") {
+        return Response.json({ strategy: "desktop", raws: [{ id: "desktop-raw" }] });
+      }
+      if (parsed.pathname.endsWith("/reports") && parsed.searchParams.get("tenant") === "jobs-test" && init?.method === "DELETE") {
+        return Response.json({ ok: true });
+      }
       return new Response("not found", { status: 404 });
     });
 
@@ -286,7 +293,7 @@ describe("durable collection jobs", () => {
       },
     });
     expect(fetchFn).toHaveBeenCalledWith(
-      "https://collector.example.test/jobs/polled-job/reports",
+      "https://collector.example.test/jobs/polled-job/reports?tenant=jobs-test",
       expect.objectContaining({ method: "DELETE" }),
     );
   });

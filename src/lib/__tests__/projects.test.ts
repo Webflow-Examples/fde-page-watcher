@@ -26,6 +26,13 @@ describe("project configuration", () => {
     ]))).toThrow("duplicate id same");
   });
 
+  it("rejects project aliases that share a tenant scope", () => {
+    expect(() => parseProjectConfiguration(JSON.stringify([
+      { id: "one", name: "One", tenant: "shared:live" },
+      { id: "two", name: "Two", tenant: "shared:live" },
+    ]))).toThrow("duplicate tenant shared:live");
+  });
+
   it("rejects unsafe tenant identifiers", () => {
     expect(() => parseProjectConfiguration(JSON.stringify([
       { id: "unsafe", name: "Unsafe", tenant: "../../other" },

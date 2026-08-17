@@ -41,6 +41,7 @@ export function parseProjectConfiguration(raw: string | undefined): ConfiguredPr
   }
 
   const ids = new Set<string>();
+  const tenants = new Set<string>();
   return value.map((entry, index) => {
     if (!entry || typeof entry !== "object") {
       throw new Error(`PAGE_WATCH_PROJECTS[${index}] must be an object`);
@@ -63,7 +64,9 @@ export function parseProjectConfiguration(raw: string | undefined): ConfiguredPr
       throw new Error(`PAGE_WATCH_PROJECTS[${index}].tenant is invalid`);
     }
     if (ids.has(id)) throw new Error(`PAGE_WATCH_PROJECTS contains duplicate id ${id}`);
+    if (tenants.has(tenant)) throw new Error(`PAGE_WATCH_PROJECTS contains duplicate tenant ${tenant}`);
     ids.add(id);
+    tenants.add(tenant);
     return { id, name, ...(customer ? { customer } : {}), tenant };
   });
 }
@@ -74,6 +77,7 @@ function configuredProjects(): ConfiguredProject[] {
 
 function validManagedProjects(state: AppState, configured = configuredProjects()): ManagedProjectRecord[] {
   const seen = new Set<string>();
+  const seenTenants = new Set<string>();
   const configuredById = new Map(configured.map((project) => [project.id, project]));
   if (!Array.isArray(state.managedProjects)) return [];
   return state.managedProjects.filter((project) => {
@@ -94,15 +98,33 @@ function validManagedProjects(state: AppState, configured = configuredProjects()
       || !SAFE_TENANT.test(project.tenant)
       || (project.archivedAt !== undefined && !Number.isFinite(Date.parse(project.archivedAt)))
       || seen.has(project.id)
+      || seenTenants.has(project.tenant)
     ) return false;
     seen.add(project.id);
+    seenTenants.add(project.tenant);
     return true;
   });
 }
 
 async function managedProjects(): Promise<ManagedProjectRecord[]> {
-  const state = await getStore(ADMIN_REGISTRY_TENANT).getState();
-  return validManagedProjects(state);
+  const configured = configuredProjects();
+  const registry = getStore(ADMIN_REGISTRY_TENANT);
+  const state = await registry.getState();
+  const current = validManagedProjects(state, configured);
+  const registeredIds = new Set(current.map((project) => project.id));
+  const missing = configured.filter((project) => !registeredIds.has(project.id));
+  if (missing.length === 0) return current;
+
+  // PAGE_WATCH_PROJECTS is a bootstrap source. Persist it into the shared
+  // registry so the independently deployed scheduler sees the same tenants.
+  const now = new Date().toISOString();
+  const updated = await registry.updateState((draft) => {
+    draft.managedProjects = validManagedProjects(draft, configured);
+    for (const project of missing) {
+      setRecord(draft.managedProjects, project, {}, now);
+    }
+  });
+  return validManagedProjects(updated, configured);
 }
 
 async function projectCatalog(): Promise<ConfiguredProject[]> {
@@ -136,6 +158,21 @@ export async function availableProjects(): Promise<Project[]> {
 
 export async function adminProjects(): Promise<Project[]> {
   return (await projectCatalog()).map(publicProject);
+}
+
+/** Server-only project scopes for background work; tenant keys never reach the browser. */
+export async function activeProjectStores(): Promise<Array<{ projectId: string; dataStore: DataStore }>> {
+  return (await projectCatalog())
+    .filter((project) => !project.archivedAt)
+    .map((project) => ({ projectId: project.id, dataStore: getStore(project.tenant) }));
+}
+
+/** Resolve an authenticated internal callback to a known active project scope. */
+export async function projectStoreForTenant(tenant: string): Promise<DataStore> {
+  const project = (await projectCatalog()).find((candidate) => candidate.tenant === tenant);
+  if (!project) throw new UnknownProjectError(tenant);
+  if (project.archivedAt) throw new ArchivedProjectError(project.id);
+  return getStore(project.tenant);
 }
 
 export async function accessibleProjects(access: UserAccess, includeArchived = false): Promise<Project[]> {
