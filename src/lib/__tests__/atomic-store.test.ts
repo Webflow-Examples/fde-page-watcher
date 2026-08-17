@@ -340,6 +340,28 @@ describe("atomic tenant updates", () => {
     expect(state.recs.map((item) => item.id)).not.toEqual(expect.arrayContaining(["weak", "single-run"]));
   });
 
+  it("keeps an unmapped audit ID's recommendation across repeated collection cycles instead of pruning it", async () => {
+    // insertRecommendations runs once per collection (see executePageRun) and
+    // re-filters *existing* recs on every call, not just new ones. A finding
+    // whose audit ID isn't in the webflow remediation catalog must survive
+    // that re-filter — it should show up as "Needs review", never disappear.
+    const dataStore = await storeWithState();
+    const now = new Date("2026-08-03T12:00:00.000Z");
+    const opportunity = { id: "brand-new-lighthouse-audit", title: "Some brand-new Lighthouse insight", savingsMs: 500, observedRuns: 3 };
+
+    await insertRecommendations(dataStore, "page", [opportunity], now, { summarize: false });
+    let state = await dataStore.getState();
+    expect(state.recs.find((item) => item.id === "brand-new-lighthouse-audit")).toMatchObject({
+      webflow: expect.objectContaining({ actionability: "review" }),
+    });
+
+    // A second collection cycle re-evaluates every existing rec's webflow
+    // classification (collector.ts's insertRecommendations prune step).
+    await insertRecommendations(dataStore, "page", [opportunity], now, { summarize: false });
+    state = await dataStore.getState();
+    expect(state.recs.map((item) => item.id)).toContain("brand-new-lighthouse-audit");
+  });
+
   it("sends one digest per nightly run and never alerts for manual page runs", async () => {
     const dataStore = await storeWithState();
     const alertFn = vi.fn(async (...args: [string | null | undefined, DailyDigestWebhookPayload]) => {

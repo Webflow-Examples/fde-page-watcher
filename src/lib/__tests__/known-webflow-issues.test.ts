@@ -66,6 +66,41 @@ describe("known Webflow issue summaries", () => {
     ]));
   });
 
+  it("still detects a blocked-remediation audit whose default customer actionability is \"review\", not \"workaround\"", () => {
+    // isKnownWebflowIssue keys off `remediation`, independent of the
+    // `actionability` disposition shown to customers. "mainthread-work-breakdown"
+    // defaults to actionability "review" (see defaultActionability in
+    // webflowPerformance.ts) rather than "workaround" like other blocked
+    // entries, but it must still surface here since it is still `remediation:
+    // "blocked"`.
+    const state = buildInitialState("live");
+    const scan = nativeElementScan(`<html data-wf-site="private" data-wf-page="private"><body></body></html>`);
+    const mainThread = finding("mainthread-work-breakdown", "Minimize main-thread work");
+    expect(classifyWebflowPerformance(mainThread.id, mainThread.title)).toMatchObject({
+      remediation: "blocked",
+      actionability: "review",
+    });
+    const night: Night = {
+      i: 1,
+      date: "Aug 10",
+      iso: "2026-08-10T12:00:00.000Z",
+      scores,
+      nativeElements: scan,
+      diagnostics: { mobile: [mainThread] },
+      culpritEvidence: {
+        mobile: [{ auditId: mainThread.id, title: mainThread.title, facts: [], sources: [{ host: "cdn.prod.website-files.com" }], sampleRuns: 3 }],
+      },
+    };
+    state.pages = [{ ...state.pages[0], id: "home", history: [night] }];
+
+    expect(summarizeKnownWebflowIssues(
+      [{ project: { id: "project", name: "Project", customer: "Customer" }, state }],
+      new Date("2026-08-17T12:00:00.000Z"),
+    )).toEqual([
+      expect.objectContaining({ key: "mainthread-work-breakdown", detections: 1, pageCount: 1, customerCount: 1 }),
+    ]);
+  });
+
   it("does not infer a platform issue from a generic audit on an unattributed page", () => {
     const state = buildInitialState("live");
     state.pages = [{ ...state.pages[0], history: [{

@@ -79,4 +79,18 @@ describe("state normalization", () => {
     });
     expect(normalizedOpenPage.markers.some((marker) => marker.id === "stale-open")).toBe(false);
   });
+
+  it("strips the retired productEscalations field from legacy persisted state", () => {
+    const page = pendingPage("page", "Page", "https://example.com", "priority");
+    const legacy = {
+      pages: [page],
+      recs: [],
+      productEscalations: [{ id: "product:page:unused-javascript", recKey: "page:unused-javascript", status: "draft" }],
+    } as unknown as AppState;
+
+    const normalized = normalizeState(legacy);
+
+    expect(normalized.productEscalations).toBeUndefined();
+    expect("productEscalations" in normalized).toBe(false);
+  });
 });
