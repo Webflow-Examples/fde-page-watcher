@@ -1,5 +1,5 @@
 {
-  "$schema": "https://webflow.com/schemas/extensions-lockfile.v1.json",
+  "$schema": "https://webflow.com/schemas/extensions-lockfile.v2.json",
   "extensions": {
     "design-system-inventory": {
       "enabled": true,
@@ -18,7 +18,7 @@
         "logicArtifact": {
           "path": "build/logic.mjs"
         },
-        "packageFilesHash": "sha256:4cca0600e2b4067293b2582ad512cf593c2c9c150662ae158c80b97698877a9e"
+        "packageFilesHash": "sha256:808cf2a3b4e32c79c3ec4301bc4ec48fdebc38bd1ccf99217e3b918fcd3efcef"
       }
     },
     "responsive-preview-dual": {
@@ -38,30 +38,10 @@
         "logicArtifact": {
           "path": "build/logic.mjs"
         },
-        "packageFilesHash": "sha256:a92cb60ea61e0defc94eb951a052a09838f4f973825891508b29e47769fef4d8"
-      }
-    },
-    "responsive-preview-launcher": {
-      "enabled": true,
-      "requestedCapabilities": [],
-      "review": {
-        "reasons": [],
-        "required": "none",
-        "state": "trusted"
-      },
-      "source": {
-        "path": ".webflow/extensions/responsive-preview-launcher",
-        "type": "site"
-      },
-      "trust": {
-        "generatedDescriptorHash": "sha256:f6f7732cbb5f6113fbae2148db47c22cc53e56d69fc9fd1a9974376878ac4737",
-        "logicArtifact": {
-          "path": "build/logic.mjs"
-        },
-        "packageFilesHash": "sha256:0d8a913ea7e868d4b228daa94602da5e990ccaf8e5aa11def4107da0fe98df2a"
+        "packageFilesHash": "sha256:da2880b2438c31c7d4e86d619dc7cad4107aeb0b1d3e46e85967b21c343e0754"
       }
     }
   },
   "hashAlgorithm": "sha256",
-  "lockfileVersion": 1
+  "lockfileVersion": 2
 }

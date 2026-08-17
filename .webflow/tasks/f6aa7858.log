@@ -1,0 +1,13 @@
+
+> fde-page-watcher@0.1.0 dev
+> next dev
+
+▲ Next.js 16.2.10 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.86.32:3000
+✓ Ready in 386ms
+
+ GET / 307 in 583ms (next.js: 522ms, application-code: 61ms)
+ GET / 307 in 32ms (next.js: 3ms, application-code: 29ms)
+ GET / 307 in 170ms (next.js: 1571µs, application-code: 169ms)
+ GET /dashboard 200 in 416ms (next.js: 30ms, application-code: 387ms)

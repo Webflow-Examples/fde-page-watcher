@@ -140,6 +140,29 @@ export interface SelectionSetResultDataReader {
     token?: string;
     [key: string]: unknown;
 }
+export interface SelectionPageNode {
+    elementRef: string;
+    elementSignature: string;
+    tagName: string;
+    elementId: string | null;
+    className: string | null;
+    textHint: string | null;
+    sourceKind: "static" | "component";
+    componentName?: string;
+    children: SelectionPageNode[];
+}
+export interface SelectionPageNodeReader {
+    elementRef: string;
+    elementSignature: string;
+    tagName: string;
+    elementId: string | null;
+    className: string | null;
+    textHint: string | null;
+    sourceKind: "static" | "component";
+    componentName?: string;
+    children: SelectionPageNodeReader[];
+    [key: string]: unknown;
+}
 export interface CodeSourceRange {
     startLine?: number;
     startColumn?: number;
@@ -176,6 +199,40 @@ export type CodeFileEdit = {
         elementSignature?: string;
         previousTextContent?: string;
         textContent: string;
+    } | {
+        kind: "node";
+        mutation: {
+            kind: "create";
+            pageUrl: string;
+            pageRevision: string;
+            parentRef: string;
+            parentSignature: string;
+            tagName: string;
+            textContent?: string;
+            index?: number;
+        } | {
+            kind: "update";
+            pageUrl: string;
+            pageRevision: string;
+            elementRef: string;
+            elementSignature: string;
+            textContent: string;
+        } | {
+            kind: "move";
+            pageUrl: string;
+            pageRevision: string;
+            elementRef: string;
+            elementSignature: string;
+            parentRef: string;
+            parentSignature: string;
+            index: number;
+        } | {
+            kind: "delete";
+            pageUrl: string;
+            pageRevision: string;
+            elementRef: string;
+            elementSignature: string;
+        };
     };
     replace?: never;
     create?: never;
@@ -217,6 +274,7 @@ export interface ContentTypeSummaryReader {
 export interface ContentType {
     sourceId: string;
     id: string;
+    typeVersion: string;
     title: string;
     description?: string;
     schemaState: "known" | "observed-only";
@@ -231,6 +289,7 @@ export interface ContentType {
 export interface ContentTypeReader {
     sourceId: string;
     id: string;
+    typeVersion: string;
     title: string;
     description?: string;
     schemaState: string;
@@ -276,6 +335,7 @@ export interface ContentItemSummaryReader {
 }
 export interface ContentItem {
     ref: ContentItemRef;
+    writeVersion: string;
     title: string;
     subtitle?: string;
     publishedAt?: string;
@@ -289,6 +349,7 @@ export interface ContentItem {
 }
 export interface ContentItemReader {
     ref: ContentItemRef;
+    writeVersion: string;
     title: string;
     subtitle?: string;
     publishedAt?: string;
@@ -430,6 +491,128 @@ export type ContentValueReader = {
 } | {
     kind: "unknown";
     value: JsonValue;
+    [key: string]: unknown;
+};
+export type ContentScalarValue = {
+    kind: "string";
+    value: string;
+} | {
+    kind: "number";
+    value: number;
+} | {
+    kind: "boolean";
+    value: boolean;
+};
+export type ContentScalarValueReader = {
+    kind: "string";
+    value: string;
+    [key: string]: unknown;
+} | {
+    kind: "number";
+    value: number;
+    [key: string]: unknown;
+} | {
+    kind: "boolean";
+    value: boolean;
+    [key: string]: unknown;
+};
+export interface ContentFieldAssignment {
+    fieldId: string;
+    value: ContentScalarValue;
+}
+export interface ContentFieldAssignmentReader {
+    fieldId: string;
+    value: ContentScalarValueReader;
+    [key: string]: unknown;
+}
+export type ContentMutationFailure = {
+    outcome: "validation_failed";
+    action: "correct";
+    correlationId: string;
+    message?: string;
+} | {
+    outcome: "missing";
+    action: "refresh";
+    correlationId: string;
+    message?: string;
+} | {
+    outcome: "item_conflict";
+    action: "refresh";
+    correlationId: string;
+    message?: string;
+} | {
+    outcome: "schema_conflict";
+    action: "refresh";
+    correlationId: string;
+    message?: string;
+} | {
+    outcome: "connection_required";
+    action: "reconnect";
+    correlationId: string;
+    message?: string;
+} | {
+    outcome: "permission_denied";
+    action: "reconnect";
+    correlationId: string;
+    message?: string;
+} | {
+    outcome: "temporarily_unavailable";
+    action: "retry";
+    correlationId: string;
+    message?: string;
+} | {
+    outcome: "unknown_outcome";
+    action: "verify-state";
+    correlationId: string;
+    message?: string;
+};
+export type ContentMutationFailureReader = {
+    outcome: "validation_failed";
+    action: "correct";
+    correlationId: string;
+    message?: string;
+    [key: string]: unknown;
+} | {
+    outcome: "missing";
+    action: "refresh";
+    correlationId: string;
+    message?: string;
+    [key: string]: unknown;
+} | {
+    outcome: "item_conflict";
+    action: "refresh";
+    correlationId: string;
+    message?: string;
+    [key: string]: unknown;
+} | {
+    outcome: "schema_conflict";
+    action: "refresh";
+    correlationId: string;
+    message?: string;
+    [key: string]: unknown;
+} | {
+    outcome: "connection_required";
+    action: "reconnect";
+    correlationId: string;
+    message?: string;
+    [key: string]: unknown;
+} | {
+    outcome: "permission_denied";
+    action: "reconnect";
+    correlationId: string;
+    message?: string;
+    [key: string]: unknown;
+} | {
+    outcome: "temporarily_unavailable";
+    action: "retry";
+    correlationId: string;
+    message?: string;
+    [key: string]: unknown;
+} | {
+    outcome: "unknown_outcome";
+    action: "verify-state";
+    correlationId: string;
+    message?: string;
     [key: string]: unknown;
 };
 export interface ContentNormalizationLimits {
@@ -589,6 +772,97 @@ export type CodeApplyFileEditOkOutcome = Omit<CapabilityOkOutcome<CodeApplyFileE
 export type CodeApplyFileEditOutcome = CodeApplyFileEditOkOutcome | Exclude<CapabilityOutcome<CodeApplyFileEditResultDataReader | undefined>, {
     status: "ok";
 }>;
+export interface CodeCreateDirectoryParams {
+    scope?: CapabilityScopeString;
+    path: string;
+    baseVersion?: string;
+}
+export interface CodeCreateDirectoryResultDataReader {
+    path: string;
+    metadata?: JsonObject;
+    [key: string]: unknown;
+}
+export interface CodeMoveFileParams {
+    scope?: CapabilityScopeString;
+    file: string;
+    to: string;
+    baseVersion?: string;
+    summary?: string;
+}
+export interface CodeMoveFileResultData {
+    file: string;
+    previousFile: string;
+    kind: "file" | "directory";
+    summary?: string;
+    metadata?: JsonObject;
+    [key: string]: unknown;
+}
+export interface CodeMoveFileResultDataReader {
+    file: string;
+    previousFile: string;
+    kind: string;
+    summary?: string;
+    metadata?: JsonObject;
+    [key: string]: unknown;
+}
+export type CodeMoveFileOkOutcome = Omit<CapabilityOkOutcome<CodeMoveFileResultDataReader>, "change"> & {
+    change: ReviewableChangeRef;
+};
+export type CodeMoveFileOutcome = CodeMoveFileOkOutcome | Exclude<CapabilityOutcome<CodeMoveFileResultDataReader>, {
+    status: "ok";
+}>;
+export interface CodeDeleteFileParams {
+    scope?: CapabilityScopeString;
+    file: string;
+    baseVersion?: string;
+}
+export interface CodeDeleteFileResultData {
+    file: string;
+    recoverableVia: "system-trash";
+    metadata?: JsonObject;
+    [key: string]: unknown;
+}
+export interface CodeDeleteFileResultDataReader {
+    file: string;
+    recoverableVia: string;
+    metadata?: JsonObject;
+    [key: string]: unknown;
+}
+export type CodeDeleteFileOkOutcome = Omit<CapabilityOkOutcome<CodeDeleteFileResultDataReader>, "change"> & {
+    change: ReviewableChangeRef;
+};
+export type CodeDeleteFileOutcome = CodeDeleteFileOkOutcome | Exclude<CapabilityOutcome<CodeDeleteFileResultDataReader>, {
+    status: "ok";
+}>;
+export interface CodeDeleteDirectoryParams {
+    scope?: CapabilityScopeString;
+    directory: string;
+    confirmationToken?: string;
+    confirmedEntryCount?: number;
+    baseVersion?: string;
+}
+export interface CodeDeleteDirectoryResultData {
+    directory: string;
+    entryCount: number;
+    entryCountExact: boolean;
+    recoverableVia: "system-trash";
+    metadata?: JsonObject;
+    [key: string]: unknown;
+}
+export interface CodeDeleteDirectoryResultDataReader {
+    directory: string;
+    entryCount: number;
+    entryCountExact: boolean;
+    recoverableVia: string;
+    metadata?: JsonObject;
+    [key: string]: unknown;
+}
+export type CodeDeleteDirectoryOkOutcome = Omit<CapabilityOkOutcome<CodeDeleteDirectoryResultDataReader>, "change"> & {
+    change: ReviewableChangeRef;
+};
+export type CodeDeleteDirectoryOutcome = CodeDeleteDirectoryOkOutcome | Exclude<CapabilityOutcome<CodeDeleteDirectoryResultDataReader>, {
+    status: "ok";
+}>;
 export type CloudAuthorizeParams = Record<string, never>;
 export interface CloudAuthorizeResultData {
     authorized: boolean;
@@ -679,6 +953,7 @@ export type ContentGetItemResultData = {
 } | {
     state: "item_too_large";
     ref: ContentItemRef;
+    writeVersion: string;
     limits: ContentNormalizationLimits;
 };
 export type ContentGetItemResultDataReader = {
@@ -692,9 +967,53 @@ export type ContentGetItemResultDataReader = {
 } | {
     state: "item_too_large";
     ref: ContentItemRef;
+    writeVersion: string;
     limits: ContentNormalizationLimitsReader;
     [key: string]: unknown;
 };
+export interface ContentCreateItemParams {
+    sourceId: string;
+    typeId: string;
+    typeVersion: string;
+    fields: ContentFieldAssignment[];
+}
+export type ContentCreateItemResultData = {
+    outcome: "created";
+    item: ContentItem;
+} | ContentMutationFailure;
+export type ContentCreateItemResultDataReader = {
+    outcome: "created";
+    item: ContentItemReader;
+    [key: string]: unknown;
+} | ContentMutationFailureReader;
+export interface ContentUpdateItemParams {
+    ref: ContentItemRef;
+    typeVersion: string;
+    writeVersion: string;
+    fields: ContentFieldAssignment[];
+}
+export type ContentUpdateItemResultData = {
+    outcome: "updated";
+    item: ContentItem;
+} | ContentMutationFailure;
+export type ContentUpdateItemResultDataReader = {
+    outcome: "updated";
+    item: ContentItemReader;
+    [key: string]: unknown;
+} | ContentMutationFailureReader;
+export interface ContentDeleteItemParams {
+    ref: ContentItemRef;
+    writeVersion: string;
+}
+export type ContentDeleteItemResultData = {
+    outcome: "deleted";
+    ref: ContentItemRef;
+} | ContentMutationFailure;
+export type ContentDeleteItemResultDataReader = {
+    outcome: "deleted";
+    ref: ContentItemRef;
+    [key: string]: unknown;
+} | ContentMutationFailureReader;
 export type SelectionSetParams = {
     action: "select";
     ref: ContentItemRef;
@@ -709,6 +1028,77 @@ export type SelectionSetParams = {
 export interface SelectionGetCurrentParams {
     scope?: CapabilityScopeString;
 }
+export type SelectionReadPageTreeParams = Record<string, never>;
+export interface SelectionPageTree {
+    pageUrl: string;
+    pageRevision: string;
+    roots: SelectionPageNode[];
+    truncated: boolean;
+}
+export interface SelectionPageTreeReader {
+    pageUrl: string;
+    pageRevision: string;
+    roots: SelectionPageNodeReader[];
+    truncated: boolean;
+    [key: string]: unknown;
+}
+export interface SelectionPageNodeParams {
+    pageUrl: string;
+    pageRevision: string;
+    elementRef: string;
+    elementSignature: string;
+}
+export interface SelectionPageNodeResultDataReader {
+    elementRef: string;
+    pageUrl: string;
+    [key: string]: unknown;
+}
+export type SelectionNodeMutation = {
+    kind: "create";
+    pageUrl: string;
+    pageRevision: string;
+    parentRef: string;
+    parentSignature: string;
+    tagName: string;
+    textContent?: string;
+    index?: number;
+} | {
+    kind: "update";
+    pageUrl: string;
+    pageRevision: string;
+    elementRef: string;
+    elementSignature: string;
+    textContent: string;
+} | {
+    kind: "move";
+    pageUrl: string;
+    pageRevision: string;
+    elementRef: string;
+    elementSignature: string;
+    parentRef: string;
+    parentSignature: string;
+    index: number;
+} | {
+    kind: "delete";
+    pageUrl: string;
+    pageRevision: string;
+    elementRef: string;
+    elementSignature: string;
+};
+export type SelectionNodeMutationResultDataReader = {
+    elementRef?: string;
+    persistence: "saved";
+    [key: string]: unknown;
+} | {
+    elementRef?: string;
+    persistence: "failed";
+    [key: string]: unknown;
+} | {
+    elementRef?: string;
+    persistence: "skipped";
+    persistenceReason: "file-too-large" | "not-writable" | "source-element-mismatch" | "source-element-not-found" | "source-element-not-text-only" | "source-element-component-managed" | "invalid-mutation";
+    [key: string]: unknown;
+};
 export interface SelectionPatchStyleParams {
     scope?: CapabilityScopeString;
     elementRef: string;
@@ -882,6 +1272,10 @@ export interface PublicCapabilityContractMap {
     "code.listDirectory": PublicCapabilityContract<CodeListDirectoryParams, CapabilityOutcome<CodeListDirectoryResultDataReader>>;
     "code.mapNodeToSource": PublicCapabilityContract<CodeMapNodeToSourceParams, CapabilityOutcome<CodeMapNodeToSourceResultDataReader>>;
     "code.applyFileEdit": PublicCapabilityContract<CodeApplyFileEditParams, CodeApplyFileEditOutcome>;
+    "code.createDirectory": PublicCapabilityContract<CodeCreateDirectoryParams, CapabilityOutcome<CodeCreateDirectoryResultDataReader>>;
+    "code.moveFile": PublicCapabilityContract<CodeMoveFileParams, CodeMoveFileOutcome>;
+    "code.deleteFile": PublicCapabilityContract<CodeDeleteFileParams, CodeDeleteFileOutcome>;
+    "code.deleteDirectory": PublicCapabilityContract<CodeDeleteDirectoryParams, CodeDeleteDirectoryOutcome>;
     "cloud.authorize": PublicCapabilityContract<CloudAuthorizeParams, CapabilityOutcome<CloudAuthorizeResultData>>;
     "cloud.getDeployContext": PublicCapabilityContract<CloudGetDeployContextParams, CapabilityOutcome<CloudGetDeployContextResultData>>;
     "cloud.deploy": PublicStreamCapabilityContract<CloudDeployParams, CapabilityOutcome<CloudDeployResultData>, CloudDeployProgressData>;
@@ -890,8 +1284,14 @@ export interface PublicCapabilityContractMap {
     "content.getType": PublicCapabilityContract<ContentGetTypeParams, CapabilityOutcome<ContentGetTypeResultDataReader>>;
     "content.queryItems": PublicCapabilityContract<ContentQueryItemsParams, CapabilityOutcome<ContentQueryItemsResultDataReader>>;
     "content.getItem": PublicCapabilityContract<ContentGetItemParams, CapabilityOutcome<ContentGetItemResultDataReader>>;
+    "content.createItem": PublicCapabilityContract<ContentCreateItemParams, CapabilityOutcome<ContentCreateItemResultDataReader>>;
+    "content.updateItem": PublicCapabilityContract<ContentUpdateItemParams, CapabilityOutcome<ContentUpdateItemResultDataReader>>;
+    "content.deleteItem": PublicCapabilityContract<ContentDeleteItemParams, CapabilityOutcome<ContentDeleteItemResultDataReader>>;
     "selection.set": PublicCapabilityContract<SelectionSetParams, CapabilityOutcome<SelectionSetResultDataReader>>;
     "selection.getCurrent": PublicCapabilityContract<SelectionGetCurrentParams, CapabilityOutcome<SelectionStateReader>>;
+    "selection.readPageTree": PublicCapabilityContract<SelectionReadPageTreeParams, CapabilityOutcome<SelectionPageTreeReader>>;
+    "selection.selectPageNode": PublicCapabilityContract<SelectionPageNodeParams, CapabilityOutcome<SelectionPageNodeResultDataReader>>;
+    "selection.mutateNode": PublicCapabilityContract<SelectionNodeMutation, CapabilityOutcome<SelectionNodeMutationResultDataReader>>;
     "selection.patchStyle": PublicCapabilityContract<SelectionPatchStyleParams, CapabilityOutcome<SelectionPatchStyleResultDataReader>>;
     "selection.editText": PublicCapabilityContract<SelectionEditTextParams, CapabilityOutcome<SelectionEditTextResultDataReader>>;
     "selection.changed": PublicCapabilityContract<SelectionChangedParams, never>;

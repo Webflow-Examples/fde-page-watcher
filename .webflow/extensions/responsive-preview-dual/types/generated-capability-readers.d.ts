@@ -69,6 +69,10 @@ interface PublicCapabilityReaderContractMap {
     readonly "code.listDirectory": RequestReaderContract<"request-response", "optional", "required", "optional", "code", "listDirectory">;
     readonly "code.mapNodeToSource": RequestReaderContract<"request-response", "required", "required", "optional", "code", "mapNodeToSource">;
     readonly "code.applyFileEdit": RequestReaderContract<"request-response", "required", "optional", "required", "code", "applyFileEdit">;
+    readonly "code.createDirectory": RequestReaderContract<"request-response", "required", "required", "optional", "code", "createDirectory">;
+    readonly "code.moveFile": RequestReaderContract<"request-response", "required", "required", "required", "code", "moveFile">;
+    readonly "code.deleteFile": RequestReaderContract<"request-response", "required", "required", "required", "code", "deleteFile">;
+    readonly "code.deleteDirectory": RequestReaderContract<"request-response", "required", "required", "required", "code", "deleteDirectory">;
     readonly "cloud.authorize": RequestReaderContract<"request-response", "optional", "required", "optional", "cloud", "authorize">;
     readonly "cloud.getDeployContext": RequestReaderContract<"request-response", "optional", "required", "optional", "cloud", "getDeployContext">;
     readonly "cloud.deploy": StreamReaderContract<"stream", "optional", "required", "optional", "cloud", "deploy">;
@@ -77,8 +81,14 @@ interface PublicCapabilityReaderContractMap {
     readonly "content.getType": RequestReaderContract<"request-response", "required", "required", "optional", "content", "getType">;
     readonly "content.queryItems": RequestReaderContract<"request-response", "required", "required", "optional", "content", "queryItems">;
     readonly "content.getItem": RequestReaderContract<"request-response", "required", "required", "optional", "content", "getItem">;
+    readonly "content.createItem": RequestReaderContract<"request-response", "required", "required", "optional", "content", "createItem">;
+    readonly "content.updateItem": RequestReaderContract<"request-response", "required", "required", "optional", "content", "updateItem">;
+    readonly "content.deleteItem": RequestReaderContract<"request-response", "required", "required", "optional", "content", "deleteItem">;
     readonly "selection.set": RequestReaderContract<"request-response", "required", "required", "optional", "selection", "set">;
     readonly "selection.getCurrent": RequestReaderContract<"request-response", "optional", "required", "optional", "selection", "getCurrent">;
+    readonly "selection.readPageTree": RequestReaderContract<"request-response", "optional", "required", "optional", "selection", "readPageTree">;
+    readonly "selection.selectPageNode": RequestReaderContract<"request-response", "required", "required", "optional", "selection", "selectPageNode">;
+    readonly "selection.mutateNode": RequestReaderContract<"request-response", "required", "required", "optional", "selection", "mutateNode">;
     readonly "selection.patchStyle": RequestReaderContract<"request-response", "required", "required", "optional", "selection", "patchStyle">;
     readonly "selection.editText": RequestReaderContract<"request-response", "required", "required", "optional", "selection", "editText">;
     readonly "selection.changed": EventReaderContract<"selection", "changed">;
