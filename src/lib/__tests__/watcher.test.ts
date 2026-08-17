@@ -184,12 +184,21 @@ describe("buildWatcher — top recommendation", () => {
 
   it("skips ignored and completed recs and picks the top active one", () => {
     const recs = [
-      rec("uses-optimized-images", "5.0 s", "ignored", "todo"), // highest savings but ignored
-      rec("modern-image-formats", "4.0 s", "task", "done"), // completed
-      rec("dom-size", "1.5 s", "inbox", "todo"), // the only actionable one
+      rec("big", "5.0 s", "ignored", "todo"), // highest savings but ignored
+      rec("done", "4.0 s", "task", "done"), // completed
+      rec("active", "1.5 s", "inbox", "todo"), // the only actionable one
     ];
     const w = buildWatcher([focus], recs, "mobile");
-    expect(w.topRec?.recTitle).toBe("dom-size-title");
+    expect(w.topRec?.recTitle).toBe("active-title");
+  });
+
+  it("still surfaces the top pick when its audit ID isn't in the documented remediation table", () => {
+    // "active" above is already unmapped, but this test makes that intent explicit
+    // and would fail again if `recommendationIsCustomerActionable` regresses to
+    // treating unmapped ("review") findings as hidden rather than actionable.
+    const recs = [rec("brand-new-lighthouse-audit", "2.0 s", "inbox", "todo")];
+    const w = buildWatcher([focus], recs, "mobile");
+    expect(w.topRec?.recTitle).toBe("brand-new-lighthouse-audit-title");
   });
 
   it("prioritizes recommendations corroborated by exact-URL visitor evidence", () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { median, range, noiseBand, classifyStatus, categoryTrendSeries, hasPersistentRegression, historyForPreviousRange, historyForRange, historyForStrategy, pageAgentHistoryForRange, pageAgentSnapshotForRange, pageHistoryForRange, pagePreviousPeriodMedian, pageRangeLatestNightForStrategy, pageRangeSeries, pageRangeTrend, pageRecordedHistoryForRange, previousPeriodMedian, rangeComparison, DROP_THRESHOLD } from "../scoring";
+import { median, range, noiseBand, classifyStatus, categoryTrendSeries, deltaMeta, hasPersistentRegression, historyForPreviousRange, historyForRange, historyForStrategy, pageAgentHistoryForRange, pageAgentSnapshotForRange, pageHistoryForRange, pagePreviousPeriodMedian, pageRangeLatestNightForStrategy, pageRangeSeries, pageRangeTrend, pageRecordedHistoryForRange, previousPeriodMedian, rangeComparison, DROP_THRESHOLD } from "../scoring";
 import type { CategoryScore, Night, NightScores, ScoreByCategory, StrategyScores, WatchPage } from "../types";
 
 const cat = (m: number): CategoryScore => ({ m, lo: m - 2, hi: m + 2 });
@@ -20,6 +20,21 @@ describe("median / range", () => {
   });
   it("range reports lo and hi", () => {
     expect(range([70, 60, 80])).toEqual({ lo: 60, hi: 80 });
+  });
+});
+
+describe("deltaMeta", () => {
+  it("treats a drop at exactly DROP_THRESHOLD as a significant regression", () => {
+    expect(deltaMeta(80 - DROP_THRESHOLD, 80)).toMatchObject({ fg: "#FF5C6C", d: -DROP_THRESHOLD });
+  });
+  it("treats a drop just short of DROP_THRESHOLD as ordinary noise", () => {
+    expect(deltaMeta(80 - DROP_THRESHOLD + 1, 80)).toMatchObject({ fg: "#FF9A3D", d: -(DROP_THRESHOLD - 1) });
+  });
+  it("treats any positive delta as an improvement", () => {
+    expect(deltaMeta(81, 80)).toMatchObject({ fg: "#35D07F", d: 1 });
+  });
+  it("treats no change as neutral", () => {
+    expect(deltaMeta(80, 80)).toMatchObject({ fg: "#8A8A90", d: 0, text: "→ 0" });
   });
 });
 

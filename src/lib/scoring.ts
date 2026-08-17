@@ -46,7 +46,7 @@ export function deltaMeta(cur: number, base: number): DeltaMeta {
   if (d > 0) {
     fg = "#35D07F";
     chip = "rgba(53,208,127,0.14)";
-  } else if (d <= -8) {
+  } else if (d <= -DROP_THRESHOLD) {
     fg = "#FF5C6C";
     chip = "rgba(255,92,108,0.14)";
   } else if (d < 0) {

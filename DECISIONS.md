@@ -7,9 +7,13 @@ change is a one-line edit.
 
 ## 1. Status is driven by mobile Performance only
 
-Page status (Healthy / Improvable / Degraded) is classified from the
-**Performance** category on the **mobile** strategy. Accessibility, SEO, Best
-Practices, and desktop scores are shown and tracked but do not change status.
+Page status is classified from the **Performance** category on the **mobile**
+strategy. Accessibility, SEO, Best Practices, and desktop scores are shown and
+tracked but do not change status. The four status values (currently Stable /
+Improving / Regressing / Pending) are a UI vocabulary, not a product decision;
+treat `statusMeta(...)` in `src/lib/scoring.ts` as the single source of truth
+for their labels rather than restating them here, so this doc can't drift from
+the code again.
 
 - Where: `classifyStatus(...)` default `key = "perf"`; callers pass `"mobile"`.
   `src/lib/scoring.ts`, `src/lib/store/fsStore.ts`.
@@ -24,7 +28,8 @@ the "dropped on X" Watcher bullets.
 
 ## 3. Noise band is `max(4, 2 × mean night-to-night movement)`
 
-"Improvable" vs "Healthy" uses a per-page, per-category noise band: twice the
+"Improving" vs "Stable" (see `statusMeta(...)` in `src/lib/scoring.ts` for the
+current status vocabulary) uses a per-page, per-category noise band: twice the
 mean absolute night-to-night movement of the median, floored at 4 points so a
 flat history still tolerates normal PSI jitter.
 
