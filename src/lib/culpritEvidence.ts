@@ -24,6 +24,14 @@ const TITLES: Record<string, string> = {
   "largest-contentful-paint-element": "Largest Contentful Paint element",
 };
 
+/**
+ * Audit IDs this module knows how to extract structured evidence for. Kept in
+ * sync with `DOCUMENTED_WEBFLOW_AUDIT_IDS` in `webflowPerformance.ts` only by
+ * a cross-module test (`culprit-evidence-catalog.test.ts`), since the two
+ * catalogs are maintained independently for unrelated reasons.
+ */
+export const CULPRIT_EVIDENCE_AUDIT_IDS = Object.freeze(Object.keys(TITLES));
+
 function record(value: unknown): UnknownRecord | null {
   return value && typeof value === "object" && !Array.isArray(value) ? value as UnknownRecord : null;
 }
@@ -239,6 +247,9 @@ const PRIMARY_FACTS: Record<string, string> = {
   "uses-optimized-images": "wastedBytes",
   "largest-contentful-paint-element": "width",
 };
+
+/** See `CULPRIT_EVIDENCE_AUDIT_IDS`; kept in sync with `TITLES` by the same drift-guard test. */
+export const CULPRIT_EVIDENCE_PRIMARY_FACT_AUDIT_IDS = Object.freeze(Object.keys(PRIMARY_FACTS));
 
 export function culpritEvidenceTrends(history: Night[], strategy: Strategy): CulpritEvidenceTrend[] {
   const captures = [...history].sort((left, right) => left.i - right.i)

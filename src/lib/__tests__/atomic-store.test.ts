@@ -323,17 +323,21 @@ describe("atomic tenant updates", () => {
       minimumSavingsKilobytes: 50,
     }, dataStore);
 
+    // IDs are deliberately unmapped/synthetic (not real Lighthouse audit IDs):
+    // this test exercises evidence-threshold gating, decoupled from webflow
+    // catalog membership. Unmapped findings must still pass through when they
+    // meet the evidence gates — they are not filtered by webflow classification.
     await insertRecommendations(dataStore, "page", [
-      { id: "uses-optimized-images", title: "Weak finding", savingsMs: 100, savingsBytes: 10_000, observedRuns: 3 },
-      { id: "dom-size", title: "Repeatable finding", savingsMs: 400, observedRuns: 3 },
-      { id: "unsized-images", title: "Structural finding", savingsMs: 0, observedRuns: 3 },
-      { id: "third-party-summary", title: "Single-run finding", savingsMs: 900, observedRuns: 1 },
+      { id: "weak", title: "Weak finding", savingsMs: 100, savingsBytes: 10_000, observedRuns: 3 },
+      { id: "repeatable", title: "Repeatable finding", savingsMs: 400, observedRuns: 3 },
+      { id: "structural", title: "Structural finding", savingsMs: 0, observedRuns: 3 },
+      { id: "single-run", title: "Single-run finding", savingsMs: 900, observedRuns: 1 },
     ], new Date("2026-08-03T12:00:00.000Z"), { summarize: false });
 
     const state = await dataStore.getState();
     expect(state.pages[0].performanceThresholdOverrides).toMatchObject({ regression: 14, confirmationRuns: 3, devicePolicy: "both" });
-    expect(state.recs.map((item) => item.id)).toEqual(expect.arrayContaining(["rec", "dom-size", "unsized-images"]));
-    expect(state.recs.map((item) => item.id)).not.toEqual(expect.arrayContaining(["uses-optimized-images", "third-party-summary"]));
+    expect(state.recs.map((item) => item.id)).toEqual(expect.arrayContaining(["rec", "repeatable", "structural"]));
+    expect(state.recs.map((item) => item.id)).not.toEqual(expect.arrayContaining(["weak", "single-run"]));
   });
 
   it("sends one digest per nightly run and never alerts for manual page runs", async () => {

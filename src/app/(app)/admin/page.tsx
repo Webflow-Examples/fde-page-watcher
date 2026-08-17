@@ -5,6 +5,7 @@ import { FolderSimpleIcon, PlusIcon, TrashIcon, UserCircleIcon } from "@phosphor
 import { useStore } from "@/components/store";
 import type { Project } from "@/lib/projects";
 import type { KnownWebflowIssueSummary } from "@/lib/knownWebflowIssues";
+import type { UnmappedWebflowFindingSummary } from "@/lib/unmappedWebflowFindings";
 
 export default function AdminPage() {
   const {
@@ -31,6 +32,8 @@ export default function AdminPage() {
   const [knownIssues, setKnownIssues] = useState<KnownWebflowIssueSummary[]>([]);
   const [knownIssuesLoading, setKnownIssuesLoading] = useState(true);
   const [optimizeAffectedDetections, setOptimizeAffectedDetections] = useState(0);
+  const [unmappedFindings, setUnmappedFindings] = useState<UnmappedWebflowFindingSummary[]>([]);
+  const [unmappedFindingsLoading, setUnmappedFindingsLoading] = useState(true);
   const trimmedName = name.trim();
   const activeProjects = adminProjects.filter((item) => !item.archivedAt);
   const archivedProjects = adminProjects.filter((item) => !!item.archivedAt);
@@ -57,6 +60,16 @@ export default function AdminPage() {
     }).catch((error) => {
       if (!cancelled) flash(error instanceof Error ? error.message : "Could not load known issue signals");
     }).finally(() => { if (!cancelled) setKnownIssuesLoading(false); });
+    void fetch(pathFor("/api/admin/unmapped-findings"), { cache: "no-store" }).then(async (response) => {
+      const body = await response.json().catch(() => null) as {
+        findings?: UnmappedWebflowFindingSummary[];
+        error?: string;
+      } | null;
+      if (!response.ok || !body?.findings) throw new Error(body?.error ?? "Could not load unmapped audit signals");
+      if (!cancelled) setUnmappedFindings(body.findings);
+    }).catch((error) => {
+      if (!cancelled) flash(error instanceof Error ? error.message : "Could not load unmapped audit signals");
+    }).finally(() => { if (!cancelled) setUnmappedFindingsLoading(false); });
     return () => { cancelled = true; };
   }, [flash, pathFor]);
 
@@ -328,6 +341,51 @@ export default function AdminPage() {
                     <td style={{ padding: "11px 10px", textAlign: "right" }}>{issue.pageCount}</td>
                     <td style={{ padding: "11px 10px", textAlign: "right" }}>{issue.detections}</td>
                     <td style={{ padding: "11px 10px", textAlign: "right", whiteSpace: "nowrap" }}>{new Date(issue.lastSeen).toLocaleDateString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+      <section className="admin-card" aria-labelledby="unmapped-findings-heading" style={{ marginTop: 18 }}>
+        <div className="admin-card__heading">
+          <div>
+            <h2 id="unmapped-findings-heading">Unmapped Lighthouse audits</h2>
+            <p>
+              Audit IDs seen in collection evidence from the last 30 days that aren&rsquo;t in the Webflow remediation
+              catalog yet. These still surface to customers as &ldquo;Needs review&rdquo; rather than being hidden —
+              add them to <code>CATALOG</code> in <code>webflowPerformance.ts</code> once triaged.
+            </p>
+          </div>
+          <span className="admin-card__heading-count">{unmappedFindings.length}</span>
+        </div>
+        {unmappedFindingsLoading ? (
+          <div className="admin-project-list__empty">Loading unmapped audit signals…</div>
+        ) : unmappedFindings.length === 0 ? (
+          <div className="admin-project-list__empty">No unmapped Lighthouse audit IDs were detected in this window.</div>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+              <thead>
+                <tr style={{ color: "#8f8f98", textAlign: "left" }}>
+                  <th style={{ padding: "9px 10px" }}>Audit ID</th>
+                  <th style={{ padding: "9px 10px" }}>Category</th>
+                  <th style={{ padding: "9px 10px", textAlign: "right" }}>Customers</th>
+                  <th style={{ padding: "9px 10px", textAlign: "right" }}>Pages</th>
+                  <th style={{ padding: "9px 10px", textAlign: "right" }}>Detections</th>
+                  <th style={{ padding: "9px 10px", textAlign: "right" }}>Last seen</th>
+                </tr>
+              </thead>
+              <tbody>
+                {unmappedFindings.map((finding) => (
+                  <tr key={finding.key} style={{ borderTop: "1px solid rgba(255,255,255,0.07)" }}>
+                    <td style={{ padding: "11px 10px" }}><strong>{finding.key}</strong><div style={{ color: "#777780", marginTop: 2 }}>{finding.title}</div></td>
+                    <td style={{ padding: "11px 10px" }}>{finding.category}</td>
+                    <td style={{ padding: "11px 10px", textAlign: "right" }}>{finding.customerCount}</td>
+                    <td style={{ padding: "11px 10px", textAlign: "right" }}>{finding.pageCount}</td>
+                    <td style={{ padding: "11px 10px", textAlign: "right" }}>{finding.detections}</td>
+                    <td style={{ padding: "11px 10px", textAlign: "right", whiteSpace: "nowrap" }}>{new Date(finding.lastSeen).toLocaleDateString()}</td>
                   </tr>
                 ))}
               </tbody>

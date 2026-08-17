@@ -263,19 +263,41 @@ function normalizedTitle(value: string): string {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
-export function classifyWebflowPerformance(auditId: string, title?: string): WebflowPerformanceClassification {
+function catalogEntryFor(auditId: string, title?: string): CatalogEntry {
   const normalizedId = auditId.trim().toLowerCase();
   const aliasedId = title ? TITLE_ALIASES[normalizedTitle(title)] : undefined;
-  const entry = CATALOG[normalizedId] ?? (aliasedId ? CATALOG[aliasedId] : undefined) ?? UNKNOWN;
+  return CATALOG[normalizedId] ?? (aliasedId ? CATALOG[aliasedId] : undefined) ?? UNKNOWN;
+}
+
+/**
+ * Single source of truth for the default customer disposition of a
+ * catalog entry, before any page-level platform-ownership override
+ * (see `classificationForPage`). `mainthread-work-breakdown` has no
+ * customer-controllable guidance even absent platform confirmation, so
+ * it defaults to "review" like a genuinely unmapped audit; every other
+ * catalog entry defaults from its remediation level alone.
+ */
+function defaultActionability(remediation: WebflowRemediationLevel, normalizedId: string): CustomerActionability {
+  if (remediation === "available") return "direct";
+  if (remediation === "partial") return "workaround";
+  if (remediation === "unknown" || normalizedId === "mainthread-work-breakdown") return "review";
+  return "workaround";
+}
+
+/** True when an audit ID (or its exact legacy title alias) is in the documented remediation table. */
+export function isDocumentedWebflowAudit(auditId: string, title?: string): boolean {
+  return catalogEntryFor(auditId, title) !== UNKNOWN;
+}
+
+export function classifyWebflowPerformance(auditId: string, title?: string): WebflowPerformanceClassification {
+  const normalizedId = auditId.trim().toLowerCase();
+  const entry = catalogEntryFor(auditId, title);
   return {
     version: 1,
     ...entry,
     metricWeight: METRIC_WEIGHTS[entry.metric],
     remediationLabel: REMEDIATION_LABELS[entry.remediation],
-    actionability: entry.remediation === "available" ? "direct"
-      : entry.remediation === "partial" ? "workaround"
-        : entry.remediation === "unknown" || normalizedId === "mainthread-work-breakdown" ? "review"
-          : "workaround",
+    actionability: defaultActionability(entry.remediation, normalizedId),
     source: "published-page-performance",
   };
 }
@@ -310,11 +332,10 @@ export function customerActionabilityFor(item: {
   webflow?: WebflowPerformanceClassification;
 }): NonNullable<WebflowPerformanceClassification["actionability"]> {
   const classification = webflowClassificationFor(item);
+  // Falls back here only for classifications persisted before `actionability`
+  // existed (e.g. legacy crux-field-only evidence returned as-is above).
   return classification.actionability
-    ?? (classification.remediation === "available" ? "direct"
-      : classification.remediation === "partial" ? "workaround"
-        : classification.remediation === "unknown" || item.id === "mainthread-work-breakdown" ? "review"
-          : "workaround");
+    ?? defaultActionability(classification.remediation, item.id.trim().toLowerCase());
 }
 
 export function formatDiagnosticImpact(item: { savingsMs: number; savingsBytes?: number }): string {
@@ -345,13 +366,19 @@ export function classificationForPage(
   return classification;
 }
 
+/**
+ * True unless the finding is a confirmed platform-owned gap with no
+ * customer-side action at all (`"none"`). Findings still awaiting
+ * classification (`"review"` — including any audit ID this catalog
+ * doesn't recognize yet) stay visible so they don't silently disappear;
+ * they surface with a "Needs review" effort label instead of an estimate.
+ */
 export function recommendationIsCustomerActionable(item: {
   id: string;
   title?: string;
   webflow?: WebflowPerformanceClassification;
 }): boolean {
-  const actionability = customerActionabilityFor(item);
-  return actionability === "direct" || actionability === "workaround";
+  return customerActionabilityFor(item) !== "none";
 }
 
 export function isKnownWebflowIssue(item: {

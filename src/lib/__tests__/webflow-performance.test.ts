@@ -5,6 +5,8 @@ import {
   culpritGroupLabel,
   effortLabel,
   formatDiagnosticImpact,
+  isDocumentedWebflowAudit,
+  recommendationIsCustomerActionable,
   triageActionLabel,
 } from "../webflowPerformance";
 
@@ -66,5 +68,27 @@ describe("Webflow performance taxonomy", () => {
       actionability: "workaround",
     });
     expect(classifyWebflowPerformance("unused-javascript").guidance).not.toMatch(/Webflow|product|escalat/i);
+  });
+
+  it("flags audit IDs (and their exact title aliases) that are documented in the remediation table", () => {
+    expect(isDocumentedWebflowAudit("dom-size")).toBe(true);
+    expect(isDocumentedWebflowAudit("r1", "Reduce unused JavaScript")).toBe(true);
+    expect(isDocumentedWebflowAudit("brand-new-lighthouse-audit")).toBe(false);
+    expect(isDocumentedWebflowAudit("brand-new-lighthouse-audit", "Some new insight")).toBe(false);
+  });
+
+  it("keeps unmapped findings actionable (visible) so they don't silently disappear, unlike confirmed platform-only gaps", () => {
+    expect(recommendationIsCustomerActionable({ id: "brand-new-lighthouse-audit" })).toBe(true);
+    expect(recommendationIsCustomerActionable({ id: "unused-css-rules" })).toBe(true);
+    expect(recommendationIsCustomerActionable({
+      id: "render-blocking-resources",
+      webflow: classificationForPage({ id: "render-blocking-resources" }, true),
+    })).toBe(false);
+  });
+
+  it("defaults main-thread work to review even without a confirmed platform signal, unlike other blocked entries", () => {
+    expect(classifyWebflowPerformance("mainthread-work-breakdown")).toMatchObject({ actionability: "review" });
+    expect(classifyWebflowPerformance("render-blocking-resources")).toMatchObject({ actionability: "workaround" });
+    expect(effortLabel({ id: "mainthread-work-breakdown", estTime: "2 days" })).toBe("Needs review");
   });
 });
