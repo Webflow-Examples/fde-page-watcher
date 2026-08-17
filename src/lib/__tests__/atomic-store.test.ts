@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createFsStore, type DataStore } from "../store/fsStore";
-import { addPage, advanceTask, createProductEscalation, pendingPage, setAgentIgnore, setAlertWebhookUrl, setDefaultAgentIgnore, setNativeElementDisposition, setPageFlag, setPageOrder, setPagePerformanceThresholdOverrides, setPageTitle, setPerformanceThresholds, updateProductEscalation } from "../mutations";
+import { addPage, advanceTask, pendingPage, setAgentIgnore, setAlertWebhookUrl, setDefaultAgentIgnore, setNativeElementDisposition, setPageFlag, setPageOrder, setPagePerformanceThresholdOverrides, setPageTitle, setPerformanceThresholds } from "../mutations";
 import { DEFAULT_PERFORMANCE_THRESHOLDS } from "../performanceThresholds";
 import { agentCheckKey } from "../agentScoring";
 import { captureBaseline, insertRecommendations, runNightly, runPage } from "../collector";
@@ -233,7 +233,7 @@ describe("atomic tenant updates", () => {
         ...rec(),
         key: "page:webflow-background-video",
         id: "webflow-background-video",
-        title: "Webflow Background Video loads eagerly",
+        title: "Background video loads eagerly",
         category: "Native elements",
         status: "inbox",
       });
@@ -257,40 +257,6 @@ describe("atomic tenant updates", () => {
     const restored = await dataStore.getState();
     expect(restored.pages[0].nativeElementControls).toEqual({});
     expect(restored.recs.find((item) => item.id === "webflow-background-video")?.status).toBe("ignored");
-  });
-
-  it("creates and advances an owned product escalation atomically", async () => {
-    const dataStore = await storeWithState();
-    await dataStore.updateState((state) => {
-      state.recs.push({
-        ...rec(),
-        key: "page:unused-javascript",
-        id: "unused-javascript",
-        title: "Reduce unused JavaScript",
-        status: "inbox",
-      });
-    });
-    await createProductEscalation("page:unused-javascript", dataStore, new Date("2026-08-03T12:00:00.000Z"));
-    const created = await dataStore.getState();
-    expect(created.recs.find((item) => item.id === "unused-javascript")?.status).toBe("task");
-    expect(created.productEscalations).toEqual([
-      expect.objectContaining({ id: "product:page:unused-javascript", status: "draft", createdAt: "2026-08-03T12:00:00.000Z" }),
-    ]);
-    await expect(updateProductEscalation("product:page:unused-javascript", { status: "ready" }, dataStore))
-      .rejects.toThrow("assign an owner");
-
-    await updateProductEscalation("product:page:unused-javascript", {
-      owner: "Performance Platform",
-      notes: "Needs a product-level fix.",
-      status: "submitted",
-    }, dataStore, new Date("2026-08-03T13:00:00.000Z"));
-    const submitted = await dataStore.getState();
-    expect(submitted.productEscalations?.[0]).toMatchObject({
-      owner: "Performance Platform",
-      notes: "Needs a product-level fix.",
-      status: "submitted",
-      submittedAt: "2026-08-03T13:00:00.000Z",
-    });
   });
 
   it("freezes readiness and ignored checks with every successful collection", async () => {
@@ -358,16 +324,16 @@ describe("atomic tenant updates", () => {
     }, dataStore);
 
     await insertRecommendations(dataStore, "page", [
-      { id: "weak", title: "Weak finding", savingsMs: 100, savingsBytes: 10_000, observedRuns: 3 },
-      { id: "repeatable", title: "Repeatable finding", savingsMs: 400, observedRuns: 3 },
-      { id: "structural", title: "Structural finding", savingsMs: 0, observedRuns: 3 },
-      { id: "single-run", title: "Single-run finding", savingsMs: 900, observedRuns: 1 },
+      { id: "uses-optimized-images", title: "Weak finding", savingsMs: 100, savingsBytes: 10_000, observedRuns: 3 },
+      { id: "dom-size", title: "Repeatable finding", savingsMs: 400, observedRuns: 3 },
+      { id: "unsized-images", title: "Structural finding", savingsMs: 0, observedRuns: 3 },
+      { id: "third-party-summary", title: "Single-run finding", savingsMs: 900, observedRuns: 1 },
     ], new Date("2026-08-03T12:00:00.000Z"), { summarize: false });
 
     const state = await dataStore.getState();
     expect(state.pages[0].performanceThresholdOverrides).toMatchObject({ regression: 14, confirmationRuns: 3, devicePolicy: "both" });
-    expect(state.recs.map((item) => item.id)).toEqual(expect.arrayContaining(["rec", "repeatable", "structural"]));
-    expect(state.recs.map((item) => item.id)).not.toEqual(expect.arrayContaining(["weak", "single-run"]));
+    expect(state.recs.map((item) => item.id)).toEqual(expect.arrayContaining(["rec", "dom-size", "unsized-images"]));
+    expect(state.recs.map((item) => item.id)).not.toEqual(expect.arrayContaining(["uses-optimized-images", "third-party-summary"]));
   });
 
   it("sends one digest per nightly run and never alerts for manual page runs", async () => {

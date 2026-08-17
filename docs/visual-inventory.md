@@ -13,8 +13,8 @@ The goal is to let a person or AI reconstruct the UI's information architecture,
 
 - Inventory date: August 4, 2026.
 - Rendered locally from the current demo data, then reconciled against the route, component, state, and CSS source.
-- Routes covered: `/`, `/dashboard`, `/pages/[id]`, `/inbox`, `/tasks`, `/escalations`, `/watchlist`, and `/settings`.
-- The current demo snapshot has 8 watched pages, 22 Inbox items, 9 Tasks, and 2 open Escalations. Those numbers are examples of dynamic content, not fixed UI copy.
+- Routes covered: `/`, `/dashboard`, `/pages/[id]`, `/inbox`, `/tasks`, `/watchlist`, `/settings`, and `/admin`.
+- Dynamic counts are examples from retained collection data, not fixed UI copy.
 - API-only routes, the Next.js development toolbar, and browser chrome are outside the product UI and are not inventoried.
 
 ## Product-level map
@@ -34,7 +34,6 @@ Page Watch application shell
 │   │   └── Agent-readiness
 │   ├── Inbox
 │   ├── Tasks
-│   ├── Product escalations
 │   ├── Watchlist
 │   └── Settings
 └── Global overlays
@@ -69,7 +68,7 @@ Page Watch application shell
 - Blue: primary actions, active navigation, selected filters, and lab metric labels.
 - Green: healthy scores, successful state, completed tasks, and custom change markers.
 - Amber: measured impact, slow or active findings, warnings, and partial states.
-- Red/pink: regressions, failing checks, product gaps, and destructive affordances.
+- Red/pink: regressions, failing checks, and destructive affordances.
 - Violet: culprit labels, agent-ignore state, and task-linked markers.
 - Page change states are not color-only. Status shapes provide an additional signal: circle, triangle, or square, depending on status.
 
@@ -97,7 +96,6 @@ Page Watch application shell
   - Dashboard.
   - Inbox, with the count of actionable Inbox recommendations.
   - Tasks, with the count of saved tasks.
-  - Escalations, with the count of non-resolved escalations.
   - Watchlist, with the total number of watched pages.
   - Settings, without a count.
   - Each item contains an icon, text label, optional count badge, and an active background.
@@ -111,7 +109,6 @@ Page Watch application shell
 - Navigation paths respect the configured application base path.
 - Badges disappear when their count is zero.
 - Inbox counts only recommendations that are currently actionable.
-- Escalation counts exclude resolved items.
 - On page-detail routes the responsive layout can visually collapse the sidebar to its icon rail, while the semantic navigation remains present.
 
 ### Mobile navigation
@@ -194,14 +191,14 @@ See the Watchlist inventory for its content and logic.
 
 #### Classification chips
 
-**Purpose:** explain why a recommendation matters and whether it is actionable inside Webflow.
+**Purpose:** explain why a recommendation matters and whether a direct action or workaround is available.
 
 **Pieces:**
 
 - Weighted metric, such as `LCP · 25%`.
 - Culprit, such as Image format or DOM complexity.
-- Remediation, such as Fixable in Webflow, Partial remediation, or Product gap.
-- The remediation chip's tooltip carries the Webflow guidance text.
+- Actionability, such as Action available, Workaround available, No direct action, or Needs review.
+- Guidance is platform-neutral and describes only changes the customer can make.
 
 #### Field-evidence chips
 
@@ -248,10 +245,10 @@ Method note
 **Logic:**
 
 - While a collection is running, the message changes to “Analyzing [n] pages…” and the primary action becomes a running indicator.
-- A fixable recommendation says “Start with…”. A partial item says “Work around…”. A blocked item says “Product gap…” and directs the user toward escalation.
+- A direct recommendation says “Start with…”. A workaround item says “Work around…”. Evidence-only findings are not promoted into customer triage.
 - A visitor-only issue is framed as an investigation because field evidence is poor while lab evidence does not reproduce it.
 - With no open recommendation, the ribbon becomes muted and shows the next collection window.
-- The primary action either saves a fix as a Task or creates a Product escalation, based on remediation logic.
+- The primary action saves a direct fix or viable workaround as a Task.
 
 ### 2. Measurement-incident banner — conditional
 
@@ -285,7 +282,7 @@ Method note
 - Page count, issue count, and oldest detection date.
 - Small remediation-tone dot.
 - Weighted metric chips.
-- Counts of product gaps, partial remediations, fixable issues, or returned issues.
+- Counts of actionable issues, viable workarounds, or returned issues.
 - Up to three page buttons, with a `+n more` remainder.
 
 **Logic:** page buttons open that page directly on Opportunities. Empty state explains that no currently present culprits have enough retained diagnostic evidence.
@@ -475,8 +472,8 @@ This section disappears globally when Visitor experience is Hidden in Settings; 
 - Optional generated explanation.
 - Measured time/transfer impact or structural signal.
 - Action area:
-  - Save fix as task for directly actionable work.
-  - Create escalation / Escalate workaround for blocked or partial work.
+  - Add to tasks for directly actionable work.
+  - Add workaround to tasks when a viable workaround exists.
   - Ignore.
   - Or a lifecycle pill such as `In tasks · In progress`, Ignored, or Monitoring lifecycle.
 
@@ -538,7 +535,7 @@ Shows the same lab/field model within the historical context for the selected de
 - Selected-device explanation.
 - Lifecycle counts: Returned, Active, Verifying fix, Resolved.
 - Reminder that resolution requires two consecutive clean captures.
-- Remediation counts: fixable in Webflow, partial, product gaps, and need review.
+- Actionability counts: actionable, workarounds, no direct action, and need review.
 
 #### 2. Culprit evidence
 
@@ -554,7 +551,7 @@ Empty state says the next collection will capture DOM, CSS, scripts, resources, 
 
 **Purpose:** expose problematic Background Video, YouTube/Vimeo, Lottie, Spline, or unresponsive raster footprints found in published HTML.
 
-**Finding pieces:** title, lifecycle badge, classification chips, confidence, human explanation, detection evidence counts, Webflow guidance, lifecycle chronology, instance count, Acknowledge/Clear acknowledgement, and Suppress.
+**Finding pieces:** title, lifecycle badge, classification chips, confidence, human explanation, detection evidence counts, recommended action, lifecycle chronology, instance count, Acknowledge/Clear acknowledgement, and Suppress.
 
 **Logic:**
 
@@ -564,7 +561,7 @@ Empty state says the next collection will capture DOM, CSS, scripts, resources, 
 
 #### 4. Audit rows
 
-**Pieces:** tone dot, title, description, lifecycle badge, classification chips, category, trusted-run evidence, confidence, Webflow guidance, first/last detection chronology, and measured impact.
+**Pieces:** tone dot, title, description, lifecycle badge, classification chips, category, trusted-run evidence, confidence, recommended action, first/last detection chronology, and measured impact.
 
 #### 5. Cleared findings
 
@@ -598,7 +595,7 @@ Groups are Discoverability, Content Accessibility, Bot Access Control, API / Aut
 
 ### Page purpose
 
-Present untriaged recommendations from the latest retained evidence and let the user commit, escalate, or dismiss each one.
+Present untriaged, customer-actionable recommendations from the latest retained evidence and let the user commit or dismiss each one.
 
 ### Header
 
@@ -637,16 +634,16 @@ Description visibility is persisted in browser storage.
 - Field-evidence and lifecycle chips.
 - URL or page chip.
 - Impact.
-- Effort or “Product gap.”
+- Effort.
 - Primary triage action.
 - Ignore.
 - Icon-only Open page.
 
 **Logic:**
 
-- Actionable remediation becomes Save fix as task.
-- Blocked remediation becomes Create escalation.
-- Partial remediation can become Escalate workaround.
+- Direct remediation becomes Add to tasks.
+- A viable workaround becomes Add workaround to tasks.
+- Evidence with no customer action remains in retained diagnostics and does not enter Inbox.
 - Ignore removes the item from Inbox but retains it on the page detail.
 - Field-only items are filtered through separate actionability rules.
 
@@ -689,7 +686,6 @@ Header shows the selected grouping label and item count. No grouping produces on
 - Optional description.
 - Classification chips.
 - Optional field-evidence lifecycle.
-- Optional escalation-status chip linking to Escalations.
 - Page chip linking to detail.
 - Task status label.
 - Impact.
@@ -700,7 +696,7 @@ Header shows the selected grouping label and item count. No grouping produces on
 
 Each group contains three columns: To do, In progress, and Done. A column header has a status dot, label, and count.
 
-**Task card pieces:** page chip, title, devices, optional description, classification and evidence, escalation chip, impact chip, effort chip, completion date when done, and state actions.
+**Task card pieces:** page chip, title, devices, optional description, classification and evidence, impact chip, effort chip, completion date when done, and state actions.
 
 **Logic:** cards can be dragged between columns. Dropping changes lifecycle immediately.
 
@@ -714,63 +710,6 @@ Each group contains three columns: To do, In progress, and Done. A column header
 Completing a task logs a conditional change marker on the page and schedules 2-, 7-, and 30-day follow-ups. Reopening or moving it out of Done removes that task marker and its follow-ups. Repeating the same Done action is idempotent.
 
 The page currently has no dedicated empty-state card; with zero tasks the header and controls remain and the content area is empty.
-
-## Product escalations — `/escalations`
-
-### Page purpose
-
-Own handoffs for recommendations blocked by Webflow product behavior or only partially remediable in the current product.
-
-### Header
-
-- Title: Product escalations.
-- Explanation of blocked/partial ownership.
-- Filter: Open (count), Resolved, All.
-
-Items sort with unresolved work first and then most recently updated.
-
-### Escalation card
-
-#### Header
-
-- Recommendation title.
-- Status badge: Draft, Ready for review, Submitted, Resolved.
-- Page button opens that page on Opportunities.
-- Classification chips.
-- Right-aligned measured impact.
-
-#### Ownership editor
-
-- Owner label and input.
-- Escalation notes label and multiline input.
-- Save details.
-
-#### Evidence packet
-
-- Webflow guidance.
-- Per-device evidence chips: device, Performance score, and lifecycle.
-- Optional lab/field verdict chips.
-- Total evidence-item count.
-- Frozen timestamp and freshness reminder.
-- Download packet.
-- View JSON in a new tab.
-- Refresh evidence.
-
-#### Footer
-
-- Created timestamp.
-- Optional Submitted timestamp.
-- Next lifecycle action.
-
-### Escalation lifecycle
-
-Draft → Mark ready → Ready for review → Mark submitted → Submitted → Resolve → Resolved → Reopen → Draft.
-
-The lifecycle action also persists the current Owner and Notes. Refresh evidence updates the frozen packet from newer collections; export does not silently refresh it.
-
-### Empty state
-
-“No open product escalations” or “No escalations in this view,” plus direction to escalate blocked/partial recommendations from Inbox or page recommendations.
 
 ## Watchlist — `/watchlist`
 
@@ -968,10 +907,9 @@ Groups and checks match the Page detail Agent-readiness tab: Discoverability, Co
 
 ```text
 Inbox
-├── actionable remediation ── Save fix as task ──> Task / To do
-├── blocked remediation ───── Create escalation ─> Product escalation / Draft
-├── partial remediation ───── Escalate workaround > Product escalation / Draft
-└── Ignore ──────────────────────────────────────> Ignored on page detail
+├── direct action ─────── Add to tasks ─────────────> Task / To do
+├── viable workaround ── Add workaround to tasks ──> Task / To do
+└── Ignore ─────────────────────────────────────────> Ignored on page detail
 ```
 
 ### Collection integrity
@@ -1026,7 +964,6 @@ The inventory corresponds primarily to these files:
 - Page detail: `src/app/(app)/pages/[id]/page.tsx`.
 - Inbox: `src/app/(app)/inbox/page.tsx`.
 - Tasks: `src/app/(app)/tasks/page.tsx`.
-- Escalations: `src/app/(app)/escalations/page.tsx`.
 - Watchlist and Settings: `src/app/(app)/watchlist/page.tsx`, `src/components/webflow-connection.tsx`.
 - Shared controls: `src/components/bits.tsx`, `src/components/segmented-control.tsx`, `src/components/select-menu.tsx`.
 - Visual tokens and responsive rules: `src/app/globals.css`.

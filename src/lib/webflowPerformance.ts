@@ -1,4 +1,5 @@
 import type {
+  CustomerActionability,
   WebflowPerformanceClassification,
   WebflowPerformanceCulprit,
   WebflowPerformanceMetric,
@@ -11,11 +12,19 @@ type CatalogEntry = Pick<
 >;
 
 const REMEDIATION_LABELS: Record<WebflowRemediationLevel, string> = {
-  blocked: "Product gap",
-  partial: "Partial remediation",
-  available: "Fixable in Webflow",
+  blocked: "No direct action",
+  partial: "Workaround available",
+  available: "Action available",
   unknown: "Needs review",
 };
+
+const WEBFLOW_NO_DIRECT_ACTION = new Set([
+  "bootup-time",
+  "mainthread-work-breakdown",
+  "render-blocking-resources",
+  "render-blocking-insight",
+  "legacy-javascript",
+]);
 
 const METRIC_WEIGHTS: Record<WebflowPerformanceMetric, 0 | 25 | 30> = {
   TBT: 30,
@@ -47,21 +56,21 @@ const CATALOG: Record<string, CatalogEntry> = {
     culprit: "global-javascript",
     culpritLabel: "JavaScript execution",
     remediation: "blocked",
-    guidance: "Webflow's global JavaScript bundle cannot currently be scoped or code-split per page.",
+    guidance: "Reduce or defer JavaScript that runs during startup, prioritizing code you control and scripts that are not required on this page.",
   },
   "mainthread-work-breakdown": {
     metric: "TBT",
     culprit: "main-thread-work",
     culpritLabel: "Main-thread work",
     remediation: "blocked",
-    guidance: "Global JavaScript and CSS frequently drive this work, with no complete in-product remediation today.",
+    guidance: "Inspect the longest main-thread tasks and address the scripts, styles, or page structures responsible for them.",
   },
   "third-party-summary": {
     metric: "TBT",
     culprit: "third-party-code",
     culpritLabel: "Third-party code",
     remediation: "partial",
-    guidance: "Remove, defer, or conditionally load nonessential tags and embeds; Webflow's own bundle may also appear here.",
+    guidance: "Remove, defer, or conditionally load nonessential third-party tags and embeds.",
   },
   "third-party-facades": {
     metric: "TBT",
@@ -75,14 +84,14 @@ const CATALOG: Record<string, CatalogEntry> = {
     culprit: "dom-complexity",
     culpritLabel: "DOM complexity",
     remediation: "partial",
-    guidance: "Reduce nesting or page length; lazy-loading page sections currently requires custom code.",
+    guidance: "Reduce unnecessary nesting and page length, or defer below-the-fold sections where the site implementation allows it.",
   },
   "largest-contentful-paint-element": {
     metric: "LCP",
     culprit: "lcp-element",
     culpritLabel: "LCP element",
     remediation: "partial",
-    guidance: "Identify and simplify the hero asset; advanced progressive or poster-based loading may require custom code.",
+    guidance: "Identify the largest above-the-fold element and simplify, resize, preload, or replace the asset where appropriate.",
   },
   "lcp-discovery-insight": {
     metric: "LCP",
@@ -110,21 +119,21 @@ const CATALOG: Record<string, CatalogEntry> = {
     culprit: "global-css",
     culpritLabel: "Unused global CSS",
     remediation: "blocked",
-    guidance: "Class cleanup can help, but Webflow still ships one site-wide CSS file without page-level scoping.",
+    guidance: "Remove unused classes and stylesheet rules you control, and avoid loading page-specific styles on pages that do not need them.",
   },
   "uses-responsive-images": {
     metric: "LCP",
     culprit: "image-delivery",
     culpritLabel: "Image sizing",
     remediation: "available",
-    guidance: "Resize the source asset and use Webflow's responsive image controls for the rendered size.",
+    guidance: "Resize the source asset and provide responsive image candidates appropriate for the rendered size.",
   },
   "uses-optimized-images": {
     metric: "LCP",
     culprit: "image-delivery",
     culpritLabel: "Image optimization",
     remediation: "available",
-    guidance: "Compress oversized source assets and use Webflow's available image conversion controls.",
+    guidance: "Compress oversized source assets and use an efficient image format for the required quality.",
   },
   "modern-image-formats": {
     metric: "LCP",
@@ -138,42 +147,42 @@ const CATALOG: Record<string, CatalogEntry> = {
     culprit: "image-delivery",
     culpritLabel: "Image delivery",
     remediation: "available",
-    guidance: "Resize and compress the flagged assets, then use the most efficient format available in Webflow.",
+    guidance: "Resize and compress the flagged assets, then use the most efficient format supported by the site.",
   },
   "render-blocking-resources": {
     metric: "LCP",
     culprit: "render-blocking",
     culpritLabel: "Render-blocking resources",
     remediation: "blocked",
-    guidance: "Webflow's global CSS is a common contributor and cannot currently be scoped per page.",
+    guidance: "Inline critical styles where appropriate and defer or split noncritical stylesheets that you control.",
   },
   "render-blocking-insight": {
     metric: "LCP",
     culprit: "render-blocking",
     culpritLabel: "Render-blocking resources",
     remediation: "blocked",
-    guidance: "Webflow's global CSS is a common contributor and cannot currently be scoped per page.",
+    guidance: "Inline critical styles where appropriate and defer or split noncritical stylesheets that you control.",
   },
   "unminified-javascript": {
     metric: "LCP",
     culprit: "custom-javascript",
     culpritLabel: "Unminified custom JavaScript",
     remediation: "partial",
-    guidance: "Minify customer-authored custom code before adding it to the site; Webflow's own bundle is already minified.",
+    guidance: "Minify custom JavaScript before publishing it and remove development-only code from production bundles.",
   },
   "legacy-javascript": {
     metric: "LCP",
     culprit: "global-javascript",
     culpritLabel: "Legacy JavaScript",
     remediation: "blocked",
-    guidance: "Legacy code and polyfills in the generated bundle cannot currently be removed by page authors.",
+    guidance: "Serve modern JavaScript to current browsers and remove unnecessary legacy transforms or polyfills from code you control.",
   },
   "unused-javascript": {
     metric: "LCP",
     culprit: "global-javascript",
     culpritLabel: "Unused global JavaScript",
     remediation: "blocked",
-    guidance: "Remove optional custom scripts where possible; Webflow's site-wide bundle cannot be code-split per page.",
+    guidance: "Remove optional scripts, split bundles by page, or conditionally load code only where it is needed.",
   },
   "unsized-images": {
     metric: "CLS",
@@ -187,7 +196,7 @@ const CATALOG: Record<string, CatalogEntry> = {
     culprit: "background-video",
     culpritLabel: "Background Video",
     remediation: "partial",
-    guidance: "Use a poster or static hero where possible; lazy-loading Webflow Background Video currently requires custom code.",
+    guidance: "Use a poster or static hero where possible, or load background video only when it approaches the viewport.",
   },
   "webflow-video-embed-eager": {
     metric: "TBT",
@@ -215,14 +224,14 @@ const CATALOG: Record<string, CatalogEntry> = {
     culprit: "interactive-media",
     culpritLabel: "Eager Spline",
     remediation: "partial",
-    guidance: "Use a static fallback where possible or custom-load the Spline scene only when it approaches the viewport.",
+    guidance: "Use a static fallback where possible or load the Spline scene only when it approaches the viewport.",
   },
   "webflow-image-unresponsive": {
     metric: "LCP",
     culprit: "image-delivery",
     culpritLabel: "Unresponsive raster image",
     remediation: "available",
-    guidance: "Resize the source asset and enable Webflow responsive image candidates so browsers do not fetch the full original unnecessarily.",
+    guidance: "Resize the source asset and provide responsive image candidates so browsers do not fetch the full original unnecessarily.",
   },
 };
 
@@ -247,7 +256,7 @@ const UNKNOWN: CatalogEntry = {
   culprit: "other",
   culpritLabel: "Other Lighthouse finding",
   remediation: "unknown",
-  guidance: "Review the Lighthouse evidence before assigning this finding to a customer or product owner.",
+  guidance: "Review the Lighthouse evidence and identify a concrete change before assigning this finding as a task.",
 };
 
 function normalizedTitle(value: string): string {
@@ -263,6 +272,10 @@ export function classifyWebflowPerformance(auditId: string, title?: string): Web
     ...entry,
     metricWeight: METRIC_WEIGHTS[entry.metric],
     remediationLabel: REMEDIATION_LABELS[entry.remediation],
+    actionability: entry.remediation === "available" ? "direct"
+      : entry.remediation === "partial" ? "workaround"
+        : entry.remediation === "unknown" || normalizedId === "mainthread-work-breakdown" ? "review"
+          : "workaround",
     source: "published-page-performance",
   };
 }
@@ -272,7 +285,9 @@ export function webflowClassificationFor(item: {
   title?: string;
   webflow?: WebflowPerformanceClassification;
 }): WebflowPerformanceClassification {
-  return item.webflow?.version === 1 ? item.webflow : classifyWebflowPerformance(item.id, item.title);
+  if (item.webflow?.version === 1 && item.webflow.source === "crux-field-only") return item.webflow;
+  const current = classifyWebflowPerformance(item.id, item.title);
+  return item.webflow?.actionability ? { ...current, actionability: item.webflow.actionability } : current;
 }
 
 export function remediationTone(level: WebflowRemediationLevel): { color: string; background: string } {
@@ -282,6 +297,26 @@ export function remediationTone(level: WebflowRemediationLevel): { color: string
   return { color: "#9A9AA0", background: "rgba(255,255,255,0.06)" };
 }
 
+export function actionabilityTone(actionability: CustomerActionability): { color: string; background: string } {
+  if (actionability === "none") return remediationTone("blocked");
+  if (actionability === "workaround") return remediationTone("partial");
+  if (actionability === "direct") return remediationTone("available");
+  return remediationTone("unknown");
+}
+
+export function customerActionabilityFor(item: {
+  id: string;
+  title?: string;
+  webflow?: WebflowPerformanceClassification;
+}): NonNullable<WebflowPerformanceClassification["actionability"]> {
+  const classification = webflowClassificationFor(item);
+  return classification.actionability
+    ?? (classification.remediation === "available" ? "direct"
+      : classification.remediation === "partial" ? "workaround"
+        : classification.remediation === "unknown" || item.id === "mainthread-work-breakdown" ? "review"
+          : "workaround");
+}
+
 export function formatDiagnosticImpact(item: { savingsMs: number; savingsBytes?: number }): string {
   if (item.savingsMs > 0) return `${(item.savingsMs / 1000).toFixed(1)} s`;
   if ((item.savingsBytes ?? 0) > 0) return `${Math.round((item.savingsBytes ?? 0) / 1024)} KB`;
@@ -289,15 +324,43 @@ export function formatDiagnosticImpact(item: { savingsMs: number; savingsBytes?:
 }
 
 export function effortLabel(item: { estTime: string; id: string; title?: string; webflow?: WebflowPerformanceClassification }): string {
-  return webflowClassificationFor(item).remediation === "blocked" ? "Product gap" : item.estTime;
+  const actionability = customerActionabilityFor(item);
+  if (actionability === "none") return "No direct action";
+  if (actionability === "review") return "Needs review";
+  return item.estTime;
 }
 
 export function triageActionLabel(item: { id: string; title?: string; webflow?: WebflowPerformanceClassification }): string {
-  const remediation = webflowClassificationFor(item).remediation;
-  if (remediation === "blocked") return "Create escalation";
-  if (remediation === "partial") return "Escalate workaround";
-  if (remediation === "available") return "Save fix as task";
-  return "Save as task";
+  return customerActionabilityFor(item) === "workaround" ? "Add workaround to tasks" : "Add to tasks";
+}
+
+export function classificationForPage(
+  item: { id: string; title?: string },
+  webflowGenerated: boolean,
+): WebflowPerformanceClassification {
+  const classification = classifyWebflowPerformance(item.id, item.title);
+  if (webflowGenerated && WEBFLOW_NO_DIRECT_ACTION.has(item.id)) {
+    return { ...classification, actionability: "none", remediationLabel: "No direct action" };
+  }
+  return classification;
+}
+
+export function recommendationIsCustomerActionable(item: {
+  id: string;
+  title?: string;
+  webflow?: WebflowPerformanceClassification;
+}): boolean {
+  const actionability = customerActionabilityFor(item);
+  return actionability === "direct" || actionability === "workaround";
+}
+
+export function isKnownWebflowIssue(item: {
+  id: string;
+  title?: string;
+  webflow?: WebflowPerformanceClassification;
+}): boolean {
+  const classification = webflowClassificationFor(item);
+  return classification.remediation === "blocked" || item.id.startsWith("webflow-");
 }
 
 export const DOCUMENTED_WEBFLOW_AUDIT_IDS = Object.freeze(Object.keys(CATALOG));

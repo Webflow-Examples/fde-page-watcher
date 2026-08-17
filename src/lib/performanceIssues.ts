@@ -8,7 +8,8 @@ import type {
   WebflowPerformanceCulprit,
   WebflowRemediationLevel,
 } from "./types";
-import { culpritGroupLabel, webflowClassificationFor } from "./webflowPerformance";
+import { classificationForPage, culpritGroupLabel, recommendationIsCustomerActionable, webflowClassificationFor } from "./webflowPerformance";
+import { isWebflowGenerated } from "./nativeElements";
 
 export type PerformanceIssueStatus = "active" | "verifying" | "resolved" | "regressed";
 
@@ -169,18 +170,23 @@ export function performanceIssuesForPage(
 }
 
 export function sitePerformanceIssues(pages: WatchPage[], strategy: Strategy): SitePerformanceIssue[] {
-  return pages.flatMap((page) => performanceIssuesForPage(page.history, strategy).map((issue) => ({
-    ...issue,
-    pageId: page.id,
-    pageTitle: page.title,
-    pageUrl: page.url,
-  })));
+  return pages.flatMap((page) => {
+    const webflowGenerated = [...page.history].reverse().some((night) => isWebflowGenerated(night.nativeElements));
+    return performanceIssuesForPage(page.history, strategy).map((issue) => ({
+      ...issue,
+      webflow: classificationForPage(issue, webflowGenerated),
+      pageId: page.id,
+      pageTitle: page.title,
+      pageUrl: page.url,
+    }));
+  });
 }
 
 /** Group currently-present issues across monitored pages by Webflow culprit. */
 export function siteCulpritRollups(pages: WatchPage[], strategy: Strategy): SiteCulpritRollup[] {
   const issues = sitePerformanceIssues(pages, strategy)
-    .filter((issue) => issue.status === "active" || issue.status === "regressed");
+    .filter((issue) => (issue.status === "active" || issue.status === "regressed")
+      && recommendationIsCustomerActionable(issue));
   const groups = new Map<WebflowPerformanceCulprit, SitePerformanceIssue[]>();
   for (const issue of issues) groups.set(issue.webflow.culprit, [...(groups.get(issue.webflow.culprit) ?? []), issue]);
 

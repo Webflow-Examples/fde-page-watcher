@@ -167,6 +167,14 @@ export async function activeProjectStores(): Promise<Array<{ projectId: string; 
     .map((project) => ({ projectId: project.id, dataStore: getStore(project.tenant) }));
 }
 
+/** Server-only project scopes for app-admin aggregate reporting, including archived projects. */
+export async function adminProjectStores(): Promise<Array<{ project: Project; dataStore: DataStore }>> {
+  return (await projectCatalog()).map((project) => ({
+    project: publicProject(project),
+    dataStore: getStore(project.tenant),
+  }));
+}
+
 /** Resolve an authenticated internal callback to a known active project scope. */
 export async function projectStoreForTenant(tenant: string): Promise<DataStore> {
   const project = (await projectCatalog()).find((candidate) => candidate.tenant === tenant);

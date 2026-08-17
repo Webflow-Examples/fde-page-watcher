@@ -30,8 +30,8 @@ import { markRunFinished, requestPageRun } from "./mutations";
 import { isPageActivelyMonitored } from "./watchCapacity";
 import { mergeStrategyOpportunities, promotedDiagnostics } from "./diagnostics";
 import { summarizePsiMeasurements } from "./psiCore";
-import { formatDiagnosticImpact, webflowClassificationFor } from "./webflowPerformance";
-import { nativeElementDisposition, nativeRecommendationOpportunities, unavailableNativeElementScan } from "./nativeElements";
+import { classificationForPage, customerActionabilityFor, formatDiagnosticImpact, recommendationIsCustomerActionable } from "./webflowPerformance";
+import { isWebflowGenerated, nativeElementDisposition, nativeRecommendationOpportunities, unavailableNativeElementScan } from "./nativeElements";
 import { summarizeCulpritEvidence } from "./culpritEvidence";
 import { reconcileFieldOnlyRecommendations } from "./fieldOnlyRecommendations";
 
@@ -142,6 +142,7 @@ export async function executePageRun(pageId: string, runId: string, options: Col
       ...nativeRecommendationOpportunities(pageScan.nativeElements),
     ],
     completedAt,
+    { webflowGenerated: isWebflowGenerated(pageScan.nativeElements) },
   );
   return reconcileFieldOnlyRecommendations(d.dataStore, pageId, completedAt, runId);
 }
@@ -177,7 +178,7 @@ export async function insertRecommendations(
     webflow?: WebflowPerformanceClassification;
   }[],
   now: Date,
-  options: { summarize?: boolean } = {},
+  options: { summarize?: boolean; webflowGenerated?: boolean } = {},
 ): Promise<AppState> {
   const snapshot = await dataStore.getState();
   const page = snapshot.pages.find((item) => item.id === pageId);
@@ -188,7 +189,14 @@ export async function insertRecommendations(
     recommendationMeetsEvidenceThresholds(opportunity, thresholds)
     && (opportunity.category !== "Native elements"
       || !nativeElementDisposition(page.nativeElementControls, opportunity.id)));
-  const candidates = await Promise.all(actionable.slice(0, 12).map(async (opportunity) => {
+  const taskCandidates = actionable.map((opportunity) => ({
+    opportunity,
+    classification: classificationForPage(opportunity, options.webflowGenerated === true),
+  })).filter(({ opportunity, classification }) => recommendationIsCustomerActionable({
+    ...opportunity,
+    webflow: classification,
+  }));
+  const candidates = await Promise.all(taskCandidates.slice(0, 12).map(async ({ opportunity, classification }) => {
     const rec: Rec = {
       key: `${pageId}:${opportunity.id}`,
       pageId,
@@ -198,7 +206,7 @@ export async function insertRecommendations(
       strategies: opportunity.strategies,
       title: opportunity.title,
       category: opportunity.category ?? "Performance",
-      webflow: webflowClassificationFor(opportunity),
+      webflow: classification,
       savings: formatDiagnosticImpact(opportunity),
       estTime: costBand(`${opportunity.id} ${opportunity.title}`),
       status: "inbox",
@@ -215,6 +223,11 @@ export async function insertRecommendations(
 
   return dataStore.updateState((state) => {
     if (!state.pages.some((item) => item.id === pageId)) return;
+    state.recs = state.recs.filter((item) => {
+      if (item.pageId !== pageId || item.source === "crux-field-only") return true;
+      item.webflow = classificationForPage(item, options.webflowGenerated === true);
+      return customerActionabilityFor(item) !== "none";
+    });
     for (const rec of candidates) {
       const title = rec.title.trim().toLowerCase();
       const existing = state.recs.find((item) =>
@@ -238,11 +251,11 @@ Recommendation: "${rec.title}"
 Category: ${rec.category}
 Estimated load-time savings: ${rec.savings}
 Estimated effort to implement: ${rec.estTime}
-Webflow culprit: ${rec.webflow?.culpritLabel ?? "Unclassified"}
-Webflow remediation: ${rec.webflow?.remediationLabel ?? "Needs review"}
-Remediation guidance: ${rec.webflow?.guidance ?? "Review the Lighthouse evidence before assigning an owner."}
+Issue type: ${rec.webflow?.culpritLabel ?? "Unclassified"}
+Actionability: ${rec.webflow?.remediationLabel ?? "Needs review"}
+Recommended action: ${rec.webflow?.guidance ?? "Review the Lighthouse evidence before assigning an owner."}
 
-Explain what this recommendation means and why it's worth doing, in plain terms. If it is blocked by a product gap, do not imply that the customer can fully resolve it; say that it should be documented for product escalation. Reference the numbers naturally rather than restating them verbatim. Two sentences maximum. No preamble, no markdown.`;
+Explain what this recommendation means and why the proposed action or workaround is worth doing, in plain terms. Do not mention a hosting platform, product team, product gap, or escalation. Reference the numbers naturally rather than restating them verbatim. Two sentences maximum. No preamble, no markdown.`;
   return generateText(prompt, { maxTokens: 150 });
 }
 

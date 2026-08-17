@@ -63,6 +63,17 @@ describe("native Webflow element detection", () => {
     expect(JSON.stringify(findings)).not.toContain("hero.jpg");
   });
 
+  it("retains Webflow generation and Optimize variation signals without attribute values", () => {
+    const scan = nativeElementScan(`<html data-wf-page="page-secret" data-wf-site="site-secret" data-wf-intellimize-customer-id="customer-secret"><body></body></html>`);
+    expect(scan).toMatchObject({
+      platform: { name: "webflow", confidence: "high", signals: ["data-wf-site", "data-wf-page"] },
+      variationRisk: { source: "webflow-optimize", confidence: "high", signals: ["data-wf-intellimize-customer-id"] },
+    });
+    expect(JSON.stringify(scan)).not.toContain("page-secret");
+    expect(JSON.stringify(scan)).not.toContain("site-secret");
+    expect(JSON.stringify(scan)).not.toContain("customer-secret");
+  });
+
   it("tracks repeated same-provider embeds and duplicate player SDK tags separately", () => {
     const findings = detectNativeWebflowElements(`
       <iframe src="https://www.youtube.com/embed/one"></iframe>

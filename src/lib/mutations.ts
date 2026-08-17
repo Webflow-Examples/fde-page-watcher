@@ -13,8 +13,6 @@ import { applyWatchlistPageOrder, changePageFlagOrder, sortWatchlistPages } from
 import { removeTaskMarker } from "./taskMarkers";
 import { isKnownNativeElementId } from "./nativeElements";
 import type { NativeElementDisposition } from "./types";
-import type { ProductEscalationStatus } from "./types";
-import { buildProductEscalation, createEscalationEvidence, isProductEscalationStatus } from "./escalations";
 import { alertWebhookUrlIsValid } from "./webhook";
 import { COLLECTION_JOB_STALE_AFTER_MS, collectionJobIsStale } from "./collectionRetry";
 
@@ -208,67 +206,6 @@ export function removePage(id: string, dataStore: DataStore = getStore()): Promi
     state.pages = state.pages.filter((p) => p.id !== id);
     state.recs = state.recs.filter((r) => r.pageId !== id);
     state.followUps = (state.followUps ?? []).filter((f) => f.pageId !== id);
-    state.productEscalations = (state.productEscalations ?? []).filter((item) => item.pageId !== id);
-    delete state.watcherNote;
-  }, dataStore);
-}
-
-export async function createProductEscalation(
-  recKey: string,
-  dataStore: DataStore = getStore(),
-  now: Date = new Date(),
-): Promise<AppState> {
-  const visitorEvidence = await dataStore.getCruxEvidence().catch(() => []);
-  return withState((state) => {
-    const rec = state.recs.find((item) => item.key === recKey);
-    if (!rec) throw new Error(`createProductEscalation: recommendation ${recKey} not found`);
-    state.productEscalations = state.productEscalations ?? [];
-    if (state.productEscalations.some((item) => item.recKey === recKey)) return;
-    state.productEscalations.push(buildProductEscalation(state, rec, now, visitorEvidence));
-    rec.status = "task";
-    if (rec.taskStatus === "done") {
-      rec.taskStatus = "todo";
-      rec.doneDate = null;
-      removeTaskMarker(state, rec);
-    }
-    delete state.watcherNote;
-  }, dataStore);
-}
-
-export async function updateProductEscalation(
-  id: string,
-  patch: { status?: ProductEscalationStatus; owner?: string; notes?: string; refreshEvidence?: boolean },
-  dataStore: DataStore = getStore(),
-  now: Date = new Date(),
-): Promise<AppState> {
-  if (patch.status !== undefined && !isProductEscalationStatus(patch.status)) {
-    throw new Error("updateProductEscalation: invalid status");
-  }
-  if (patch.owner !== undefined && patch.owner.trim().length > 100) throw new Error("updateProductEscalation: owner is too long");
-  if (patch.notes !== undefined && patch.notes.trim().length > 4_000) throw new Error("updateProductEscalation: notes are too long");
-  const visitorEvidence = patch.refreshEvidence ? await dataStore.getCruxEvidence().catch(() => []) : [];
-  return withState((state) => {
-    const escalation = (state.productEscalations ?? []).find((item) => item.id === id);
-    if (!escalation) throw new Error(`updateProductEscalation: escalation ${id} not found`);
-    const timestamp = now.toISOString();
-    const nextOwner = patch.owner !== undefined ? patch.owner.trim() : escalation.owner;
-    if ((patch.status === "ready" || patch.status === "submitted") && !nextOwner) {
-      throw new Error("updateProductEscalation: assign an owner before review or submission");
-    }
-    if (patch.owner !== undefined) escalation.owner = patch.owner.trim();
-    if (patch.notes !== undefined) escalation.notes = patch.notes.trim();
-    if (patch.status !== undefined) {
-      escalation.status = patch.status;
-      if (patch.status === "submitted") escalation.submittedAt = escalation.submittedAt ?? timestamp;
-      if (patch.status === "resolved") escalation.resolvedAt = timestamp;
-      else delete escalation.resolvedAt;
-    }
-    if (patch.refreshEvidence) {
-      const rec = state.recs.find((item) => item.key === escalation.recKey);
-      if (!rec) throw new Error(`updateProductEscalation: recommendation ${escalation.recKey} not found`);
-      escalation.evidence = createEscalationEvidence(state, rec, timestamp, visitorEvidence);
-    }
-    escalation.updatedAt = timestamp;
     delete state.watcherNote;
   }, dataStore);
 }

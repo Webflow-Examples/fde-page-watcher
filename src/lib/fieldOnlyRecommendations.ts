@@ -63,6 +63,7 @@ function fieldOnlyClassification(investigation: string): WebflowPerformanceClass
     remediation: "unknown",
     remediationLabel: "Investigation needed",
     guidance: investigation,
+    actionability: "direct",
     source: "crux-field-only",
   };
 }

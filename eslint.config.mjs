@@ -28,6 +28,7 @@ const eslintConfig = defineConfig([
     "**/.next/**",
     "**/node_modules/**",
     ".claude/**",
+    ".delta/**",
   ]),
 ]);
 

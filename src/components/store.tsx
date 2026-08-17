@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { DEFAULT_RANGE_DAYS } from "@/lib/types";
-import type { AgentIgnoreOverrideMode, AgentIgnoreScope, AppState, CategoryKey, CollectionSchedule, Flag, NativeElementDisposition, PagePerformanceThresholdOverrides, PerformanceThresholds, ProductEscalationStatus, RangeDays, ScoreByCategory, Strategy } from "@/lib/types";
+import type { AgentIgnoreOverrideMode, AgentIgnoreScope, AppState, CategoryKey, CollectionSchedule, Flag, NativeElementDisposition, PagePerformanceThresholdOverrides, PerformanceThresholds, RangeDays, ScoreByCategory, Strategy } from "@/lib/types";
 import type { CruxPageEvidence } from "@/lib/crux";
 import { updateAgentIgnoreOverride, updateAgentIgnoreSettings } from "@/lib/agentScoring";
 import { collectionRequestMessage, collectionSettlementMessage, hasActiveCollections, startCollectionPolling, type CollectionRequestResult } from "@/lib/collectionPolling";
@@ -12,7 +12,6 @@ import { withBasePath } from "@/lib/paths";
 import { defaultNewPageFlag, flagCapacityError } from "@/lib/watchCapacity";
 import { applyWatchlistPageOrder, changePageFlagOrder } from "@/lib/watchlistOrder";
 import { isTaskMarker, removeTaskMarker, taskMarkerText } from "@/lib/taskMarkers";
-import { recommendationNeedsEscalation } from "@/lib/escalations";
 import { pageTrend } from "@/lib/scoring";
 import type { Project } from "@/lib/projects";
 import { LAST_PROJECT_KEY } from "@/lib/projectSelection";
@@ -118,8 +117,6 @@ interface StoreValue extends AppState {
   removePage: (id: string) => void;
   saveTask: (key: string) => void;
   triageRec: (key: string) => void;
-  createEscalation: (key: string) => void;
-  updateEscalation: (id: string, patch: { status?: ProductEscalationStatus; owner?: string; notes?: string; refreshEvidence?: boolean }) => void;
   ignoreRec: (key: string) => void;
   advanceTask: (key: string, to: "todo" | "in-progress" | "done") => void;
   submitAdd: () => void;
@@ -742,64 +739,11 @@ export function StoreProvider({
     [mutate],
   );
 
-  const createEscalation = useCallback(
-    (key: string) => {
-      if (!canManageProject) {
-        flash("Viewer access is read-only");
-        return;
-      }
-      const rec = dataRef.current.recs.find((item) => item.key === key);
-      if (!rec) return;
-      flash(`Creating product escalation for ${rec.pageTitle}…`);
-      fetch(pathFor("/api/escalations"), {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "create", recKey: key }),
-      }).then(async (response) => {
-        const value = await response.json().catch(() => null) as { state?: AppState; error?: string } | null;
-        if (!response.ok || !value?.state) throw new Error(value?.error ?? `HTTP ${response.status}`);
-        apply(value.state);
-        flash("Product escalation created — assign and export it from Escalations");
-      }).catch(() => flash("Couldn't create the product escalation — try again"));
-    },
-    [apply, canManageProject, flash, pathFor],
-  );
-
   const triageRec = useCallback(
     (key: string) => {
-      const rec = dataRef.current.recs.find((item) => item.key === key);
-      if (!rec) return;
-      if (recommendationNeedsEscalation(rec)) createEscalation(key);
-      else saveTask(key);
+      saveTask(key);
     },
-    [createEscalation, saveTask],
-  );
-
-  const updateEscalation = useCallback(
-    (id: string, patch: { status?: ProductEscalationStatus; owner?: string; notes?: string; refreshEvidence?: boolean }) => {
-      const cur = dataRef.current;
-      const updatedAt = new Date().toISOString();
-      mutate(
-        {
-          ...cur,
-          productEscalations: (cur.productEscalations ?? []).map((item) => item.id === id ? {
-            ...item,
-            ...(patch.status ? { status: patch.status } : {}),
-            ...(patch.owner !== undefined ? { owner: patch.owner.trim() } : {}),
-            ...(patch.notes !== undefined ? { notes: patch.notes.trim() } : {}),
-            ...(patch.status === "submitted" && !item.submittedAt ? { submittedAt: updatedAt } : {}),
-            ...(patch.status === "resolved" ? { resolvedAt: updatedAt } : patch.status ? { resolvedAt: undefined } : {}),
-            updatedAt,
-          } : item),
-        },
-        { url: "/api/escalations", body: { action: "update", id, ...patch } },
-        {
-          success: patch.refreshEvidence ? "Escalation evidence refreshed" : "Escalation updated",
-          failure: "Couldn't update the escalation — try again",
-        },
-      );
-    },
-    [mutate],
+    [saveTask],
   );
 
   const ignoreRec = useCallback(
@@ -1103,8 +1047,6 @@ export function StoreProvider({
     removePage,
     saveTask,
     triageRec,
-    createEscalation,
-    updateEscalation,
     ignoreRec,
     advanceTask,
     submitAdd,

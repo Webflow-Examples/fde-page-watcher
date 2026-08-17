@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { FolderSimpleIcon, PlusIcon, TrashIcon, UserCircleIcon } from "@phosphor-icons/react";
 import { useStore } from "@/components/store";
 import type { Project } from "@/lib/projects";
+import type { KnownWebflowIssueSummary } from "@/lib/knownWebflowIssues";
 
 export default function AdminPage() {
   const {
@@ -27,6 +28,9 @@ export default function AdminPage() {
   const [appAdmins, setAppAdmins] = useState<Array<{ email: string; bootstrap: boolean; invitedBy?: string }>>([]);
   const [adminEmail, setAdminEmail] = useState("");
   const [adminBusy, setAdminBusy] = useState(false);
+  const [knownIssues, setKnownIssues] = useState<KnownWebflowIssueSummary[]>([]);
+  const [knownIssuesLoading, setKnownIssuesLoading] = useState(true);
+  const [optimizeAffectedDetections, setOptimizeAffectedDetections] = useState(0);
   const trimmedName = name.trim();
   const activeProjects = adminProjects.filter((item) => !item.archivedAt);
   const archivedProjects = adminProjects.filter((item) => !!item.archivedAt);
@@ -39,6 +43,20 @@ export default function AdminPage() {
       if (!response.ok || !body?.appAdmins) throw new Error(body?.error ?? "Could not load app administrators");
       if (!cancelled) setAppAdmins(body.appAdmins);
     }).catch((error) => { if (!cancelled) flash(error instanceof Error ? error.message : "Could not load app administrators"); });
+    void fetch(pathFor("/api/admin/known-issues"), { cache: "no-store" }).then(async (response) => {
+      const body = await response.json().catch(() => null) as {
+        issues?: KnownWebflowIssueSummary[];
+        optimizeAffectedDetections?: number;
+        error?: string;
+      } | null;
+      if (!response.ok || !body?.issues) throw new Error(body?.error ?? "Could not load known issue signals");
+      if (!cancelled) {
+        setKnownIssues(body.issues);
+        setOptimizeAffectedDetections(body.optimizeAffectedDetections ?? 0);
+      }
+    }).catch((error) => {
+      if (!cancelled) flash(error instanceof Error ? error.message : "Could not load known issue signals");
+    }).finally(() => { if (!cancelled) setKnownIssuesLoading(false); });
     return () => { cancelled = true; };
   }, [flash, pathFor]);
 
@@ -275,6 +293,48 @@ export default function AdminPage() {
         </section>
         </div>
       </div>
+      <section className="admin-card" aria-labelledby="known-webflow-issues-heading" style={{ marginTop: 18 }}>
+        <div className="admin-card__heading">
+          <div>
+            <h2 id="known-webflow-issues-heading">Known Webflow issue signals</h2>
+            <p>
+              High-confidence Webflow-generated pages with platform-attributed evidence from the last 30 days.
+              {optimizeAffectedDetections > 0 ? ` ${optimizeAffectedDetections} detections occurred while Webflow Optimize variation signals were present.` : ""}
+            </p>
+          </div>
+          <span className="admin-card__heading-count">{knownIssues.length}</span>
+        </div>
+        {knownIssuesLoading ? (
+          <div className="admin-project-list__empty">Loading issue signals…</div>
+        ) : knownIssues.length === 0 ? (
+          <div className="admin-project-list__empty">No confidently attributed Webflow issue signals were detected in this window.</div>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+              <thead>
+                <tr style={{ color: "#8f8f98", textAlign: "left" }}>
+                  <th style={{ padding: "9px 10px" }}>Issue</th>
+                  <th style={{ padding: "9px 10px", textAlign: "right" }}>Customers</th>
+                  <th style={{ padding: "9px 10px", textAlign: "right" }}>Pages</th>
+                  <th style={{ padding: "9px 10px", textAlign: "right" }}>Detections</th>
+                  <th style={{ padding: "9px 10px", textAlign: "right" }}>Last seen</th>
+                </tr>
+              </thead>
+              <tbody>
+                {knownIssues.map((issue) => (
+                  <tr key={issue.key} style={{ borderTop: "1px solid rgba(255,255,255,0.07)" }}>
+                    <td style={{ padding: "11px 10px" }}><strong>{issue.title}</strong><div style={{ color: "#777780", marginTop: 2 }}>{issue.key}</div></td>
+                    <td style={{ padding: "11px 10px", textAlign: "right" }}>{issue.customerCount}</td>
+                    <td style={{ padding: "11px 10px", textAlign: "right" }}>{issue.pageCount}</td>
+                    <td style={{ padding: "11px 10px", textAlign: "right" }}>{issue.detections}</td>
+                    <td style={{ padding: "11px 10px", textAlign: "right", whiteSpace: "nowrap" }}>{new Date(issue.lastSeen).toLocaleDateString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
     </div>
   );
 }

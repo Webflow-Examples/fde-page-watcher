@@ -63,6 +63,7 @@ export type WebflowPerformanceCulprit =
   | "interactive-media"
   | "other";
 export type WebflowRemediationLevel = "blocked" | "partial" | "available" | "unknown";
+export type CustomerActionability = "direct" | "workaround" | "none" | "review";
 
 /** Deterministic Webflow-specific interpretation of a Lighthouse audit. */
 export interface WebflowPerformanceClassification {
@@ -74,6 +75,8 @@ export interface WebflowPerformanceClassification {
   remediation: WebflowRemediationLevel;
   remediationLabel: string;
   guidance: string;
+  /** Customer-facing disposition. Platform ownership is evaluated separately. */
+  actionability?: CustomerActionability;
   source: "published-page-performance" | "crux-field-only";
 }
 
@@ -214,6 +217,18 @@ export interface NativeElementScan {
   status: "available" | "unavailable";
   findings: NativeElementFinding[];
   reason?: string;
+  /** Privacy-safe document-generator attribution; attribute values are never retained. */
+  platform?: {
+    name: "webflow";
+    confidence: "high";
+    signals: Array<"data-wf-site" | "data-wf-page">;
+  };
+  /** An experiment system may serve different variants across repeated measurements. */
+  variationRisk?: {
+    source: "webflow-optimize";
+    confidence: "high";
+    signals: ["data-wf-intellimize-customer-id"];
+  };
 }
 
 /** Compact, provider-specific evidence from one rendered Kitesurf page probe. */
@@ -635,74 +650,6 @@ export interface WatcherNote {
   modelVersion?: number;
 }
 
-export type ProductEscalationStatus = "draft" | "ready" | "submitted" | "resolved";
-
-export interface EscalationStrategyEvidence {
-  strategy: Strategy;
-  performanceScore?: number;
-  metricValue?: number;
-  metricUnit?: "milliseconds" | "score";
-  diagnostic?: {
-    observedRuns: number;
-    eligibleRuns: number;
-    confidence: LighthouseFindingConfidence;
-    savingsMs: number;
-    savingsBytes: number;
-  };
-  lifecycle?: {
-    status: "active" | "verifying" | "resolved" | "regressed";
-    firstDetected: string;
-    lastDetected: string;
-  };
-  culpritEvidence: CulpritEvidence[];
-  fieldEvidence?: {
-    relationship: "direct" | "proxy";
-    verdict: "aligned-good" | "corroborated-issue" | "field-only-risk" | "lab-only-risk" | "unavailable";
-    verdictLabel: string;
-    metricLabel: string;
-    value?: string;
-    rating?: "Good" | "Needs improvement" | "Poor";
-    scope?: "url" | "origin";
-    collectionStart?: string;
-    collectionEnd?: string;
-  };
-}
-
-export interface EscalationEvidenceSnapshot {
-  capturedAt: string;
-  page: { id: string; title: string; url: string };
-  recommendation: {
-    id: string;
-    title: string;
-    category: string;
-    impact: string;
-    strategies: Strategy[];
-  };
-  classification: WebflowPerformanceClassification;
-  strategies: EscalationStrategyEvidence[];
-  nativeFinding?: {
-    count: number;
-    confidence: "high" | "medium";
-    signals: string[];
-    detail: string;
-  };
-}
-
-export interface ProductEscalation {
-  id: string;
-  recKey: string;
-  pageId: string;
-  title: string;
-  status: ProductEscalationStatus;
-  owner: string;
-  notes: string;
-  createdAt: string;
-  updatedAt: string;
-  submittedAt?: string;
-  resolvedAt?: string;
-  evidence: EscalationEvidenceSnapshot;
-}
-
 /** Server-owned project metadata persisted in the private admin tenant. */
 export interface ManagedProjectRecord {
   id: string;
@@ -741,7 +688,6 @@ export interface AppState {
   projectArchivePageFlags?: Record<string, Flag>;
   pages: WatchPage[];
   recs: Rec[];
-  productEscalations?: ProductEscalation[];
   /** Workspace-owned HTTPS endpoint for confirmed performance-regression alerts. */
   alertWebhookUrl?: string | null;
   /** Recent scheduled digest claims/deliveries, retained for idempotency and retries. */
