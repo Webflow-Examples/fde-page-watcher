@@ -7,7 +7,7 @@ import { useStore } from "./store";
 import { C } from "@/lib/ui";
 import { normalizeCollectionSchedule } from "@/lib/collectionSchedule";
 import { ClockIcon, DashboardIcon, EyeIcon, InboxIcon, PagesIcon, TasksIcon } from "./icons";
-import { GearIcon, ShieldCheckIcon, SignOutIcon } from "@phosphor-icons/react";
+import { BookOpenTextIcon, GearIcon, ShieldCheckIcon, SignOutIcon } from "@phosphor-icons/react";
 import { isFieldRecommendationActionable } from "@/lib/fieldOnlyRecommendations";
 import { SelectMenu } from "./select-menu";
 import webflowSocialLogo from "../../public/webflow-social.png";
@@ -35,6 +35,10 @@ const managementNavItems = [
   { href: "/settings", label: "Settings", Icon: GearIcon, badge: null },
 ];
 
+const guideNavItems = [
+  { href: "/guide", label: "Guide", Icon: BookOpenTextIcon, badge: null },
+];
+
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
@@ -58,8 +62,8 @@ export function Sidebar() {
 
   const schedule = normalizeCollectionSchedule(collectionSchedule);
   const navGroups = canManageProject
-    ? [primaryNavItems, activityNavItems, managementNavItems]
-    : [primaryNavItems, activityNavItems];
+    ? [primaryNavItems, activityNavItems, managementNavItems, guideNavItems]
+    : [primaryNavItems, activityNavItems, guideNavItems];
 
   return (
     <aside
