@@ -1,0 +1,13 @@
+▲ Next.js 16.2.10 (Turbopack)
+- Local:         http://localhost:3411
+- Network:       http://192.168.86.32:3411
+✓ Ready in 312ms
+⨯ Another next dev server is already running.
+
+- Local:        http://localhost:3000
+- PID:          88855
+- Dir:          /Users/mmunger/fde-page-watcher
+- Log:          .next/dev/logs/next-development.log
+
+Run kill 88855 to stop it.
+[?25h

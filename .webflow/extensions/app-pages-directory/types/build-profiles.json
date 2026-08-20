@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "view": {
+    "schemaVersion": 1,
+    "id": "studio-managed-react",
+    "version": 5,
+    "jsx": "react-jsx",
+    "buildMode": "production",
+    "allowedImports": [
+      "react",
+      "react-dom/client",
+      "@webflow/extension-ui",
+      "@webflow/extension-view-sdk (types only in Views)",
+      "@webflow/extension-block-sdk (types only in Blocks)"
+    ],
+    "dependencies": {
+      "react": "19.2.6",
+      "reactDom": "19.2.6",
+      "extensionUi": {
+        "package": "@webflow/product-design",
+        "contentDigest": "sha256-ad428bfdc6702931f1d7d98883894f2f5b4aff8a564968b6b4b356bb871844b0",
+        "profileInputDigest": "sha256-283e9671569babdcef02656157e58ebecd62254e029c829c931b85558c43b09f"
+      }
+    },
+    "contentDigest": "sha256-414d6f7199cb8fd4c18daad67553bb6e892b026adc4e73fcb0427b9bad42df10"
+  },
+  "block": null
+}

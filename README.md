@@ -196,6 +196,23 @@ Use `DATASET_MODE=demo` for the existing sample state and `DATASET_MODE=live`
 for real URLs. The two modes use separate tenant keys in the same D1 database,
 so switching modes is reversible and never overwrites the demo dataset.
 
+### Demo dataset
+
+The bundled demo is date-relative and intentionally scenario-rich. It includes
+stable, improving, regressing, paused, failed, partial, agent-only, and pending
+pages; custom and task-linked chart markers; a verified PSI provider incident
+with excluded anomaly bands; Lighthouse quality/provenance, native Webflow
+elements, Kitesurf evidence, agent-ignore history, and recommendation/task
+lifecycles. Separate CrUX fixtures cover URL and origin scope, stable/improving/
+worsening trends, partial metrics, insufficient traffic, and provider errors.
+When no collector URL is configured, Settings also shows a local Webflow
+activity/publish example.
+
+The disposable `brand-studio` demo namespace carries a fixture version. Local
+filesystem and demo D1/FDE stores replace an older bundled fixture once when
+that version changes; live namespaces and arbitrary project tenants are never
+refreshed this way.
+
 ## Deferred integrations
 
 - Automated page remediation

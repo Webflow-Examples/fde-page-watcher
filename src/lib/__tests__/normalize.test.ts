@@ -31,7 +31,10 @@ describe("state normalization", () => {
       { group: "API / Auth / MCP", name: "WebMCP", pass: false },
     ];
     page.history[0].agent = checks;
+    delete page.history[0].agentReadiness;
     page.agentIgnores = { checks: [agentCheckKey(checks[1])], groups: [] };
+    page.agentIgnoreRestores = { checks: [], groups: [] };
+    legacy.agentIgnoreDefaults = { checks: [], groups: [] };
 
     const normalized = normalizeState(legacy);
     expect(normalized.pages[0].history[0].agentReadiness).toMatchObject({
@@ -49,16 +52,16 @@ describe("state normalization", () => {
 
   it("reconciles task markers from completed state and completed date", () => {
     const state = buildSeedState();
-    const completed = state.recs.find((rec) => rec.key === "designer:r2")!;
-    const open = state.recs.find((rec) => rec.key === "pricing:r1")!;
+    const completed = state.recs.find((rec) => rec.key === "designer:uses-responsive-images")!;
+    const open = state.recs.find((rec) => rec.key === "pricing:unused-javascript")!;
     const completedPage = state.pages.find((page) => page.id === completed.pageId)!;
     const openPage = state.pages.find((page) => page.id === open.pageId)!;
-    completedPage.markers.push({
+    completedPage.markers = [{
       id: "legacy-completed",
       i: 0,
       date: "Jul 1",
       text: `Acted: ${completed.title}`,
-    });
+    }];
     openPage.markers.push({
       id: "stale-open",
       i: 0,

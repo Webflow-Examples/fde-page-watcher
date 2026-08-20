@@ -1,0 +1,33 @@
+{
+  "manifestVersion": 1,
+  "packageType": "extension",
+  "id": "app-pages-directory",
+  "name": "app-pages-directory",
+  "version": "1.0.0",
+  "displayName": "Pages Directory",
+  "hostEnvironments": [
+    "desktop"
+  ],
+  "entrypoints": {
+    "logic": "src/extension.ts"
+  },
+  "capabilities": [
+    "preview.openRoute"
+  ],
+  "network": {
+    "access": "none"
+  },
+  "contributes": {
+    "extensionUi": [
+      {
+        "id": "app-pages-directory.view",
+        "title": "Pages Directory",
+        "entry": "view.html",
+        "activationEvents": [],
+        "requiredCapabilities": []
+      }
+    ],
+    "tools": [],
+    "commands": []
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "composite": true,
+    "declaration": true,
+    "rootDir": "..",
+    "outDir": "./.build/block",
+    "tsBuildInfoFile": "./.build/block.tsbuildinfo",
+    "skipLibCheck": false,
+    "types": [],
+    "paths": {
+      "@webflow/extension-block-sdk": [
+        "./webflow-extension-block.d.ts"
+      ],
+      "@webflow/extension-provided-apis": [
+        "./provided-extension-apis.d.ts"
+      ]
+    }
+  },
+  "files": [
+    "webflow-extension-block.d.ts",
+    "provided-extension-apis.d.ts"
+  ]
+}

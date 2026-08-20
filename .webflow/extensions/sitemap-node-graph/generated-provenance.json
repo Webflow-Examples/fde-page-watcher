@@ -1,0 +1,47 @@
+{
+  "provenanceVersion": 1,
+  "generatorVersion": 1,
+  "recipe": {
+    "kind": "request-operations",
+    "extensionId": "sitemap-node-graph",
+    "displayName": "Sitemap Node Graph",
+    "operations": [
+      {
+        "id": "preview.openTarget",
+        "capability": "preview.openTarget"
+      },
+      {
+        "id": "preview.openRoute",
+        "capability": "preview.openRoute"
+      }
+    ],
+    "profile": "plain"
+  },
+  "files": [
+    {
+      "path": "webflow.json",
+      "owner": "host",
+      "digest": "sha256:8f7fe9400f632acb032fd6bd77ebb4d2bd4ea78a1970a97759ba29dfe09a80a6"
+    },
+    {
+      "path": "src/intents.ts",
+      "owner": "host",
+      "digest": "sha256:a5c7a5230b34ca984c77e9157ad1dc374da36d4d788e65c5e7b0ab056af6846a"
+    },
+    {
+      "path": "src/extension.ts",
+      "owner": "host",
+      "digest": "sha256:3c145f9fdb722f6e93d5282c53ed3de1d064844e6364a7f7b70c3af8d3a209e9"
+    },
+    {
+      "path": "src/view.ts",
+      "owner": "agent",
+      "digest": "sha256:689e24f88f0f64c5e3750edf3d3729c5e4e438b0528566fb85c0869196e41d37"
+    },
+    {
+      "path": "view.html",
+      "owner": "agent",
+      "digest": "sha256:28fb91040321bd40102131d12d1ecf696e559aa66f49ee0d31a76673a86d4333"
+    }
+  ]
+}

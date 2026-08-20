@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "capabilityRegistryVersion": "capability-registry.v1",
+  "extensionManifestVersion": 1,
+  "viewTransportVersion": 1,
+  "typescriptVersion": "6.0.3",
+  "contentDigest": "sha256-8358b7155ca144b141ec6c0978b274fdf5b87ab3f5cdd8d8ce9464bb7b84ccfc"
+}
