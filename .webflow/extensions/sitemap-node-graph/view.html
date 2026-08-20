@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sitemap Node Graph</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+        background: #0b0b0c;
+        color: #f4f4f5;
+      }
+      main {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+      }
+      header {
+        padding: 14px 18px 10px;
+        border-bottom: 1px solid #26262a;
+        flex: none;
+      }
+      header h1 {
+        margin: 0 0 4px;
+        font-size: 15px;
+        font-weight: 650;
+      }
+      header p {
+        margin: 0;
+        font-size: 12px;
+        color: #9a9aa2;
+      }
+      .legend {
+        display: flex;
+        gap: 14px;
+        margin-top: 10px;
+        flex-wrap: wrap;
+      }
+      .legend span {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        color: #c7c7cf;
+      }
+      .legend i {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        display: inline-block;
+      }
+      .stats {
+        margin-top: 8px;
+        font-size: 11px;
+        color: #7a7a82;
+      }
+      .body {
+        flex: 1;
+        display: flex;
+        min-height: 0;
+      }
+      .graph-pane {
+        flex: 1;
+        overflow: auto;
+        padding: 10px;
+      }
+      svg {
+        display: block;
+        width: 100%;
+        height: auto;
+        min-width: 640px;
+      }
+      aside {
+        width: 260px;
+        flex: none;
+        border-left: 1px solid #26262a;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      aside h2 {
+        margin: 0;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #9a9aa2;
+      }
+      .field {
+        font-size: 12.5px;
+      }
+      .field .label {
+        color: #7a7a82;
+        font-size: 10.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 3px;
+      }
+      .field .value {
+        color: #f4f4f5;
+        word-break: break-word;
+      }
+      #detail-route { font-weight: 600; }
+      #detail-file { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; color: #c7c7cf; }
+      button {
+        margin-top: 4px;
+        border: 1px solid #35d07f;
+        background: rgba(53,208,127,0.12);
+        color: #35d07f;
+        border-radius: 7px;
+        padding: 9px 12px;
+        font-size: 12.5px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
+      #open-status {
+        font-size: 11.5px;
+        color: #9a9aa2;
+        min-height: 14px;
+      }
+      .hint {
+        font-size: 11px;
+        color: #7a7a82;
+        line-height: 1.5;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Sitemap Node Graph</h1>
+        <p>Real route tree for this app, read from src/app/**/page.tsx and the Sidebar's navigation links. Drag any node to rearrange it — nodes keep clear of each other automatically.</p>
+        <div class="legend">
+          <span><i style="background:#3b89ff"></i>Route</span>
+          <span><i style="background:#35d07f"></i>Dynamic route</span>
+          <span><i style="background:#f5a623"></i>Auth</span>
+          <span><i style="background:#a1a1aa"></i>Demo</span>
+        </div>
+        <div class="stats"><span id="node-count">0</span> routes · <span id="edge-count">0</span> connections</div>
+      </header>
+      <div class="body">
+        <div class="graph-pane">
+          <svg id="graph" role="img" aria-label="Sitemap node graph"></svg>
+        </div>
+        <aside>
+          <h2>Selected route</h2>
+          <div class="field">
+            <div class="label">Route</div>
+            <div class="value" id="detail-route">Click a node</div>
+          </div>
+          <div class="field">
+            <div class="label">Source file</div>
+            <div class="value" id="detail-file">—</div>
+          </div>
+          <div class="field">
+            <div class="label">Kind</div>
+            <div class="value" id="detail-kind">—</div>
+          </div>
+          <button type="button" id="open-route" disabled>Open in preview</button>
+          <div id="open-status"></div>
+          <p class="hint">Drag a node to reposition it; edges follow automatically and overlapping nodes are pushed apart. Click a node (without dragging) to select it. Dashed lines show the sign-in/landing redirect flow, solid blue lines show sidebar navigation, green shows a dynamic child route nested under its list page.</p>
+        </aside>
+      </div>
+    </main>
+    <script data-webflow-view-entry="src/view.ts">
+(() => {
+  // src/view.ts
+  var view = WebflowExtensionView.connect();
+  var nodes = [
+    { id: "root", route: "/", label: "/ (root redirect)", sourceFile: "src/app/page.tsx", kind: "route", col: 0, row: 2, x: 0, y: 0 },
+    { id: "login", route: "/login", label: "Login", sourceFile: "src/app/login/page.tsx", kind: "auth", col: 0, row: 0, x: 0, y: 0 },
+    { id: "scorecard-demo", route: "/scorecard-demo", label: "Scorecard Demo", sourceFile: "src/app/scorecard-demo/page.tsx", kind: "demo", col: 0, row: 4, x: 0, y: 0 },
+    { id: "dashboard", route: "/dashboard", label: "Dashboard", sourceFile: "src/app/(app)/dashboard/page.tsx", kind: "route", col: 1, row: 0, x: 0, y: 0 },
+    { id: "pages", route: "/pages", label: "Pages", sourceFile: "src/app/(app)/pages/page.tsx", kind: "route", col: 1, row: 1, x: 0, y: 0 },
+    { id: "inbox", route: "/inbox", label: "Inbox", sourceFile: "src/app/(app)/inbox/page.tsx", kind: "route", col: 1, row: 2, x: 0, y: 0 },
+    { id: "tasks", route: "/tasks", label: "Tasks", sourceFile: "src/app/(app)/tasks/page.tsx", kind: "route", col: 1, row: 3, x: 0, y: 0 },
+    { id: "watchlist", route: "/watchlist", label: "Watchlist", sourceFile: "src/app/(app)/watchlist/page.tsx", kind: "route", col: 1, row: 4, x: 0, y: 0 },
+    { id: "settings", route: "/settings", label: "Settings", sourceFile: "src/app/(app)/settings/page.tsx", kind: "route", col: 1, row: 5, x: 0, y: 0 },
+    { id: "admin", route: "/admin", label: "Admin", sourceFile: "src/app/(app)/admin/page.tsx", kind: "route", col: 1, row: 6, x: 0, y: 0 },
+    { id: "pages-id", route: "/pages/[id]", label: "Page detail", sourceFile: "src/app/(app)/pages/[id]/page.tsx", kind: "dynamic", col: 2, row: 1, x: 0, y: 0 }
+  ];
+  var edges = [
+    { from: "root", to: "login", kind: "flow" },
+    { from: "root", to: "dashboard", kind: "flow" },
+    { from: "dashboard", to: "pages", kind: "nav" },
+    { from: "dashboard", to: "inbox", kind: "nav" },
+    { from: "dashboard", to: "tasks", kind: "nav" },
+    { from: "dashboard", to: "watchlist", kind: "nav" },
+    { from: "dashboard", to: "settings", kind: "nav" },
+    { from: "dashboard", to: "admin", kind: "nav" },
+    { from: "pages", to: "pages-id", kind: "nest" }
+  ];
+  var KIND_COLOR = {
+    route: "#3b89ff",
+    dynamic: "#35d07f",
+    auth: "#f5a623",
+    demo: "#a1a1aa"
+  };
+  var COL_W = 210;
+  var ROW_H = 74;
+  var PAD_X = 90;
+  var PAD_Y = 50;
+  var R = 46;
+  var MIN_DIST = R * 2 + 16;
+  for (const n of nodes) {
+    n.x = PAD_X + n.col * COL_W;
+    n.y = PAD_Y + n.row * ROW_H;
+  }
+  var byId = new Map(nodes.map((n) => [n.id, n]));
+  var maxCol = Math.max(...nodes.map((n) => n.col));
+  var maxRow = Math.max(...nodes.map((n) => n.row));
+  var width = PAD_X * 2 + maxCol * COL_W;
+  var height = PAD_Y * 2 + maxRow * ROW_H;
+  var svgNS = "http://www.w3.org/2000/svg";
+  function makeSvgEl(tag) {
+    return document.createElementNS(svgNS, tag);
+  }
+  var svg = document.querySelector("#graph");
+  var detailRoute = document.querySelector("#detail-route");
+  var detailFile = document.querySelector("#detail-file");
+  var detailKind = document.querySelector("#detail-kind");
+  var openButton = document.querySelector("#open-route");
+  var openStatus = document.querySelector("#open-status");
+  var nodeCountEl = document.querySelector("#node-count");
+  var edgeCountEl = document.querySelector("#edge-count");
+  var selected = null;
+  var circleEls = /* @__PURE__ */ new Map();
+  var groupEls = /* @__PURE__ */ new Map();
+  var edgeEls = [];
+  function resolveOverlaps() {
+    const iterations = 24;
+    for (let iter = 0; iter < iterations; iter += 1) {
+      let moved = false;
+      for (let i = 0; i < nodes.length; i += 1) {
+        for (let j = i + 1; j < nodes.length; j += 1) {
+          const a = nodes[i];
+          const b = nodes[j];
+          let dx = b.x - a.x;
+          let dy = b.y - a.y;
+          let dist = Math.hypot(dx, dy);
+          if (dist === 0) {
+            dx = 1;
+            dy = 0;
+            dist = 1;
+          }
+          if (dist < MIN_DIST) {
+            const overlap = (MIN_DIST - dist) / 2;
+            const ux = dx / dist;
+            const uy = dy / dist;
+            a.x -= ux * overlap;
+            a.y -= uy * overlap;
+            b.x += ux * overlap;
+            b.y += uy * overlap;
+            moved = true;
+          }
+        }
+      }
+      if (!moved) break;
+    }
+    for (const n of nodes) {
+      n.x = Math.max(PAD_X, n.x);
+      n.y = Math.max(PAD_Y, n.y);
+    }
+    const maxX = Math.max(...nodes.map((n) => n.x));
+    const maxY = Math.max(...nodes.map((n) => n.y));
+    width = Math.max(width, maxX + PAD_X);
+    height = Math.max(height, maxY + PAD_Y);
+  }
+  function updateEdgePaths() {
+    for (const { edge, path } of edgeEls) {
+      const a = byId.get(edge.from);
+      const b = byId.get(edge.to);
+      if (!a || !b) continue;
+      const midX = (a.x + b.x) / 2;
+      path.setAttribute("d", `M ${a.x} ${a.y} C ${midX} ${a.y}, ${midX} ${b.y}, ${b.x} ${b.y}`);
+    }
+  }
+  function updateNodeTransform(node) {
+    const g = groupEls.get(node.id);
+    if (g) g.setAttribute("transform", `translate(${node.x}, ${node.y})`);
+  }
+  function updateViewport() {
+    svg?.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  }
+  function selectNode(node) {
+    selected = node;
+    for (const [id, circle] of circleEls) {
+      circle.setAttribute("stroke", id === node.id ? "#ffffff" : "rgba(255,255,255,0.25)");
+      circle.setAttribute("stroke-width", id === node.id ? "3" : "1.5");
+    }
+    if (detailRoute) detailRoute.textContent = node.route;
+    if (detailFile) detailFile.textContent = node.sourceFile;
+    if (detailKind) detailKind.textContent = node.kind;
+    if (openButton) openButton.disabled = false;
+    if (openStatus) openStatus.textContent = "";
+  }
+  function svgPoint(clientX, clientY) {
+    if (!svg) return { x: clientX, y: clientY };
+    const rect = svg.getBoundingClientRect();
+    const scaleX = width / rect.width;
+    const scaleY = height / rect.height;
+    return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
+  }
+  function makeDraggable(g, node) {
+    let dragging = false;
+    let moved = false;
+    let offsetX = 0;
+    let offsetY = 0;
+    g.addEventListener("pointerdown", (event) => {
+      dragging = true;
+      moved = false;
+      g.setPointerCapture(event.pointerId);
+      const p = svgPoint(event.clientX, event.clientY);
+      offsetX = node.x - p.x;
+      offsetY = node.y - p.y;
+      g.style.cursor = "grabbing";
+    });
+    g.addEventListener("pointermove", (event) => {
+      if (!dragging) return;
+      moved = true;
+      const p = svgPoint(event.clientX, event.clientY);
+      node.x = Math.max(R + 4, p.x + offsetX);
+      node.y = Math.max(R + 4, p.y + offsetY);
+      updateNodeTransform(node);
+      updateEdgePaths();
+    });
+    function endDrag(event) {
+      if (!dragging) return;
+      dragging = false;
+      g.style.cursor = "grab";
+      try {
+        g.releasePointerCapture(event.pointerId);
+      } catch {
+      }
+      if (moved) {
+        resolveOverlaps();
+        for (const n of nodes) updateNodeTransform(n);
+        updateEdgePaths();
+        updateViewport();
+      } else {
+        selectNode(node);
+      }
+    }
+    g.addEventListener("pointerup", endDrag);
+    g.addEventListener("pointercancel", endDrag);
+  }
+  function render() {
+    if (!svg) return;
+    resolveOverlaps();
+    updateViewport();
+    svg.innerHTML = "";
+    circleEls.clear();
+    groupEls.clear();
+    edgeEls.length = 0;
+    const edgeGroup = makeSvgEl("g");
+    for (const edge of edges) {
+      const path = makeSvgEl("path");
+      path.setAttribute("fill", "none");
+      path.setAttribute(
+        "stroke",
+        edge.kind === "nav" ? "rgba(59,137,255,0.55)" : edge.kind === "nest" ? "rgba(53,208,127,0.6)" : "rgba(255,255,255,0.25)"
+      );
+      path.setAttribute("stroke-width", edge.kind === "nav" ? "2" : "1.5");
+      if (edge.kind === "flow") path.setAttribute("stroke-dasharray", "4 4");
+      edgeEls.push({ edge, path });
+      edgeGroup.appendChild(path);
+    }
+    svg.appendChild(edgeGroup);
+    updateEdgePaths();
+    const nodeGroup = makeSvgEl("g");
+    for (const node of nodes) {
+      const g = makeSvgEl("g");
+      g.setAttribute("transform", `translate(${node.x}, ${node.y})`);
+      g.style.cursor = "grab";
+      g.style.touchAction = "none";
+      groupEls.set(node.id, g);
+      const circle = makeSvgEl("circle");
+      circle.setAttribute("r", String(R));
+      circle.setAttribute("fill", KIND_COLOR[node.kind]);
+      circle.setAttribute("fill-opacity", "0.16");
+      circle.setAttribute("stroke", "rgba(255,255,255,0.25)");
+      circle.setAttribute("stroke-width", "1.5");
+      circleEls.set(node.id, circle);
+      g.appendChild(circle);
+      const dot = makeSvgEl("circle");
+      dot.setAttribute("r", "5");
+      dot.setAttribute("cy", String(-R + 14));
+      dot.setAttribute("fill", KIND_COLOR[node.kind]);
+      g.appendChild(dot);
+      const text = makeSvgEl("text");
+      text.textContent = node.label;
+      text.setAttribute("text-anchor", "middle");
+      text.setAttribute("dy", "-2");
+      text.setAttribute("fill", "#f4f4f5");
+      text.setAttribute("font-size", "12.5");
+      text.setAttribute("font-weight", "600");
+      text.style.userSelect = "none";
+      g.appendChild(text);
+      const routeText = makeSvgEl("text");
+      routeText.textContent = node.route;
+      routeText.setAttribute("text-anchor", "middle");
+      routeText.setAttribute("dy", "16");
+      routeText.setAttribute("fill", "rgba(244,244,245,0.6)");
+      routeText.setAttribute("font-size", "10.5");
+      routeText.style.userSelect = "none";
+      g.appendChild(routeText);
+      makeDraggable(g, node);
+      nodeGroup.appendChild(g);
+    }
+    svg.appendChild(nodeGroup);
+    if (nodeCountEl) nodeCountEl.textContent = String(nodes.length);
+    if (edgeCountEl) edgeCountEl.textContent = String(edges.length);
+  }
+  render();
+  openButton?.addEventListener("click", async () => {
+    if (!selected || !openButton || !openStatus) return;
+    const route = selected.route === "/pages/[id]" ? "/pages" : selected.route;
+    openButton.disabled = true;
+    openStatus.textContent = "Opening preview…";
+    try {
+      const result = await view.intent("preview.openRoute", { route });
+      if (result.status === "ok") {
+        openStatus.textContent = `Opened ${route} in preview.`;
+      } else if (result.status === "blocked") {
+        openStatus.textContent = `Blocked: ${String(result.reason ?? "Preview unavailable.")}`;
+      } else {
+        openStatus.textContent = "More input is required to open this route.";
+      }
+    } catch (error) {
+      openStatus.textContent = error instanceof Error ? `Transport error: ${error.message}` : "Transport error.";
+    } finally {
+      openButton.disabled = false;
+    }
+  });
+})();
+</script>
+  </body>
+</html>

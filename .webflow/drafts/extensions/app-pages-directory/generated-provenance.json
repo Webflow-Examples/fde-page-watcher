@@ -1,0 +1,43 @@
+{
+  "provenanceVersion": 1,
+  "generatorVersion": 1,
+  "recipe": {
+    "kind": "request-operations",
+    "extensionId": "app-pages-directory",
+    "displayName": "Pages Directory",
+    "operations": [
+      {
+        "id": "pages.openRoute",
+        "capability": "preview.openRoute"
+      }
+    ],
+    "profile": "managed-react"
+  },
+  "files": [
+    {
+      "path": "webflow.json",
+      "owner": "host",
+      "digest": "sha256:86eb97245509fe7b130505a3dadc4c02e62d4f3ecd70228211782cb3966ad250"
+    },
+    {
+      "path": "src/intents.ts",
+      "owner": "host",
+      "digest": "sha256:e362e0409c11d471f26bb24b7c88752017332dfc045c473e3a6018406e0308c6"
+    },
+    {
+      "path": "src/extension.ts",
+      "owner": "host",
+      "digest": "sha256:9739b70e8e015d5181245f7a7c4cb6433670586c395aae66a685c0dd8bceb6db"
+    },
+    {
+      "path": "src/view.tsx",
+      "owner": "agent",
+      "digest": "sha256:a7813d836bfb3a22dd85920c1f10a4a2850fdcb7b52941784ec220af8de6d900"
+    },
+    {
+      "path": "view.html",
+      "owner": "agent",
+      "digest": "sha256:22410ba60abadc4e1e7d088476c4b2abfea1e8841821626f71d7d320e6c14613"
+    }
+  ]
+}

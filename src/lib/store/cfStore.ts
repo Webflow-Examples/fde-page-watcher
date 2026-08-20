@@ -1,6 +1,6 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
-import type { AppState, ChangeMarker, CollectionJob, Night } from "../types";
-import { buildInitialState } from "../seed";
+import { TENANT, type AppState, type ChangeMarker, type CollectionJob, type Night } from "../types";
+import { buildInitialState, buildSeedCruxEvidence, DEMO_DATA_VERSION } from "../seed";
 import { captureAgentReadiness } from "../agentScoring";
 import { effectivePerformanceThresholds } from "../performanceThresholds";
 import { mediansOf, pageTrend } from "../scoring";
@@ -104,7 +104,19 @@ class CfDataStore implements DataStore {
       }
       return this.getState();
     }
-    return this.materializedState(DB, JSON.parse(row.json) as AppState);
+    const state = await this.materializedState(DB, JSON.parse(row.json) as AppState);
+    if (
+      this.tenant === TENANT
+      && getEnv("DATASET_MODE") !== "live"
+      && state.demoDataVersion !== DEMO_DATA_VERSION
+    ) {
+      const seeded = buildInitialState("demo");
+      return this.updateState((draft) => {
+        for (const key of Object.keys(draft) as Array<keyof AppState>) delete draft[key];
+        Object.assign(draft, structuredClone(seeded));
+      });
+    }
+    return state;
   }
 
   async getCruxEvidence(): Promise<CruxPageEvidence[]> {
@@ -121,7 +133,10 @@ class CfDataStore implements DataStore {
           "ORDER BY page_id, form_factor",
       ).bind(this.tenant).all<CruxStatusRow>(),
     ]);
-    return cruxEvidenceFromRows(snapshots.results, statuses.results);
+    const evidence = cruxEvidenceFromRows(snapshots.results, statuses.results);
+    return evidence.length === 0 && this.tenant === TENANT && getEnv("DATASET_MODE") !== "live"
+      ? buildSeedCruxEvidence()
+      : evidence;
   }
 
   /**

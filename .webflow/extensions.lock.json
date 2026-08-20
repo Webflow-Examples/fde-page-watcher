@@ -1,6 +1,28 @@
 {
-  "$schema": "https://webflow.com/schemas/extensions-lockfile.v2.json",
+  "$schema": "https://webflow.com/schemas/extensions-lockfile.v3.json",
   "extensions": {
+    "app-pages-directory": {
+      "enabled": true,
+      "requestedCapabilities": [
+        "preview.openRoute"
+      ],
+      "review": {
+        "reasons": [],
+        "required": "none",
+        "state": "trusted"
+      },
+      "source": {
+        "path": ".webflow/extensions/app-pages-directory",
+        "type": "site"
+      },
+      "trust": {
+        "generatedDescriptorHash": "sha256:9042207a6b83d420b10e3084762fef6e65e28e9c5eccaf4077a6b3e6ab6af7ea",
+        "logicArtifact": {
+          "path": "build/logic.mjs"
+        },
+        "packageFilesHash": "sha256:8a09cde67ae3466d21a378861388f3686c5be409697c61750cd96c720b978dfb"
+      }
+    },
     "design-system-inventory": {
       "enabled": true,
       "requestedCapabilities": [],
@@ -40,8 +62,31 @@
         },
         "packageFilesHash": "sha256:da2880b2438c31c7d4e86d619dc7cad4107aeb0b1d3e46e85967b21c343e0754"
       }
+    },
+    "sitemap-node-graph": {
+      "enabled": true,
+      "requestedCapabilities": [
+        "preview.openRoute",
+        "preview.openTarget"
+      ],
+      "review": {
+        "reasons": [],
+        "required": "none",
+        "state": "trusted"
+      },
+      "source": {
+        "path": ".webflow/extensions/sitemap-node-graph",
+        "type": "site"
+      },
+      "trust": {
+        "generatedDescriptorHash": "sha256:5e463c8660fc60a34b04ce2ffbea7bb0d0fe8b30d9bf0d83c6e322ceed435d5b",
+        "logicArtifact": {
+          "path": "build/logic.mjs"
+        },
+        "packageFilesHash": "sha256:28454b4edf2dbca00d6b2c7cc2c956e6dd203fe5a2a8934e83fb0f43fa9c6967"
+      }
     }
   },
   "hashAlgorithm": "sha256",
-  "lockfileVersion": 2
+  "lockfileVersion": 3
 }

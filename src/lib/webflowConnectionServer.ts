@@ -1,4 +1,5 @@
 import { getEnv } from "./env";
+import { buildSeedWebflowConnectionStatus } from "./seed";
 
 function collectorBaseUrl(): string {
   const configured = getEnv("FDE_DATA_URL") ?? getEnv("COLLECTOR_URL");
@@ -20,6 +21,15 @@ export async function requestWebflowCollector(
   init: RequestInit = {},
   fetchFn: typeof fetch = fetch,
 ): Promise<Response> {
+  const configured = getEnv("FDE_DATA_URL") ?? getEnv("COLLECTOR_URL");
+  if (!configured && getEnv("DATASET_MODE") !== "live") {
+    const method = (init.method ?? "GET").toUpperCase();
+    if (action === "sync") {
+      return Response.json({ ok: true, fetched: 24, inserted: 3, pages: 6, syncedAt: new Date().toISOString() });
+    }
+    if (method === "DELETE") return Response.json({ connected: false });
+    return Response.json(buildSeedWebflowConnectionStatus());
+  }
   const headers = new Headers(init.headers);
   headers.set("authorization", `Bearer ${collectorSecret()}`);
   if (init.body !== undefined) headers.set("content-type", "application/json");

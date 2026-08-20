@@ -1,0 +1,1715 @@
+
+> fde-page-watcher@0.1.0 dev
+> next dev
+
+▲ Next.js 16.2.10 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.86.32:3000
+✓ Ready in 355ms
+
+ GET / 307 in 30ms (next.js: 1727µs, application-code: 28ms)
+ GET / 307 in 25ms (next.js: 1583µs, application-code: 23ms)
+ GET / 307 in 155ms (next.js: 1959µs, application-code: 153ms)
+ GET /dashboard 200 in 560ms (next.js: 21ms, application-code: 539ms)
+ GET / 307 in 143ms (next.js: 1550µs, application-code: 141ms)
+ GET /dashboard 200 in 109ms (next.js: 2ms, application-code: 106ms)
+ GET /pages 200 in 53ms (next.js: 35ms, application-code: 18ms)
+ GET /score-card 404 in 50ms (next.js: 24ms, application-code: 26ms)
+ GET /score-cards 404 in 26ms (next.js: 2ms, application-code: 24ms)
+ GET /scorecard-demo 200 in 66ms (next.js: 21ms, application-code: 45ms)
+ GET /scorecard-demo 200 in 243ms (next.js: 200ms, application-code: 43ms)
+ GET /scorecard-demo 200 in 39ms (next.js: 1597µs, application-code: 37ms)
+ GET /scorecard-demo 200 in 32ms (next.js: 1218µs, application-code: 31ms)
+ GET /scorecard-demo 200 in 23ms (next.js: 1011µs, application-code: 22ms)
+ GET /scorecard-demo 200 in 13ms (next.js: 1333µs, application-code: 11ms)
+ GET /scorecard-demo 200 in 48ms (next.js: 4ms, application-code: 44ms)
+ GET / 307 in 98ms (next.js: 6ms, application-code: 92ms)
+ GET /dashboard 200 in 114ms (next.js: 13ms, application-code: 101ms)
+✓ Compiled in 282ms
+✓ Compiled in 101ms
+✓ Compiled in 82ms
+✓ Compiled in 293ms
+[browser] Uncaught ReferenceError: LargeChartAxes is not defined
+    at ScaledScoreCard (src/components/ScoreCard.tsx:901:24)
+    at ScoreCard (src/components/ScoreCard.tsx:171:35)
+    at <unknown> (src/app/scorecard-demo/page.tsx:42:99)
+    at Array.map (<anonymous>)
+    at ScoreCardDemoPage (src/app/scorecard-demo/page.tsx:42:99)
+  899 |           </svg>
+  900 |
+> 901 |           {isLarge && <LargeChartAxes bounds={bounds} last={last} data={data} />}
+      |                        ^
+  902 |
+  903 |           {/* Run-to-run range band per trusted segment, one hatch layer per band —
+  904 |               replaces small's area-under-the-median fill (§4). */}
+⚠ Fast Refresh had to perform a full reload due to a runtime error.
+✓ Compiled in 78ms
+ GET /scorecard-demo 200 in 61ms (next.js: 10ms, application-code: 51ms)
+✓ Compiled in 97ms
+✓ Compiled in 90ms
+✓ Compiled in 89ms
+ GET /pages/home 200 in 460ms (next.js: 365ms, application-code: 94ms)
+ GET /scorecard-demo 200 in 38ms (next.js: 5ms, application-code: 32ms)
+ GET /pages/home 200 in 97ms (next.js: 5ms, application-code: 92ms)
+✓ Compiled in 73ms
+ GET /pages/home 200 in 91ms (next.js: 6ms, application-code: 84ms)
+✓ Compiled in 65ms
+ GET /pages/home 200 in 97ms (next.js: 8ms, application-code: 89ms)
+✓ Compiled in 76ms
+ GET /pages/home 200 in 90ms (next.js: 7ms, application-code: 83ms)
+ GET / 307 in 30ms (next.js: 4ms, application-code: 26ms)
+ GET /dashboard 200 in 75ms (next.js: 4ms, application-code: 71ms)
+ GET /pages 200 in 46ms (next.js: 26ms, application-code: 20ms)
+ GET /pages/pricing 200 in 31ms (next.js: 10ms, application-code: 21ms)
+[browser] Encountered two children with the same key, `99`. Keys should be unique so that components maintain their identity across updates. Non-unique keys may cause children to be duplicated and/or omitted — the behavior is unsupported and could change in a future version. 
+[browser] Encountered two children with the same key, `99`. Keys should be unique so that components maintain their identity across updates. Non-unique keys may cause children to be duplicated and/or omitted — the behavior is unsupported and could change in a future version. 
+✓ Compiled in 104ms
+ GET /pages 200 in 114ms (next.js: 4ms, application-code: 110ms)
+✓ Compiled in 138ms
+ GET /pages 200 in 111ms (next.js: 4ms, application-code: 107ms)
+ GET / 307 in 48ms (next.js: 3ms, application-code: 46ms)
+ GET /dashboard 200 in 69ms (next.js: 3ms, application-code: 66ms)
+⨯ ./src/lib/store/cfStore.ts:3:1
+Module not found: Can't resolve '../seed'
+  [90m1 |[0m [36mimport[0m { getCloudflareContext } [36mfrom[0m [32m"@opennextjs/cloudflare"[0m;
+  [90m2 |[0m [36mimport[0m [36mtype[0m { [33mAppState[0m, [33mChangeMarker[0m, [33mCollectionJob[0m, [33mNight[0m } [36mfrom[0m [32m"../types"[0m;
+[31m[1m>[0m [90m3 |[0m [36mimport[0m { buildInitialState } [36mfrom[0m [32m"../seed"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m4 |[0m [36mimport[0m { captureAgentReadiness } [36mfrom[0m [32m"../agentScoring"[0m;
+  [90m5 |[0m [36mimport[0m { effectivePerformanceThresholds } [36mfrom[0m [32m"../performanceThresholds"[0m;
+  [90m6 |[0m [36mimport[0m { mediansOf, pageTrend } [36mfrom[0m [32m"../scoring"[0m;
+
+
+
+Import trace:
+  Server Component:
+    ./src/lib/store/cfStore.ts
+    ./src/lib/store/index.ts
+    ./src/app/(app)/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/lib/store/cfStore.ts:3:1
+Module not found: Can't resolve '../seed'
+  [90m1 |[0m [36mimport[0m { getCloudflareContext } [36mfrom[0m [32m"@opennextjs/cloudflare"[0m;
+  [90m2 |[0m [36mimport[0m [36mtype[0m { [33mAppState[0m, [33mChangeMarker[0m, [33mCollectionJob[0m, [33mNight[0m } [36mfrom[0m [32m"../types"[0m;
+[31m[1m>[0m [90m3 |[0m [36mimport[0m { buildInitialState } [36mfrom[0m [32m"../seed"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m4 |[0m [36mimport[0m { captureAgentReadiness } [36mfrom[0m [32m"../agentScoring"[0m;
+  [90m5 |[0m [36mimport[0m { effectivePerformanceThresholds } [36mfrom[0m [32m"../performanceThresholds"[0m;
+  [90m6 |[0m [36mimport[0m { mediansOf, pageTrend } [36mfrom[0m [32m"../scoring"[0m;
+
+
+
+Import trace:
+  Server Component:
+    ./src/lib/store/cfStore.ts
+    ./src/lib/store/index.ts
+    ./src/app/(app)/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/lib/store/fsStore.ts:5:1
+Module not found: Can't resolve '../seed'
+  [90m3 |[0m [36mimport[0m [36mtype[0m { [33mAppState[0m, [33mChangeMarker[0m, [33mNight[0m, [33mWatchPage[0m } [36mfrom[0m [32m"../types"[0m;
+  [90m4 |[0m [36mimport[0m [36mtype[0m { [33mCruxPageEvidence[0m } [36mfrom[0m [32m"../crux"[0m;
+[31m[1m>[0m [90m5 |[0m [36mimport[0m { buildInitialState } [36mfrom[0m [32m"../seed"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m [36mimport[0m { captureAgentReadiness } [36mfrom[0m [32m"../agentScoring"[0m;
+  [90m7 |[0m [36mimport[0m { effectivePerformanceThresholds } [36mfrom[0m [32m"../performanceThresholds"[0m;
+  [90m8 |[0m [36mimport[0m { mediansOf, pageTrend } [36mfrom[0m [32m"../scoring"[0m;
+
+
+
+Import trace:
+  Server Component:
+    ./src/lib/store/fsStore.ts
+    ./src/lib/store/index.ts
+    ./src/app/(app)/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/lib/store/fsStore.ts:5:1
+Module not found: Can't resolve '../seed'
+  [90m3 |[0m [36mimport[0m [36mtype[0m { [33mAppState[0m, [33mChangeMarker[0m, [33mNight[0m, [33mWatchPage[0m } [36mfrom[0m [32m"../types"[0m;
+  [90m4 |[0m [36mimport[0m [36mtype[0m { [33mCruxPageEvidence[0m } [36mfrom[0m [32m"../crux"[0m;
+[31m[1m>[0m [90m5 |[0m [36mimport[0m { buildInitialState } [36mfrom[0m [32m"../seed"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m [36mimport[0m { captureAgentReadiness } [36mfrom[0m [32m"../agentScoring"[0m;
+  [90m7 |[0m [36mimport[0m { effectivePerformanceThresholds } [36mfrom[0m [32m"../performanceThresholds"[0m;
+  [90m8 |[0m [36mimport[0m { mediansOf, pageTrend } [36mfrom[0m [32m"../scoring"[0m;
+
+
+
+Import trace:
+  Server Component:
+    ./src/lib/store/fsStore.ts
+    ./src/lib/store/index.ts
+    ./src/app/(app)/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/lib/projects.ts:3:1
+Module not found: Can't resolve './seed'
+  [90m1 |[0m [36mimport[0m { randomUUID } [36mfrom[0m [32m"node:crypto"[0m;
+  [90m2 |[0m [36mimport[0m { getEnv } [36mfrom[0m [32m"./env"[0m;
+[31m[1m>[0m [90m3 |[0m [36mimport[0m { buildInitialState } [36mfrom[0m [32m"./seed"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m4 |[0m [36mimport[0m { deploymentTenant, getStore, [36mtype[0m [33mDataStore[0m } [36mfrom[0m [32m"./store"[0m;
+  [90m5 |[0m [36mimport[0m { isAccessError, requireProjectAccess, [36mtype[0m [33mUserAccess[0m } [36mfrom[0m [32m"./authorization"[0m;
+  [90m6 |[0m [36mimport[0m [36mtype[0m { [33mAppState[0m, [33mManagedProjectRecord[0m, [33mProjectRole[0m } [36mfrom[0m [32m"./types"[0m;
+
+
+
+Import trace:
+  Server Component:
+    ./src/lib/projects.ts
+    ./src/app/(app)/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/lib/projects.ts:3:1
+Module not found: Can't resolve './seed'
+  [90m1 |[0m [36mimport[0m { randomUUID } [36mfrom[0m [32m"node:crypto"[0m;
+  [90m2 |[0m [36mimport[0m { getEnv } [36mfrom[0m [32m"./env"[0m;
+[31m[1m>[0m [90m3 |[0m [36mimport[0m { buildInitialState } [36mfrom[0m [32m"./seed"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m4 |[0m [36mimport[0m { deploymentTenant, getStore, [36mtype[0m [33mDataStore[0m } [36mfrom[0m [32m"./store"[0m;
+  [90m5 |[0m [36mimport[0m { isAccessError, requireProjectAccess, [36mtype[0m [33mUserAccess[0m } [36mfrom[0m [32m"./authorization"[0m;
+  [90m6 |[0m [36mimport[0m [36mtype[0m { [33mAppState[0m, [33mManagedProjectRecord[0m, [33mProjectRole[0m } [36mfrom[0m [32m"./types"[0m;
+
+
+
+Import trace:
+  Server Component:
+    ./src/lib/projects.ts
+    ./src/app/(app)/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/lib/store/cfStore.ts:3:1
+Module not found: Can't resolve '../seed'
+  [90m1 |[0m [36mimport[0m { getCloudflareContext } [36mfrom[0m [32m"@opennextjs/cloudflare"[0m;
+  [90m2 |[0m [36mimport[0m [36mtype[0m { [33mAppState[0m, [33mChangeMarker[0m, [33mCollectionJob[0m, [33mNight[0m } [36mfrom[0m [32m"../types"[0m;
+[31m[1m>[0m [90m3 |[0m [36mimport[0m { buildInitialState } [36mfrom[0m [32m"../seed"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m4 |[0m [36mimport[0m { captureAgentReadiness } [36mfrom[0m [32m"../agentScoring"[0m;
+  [90m5 |[0m [36mimport[0m { effectivePerformanceThresholds } [36mfrom[0m [32m"../performanceThresholds"[0m;
+  [90m6 |[0m [36mimport[0m { mediansOf, pageTrend } [36mfrom[0m [32m"../scoring"[0m;
+
+
+
+Import trace:
+  Server Component:
+    ./src/lib/store/cfStore.ts
+    ./src/lib/store/index.ts
+    ./src/app/(app)/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/lib/store/cfStore.ts:3:1
+Module not found: Can't resolve '../seed'
+  [90m1 |[0m [36mimport[0m { getCloudflareContext } [36mfrom[0m [32m"@opennextjs/cloudflare"[0m;
+  [90m2 |[0m [36mimport[0m [36mtype[0m { [33mAppState[0m, [33mChangeMarker[0m, [33mCollectionJob[0m, [33mNight[0m } [36mfrom[0m [32m"../types"[0m;
+[31m[1m>[0m [90m3 |[0m [36mimport[0m { buildInitialState } [36mfrom[0m [32m"../seed"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m4 |[0m [36mimport[0m { captureAgentReadiness } [36mfrom[0m [32m"../agentScoring"[0m;
+  [90m5 |[0m [36mimport[0m { effectivePerformanceThresholds } [36mfrom[0m [32m"../performanceThresholds"[0m;
+  [90m6 |[0m [36mimport[0m { mediansOf, pageTrend } [36mfrom[0m [32m"../scoring"[0m;
+
+
+
+Import trace:
+  Server Component:
+    ./src/lib/store/cfStore.ts
+    ./src/lib/store/index.ts
+    ./src/app/(app)/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/lib/store/fsStore.ts:5:1
+Module not found: Can't resolve '../seed'
+  [90m3 |[0m [36mimport[0m [36mtype[0m { [33mAppState[0m, [33mChangeMarker[0m, [33mNight[0m, [33mWatchPage[0m } [36mfrom[0m [32m"../types"[0m;
+  [90m4 |[0m [36mimport[0m [36mtype[0m { [33mCruxPageEvidence[0m } [36mfrom[0m [32m"../crux"[0m;
+[31m[1m>[0m [90m5 |[0m [36mimport[0m { buildInitialState } [36mfrom[0m [32m"../seed"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m [36mimport[0m { captureAgentReadiness } [36mfrom[0m [32m"../agentScoring"[0m;
+  [90m7 |[0m [36mimport[0m { effectivePerformanceThresholds } [36mfrom[0m [32m"../performanceThresholds"[0m;
+  [90m8 |[0m [36mimport[0m { mediansOf, pageTrend } [36mfrom[0m [32m"../scoring"[0m;
+
+
+
+Import trace:
+  Server Component:
+    ./src/lib/store/fsStore.ts
+    ./src/lib/store/index.ts
+    ./src/app/(app)/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/lib/store/fsStore.ts:5:1
+Module not found: Can't resolve '../seed'
+  [90m3 |[0m [36mimport[0m [36mtype[0m { [33mAppState[0m, [33mChangeMarker[0m, [33mNight[0m, [33mWatchPage[0m } [36mfrom[0m [32m"../types"[0m;
+  [90m4 |[0m [36mimport[0m [36mtype[0m { [33mCruxPageEvidence[0m } [36mfrom[0m [32m"../crux"[0m;
+[31m[1m>[0m [90m5 |[0m [36mimport[0m { buildInitialState } [36mfrom[0m [32m"../seed"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m [36mimport[0m { captureAgentReadiness } [36mfrom[0m [32m"../agentScoring"[0m;
+  [90m7 |[0m [36mimport[0m { effectivePerformanceThresholds } [36mfrom[0m [32m"../performanceThresholds"[0m;
+  [90m8 |[0m [36mimport[0m { mediansOf, pageTrend } [36mfrom[0m [32m"../scoring"[0m;
+
+
+
+Import trace:
+  Server Component:
+    ./src/lib/store/fsStore.ts
+    ./src/lib/store/index.ts
+    ./src/app/(app)/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/lib/projects.ts:3:1
+Module not found: Can't resolve './seed'
+  [90m1 |[0m [36mimport[0m { randomUUID } [36mfrom[0m [32m"node:crypto"[0m;
+  [90m2 |[0m [36mimport[0m { getEnv } [36mfrom[0m [32m"./env"[0m;
+[31m[1m>[0m [90m3 |[0m [36mimport[0m { buildInitialState } [36mfrom[0m [32m"./seed"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m4 |[0m [36mimport[0m { deploymentTenant, getStore, [36mtype[0m [33mDataStore[0m } [36mfrom[0m [32m"./store"[0m;
+  [90m5 |[0m [36mimport[0m { isAccessError, requireProjectAccess, [36mtype[0m [33mUserAccess[0m } [36mfrom[0m [32m"./authorization"[0m;
+  [90m6 |[0m [36mimport[0m [36mtype[0m { [33mAppState[0m, [33mManagedProjectRecord[0m, [33mProjectRole[0m } [36mfrom[0m [32m"./types"[0m;
+
+
+
+Import trace:
+  Server Component:
+    ./src/lib/projects.ts
+    ./src/app/(app)/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/lib/projects.ts:3:1
+Module not found: Can't resolve './seed'
+  [90m1 |[0m [36mimport[0m { randomUUID } [36mfrom[0m [32m"node:crypto"[0m;
+  [90m2 |[0m [36mimport[0m { getEnv } [36mfrom[0m [32m"./env"[0m;
+[31m[1m>[0m [90m3 |[0m [36mimport[0m { buildInitialState } [36mfrom[0m [32m"./seed"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m4 |[0m [36mimport[0m { deploymentTenant, getStore, [36mtype[0m [33mDataStore[0m } [36mfrom[0m [32m"./store"[0m;
+  [90m5 |[0m [36mimport[0m { isAccessError, requireProjectAccess, [36mtype[0m [33mUserAccess[0m } [36mfrom[0m [32m"./authorization"[0m;
+  [90m6 |[0m [36mimport[0m [36mtype[0m { [33mAppState[0m, [33mManagedProjectRecord[0m, [33mProjectRole[0m } [36mfrom[0m [32m"./types"[0m;
+
+
+
+Import trace:
+  Server Component:
+    ./src/lib/projects.ts
+    ./src/app/(app)/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/lib/store/cfStore.ts:3:1
+Module not found: Can't resolve '../seed'
+  [90m1 |[0m [36mimport[0m { getCloudflareContext } [36mfrom[0m [32m"@opennextjs/cloudflare"[0m;
+  [90m2 |[0m [36mimport[0m [36mtype[0m { [33mAppState[0m, [33mChangeMarker[0m, [33mCollectionJob[0m, [33mNight[0m } [36mfrom[0m [32m"../types"[0m;
+[31m[1m>[0m [90m3 |[0m [36mimport[0m { buildInitialState } [36mfrom[0m [32m"../seed"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m4 |[0m [36mimport[0m { captureAgentReadiness } [36mfrom[0m [32m"../agentScoring"[0m;
+  [90m5 |[0m [36mimport[0m { effectivePerformanceThresholds } [36mfrom[0m [32m"../performanceThresholds"[0m;
+  [90m6 |[0m [36mimport[0m { mediansOf, pageTrend } [36mfrom[0m [32m"../scoring"[0m;
+
+
+
+Import trace:
+  Server Component:
+    ./src/lib/store/cfStore.ts
+    ./src/lib/store/index.ts
+    ./src/app/(app)/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/lib/store/cfStore.ts:3:1
+Module not found: Can't resolve '../seed'
+  [90m1 |[0m [36mimport[0m { getCloudflareContext } [36mfrom[0m [32m"@opennextjs/cloudflare"[0m;
+  [90m2 |[0m [36mimport[0m [36mtype[0m { [33mAppState[0m, [33mChangeMarker[0m, [33mCollectionJob[0m, [33mNight[0m } [36mfrom[0m [32m"../types"[0m;
+[31m[1m>[0m [90m3 |[0m [36mimport[0m { buildInitialState } [36mfrom[0m [32m"../seed"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m4 |[0m [36mimport[0m { captureAgentReadiness } [36mfrom[0m [32m"../agentScoring"[0m;
+  [90m5 |[0m [36mimport[0m { effectivePerformanceThresholds } [36mfrom[0m [32m"../performanceThresholds"[0m;
+  [90m6 |[0m [36mimport[0m { mediansOf, pageTrend } [36mfrom[0m [32m"../scoring"[0m;
+
+
+
+Import trace:
+  Server Component:
+    ./src/lib/store/cfStore.ts
+    ./src/lib/store/index.ts
+    ./src/app/(app)/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/lib/store/fsStore.ts:5:1
+Module not found: Can't resolve '../seed'
+  [90m3 |[0m [36mimport[0m [36mtype[0m { [33mAppState[0m, [33mChangeMarker[0m, [33mNight[0m, [33mWatchPage[0m } [36mfrom[0m [32m"../types"[0m;
+  [90m4 |[0m [36mimport[0m [36mtype[0m { [33mCruxPageEvidence[0m } [36mfrom[0m [32m"../crux"[0m;
+[31m[1m>[0m [90m5 |[0m [36mimport[0m { buildInitialState } [36mfrom[0m [32m"../seed"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m [36mimport[0m { captureAgentReadiness } [36mfrom[0m [32m"../agentScoring"[0m;
+  [90m7 |[0m [36mimport[0m { effectivePerformanceThresholds } [36mfrom[0m [32m"../performanceThresholds"[0m;
+  [90m8 |[0m [36mimport[0m { mediansOf, pageTrend } [36mfrom[0m [32m"../scoring"[0m;
+
+
+
+Import trace:
+  Server Component:
+    ./src/lib/store/fsStore.ts
+    ./src/lib/store/index.ts
+    ./src/app/(app)/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/lib/store/fsStore.ts:5:1
+Module not found: Can't resolve '../seed'
+  [90m3 |[0m [36mimport[0m [36mtype[0m { [33mAppState[0m, [33mChangeMarker[0m, [33mNight[0m, [33mWatchPage[0m } [36mfrom[0m [32m"../types"[0m;
+  [90m4 |[0m [36mimport[0m [36mtype[0m { [33mCruxPageEvidence[0m } [36mfrom[0m [32m"../crux"[0m;
+[31m[1m>[0m [90m5 |[0m [36mimport[0m { buildInitialState } [36mfrom[0m [32m"../seed"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m [36mimport[0m { captureAgentReadiness } [36mfrom[0m [32m"../agentScoring"[0m;
+  [90m7 |[0m [36mimport[0m { effectivePerformanceThresholds } [36mfrom[0m [32m"../performanceThresholds"[0m;
+  [90m8 |[0m [36mimport[0m { mediansOf, pageTrend } [36mfrom[0m [32m"../scoring"[0m;
+
+
+
+Import trace:
+  Server Component:
+    ./src/lib/store/fsStore.ts
+    ./src/lib/store/index.ts
+    ./src/app/(app)/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/lib/projects.ts:3:1
+Module not found: Can't resolve './seed'
+  [90m1 |[0m [36mimport[0m { randomUUID } [36mfrom[0m [32m"node:crypto"[0m;
+  [90m2 |[0m [36mimport[0m { getEnv } [36mfrom[0m [32m"./env"[0m;
+[31m[1m>[0m [90m3 |[0m [36mimport[0m { buildInitialState } [36mfrom[0m [32m"./seed"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m4 |[0m [36mimport[0m { deploymentTenant, getStore, [36mtype[0m [33mDataStore[0m } [36mfrom[0m [32m"./store"[0m;
+  [90m5 |[0m [36mimport[0m { isAccessError, requireProjectAccess, [36mtype[0m [33mUserAccess[0m } [36mfrom[0m [32m"./authorization"[0m;
+  [90m6 |[0m [36mimport[0m [36mtype[0m { [33mAppState[0m, [33mManagedProjectRecord[0m, [33mProjectRole[0m } [36mfrom[0m [32m"./types"[0m;
+
+
+
+Import trace:
+  Server Component:
+    ./src/lib/projects.ts
+    ./src/app/(app)/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/lib/projects.ts:3:1
+Module not found: Can't resolve './seed'
+  [90m1 |[0m [36mimport[0m { randomUUID } [36mfrom[0m [32m"node:crypto"[0m;
+  [90m2 |[0m [36mimport[0m { getEnv } [36mfrom[0m [32m"./env"[0m;
+[31m[1m>[0m [90m3 |[0m [36mimport[0m { buildInitialState } [36mfrom[0m [32m"./seed"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m4 |[0m [36mimport[0m { deploymentTenant, getStore, [36mtype[0m [33mDataStore[0m } [36mfrom[0m [32m"./store"[0m;
+  [90m5 |[0m [36mimport[0m { isAccessError, requireProjectAccess, [36mtype[0m [33mUserAccess[0m } [36mfrom[0m [32m"./authorization"[0m;
+  [90m6 |[0m [36mimport[0m [36mtype[0m { [33mAppState[0m, [33mManagedProjectRecord[0m, [33mProjectRole[0m } [36mfrom[0m [32m"./types"[0m;
+
+
+
+Import trace:
+  Server Component:
+    ./src/lib/projects.ts
+    ./src/app/(app)/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/lib/store/cfStore.ts:3:1
+Module not found: Can't resolve '../seed'
+  [90m1 |[0m [36mimport[0m { getCloudflareContext } [36mfrom[0m [32m"@opennextjs/cloudflare"[0m;
+  [90m2 |[0m [36mimport[0m [36mtype[0m { [33mAppState[0m, [33mChangeMarker[0m, [33mCollectionJob[0m, [33mNight[0m } [36mfrom[0m [32m"../types"[0m;
+[31m[1m>[0m [90m3 |[0m [36mimport[0m { buildInitialState } [36mfrom[0m [32m"../seed"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m4 |[0m [36mimport[0m { captureAgentReadiness } [36mfrom[0m [32m"../agentScoring"[0m;
+  [90m5 |[0m [36mimport[0m { effectivePerformanceThresholds } [36mfrom[0m [32m"../performanceThresholds"[0m;
+  [90m6 |[0m [36mimport[0m { mediansOf, pageTrend } [36mfrom[0m [32m"../scoring"[0m;
+
+
+
+Import trace:
+  Server Component:
+    ./src/lib/store/cfStore.ts
+    ./src/lib/store/index.ts
+    ./src/app/(app)/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/lib/store/cfStore.ts:3:1
+Module not found: Can't resolve '../seed'
+  [90m1 |[0m [36mimport[0m { getCloudflareContext } [36mfrom[0m [32m"@opennextjs/cloudflare"[0m;
+  [90m2 |[0m [36mimport[0m [36mtype[0m { [33mAppState[0m, [33mChangeMarker[0m, [33mCollectionJob[0m, [33mNight[0m } [36mfrom[0m [32m"../types"[0m;
+[31m[1m>[0m [90m3 |[0m [36mimport[0m { buildInitialState } [36mfrom[0m [32m"../seed"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m4 |[0m [36mimport[0m { captureAgentReadiness } [36mfrom[0m [32m"../agentScoring"[0m;
+  [90m5 |[0m [36mimport[0m { effectivePerformanceThresholds } [36mfrom[0m [32m"../performanceThresholds"[0m;
+  [90m6 |[0m [36mimport[0m { mediansOf, pageTrend } [36mfrom[0m [32m"../scoring"[0m;
+
+
+
+Import trace:
+  Server Component:
+    ./src/lib/store/cfStore.ts
+    ./src/lib/store/index.ts
+    ./src/app/(app)/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/lib/store/fsStore.ts:5:1
+Module not found: Can't resolve '../seed'
+  [90m3 |[0m [36mimport[0m [36mtype[0m { [33mAppState[0m, [33mChangeMarker[0m, [33mNight[0m, [33mWatchPage[0m } [36mfrom[0m [32m"../types"[0m;
+  [90m4 |[0m [36mimport[0m [36mtype[0m { [33mCruxPageEvidence[0m } [36mfrom[0m [32m"../crux"[0m;
+[31m[1m>[0m [90m5 |[0m [36mimport[0m { buildInitialState } [36mfrom[0m [32m"../seed"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m [36mimport[0m { captureAgentReadiness } [36mfrom[0m [32m"../agentScoring"[0m;
+  [90m7 |[0m [36mimport[0m { effectivePerformanceThresholds } [36mfrom[0m [32m"../performanceThresholds"[0m;
+  [90m8 |[0m [36mimport[0m { mediansOf, pageTrend } [36mfrom[0m [32m"../scoring"[0m;
+
+
+
+Import trace:
+  Server Component:
+    ./src/lib/store/fsStore.ts
+    ./src/lib/store/index.ts
+    ./src/app/(app)/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/lib/store/fsStore.ts:5:1
+Module not found: Can't resolve '../seed'
+  [90m3 |[0m [36mimport[0m [36mtype[0m { [33mAppState[0m, [33mChangeMarker[0m, [33mNight[0m, [33mWatchPage[0m } [36mfrom[0m [32m"../types"[0m;
+  [90m4 |[0m [36mimport[0m [36mtype[0m { [33mCruxPageEvidence[0m } [36mfrom[0m [32m"../crux"[0m;
+[31m[1m>[0m [90m5 |[0m [36mimport[0m { buildInitialState } [36mfrom[0m [32m"../seed"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m [36mimport[0m { captureAgentReadiness } [36mfrom[0m [32m"../agentScoring"[0m;
+  [90m7 |[0m [36mimport[0m { effectivePerformanceThresholds } [36mfrom[0m [32m"../performanceThresholds"[0m;
+  [90m8 |[0m [36mimport[0m { mediansOf, pageTrend } [36mfrom[0m [32m"../scoring"[0m;
+
+
+
+Import trace:
+  Server Component:
+    ./src/lib/store/fsStore.ts
+    ./src/lib/store/index.ts
+    ./src/app/(app)/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/lib/projects.ts:3:1
+Module not found: Can't resolve './seed'
+  [90m1 |[0m [36mimport[0m { randomUUID } [36mfrom[0m [32m"node:crypto"[0m;
+  [90m2 |[0m [36mimport[0m { getEnv } [36mfrom[0m [32m"./env"[0m;
+[31m[1m>[0m [90m3 |[0m [36mimport[0m { buildInitialState } [36mfrom[0m [32m"./seed"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m4 |[0m [36mimport[0m { deploymentTenant, getStore, [36mtype[0m [33mDataStore[0m } [36mfrom[0m [32m"./store"[0m;
+  [90m5 |[0m [36mimport[0m { isAccessError, requireProjectAccess, [36mtype[0m [33mUserAccess[0m } [36mfrom[0m [32m"./authorization"[0m;
+  [90m6 |[0m [36mimport[0m [36mtype[0m { [33mAppState[0m, [33mManagedProjectRecord[0m, [33mProjectRole[0m } [36mfrom[0m [32m"./types"[0m;
+
+
+
+Import trace:
+  Server Component:
+    ./src/lib/projects.ts
+    ./src/app/(app)/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/lib/projects.ts:3:1
+Module not found: Can't resolve './seed'
+  [90m1 |[0m [36mimport[0m { randomUUID } [36mfrom[0m [32m"node:crypto"[0m;
+  [90m2 |[0m [36mimport[0m { getEnv } [36mfrom[0m [32m"./env"[0m;
+[31m[1m>[0m [90m3 |[0m [36mimport[0m { buildInitialState } [36mfrom[0m [32m"./seed"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m4 |[0m [36mimport[0m { deploymentTenant, getStore, [36mtype[0m [33mDataStore[0m } [36mfrom[0m [32m"./store"[0m;
+  [90m5 |[0m [36mimport[0m { isAccessError, requireProjectAccess, [36mtype[0m [33mUserAccess[0m } [36mfrom[0m [32m"./authorization"[0m;
+  [90m6 |[0m [36mimport[0m [36mtype[0m { [33mAppState[0m, [33mManagedProjectRecord[0m, [33mProjectRole[0m } [36mfrom[0m [32m"./types"[0m;
+
+
+
+Import trace:
+  Server Component:
+    ./src/lib/projects.ts
+    ./src/app/(app)/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/lib/store/cfStore.ts:3:1
+Module not found: Can't resolve '../seed'
+  [90m1 |[0m [36mimport[0m { getCloudflareContext } [36mfrom[0m [32m"@opennextjs/cloudflare"[0m;
+  [90m2 |[0m [36mimport[0m [36mtype[0m { [33mAppState[0m, [33mChangeMarker[0m, [33mCollectionJob[0m, [33mNight[0m } [36mfrom[0m [32m"../types"[0m;
+[31m[1m>[0m [90m3 |[0m [36mimport[0m { buildInitialState } [36mfrom[0m [32m"../seed"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m4 |[0m [36mimport[0m { captureAgentReadiness } [36mfrom[0m [32m"../agentScoring"[0m;
+  [90m5 |[0m [36mimport[0m { effectivePerformanceThresholds } [36mfrom[0m [32m"../performanceThresholds"[0m;
+  [90m6 |[0m [36mimport[0m { mediansOf, pageTrend } [36mfrom[0m [32m"../scoring"[0m;
+
+
+
+Import trace:
+  Server Component:
+    ./src/lib/store/cfStore.ts
+    ./src/lib/store/index.ts
+    ./src/app/(app)/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/lib/store/cfStore.ts:3:1
+Module not found: Can't resolve '../seed'
+  [90m1 |[0m [36mimport[0m { getCloudflareContext } [36mfrom[0m [32m"@opennextjs/cloudflare"[0m;
+  [90m2 |[0m [36mimport[0m [36mtype[0m { [33mAppState[0m, [33mChangeMarker[0m, [33mCollectionJob[0m, [33mNight[0m } [36mfrom[0m [32m"../types"[0m;
+[31m[1m>[0m [90m3 |[0m [36mimport[0m { buildInitialState } [36mfrom[0m [32m"../seed"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m4 |[0m [36mimport[0m { captureAgentReadiness } [36mfrom[0m [32m"../agentScoring"[0m;
+  [90m5 |[0m [36mimport[0m { effectivePerformanceThresholds } [36mfrom[0m [32m"../performanceThresholds"[0m;
+  [90m6 |[0m [36mimport[0m { mediansOf, pageTrend } [36mfrom[0m [32m"../scoring"[0m;
+
+
+
+Import trace:
+  Server Component:
+    ./src/lib/store/cfStore.ts
+    ./src/lib/store/index.ts
+    ./src/app/(app)/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/lib/store/fsStore.ts:5:1
+Module not found: Can't resolve '../seed'
+  [90m3 |[0m [36mimport[0m [36mtype[0m { [33mAppState[0m, [33mChangeMarker[0m, [33mNight[0m, [33mWatchPage[0m } [36mfrom[0m [32m"../types"[0m;
+  [90m4 |[0m [36mimport[0m [36mtype[0m { [33mCruxPageEvidence[0m } [36mfrom[0m [32m"../crux"[0m;
+[31m[1m>[0m [90m5 |[0m [36mimport[0m { buildInitialState } [36mfrom[0m [32m"../seed"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m [36mimport[0m { captureAgentReadiness } [36mfrom[0m [32m"../agentScoring"[0m;
+  [90m7 |[0m [36mimport[0m { effectivePerformanceThresholds } [36mfrom[0m [32m"../performanceThresholds"[0m;
+  [90m8 |[0m [36mimport[0m { mediansOf, pageTrend } [36mfrom[0m [32m"../scoring"[0m;
+
+
+
+Import trace:
+  Server Component:
+    ./src/lib/store/fsStore.ts
+    ./src/lib/store/index.ts
+    ./src/app/(app)/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/lib/store/fsStore.ts:5:1
+Module not found: Can't resolve '../seed'
+  [90m3 |[0m [36mimport[0m [36mtype[0m { [33mAppState[0m, [33mChangeMarker[0m, [33mNight[0m, [33mWatchPage[0m } [36mfrom[0m [32m"../types"[0m;
+  [90m4 |[0m [36mimport[0m [36mtype[0m { [33mCruxPageEvidence[0m } [36mfrom[0m [32m"../crux"[0m;
+[31m[1m>[0m [90m5 |[0m [36mimport[0m { buildInitialState } [36mfrom[0m [32m"../seed"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m [36mimport[0m { captureAgentReadiness } [36mfrom[0m [32m"../agentScoring"[0m;
+  [90m7 |[0m [36mimport[0m { effectivePerformanceThresholds } [36mfrom[0m [32m"../performanceThresholds"[0m;
+  [90m8 |[0m [36mimport[0m { mediansOf, pageTrend } [36mfrom[0m [32m"../scoring"[0m;
+
+
+
+Import trace:
+  Server Component:
+    ./src/lib/store/fsStore.ts
+    ./src/lib/store/index.ts
+    ./src/app/(app)/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/lib/projects.ts:3:1
+Module not found: Can't resolve './seed'
+  [90m1 |[0m [36mimport[0m { randomUUID } [36mfrom[0m [32m"node:crypto"[0m;
+  [90m2 |[0m [36mimport[0m { getEnv } [36mfrom[0m [32m"./env"[0m;
+[31m[1m>[0m [90m3 |[0m [36mimport[0m { buildInitialState } [36mfrom[0m [32m"./seed"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m4 |[0m [36mimport[0m { deploymentTenant, getStore, [36mtype[0m [33mDataStore[0m } [36mfrom[0m [32m"./store"[0m;
+  [90m5 |[0m [36mimport[0m { isAccessError, requireProjectAccess, [36mtype[0m [33mUserAccess[0m } [36mfrom[0m [32m"./authorization"[0m;
+  [90m6 |[0m [36mimport[0m [36mtype[0m { [33mAppState[0m, [33mManagedProjectRecord[0m, [33mProjectRole[0m } [36mfrom[0m [32m"./types"[0m;
+
+
+
+Import trace:
+  Server Component:
+    ./src/lib/projects.ts
+    ./src/app/(app)/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/lib/projects.ts:3:1
+Module not found: Can't resolve './seed'
+  [90m1 |[0m [36mimport[0m { randomUUID } [36mfrom[0m [32m"node:crypto"[0m;
+  [90m2 |[0m [36mimport[0m { getEnv } [36mfrom[0m [32m"./env"[0m;
+[31m[1m>[0m [90m3 |[0m [36mimport[0m { buildInitialState } [36mfrom[0m [32m"./seed"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m4 |[0m [36mimport[0m { deploymentTenant, getStore, [36mtype[0m [33mDataStore[0m } [36mfrom[0m [32m"./store"[0m;
+  [90m5 |[0m [36mimport[0m { isAccessError, requireProjectAccess, [36mtype[0m [33mUserAccess[0m } [36mfrom[0m [32m"./authorization"[0m;
+  [90m6 |[0m [36mimport[0m [36mtype[0m { [33mAppState[0m, [33mManagedProjectRecord[0m, [33mProjectRole[0m } [36mfrom[0m [32m"./types"[0m;
+
+
+
+Import trace:
+  Server Component:
+    ./src/lib/projects.ts
+    ./src/app/(app)/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/lib/store/cfStore.ts:3:1
+Module not found: Can't resolve '../seed'
+  [90m1 |[0m [36mimport[0m { getCloudflareContext } [36mfrom[0m [32m"@opennextjs/cloudflare"[0m;
+  [90m2 |[0m [36mimport[0m [36mtype[0m { [33mAppState[0m, [33mChangeMarker[0m, [33mCollectionJob[0m, [33mNight[0m } [36mfrom[0m [32m"../types"[0m;
+[31m[1m>[0m [90m3 |[0m [36mimport[0m { buildInitialState } [36mfrom[0m [32m"../seed"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m4 |[0m [36mimport[0m { captureAgentReadiness } [36mfrom[0m [32m"../agentScoring"[0m;
+  [90m5 |[0m [36mimport[0m { effectivePerformanceThresholds } [36mfrom[0m [32m"../performanceThresholds"[0m;
+  [90m6 |[0m [36mimport[0m { mediansOf, pageTrend } [36mfrom[0m [32m"../scoring"[0m;
+
+
+
+Import trace:
+  Server Component:
+    ./src/lib/store/cfStore.ts
+    ./src/lib/store/index.ts
+    ./src/app/(app)/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+
+./src/lib/store/fsStore.ts:5:1
+Module not found: Can't resolve '../seed'
+  [90m3 |[0m [36mimport[0m [36mtype[0m { [33mAppState[0m, [33mChangeMarker[0m, [33mNight[0m, [33mWatchPage[0m } [36mfrom[0m [32m"../types"[0m;
+  [90m4 |[0m [36mimport[0m [36mtype[0m { [33mCruxPageEvidence[0m } [36mfrom[0m [32m"../crux"[0m;
+[31m[1m>[0m [90m5 |[0m [36mimport[0m { buildInitialState } [36mfrom[0m [32m"../seed"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m [36mimport[0m { captureAgentReadiness } [36mfrom[0m [32m"../agentScoring"[0m;
+  [90m7 |[0m [36mimport[0m { effectivePerformanceThresholds } [36mfrom[0m [32m"../performanceThresholds"[0m;
+  [90m8 |[0m [36mimport[0m { mediansOf, pageTrend } [36mfrom[0m [32m"../scoring"[0m;
+
+
+
+Import trace:
+  Server Component:
+    ./src/lib/store/fsStore.ts
+    ./src/lib/store/index.ts
+    ./src/app/(app)/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+
+./src/lib/projects.ts:3:1
+Module not found: Can't resolve './seed'
+  [90m1 |[0m [36mimport[0m { randomUUID } [36mfrom[0m [32m"node:crypto"[0m;
+  [90m2 |[0m [36mimport[0m { getEnv } [36mfrom[0m [32m"./env"[0m;
+[31m[1m>[0m [90m3 |[0m [36mimport[0m { buildInitialState } [36mfrom[0m [32m"./seed"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m4 |[0m [36mimport[0m { deploymentTenant, getStore, [36mtype[0m [33mDataStore[0m } [36mfrom[0m [32m"./store"[0m;
+  [90m5 |[0m [36mimport[0m { isAccessError, requireProjectAccess, [36mtype[0m [33mUserAccess[0m } [36mfrom[0m [32m"./authorization"[0m;
+  [90m6 |[0m [36mimport[0m [36mtype[0m { [33mAppState[0m, [33mManagedProjectRecord[0m, [33mProjectRole[0m } [36mfrom[0m [32m"./types"[0m;
+
+
+
+Import trace:
+  Server Component:
+    ./src/lib/projects.ts
+    ./src/app/(app)/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+ GET /pages 500 in 137ms (next.js: 66ms, application-code: 72ms)
+⨯ ./src/lib/store/cfStore.ts:3:1
+Module not found: Can't resolve '../seed'
+  [90m1 |[0m [36mimport[0m { getCloudflareContext } [36mfrom[0m [32m"@opennextjs/cloudflare"[0m;
+  [90m2 |[0m [36mimport[0m [36mtype[0m { [33mAppState[0m, [33mChangeMarker[0m, [33mCollectionJob[0m, [33mNight[0m } [36mfrom[0m [32m"../types"[0m;
+[31m[1m>[0m [90m3 |[0m [36mimport[0m { buildInitialState } [36mfrom[0m [32m"../seed"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m4 |[0m [36mimport[0m { captureAgentReadiness } [36mfrom[0m [32m"../agentScoring"[0m;
+  [90m5 |[0m [36mimport[0m { effectivePerformanceThresholds } [36mfrom[0m [32m"../performanceThresholds"[0m;
+  [90m6 |[0m [36mimport[0m { mediansOf, pageTrend } [36mfrom[0m [32m"../scoring"[0m;
+
+
+
+Import trace:
+  Server Component:
+    ./src/lib/store/cfStore.ts
+    ./src/lib/store/index.ts
+    ./src/app/(app)/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+
+./src/lib/store/fsStore.ts:5:1
+Module not found: Can't resolve '../seed'
+  [90m3 |[0m [36mimport[0m [36mtype[0m { [33mAppState[0m, [33mChangeMarker[0m, [33mNight[0m, [33mWatchPage[0m } [36mfrom[0m [32m"../types"[0m;
+  [90m4 |[0m [36mimport[0m [36mtype[0m { [33mCruxPageEvidence[0m } [36mfrom[0m [32m"../crux"[0m;
+[31m[1m>[0m [90m5 |[0m [36mimport[0m { buildInitialState } [36mfrom[0m [32m"../seed"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m [36mimport[0m { captureAgentReadiness } [36mfrom[0m [32m"../agentScoring"[0m;
+  [90m7 |[0m [36mimport[0m { effectivePerformanceThresholds } [36mfrom[0m [32m"../performanceThresholds"[0m;
+  [90m8 |[0m [36mimport[0m { mediansOf, pageTrend } [36mfrom[0m [32m"../scoring"[0m;
+
+
+
+Import trace:
+  Server Component:
+    ./src/lib/store/fsStore.ts
+    ./src/lib/store/index.ts
+    ./src/app/(app)/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+
+./src/lib/projects.ts:3:1
+Module not found: Can't resolve './seed'
+  [90m1 |[0m [36mimport[0m { randomUUID } [36mfrom[0m [32m"node:crypto"[0m;
+  [90m2 |[0m [36mimport[0m { getEnv } [36mfrom[0m [32m"./env"[0m;
+[31m[1m>[0m [90m3 |[0m [36mimport[0m { buildInitialState } [36mfrom[0m [32m"./seed"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m4 |[0m [36mimport[0m { deploymentTenant, getStore, [36mtype[0m [33mDataStore[0m } [36mfrom[0m [32m"./store"[0m;
+  [90m5 |[0m [36mimport[0m { isAccessError, requireProjectAccess, [36mtype[0m [33mUserAccess[0m } [36mfrom[0m [32m"./authorization"[0m;
+  [90m6 |[0m [36mimport[0m [36mtype[0m { [33mAppState[0m, [33mManagedProjectRecord[0m, [33mProjectRole[0m } [36mfrom[0m [32m"./types"[0m;
+
+
+
+Import trace:
+  Server Component:
+    ./src/lib/projects.ts
+    ./src/app/(app)/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+ GET /pages 500 in 7ms (next.js: 3ms, application-code: 4ms)
+⨯ ./src/lib/store/cfStore.ts:3:1
+Module not found: Can't resolve '../seed'
+  [90m1 |[0m [36mimport[0m { getCloudflareContext } [36mfrom[0m [32m"@opennextjs/cloudflare"[0m;
+  [90m2 |[0m [36mimport[0m [36mtype[0m { [33mAppState[0m, [33mChangeMarker[0m, [33mCollectionJob[0m, [33mNight[0m } [36mfrom[0m [32m"../types"[0m;
+[31m[1m>[0m [90m3 |[0m [36mimport[0m { buildInitialState } [36mfrom[0m [32m"../seed"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m4 |[0m [36mimport[0m { captureAgentReadiness } [36mfrom[0m [32m"../agentScoring"[0m;
+  [90m5 |[0m [36mimport[0m { effectivePerformanceThresholds } [36mfrom[0m [32m"../performanceThresholds"[0m;
+  [90m6 |[0m [36mimport[0m { mediansOf, pageTrend } [36mfrom[0m [32m"../scoring"[0m;
+
+
+
+Import trace:
+  Server Component:
+    ./src/lib/store/cfStore.ts
+    ./src/lib/store/index.ts
+    ./src/app/(app)/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+
+./src/lib/store/fsStore.ts:5:1
+Module not found: Can't resolve '../seed'
+  [90m3 |[0m [36mimport[0m [36mtype[0m { [33mAppState[0m, [33mChangeMarker[0m, [33mNight[0m, [33mWatchPage[0m } [36mfrom[0m [32m"../types"[0m;
+  [90m4 |[0m [36mimport[0m [36mtype[0m { [33mCruxPageEvidence[0m } [36mfrom[0m [32m"../crux"[0m;
+[31m[1m>[0m [90m5 |[0m [36mimport[0m { buildInitialState } [36mfrom[0m [32m"../seed"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m [36mimport[0m { captureAgentReadiness } [36mfrom[0m [32m"../agentScoring"[0m;
+  [90m7 |[0m [36mimport[0m { effectivePerformanceThresholds } [36mfrom[0m [32m"../performanceThresholds"[0m;
+  [90m8 |[0m [36mimport[0m { mediansOf, pageTrend } [36mfrom[0m [32m"../scoring"[0m;
+
+
+
+Import trace:
+  Server Component:
+    ./src/lib/store/fsStore.ts
+    ./src/lib/store/index.ts
+    ./src/app/(app)/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+
+./src/lib/projects.ts:3:1
+Module not found: Can't resolve './seed'
+  [90m1 |[0m [36mimport[0m { randomUUID } [36mfrom[0m [32m"node:crypto"[0m;
+  [90m2 |[0m [36mimport[0m { getEnv } [36mfrom[0m [32m"./env"[0m;
+[31m[1m>[0m [90m3 |[0m [36mimport[0m { buildInitialState } [36mfrom[0m [32m"./seed"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m4 |[0m [36mimport[0m { deploymentTenant, getStore, [36mtype[0m [33mDataStore[0m } [36mfrom[0m [32m"./store"[0m;
+  [90m5 |[0m [36mimport[0m { isAccessError, requireProjectAccess, [36mtype[0m [33mUserAccess[0m } [36mfrom[0m [32m"./authorization"[0m;
+  [90m6 |[0m [36mimport[0m [36mtype[0m { [33mAppState[0m, [33mManagedProjectRecord[0m, [33mProjectRole[0m } [36mfrom[0m [32m"./types"[0m;
+
+
+
+Import trace:
+  Server Component:
+    ./src/lib/projects.ts
+    ./src/app/(app)/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/lib/store/cfStore.ts:3:1
+Module not found: Can't resolve '../seed'
+  [90m1 |[0m [36mimport[0m { getCloudflareContext } [36mfrom[0m [32m"@opennextjs/cloudflare"[0m;
+  [90m2 |[0m [36mimport[0m [36mtype[0m { [33mAppState[0m, [33mChangeMarker[0m, [33mCollectionJob[0m, [33mNight[0m } [36mfrom[0m [32m"../types"[0m;
+[31m[1m>[0m [90m3 |[0m [36mimport[0m { buildInitialState } [36mfrom[0m [32m"../seed"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m4 |[0m [36mimport[0m { captureAgentReadiness } [36mfrom[0m [32m"../agentScoring"[0m;
+  [90m5 |[0m [36mimport[0m { effectivePerformanceThresholds } [36mfrom[0m [32m"../performanceThresholds"[0m;
+  [90m6 |[0m [36mimport[0m { mediansOf, pageTrend } [36mfrom[0m [32m"../scoring"[0m;
+
+
+
+Import trace:
+  Server Component:
+    ./src/lib/store/cfStore.ts
+    ./src/lib/store/index.ts
+    ./src/app/(app)/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+
+./src/lib/store/fsStore.ts:5:1
+Module not found: Can't resolve '../seed'
+  [90m3 |[0m [36mimport[0m [36mtype[0m { [33mAppState[0m, [33mChangeMarker[0m, [33mNight[0m, [33mWatchPage[0m } [36mfrom[0m [32m"../types"[0m;
+  [90m4 |[0m [36mimport[0m [36mtype[0m { [33mCruxPageEvidence[0m } [36mfrom[0m [32m"../crux"[0m;
+[31m[1m>[0m [90m5 |[0m [36mimport[0m { buildInitialState } [36mfrom[0m [32m"../seed"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m [36mimport[0m { captureAgentReadiness } [36mfrom[0m [32m"../agentScoring"[0m;
+  [90m7 |[0m [36mimport[0m { effectivePerformanceThresholds } [36mfrom[0m [32m"../performanceThresholds"[0m;
+  [90m8 |[0m [36mimport[0m { mediansOf, pageTrend } [36mfrom[0m [32m"../scoring"[0m;
+
+
+
+Import trace:
+  Server Component:
+    ./src/lib/store/fsStore.ts
+    ./src/lib/store/index.ts
+    ./src/app/(app)/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+
+./src/lib/projects.ts:3:1
+Module not found: Can't resolve './seed'
+  [90m1 |[0m [36mimport[0m { randomUUID } [36mfrom[0m [32m"node:crypto"[0m;
+  [90m2 |[0m [36mimport[0m { getEnv } [36mfrom[0m [32m"./env"[0m;
+[31m[1m>[0m [90m3 |[0m [36mimport[0m { buildInitialState } [36mfrom[0m [32m"./seed"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m4 |[0m [36mimport[0m { deploymentTenant, getStore, [36mtype[0m [33mDataStore[0m } [36mfrom[0m [32m"./store"[0m;
+  [90m5 |[0m [36mimport[0m { isAccessError, requireProjectAccess, [36mtype[0m [33mUserAccess[0m } [36mfrom[0m [32m"./authorization"[0m;
+  [90m6 |[0m [36mimport[0m [36mtype[0m { [33mAppState[0m, [33mManagedProjectRecord[0m, [33mProjectRole[0m } [36mfrom[0m [32m"./types"[0m;
+
+
+
+Import trace:
+  Server Component:
+    ./src/lib/projects.ts
+    ./src/app/(app)/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+ GET /pages 500 in 12ms (next.js: 4ms, application-code: 8ms)
+ GET /pages 500 in 11ms (next.js: 7ms, application-code: 4ms)
+[browser] Uncaught Error: ./src/lib/store/cfStore.ts:3:1
+Module not found: Can't resolve '../seed'
+  1 | import { getCloudflareContext } from "@opennextjs/cloudflare";
+  2 | import type { AppState, ChangeMarker, CollectionJob, Night } from "../types";
+> 3 | import { buildInitialState } from "../seed";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  4 | import { captureAgentReadiness } from "../agentScoring";
+  5 | import { effectivePerformanceThresholds } from "../performanceThresholds";
+  6 | import { mediansOf, pageTrend } from "../scoring";
+
+
+
+Import trace:
+  Server Component:
+    ./src/lib/store/cfStore.ts
+    ./src/lib/store/index.ts
+    ./src/app/(app)/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+    at <unknown> (Error: ./src/lib/store/cfStore.ts:3:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (Error: (./src/lib/store/cfStore.ts:3:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+✓ Compiled in 326ms
+ GET /pages 200 in 405ms (next.js: 51ms, application-code: 354ms)
+✓ Compiled in 103ms
+ GET /pages 200 in 254ms (next.js: 47ms, application-code: 208ms)
+ GET /pages 200 in 210ms (next.js: 7ms, application-code: 203ms)
+ GET /pages 200 in 217ms (next.js: 1790µs, application-code: 215ms)
+ GET /pages 200 in 234ms (next.js: 1702µs, application-code: 233ms)
+ GET /pages 200 in 230ms (next.js: 5ms, application-code: 225ms)
+ GET /pages 200 in 229ms (next.js: 5ms, application-code: 224ms)
+ GET /pages 200 in 231ms (next.js: 1966µs, application-code: 229ms)
+ GET /pages 200 in 246ms (next.js: 5ms, application-code: 240ms)
+ GET /pages 200 in 243ms (next.js: 8ms, application-code: 234ms)
+ GET /pages 200 in 237ms (next.js: 1875µs, application-code: 236ms)
+ GET /pages 200 in 240ms (next.js: 1648µs, application-code: 238ms)
+ GET /pages 200 in 243ms (next.js: 7ms, application-code: 236ms)
+ GET /pages 200 in 222ms (next.js: 1879µs, application-code: 220ms)
+ GET /pages 200 in 232ms (next.js: 5ms, application-code: 227ms)
+ GET /pages 200 in 229ms (next.js: 2ms, application-code: 227ms)
+ GET /pages 200 in 231ms (next.js: 6ms, application-code: 225ms)
+ GET /pages 200 in 232ms (next.js: 6ms, application-code: 226ms)
+ GET /pages 200 in 228ms (next.js: 1979µs, application-code: 226ms)
+ GET /pages 200 in 220ms (next.js: 1692µs, application-code: 218ms)
+ GET /pages 200 in 212ms (next.js: 3ms, application-code: 210ms)
+ GET /pages 200 in 198ms (next.js: 5ms, application-code: 193ms)
+ GET /pages 200 in 178ms (next.js: 2ms, application-code: 176ms)
+ GET /pages 200 in 142ms (next.js: 5ms, application-code: 138ms)
+ GET /pages 200 in 104ms (next.js: 6ms, application-code: 98ms)
+✓ Compiled in 103ms
+ GET /pages 200 in 249ms (next.js: 45ms, application-code: 203ms)
+ GET /pages 200 in 208ms (next.js: 1537µs, application-code: 206ms)
+ GET /pages 200 in 216ms (next.js: 1638µs, application-code: 214ms)
+ GET /pages 200 in 237ms (next.js: 5ms, application-code: 232ms)
+ GET /pages 200 in 230ms (next.js: 2ms, application-code: 228ms)
+ GET /pages 200 in 229ms (next.js: 3ms, application-code: 226ms)
+ GET /pages 200 in 230ms (next.js: 3ms, application-code: 228ms)
+ GET /pages 200 in 228ms (next.js: 1761µs, application-code: 226ms)
+ GET /pages 200 in 234ms (next.js: 1805µs, application-code: 232ms)
+ GET /pages 200 in 261ms (next.js: 5ms, application-code: 256ms)
+ GET /pages 200 in 225ms (next.js: 5ms, application-code: 220ms)
+ GET /pages 200 in 226ms (next.js: 9ms, application-code: 217ms)
+ GET /pages 200 in 213ms (next.js: 16ms, application-code: 197ms)
+ GET /pages 200 in 220ms (next.js: 15ms, application-code: 205ms)
+ GET /pages 200 in 222ms (next.js: 3ms, application-code: 219ms)
+ GET /pages 200 in 251ms (next.js: 17ms, application-code: 234ms)
+ GET /pages 200 in 227ms (next.js: 7ms, application-code: 220ms)
+ GET /pages 200 in 228ms (next.js: 6ms, application-code: 223ms)
+ GET /pages 200 in 213ms (next.js: 12ms, application-code: 200ms)
+ GET /pages 200 in 214ms (next.js: 14ms, application-code: 201ms)
+ GET /pages 200 in 192ms (next.js: 7ms, application-code: 185ms)
+ GET /pages 200 in 156ms (next.js: 8ms, application-code: 148ms)
+ GET /pages 200 in 127ms (next.js: 9ms, application-code: 118ms)
+ GET /pages 200 in 107ms (next.js: 8ms, application-code: 99ms)
+✓ Compiled in 113ms
+ GET /pages 200 in 405ms (next.js: 42ms, application-code: 363ms)
+[DataStore] filesystem read/write failed; falling back to in-memory state for this process. State will not persist across restarts or instances. Configure a durable DataStore adapter for production. ENOENT: no such file or directory, rename '/Users/mmunger/fde-page-watcher/.data/brand-studio/state.json.52480.tmp' -> '/Users/mmunger/fde-page-watcher/.data/brand-studio/state.json'
+ GET /pages 200 in 388ms (next.js: 7ms, application-code: 381ms)
+ GET /pages 200 in 364ms (next.js: 5ms, application-code: 359ms)
+ GET /pages 200 in 446ms (next.js: 12ms, application-code: 435ms)
+ GET /pages 200 in 398ms (next.js: 2ms, application-code: 395ms)
+ GET /pages 200 in 356ms (next.js: 5ms, application-code: 351ms)
+ GET /pages 200 in 334ms (next.js: 16ms, application-code: 318ms)
+ GET /pages 200 in 321ms (next.js: 15ms, application-code: 306ms)
+ GET /pages 200 in 325ms (next.js: 5ms, application-code: 320ms)
+ GET /pages 200 in 327ms (next.js: 7ms, application-code: 320ms)
+ GET /pages 200 in 335ms (next.js: 8ms, application-code: 327ms)
+ GET /pages 200 in 339ms (next.js: 23ms, application-code: 317ms)
+ GET /pages 200 in 352ms (next.js: 5ms, application-code: 347ms)
+ GET /pages 200 in 336ms (next.js: 2ms, application-code: 334ms)
+ GET /pages 200 in 333ms (next.js: 3ms, application-code: 329ms)
+ GET /pages 200 in 343ms (next.js: 3ms, application-code: 341ms)
+ GET /pages 200 in 338ms (next.js: 6ms, application-code: 332ms)
+ GET /pages 200 in 334ms (next.js: 7ms, application-code: 327ms)
+ GET /pages 200 in 332ms (next.js: 1347µs, application-code: 331ms)
+ GET /pages 200 in 332ms (next.js: 20ms, application-code: 312ms)
+ GET /pages 200 in 328ms (next.js: 7ms, application-code: 321ms)
+ GET /pages 200 in 352ms (next.js: 8ms, application-code: 344ms)
+ GET /pages 200 in 348ms (next.js: 9ms, application-code: 339ms)
+ GET /pages 200 in 338ms (next.js: 22ms, application-code: 316ms)
+ GET /pages 200 in 274ms (next.js: 21ms, application-code: 253ms)
+ GET /pages 200 in 222ms (next.js: 2ms, application-code: 220ms)
+ GET /pages 200 in 193ms (next.js: 18ms, application-code: 175ms)
+ GET /pages/pricing 200 in 32ms (next.js: 16ms, application-code: 16ms)
+✓ Compiled in 102ms
+ GET /pages/pricing 200 in 267ms (next.js: 54ms, application-code: 213ms)
+ GET /pages/pricing 200 in 234ms (next.js: 1611µs, application-code: 232ms)
+ GET /pages/pricing 200 in 271ms (next.js: 2ms, application-code: 269ms)
+ GET /pages/pricing 200 in 259ms (next.js: 1726µs, application-code: 257ms)
+ GET /pages/pricing 200 in 257ms (next.js: 1383µs, application-code: 256ms)
+ GET /pages/pricing 200 in 277ms (next.js: 8ms, application-code: 269ms)
+ GET /pages/pricing 200 in 289ms (next.js: 10ms, application-code: 279ms)
+ GET /pages/pricing 200 in 299ms (next.js: 8ms, application-code: 291ms)
+ GET /pages/pricing 200 in 288ms (next.js: 10ms, application-code: 278ms)
+ GET /pages/pricing 200 in 282ms (next.js: 6ms, application-code: 276ms)
+ GET /pages/pricing 200 in 255ms (next.js: 9ms, application-code: 246ms)
+ GET /pages/pricing 200 in 269ms (next.js: 9ms, application-code: 260ms)
+ GET /pages/pricing 200 in 275ms (next.js: 8ms, application-code: 267ms)
+ GET /pages/pricing 200 in 247ms (next.js: 6ms, application-code: 241ms)
+ GET /pages/pricing 200 in 261ms (next.js: 9ms, application-code: 252ms)
+ GET /pages/pricing 200 in 266ms (next.js: 8ms, application-code: 257ms)
+ GET /pages/pricing 200 in 249ms (next.js: 9ms, application-code: 240ms)
+ GET /pages/pricing 200 in 258ms (next.js: 8ms, application-code: 250ms)
+ GET /pages/pricing 200 in 247ms (next.js: 3ms, application-code: 244ms)
+ GET /pages/pricing 200 in 261ms (next.js: 2ms, application-code: 259ms)
+ GET /pages/pricing 200 in 248ms (next.js: 8ms, application-code: 240ms)
+ GET /pages/pricing 200 in 232ms (next.js: 9ms, application-code: 223ms)
+ GET /pages/pricing 200 in 201ms (next.js: 9ms, application-code: 192ms)
+ GET /pages/pricing 200 in 134ms (next.js: 8ms, application-code: 126ms)
+✓ Compiled in 81ms
+[browser] Uncaught ReferenceError: SCORE_CARD_GRID_COLUMNS is not defined
+    at OverviewTab (src/app/(app)/pages/[id]/page.tsx:447:32)
+    at Set.forEach (<anonymous>)
+    at PageDetail (src/app/(app)/pages/[id]/page.tsx:257:36)
+  445 |         style={{
+  446 |           display: "grid",
+> 447 |           gridTemplateColumns: SCORE_CARD_GRID_COLUMNS[scoreCardDensity],
+      |                                ^
+  448 |           gap: scoreCardDensity === "xsmall" ? 0 : 16,
+  449 |           border: scoreCardDensity === "xsmall" ? `1px solid ${C.border}` : undefined,
+  450 |           borderRadius: scoreCardDensity === "xsmall" ? 8 : undefined,
+⚠ Fast Refresh had to perform a full reload due to a runtime error.
+✓ Compiled in 104ms
+[browser] Uncaught ReferenceError: SCORE_CARD_GRID_COLUMNS is not defined
+    at OverviewTab (src/app/(app)/pages/[id]/page.tsx:447:32)
+    at Set.forEach (<anonymous>)
+    at PageDetail (src/app/(app)/pages/[id]/page.tsx:257:36)
+  445 |         style={{
+  446 |           display: "grid",
+> 447 |           gridTemplateColumns: SCORE_CARD_GRID_COLUMNS[scoreCardDensity],
+      |                                ^
+  448 |           gap: scoreCardDensity === "xsmall" ? 0 : 16,
+  449 |           border: scoreCardDensity === "xsmall" ? `1px solid ${C.border}` : undefined,
+  450 |           borderRadius: scoreCardDensity === "xsmall" ? 8 : undefined,
+⨯ ReferenceError: SCORE_CARD_GRID_COLUMNS is not defined
+    at OverviewTab (src/app/(app)/pages/[id]/page.tsx:447:32)
+  445 |         style={{
+  446 |           display: "grid",
+> 447 |           gridTemplateColumns: SCORE_CARD_GRID_COLUMNS[scoreCardDensity],
+      |                                ^
+  448 |           gap: scoreCardDensity === "xsmall" ? 0 : 16,
+  449 |           border: scoreCardDensity === "xsmall" ? `1px solid ${C.border}` : undefined,
+  450 |           borderRadius: scoreCardDensity === "xsmall" ? 8 : undefined, {
+  digest: '2902199550'
+}
+ GET /pages/pricing 500 in 523ms (next.js: 10ms, application-code: 513ms)
+[browser] Uncaught ReferenceError: SCORE_CARD_GRID_COLUMNS is not defined
+    at OverviewTab (src/app/(app)/pages/[id]/page.tsx:447:32)
+    at PageDetail (src/app/(app)/pages/[id]/page.tsx:257:36)
+  445 |         style={{
+  446 |           display: "grid",
+> 447 |           gridTemplateColumns: SCORE_CARD_GRID_COLUMNS[scoreCardDensity],
+      |                                ^
+  448 |           gap: scoreCardDensity === "xsmall" ? 0 : 16,
+  449 |           border: scoreCardDensity === "xsmall" ? `1px solid ${C.border}` : undefined,
+  450 |           borderRadius: scoreCardDensity === "xsmall" ? 8 : undefined,
+⚠ Fast Refresh had to perform a full reload due to a runtime error.
+✓ Compiled in 79ms
+ GET /pages/pricing 200 in 158ms (next.js: 8ms, application-code: 150ms)
+✓ Compiled in 94ms
+ GET /pages/pricing 200 in 315ms (next.js: 82ms, application-code: 233ms)
+ GET /pages/pricing 200 in 249ms (next.js: 4ms, application-code: 245ms)
+ GET /pages/pricing 200 in 284ms (next.js: 8ms, application-code: 276ms)
+ GET /pages/pricing 200 in 221ms (next.js: 1734µs, application-code: 220ms)
+ GET /pages/pricing 200 in 256ms (next.js: 2ms, application-code: 254ms)
+ GET /pages/pricing 200 in 248ms (next.js: 3ms, application-code: 245ms)
+ GET /pages/pricing 200 in 254ms (next.js: 8ms, application-code: 246ms)
+ GET /pages/pricing 200 in 261ms (next.js: 1557µs, application-code: 259ms)
+ GET /pages/pricing 200 in 270ms (next.js: 8ms, application-code: 261ms)
+ GET /pages/pricing 200 in 290ms (next.js: 3ms, application-code: 287ms)
+ GET /pages/pricing 200 in 286ms (next.js: 11ms, application-code: 274ms)
+ GET /pages/pricing 200 in 260ms (next.js: 8ms, application-code: 253ms)
+ GET /pages/pricing 200 in 269ms (next.js: 10ms, application-code: 260ms)
+ GET /pages/pricing 200 in 243ms (next.js: 8ms, application-code: 235ms)
+ GET /pages/pricing 200 in 248ms (next.js: 8ms, application-code: 240ms)
+ GET /pages/pricing 200 in 246ms (next.js: 8ms, application-code: 238ms)
+ GET /pages/pricing 200 in 249ms (next.js: 8ms, application-code: 241ms)
+ GET /pages/pricing 200 in 257ms (next.js: 9ms, application-code: 248ms)
+ GET /pages/pricing 200 in 239ms (next.js: 8ms, application-code: 231ms)
+ GET /pages/pricing 200 in 254ms (next.js: 8ms, application-code: 246ms)
+ GET /pages/pricing 200 in 240ms (next.js: 7ms, application-code: 233ms)
+ GET /pages/pricing 200 in 224ms (next.js: 9ms, application-code: 216ms)
+ GET /pages/pricing 200 in 192ms (next.js: 9ms, application-code: 184ms)
+ GET /pages/pricing 200 in 132ms (next.js: 8ms, application-code: 124ms)
+ GET /scorecard-demo 200 in 68ms (next.js: 13ms, application-code: 55ms)
+ GET /pages/home 200 in 189ms (next.js: 7ms, application-code: 182ms)
+ GET /scorecard-demo 200 in 29ms (next.js: 3ms, application-code: 25ms)
+ GET / 307 in 72ms (next.js: 9ms, application-code: 63ms)
+ GET /dashboard 200 in 109ms (next.js: 8ms, application-code: 101ms)
+✓ Compiled in 162ms
+[browser] ./src/app/scorecard-demo/page.tsx:4:1
+Export SCORE_CARD_GRID_COLUMNS doesn't exist in target module
+  2 | ...
+  3 | ...te } from "react";
+> 4 | ...ard, SCORE_CARD_GRID_COLUMNS, type ScoreCardData, type ScoreCardDensity } from "@/compon...
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 | ...ardDensityControl } from "@/components/ScoreCardDensityControl";
+  6 | ...
+  7 | ...emo route for the ScoreCard component — realistic 24-point
+
+The export SCORE_CARD_GRID_COLUMNS was not found in module [project]/src/components/ScoreCard.tsx [app-client] (ecmascript).
+Did you mean to import SCORE_CARD_MIN_WIDTH?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import traces:
+  Client Component Browser:
+    ./src/app/scorecard-demo/page.tsx [Client Component Browser]
+    ./src/app/scorecard-demo/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/scorecard-demo/page.tsx [Client Component SSR]
+    ./src/app/scorecard-demo/page.tsx [Server Component] 
+[browser] ./src/app/scorecard-demo/page.tsx:4:1
+Export SCORE_CARD_GRID_COLUMNS doesn't exist in target module
+  2 | ...
+  3 | ...te } from "react";
+> 4 | ...ard, SCORE_CARD_GRID_COLUMNS, type ScoreCardData, type ScoreCardDensity } from "@/compon...
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 | ...ardDensityControl } from "@/components/ScoreCardDensityControl";
+  6 | ...
+  7 | ...emo route for the ScoreCard component — realistic 24-point
+
+The export SCORE_CARD_GRID_COLUMNS was not found in module [project]/src/components/ScoreCard.tsx [app-ssr] (ecmascript).
+Did you mean to import SCORE_CARD_MIN_WIDTH?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import traces:
+  Client Component Browser:
+    ./src/app/scorecard-demo/page.tsx [Client Component Browser]
+    ./src/app/scorecard-demo/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/scorecard-demo/page.tsx [Client Component SSR]
+    ./src/app/scorecard-demo/page.tsx [Server Component] 
+[browser] ./src/app/(app)/pages/[id]/page.tsx:17:1
+Export SCORE_CARD_GRID_COLUMNS doesn't exist in target module
+  15 | import { C, taskLabel } from "@/lib/ui";
+  16 | import { AgentReadinessChart, HistoryChart, Sparkline } from "@/components/charts";
+> 17 | import { ScoreCard, SCORE_CARD_GRID_COLUMNS } from "@/components/ScoreCard";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  18 | import type { ScoreCardDensity } from "@/components/ScoreCard";
+  19 | import { ScoreCardDensityControl } from "@/components/ScoreCardDensityControl";
+  20 | import { FieldEvidenceChip, FieldRecommendationStatusBadge, PerformanceIssueStatusBadge, S...
+
+The export SCORE_CARD_GRID_COLUMNS was not found in module [project]/src/components/ScoreCard.tsx [app-client] (ecmascript).
+Did you mean to import SCORE_CARD_MIN_WIDTH?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import traces:
+  Client Component Browser:
+    ./src/app/(app)/pages/[id]/page.tsx [Client Component Browser]
+    ./src/app/(app)/pages/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/(app)/pages/[id]/page.tsx [Client Component SSR]
+    ./src/app/(app)/pages/[id]/page.tsx [Server Component] 
+[browser] ./src/app/(app)/pages/[id]/page.tsx:17:1
+Export SCORE_CARD_GRID_COLUMNS doesn't exist in target module
+  15 | import { C, taskLabel } from "@/lib/ui";
+  16 | import { AgentReadinessChart, HistoryChart, Sparkline } from "@/components/charts";
+> 17 | import { ScoreCard, SCORE_CARD_GRID_COLUMNS } from "@/components/ScoreCard";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  18 | import type { ScoreCardDensity } from "@/components/ScoreCard";
+  19 | import { ScoreCardDensityControl } from "@/components/ScoreCardDensityControl";
+  20 | import { FieldEvidenceChip, FieldRecommendationStatusBadge, PerformanceIssueStatusBadge, S...
+
+The export SCORE_CARD_GRID_COLUMNS was not found in module [project]/src/components/ScoreCard.tsx [app-ssr] (ecmascript).
+Did you mean to import SCORE_CARD_MIN_WIDTH?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import traces:
+  Client Component Browser:
+    ./src/app/(app)/pages/[id]/page.tsx [Client Component Browser]
+    ./src/app/(app)/pages/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/(app)/pages/[id]/page.tsx [Client Component SSR]
+    ./src/app/(app)/pages/[id]/page.tsx [Server Component] 
+[browser] ./src/app/scorecard-demo/page.tsx:4:1
+Export SCORE_CARD_GRID_COLUMNS doesn't exist in target module
+  2 | ...
+  3 | ...te } from "react";
+> 4 | ...ard, SCORE_CARD_GRID_COLUMNS, type ScoreCardData, type ScoreCardDensity } from "@/compon...
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 | ...ardDensityControl } from "@/components/ScoreCardDensityControl";
+  6 | ...
+  7 | ...emo route for the ScoreCard component — realistic 24-point
+
+The export SCORE_CARD_GRID_COLUMNS was not found in module [project]/src/components/ScoreCard.tsx [app-client] (ecmascript).
+Did you mean to import SCORE_CARD_MIN_WIDTH?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import traces:
+  Client Component Browser:
+    ./src/app/scorecard-demo/page.tsx [Client Component Browser]
+    ./src/app/scorecard-demo/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/scorecard-demo/page.tsx [Client Component SSR]
+    ./src/app/scorecard-demo/page.tsx [Server Component] 
+[browser] ./src/app/scorecard-demo/page.tsx:4:1
+Export SCORE_CARD_GRID_COLUMNS doesn't exist in target module
+  2 | ...
+  3 | ...te } from "react";
+> 4 | ...ard, SCORE_CARD_GRID_COLUMNS, type ScoreCardData, type ScoreCardDensity } from "@/compon...
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 | ...ardDensityControl } from "@/components/ScoreCardDensityControl";
+  6 | ...
+  7 | ...emo route for the ScoreCard component — realistic 24-point
+
+The export SCORE_CARD_GRID_COLUMNS was not found in module [project]/src/components/ScoreCard.tsx [app-ssr] (ecmascript).
+Did you mean to import SCORE_CARD_MIN_WIDTH?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import traces:
+  Client Component Browser:
+    ./src/app/scorecard-demo/page.tsx [Client Component Browser]
+    ./src/app/scorecard-demo/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/scorecard-demo/page.tsx [Client Component SSR]
+    ./src/app/scorecard-demo/page.tsx [Server Component] 
+[browser] ./src/app/(app)/pages/[id]/page.tsx:17:1
+Export SCORE_CARD_GRID_COLUMNS doesn't exist in target module
+  15 | import { C, taskLabel } from "@/lib/ui";
+  16 | import { AgentReadinessChart, HistoryChart, Sparkline } from "@/components/charts";
+> 17 | import { ScoreCard, SCORE_CARD_GRID_COLUMNS } from "@/components/ScoreCard";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  18 | import type { ScoreCardDensity } from "@/components/ScoreCard";
+  19 | import { ScoreCardDensityControl } from "@/components/ScoreCardDensityControl";
+  20 | import { FieldEvidenceChip, FieldRecommendationStatusBadge, PerformanceIssueStatusBadge, S...
+
+The export SCORE_CARD_GRID_COLUMNS was not found in module [project]/src/components/ScoreCard.tsx [app-client] (ecmascript).
+Did you mean to import SCORE_CARD_MIN_WIDTH?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import traces:
+  Client Component Browser:
+    ./src/app/(app)/pages/[id]/page.tsx [Client Component Browser]
+    ./src/app/(app)/pages/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/(app)/pages/[id]/page.tsx [Client Component SSR]
+    ./src/app/(app)/pages/[id]/page.tsx [Server Component] 
+[browser] ./src/app/(app)/pages/[id]/page.tsx:17:1
+Export SCORE_CARD_GRID_COLUMNS doesn't exist in target module
+  15 | import { C, taskLabel } from "@/lib/ui";
+  16 | import { AgentReadinessChart, HistoryChart, Sparkline } from "@/components/charts";
+> 17 | import { ScoreCard, SCORE_CARD_GRID_COLUMNS } from "@/components/ScoreCard";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  18 | import type { ScoreCardDensity } from "@/components/ScoreCard";
+  19 | import { ScoreCardDensityControl } from "@/components/ScoreCardDensityControl";
+  20 | import { FieldEvidenceChip, FieldRecommendationStatusBadge, PerformanceIssueStatusBadge, S...
+
+The export SCORE_CARD_GRID_COLUMNS was not found in module [project]/src/components/ScoreCard.tsx [app-ssr] (ecmascript).
+Did you mean to import SCORE_CARD_MIN_WIDTH?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import traces:
+  Client Component Browser:
+    ./src/app/(app)/pages/[id]/page.tsx [Client Component Browser]
+    ./src/app/(app)/pages/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/(app)/pages/[id]/page.tsx [Client Component SSR]
+    ./src/app/(app)/pages/[id]/page.tsx [Server Component] 
+✓ Compiled in 66ms
+[browser] ./src/app/scorecard-demo/page.tsx:4:1
+Export SCORE_CARD_GRID_COLUMNS doesn't exist in target module
+  2 | ...
+  3 | ...te } from "react";
+> 4 | ...ard, SCORE_CARD_GRID_COLUMNS, type ScoreCardData, type ScoreCardDensity } from "@/compon...
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 | ...ardDensityControl } from "@/components/ScoreCardDensityControl";
+  6 | ...
+  7 | ...emo route for the ScoreCard component — realistic 24-point
+
+The export SCORE_CARD_GRID_COLUMNS was not found in module [project]/src/components/ScoreCard.tsx [app-client] (ecmascript).
+Did you mean to import SCORE_CARD_MIN_WIDTH?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import traces:
+  Client Component Browser:
+    ./src/app/scorecard-demo/page.tsx [Client Component Browser]
+    ./src/app/scorecard-demo/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/scorecard-demo/page.tsx [Client Component SSR]
+    ./src/app/scorecard-demo/page.tsx [Server Component] 
+[browser] ./src/app/scorecard-demo/page.tsx:4:1
+Export SCORE_CARD_GRID_COLUMNS doesn't exist in target module
+  2 | ...
+  3 | ...te } from "react";
+> 4 | ...ard, SCORE_CARD_GRID_COLUMNS, type ScoreCardData, type ScoreCardDensity } from "@/compon...
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 | ...ardDensityControl } from "@/components/ScoreCardDensityControl";
+  6 | ...
+  7 | ...emo route for the ScoreCard component — realistic 24-point
+
+The export SCORE_CARD_GRID_COLUMNS was not found in module [project]/src/components/ScoreCard.tsx [app-ssr] (ecmascript).
+Did you mean to import SCORE_CARD_MIN_WIDTH?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import traces:
+  Client Component Browser:
+    ./src/app/scorecard-demo/page.tsx [Client Component Browser]
+    ./src/app/scorecard-demo/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/scorecard-demo/page.tsx [Client Component SSR]
+    ./src/app/scorecard-demo/page.tsx [Server Component] 
+[browser] ./src/app/(app)/pages/[id]/page.tsx:17:1
+Export SCORE_CARD_GRID_COLUMNS doesn't exist in target module
+  15 | import { C, taskLabel } from "@/lib/ui";
+  16 | import { AgentReadinessChart, HistoryChart, Sparkline } from "@/components/charts";
+> 17 | import { ScoreCard, SCORE_CARD_GRID_COLUMNS } from "@/components/ScoreCard";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  18 | import type { ScoreCardDensity } from "@/components/ScoreCard";
+  19 | import { ScoreCardDensityControl } from "@/components/ScoreCardDensityControl";
+  20 | import { FieldEvidenceChip, FieldRecommendationStatusBadge, PerformanceIssueStatusBadge, S...
+
+The export SCORE_CARD_GRID_COLUMNS was not found in module [project]/src/components/ScoreCard.tsx [app-client] (ecmascript).
+Did you mean to import SCORE_CARD_MIN_WIDTH?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import traces:
+  Client Component Browser:
+    ./src/app/(app)/pages/[id]/page.tsx [Client Component Browser]
+    ./src/app/(app)/pages/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/(app)/pages/[id]/page.tsx [Client Component SSR]
+    ./src/app/(app)/pages/[id]/page.tsx [Server Component] 
+[browser] ./src/app/(app)/pages/[id]/page.tsx:17:1
+Export SCORE_CARD_GRID_COLUMNS doesn't exist in target module
+  15 | import { C, taskLabel } from "@/lib/ui";
+  16 | import { AgentReadinessChart, HistoryChart, Sparkline } from "@/components/charts";
+> 17 | import { ScoreCard, SCORE_CARD_GRID_COLUMNS } from "@/components/ScoreCard";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  18 | import type { ScoreCardDensity } from "@/components/ScoreCard";
+  19 | import { ScoreCardDensityControl } from "@/components/ScoreCardDensityControl";
+  20 | import { FieldEvidenceChip, FieldRecommendationStatusBadge, PerformanceIssueStatusBadge, S...
+
+The export SCORE_CARD_GRID_COLUMNS was not found in module [project]/src/components/ScoreCard.tsx [app-ssr] (ecmascript).
+Did you mean to import SCORE_CARD_MIN_WIDTH?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import traces:
+  Client Component Browser:
+    ./src/app/(app)/pages/[id]/page.tsx [Client Component Browser]
+    ./src/app/(app)/pages/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/(app)/pages/[id]/page.tsx [Client Component SSR]
+    ./src/app/(app)/pages/[id]/page.tsx [Server Component] 
+✓ Compiled in 66ms
+[browser] ./src/app/scorecard-demo/page.tsx:4:1
+Export SCORE_CARD_GRID_COLUMNS doesn't exist in target module
+  2 | ...
+  3 | ...te } from "react";
+> 4 | ...ard, SCORE_CARD_GRID_COLUMNS, type ScoreCardData, type ScoreCardDensity } from "@/compon...
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 | ...ardDensityControl } from "@/components/ScoreCardDensityControl";
+  6 | ...
+  7 | ...emo route for the ScoreCard component — realistic 24-point
+
+The export SCORE_CARD_GRID_COLUMNS was not found in module [project]/src/components/ScoreCard.tsx [app-client] (ecmascript).
+Did you mean to import SCORE_CARD_MIN_WIDTH?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import traces:
+  Client Component Browser:
+    ./src/app/scorecard-demo/page.tsx [Client Component Browser]
+    ./src/app/scorecard-demo/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/scorecard-demo/page.tsx [Client Component SSR]
+    ./src/app/scorecard-demo/page.tsx [Server Component] 
+[browser] ./src/app/scorecard-demo/page.tsx:4:1
+Export SCORE_CARD_GRID_COLUMNS doesn't exist in target module
+  2 | ...
+  3 | ...te } from "react";
+> 4 | ...ard, SCORE_CARD_GRID_COLUMNS, type ScoreCardData, type ScoreCardDensity } from "@/compon...
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 | ...ardDensityControl } from "@/components/ScoreCardDensityControl";
+  6 | ...
+  7 | ...emo route for the ScoreCard component — realistic 24-point
+
+The export SCORE_CARD_GRID_COLUMNS was not found in module [project]/src/components/ScoreCard.tsx [app-ssr] (ecmascript).
+Did you mean to import SCORE_CARD_MIN_WIDTH?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import traces:
+  Client Component Browser:
+    ./src/app/scorecard-demo/page.tsx [Client Component Browser]
+    ./src/app/scorecard-demo/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/scorecard-demo/page.tsx [Client Component SSR]
+    ./src/app/scorecard-demo/page.tsx [Server Component] 
+[browser] ./src/app/scorecard-demo/page.tsx:4:1
+Export SCORE_CARD_GRID_COLUMNS doesn't exist in target module
+  2 | ...
+  3 | ...te } from "react";
+> 4 | ...ard, SCORE_CARD_GRID_COLUMNS, type ScoreCardData, type ScoreCardDensity } from "@/compon...
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 | ...ardDensityControl } from "@/components/ScoreCardDensityControl";
+  6 | ...
+  7 | ...emo route for the ScoreCard component — realistic 24-point
+
+The export SCORE_CARD_GRID_COLUMNS was not found in module [project]/src/components/ScoreCard.tsx [app-client] (ecmascript).
+Did you mean to import SCORE_CARD_MIN_WIDTH?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import traces:
+  Client Component Browser:
+    ./src/app/scorecard-demo/page.tsx [Client Component Browser]
+    ./src/app/scorecard-demo/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/scorecard-demo/page.tsx [Client Component SSR]
+    ./src/app/scorecard-demo/page.tsx [Server Component] 
+[browser] ./src/app/scorecard-demo/page.tsx:4:1
+Export SCORE_CARD_GRID_COLUMNS doesn't exist in target module
+  2 | ...
+  3 | ...te } from "react";
+> 4 | ...ard, SCORE_CARD_GRID_COLUMNS, type ScoreCardData, type ScoreCardDensity } from "@/compon...
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 | ...ardDensityControl } from "@/components/ScoreCardDensityControl";
+  6 | ...
+  7 | ...emo route for the ScoreCard component — realistic 24-point
+
+The export SCORE_CARD_GRID_COLUMNS was not found in module [project]/src/components/ScoreCard.tsx [app-ssr] (ecmascript).
+Did you mean to import SCORE_CARD_MIN_WIDTH?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import traces:
+  Client Component Browser:
+    ./src/app/scorecard-demo/page.tsx [Client Component Browser]
+    ./src/app/scorecard-demo/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/scorecard-demo/page.tsx [Client Component SSR]
+    ./src/app/scorecard-demo/page.tsx [Server Component] 
+ GET /scorecard-demo 200 in 34ms (next.js: 5ms, application-code: 29ms)
+ GET /scorecard-demo 200 in 18ms (next.js: 1212µs, application-code: 17ms)
+ GET /pages/home 200 in 130ms (next.js: 8ms, application-code: 122ms)
+ GET /scorecard-demo 200 in 38ms (next.js: 5ms, application-code: 33ms)
+ GET /pages/home 200 in 139ms (next.js: 4ms, application-code: 135ms)
+✓ Compiled in 69ms
+ GET /pages/home 200 in 128ms (next.js: 7ms, application-code: 122ms)
+✓ Compiled in 86ms
+ GET /pages/home 200 in 117ms (next.js: 5ms, application-code: 112ms)
+✓ Compiled in 71ms
+ GET /pages/home 200 in 141ms (next.js: 6ms, application-code: 136ms)
+✓ Compiled in 205ms
+ GET / 307 in 44ms (next.js: 3ms, application-code: 41ms)
+ GET /dashboard 200 in 114ms (next.js: 3ms, application-code: 111ms)
+ GET / 307 in 58ms (next.js: 3ms, application-code: 55ms)
+ GET /dashboard 200 in 98ms (next.js: 3ms, application-code: 96ms)
+ GET / 307 in 23ms (next.js: 1388µs, application-code: 21ms)
+ GET /dashboard 200 in 131ms (next.js: 1255µs, application-code: 130ms)
+ GET /scorecard-demo 200 in 50ms (next.js: 4ms, application-code: 46ms)
+ GET / 307 in 45ms (next.js: 1162µs, application-code: 44ms)
+ GET /dashboard 200 in 79ms (next.js: 1115µs, application-code: 78ms)
+ GET / 307 in 51ms (next.js: 1466µs, application-code: 50ms)
+ GET /dashboard 200 in 134ms (next.js: 1458µs, application-code: 132ms)
+ GET /dashboard 200 in 110ms (next.js: 2ms, application-code: 108ms)
+ GET / 307 in 44ms (next.js: 1162µs, application-code: 43ms)
+ GET /dashboard 200 in 127ms (next.js: 943µs, application-code: 126ms)
+ GET /pages 200 in 129ms (next.js: 10ms, application-code: 119ms)
+ GET / 307 in 48ms (next.js: 1506µs, application-code: 46ms)
+ GET /dashboard 200 in 82ms (next.js: 995µs, application-code: 81ms)
+ GET /inbox 200 in 120ms (next.js: 23ms, application-code: 97ms)
+ GET / 307 in 50ms (next.js: 1181µs, application-code: 49ms)
+ GET /dashboard 200 in 108ms (next.js: 1060µs, application-code: 107ms)
+ GET /tasks 200 in 113ms (next.js: 19ms, application-code: 94ms)
+ GET / 307 in 48ms (next.js: 1586µs, application-code: 46ms)
+ GET /dashboard 200 in 85ms (next.js: 1166µs, application-code: 84ms)
+ GET /watchlist 200 in 134ms (next.js: 25ms, application-code: 109ms)
+ GET / 307 in 46ms (next.js: 1269µs, application-code: 45ms)
+ GET /dashboard 200 in 87ms (next.js: 1277µs, application-code: 85ms)
+ GET /settings 200 in 135ms (next.js: 23ms, application-code: 112ms)
+ GET /api/settings/webflow?project=brand-studio 200 in 98ms (next.js: 76ms, application-code: 22ms)
+ GET /api/projects/members?project=brand-studio 200 in 102ms (next.js: 47ms, application-code: 55ms)
+ GET / 307 in 48ms (next.js: 1477µs, application-code: 47ms)
+ GET /dashboard 200 in 120ms (next.js: 1236µs, application-code: 119ms)
+ GET /settings 200 in 117ms (next.js: 1419µs, application-code: 116ms)
+ GET /api/settings/webflow?project=brand-studio 200 in 19ms (next.js: 1141µs, application-code: 18ms)
+ GET /api/projects/members?project=brand-studio 200 in 29ms (next.js: 4ms, application-code: 25ms)
+ GET / 307 in 51ms (next.js: 4ms, application-code: 47ms)
+ GET /dashboard 200 in 132ms (next.js: 1024µs, application-code: 131ms)
+ GET /admin 200 in 126ms (next.js: 17ms, application-code: 109ms)
+ GET /api/admin/app-admins?project=brand-studio 200 in 37ms (next.js: 25ms, application-code: 12ms)
+ GET /api/admin/known-issues?project=brand-studio 200 in 207ms (next.js: 182ms, application-code: 25ms)
+ GET / 307 in 66ms (next.js: 1355µs, application-code: 64ms)
+ GET /dashboard 200 in 106ms (next.js: 1417µs, application-code: 104ms)
+ GET /login 307 in 683ms (next.js: 494ms, application-code: 190ms)
+ GET /admin 200 in 234ms (next.js: 20ms, application-code: 215ms)
+ GET /dashboard 200 in 199ms (next.js: 12ms, application-code: 187ms)
+ GET / 307 in 55ms (next.js: 10ms, application-code: 45ms)
+ GET /dashboard 200 in 100ms (next.js: 1008µs, application-code: 99ms)
+ GET / 307 in 23ms (next.js: 1398µs, application-code: 21ms)
+ GET /dashboard 200 in 97ms (next.js: 1707µs, application-code: 95ms)
+ GET / 307 in 40ms (next.js: 1445µs, application-code: 39ms)
+ GET /dashboard 200 in 83ms (next.js: 994µs, application-code: 82ms)
+ GET /inbox 200 in 124ms (next.js: 6ms, application-code: 119ms)
+ GET / 307 in 54ms (next.js: 3ms, application-code: 51ms)
+ GET /dashboard 200 in 94ms (next.js: 2ms, application-code: 92ms)
+ GET / 307 in 46ms (next.js: 3ms, application-code: 43ms)
+ GET /dashboard 200 in 149ms (next.js: 2ms, application-code: 146ms)
+ GET /dashboard 200 in 123ms (next.js: 1412µs, application-code: 121ms)
+ GET / 307 in 56ms (next.js: 1536µs, application-code: 54ms)
+ GET /dashboard 200 in 149ms (next.js: 1042µs, application-code: 148ms)
+ GET /pages 200 in 150ms (next.js: 10ms, application-code: 140ms)
+ GET / 307 in 31ms (next.js: 1374µs, application-code: 30ms)
+ GET /dashboard 200 in 122ms (next.js: 1316µs, application-code: 120ms)
+ GET /inbox 200 in 97ms (next.js: 3ms, application-code: 94ms)
+ GET / 307 in 47ms (next.js: 1152µs, application-code: 46ms)
+ GET /dashboard 200 in 195ms (next.js: 1005µs, application-code: 194ms)
+ GET /watchlist 200 in 130ms (next.js: 9ms, application-code: 120ms)
+ GET / 307 in 60ms (next.js: 1715µs, application-code: 59ms)
+ GET /dashboard 200 in 151ms (next.js: 1165µs, application-code: 149ms)
+ GET /settings 200 in 130ms (next.js: 10ms, application-code: 120ms)
+ GET /api/settings/webflow?project=brand-studio 200 in 76ms (next.js: 26ms, application-code: 50ms)
+ GET /api/projects/members?project=brand-studio 200 in 84ms (next.js: 58ms, application-code: 25ms)
+ GET / 307 in 50ms (next.js: 1469µs, application-code: 49ms)
+ GET /dashboard 200 in 120ms (next.js: 1009µs, application-code: 119ms)
+ GET /scorecard-demo 200 in 47ms (next.js: 10ms, application-code: 37ms)
+ GET / 307 in 48ms (next.js: 5ms, application-code: 44ms)
+ GET /dashboard 200 in 85ms (next.js: 2ms, application-code: 83ms)
+ GET / 307 in 57ms (next.js: 3ms, application-code: 54ms)
+ GET /dashboard 200 in 100ms (next.js: 3ms, application-code: 97ms)
+ GET / 307 in 50ms (next.js: 4ms, application-code: 47ms)
+ GET /dashboard 200 in 143ms (next.js: 3ms, application-code: 141ms)
+ GET /pages 200 in 190ms (next.js: 3ms, application-code: 187ms)
+ GET / 307 in 46ms (next.js: 4ms, application-code: 43ms)
+ GET /scorecard-demo 200 in 28ms (next.js: 3ms, application-code: 26ms)
+ GET /dashboard 200 in 130ms (next.js: 3ms, application-code: 127ms)
+ GET / 307 in 55ms (next.js: 2ms, application-code: 53ms)
+ GET /dashboard 200 in 91ms (next.js: 1642µs, application-code: 90ms)
+✓ Compiled in 107ms
+ GET /scorecard-demo 200 in 46ms (next.js: 5ms, application-code: 41ms)
+ GET / 307 in 44ms (next.js: 2ms, application-code: 41ms)
+ GET /dashboard 200 in 91ms (next.js: 4ms, application-code: 87ms)
+✓ Compiled in 85ms
+ GET / 307 in 50ms (next.js: 3ms, application-code: 46ms)
+ GET /dashboard 200 in 125ms (next.js: 6ms, application-code: 118ms)
+ GET /pages 200 in 132ms (next.js: 4ms, application-code: 128ms)
+ GET /pages/home 200 in 37ms (next.js: 19ms, application-code: 18ms)
+ GET /scorecard-demo 200 in 30ms (next.js: 4ms, application-code: 26ms)
+ GET / 307 in 51ms (next.js: 2ms, application-code: 49ms)
+ GET /dashboard 200 in 90ms (next.js: 2ms, application-code: 88ms)
+ GET / 307 in 42ms (next.js: 1103µs, application-code: 40ms)
+ GET /dashboard 200 in 129ms (next.js: 1136µs, application-code: 128ms)
+ GET /pages 200 in 133ms (next.js: 3ms, application-code: 129ms)
+ GET /pages/home 200 in 21ms (next.js: 6ms, application-code: 15ms)
+✓ Compiled in 127ms
+✓ Compiled in 76ms
+✓ Compiled in 85ms
+✓ Compiled in 92ms
+✓ Compiled in 78ms
+✓ Compiled in 70ms
+[browser] Uncaught ReferenceError: resolvedChartHeight is not defined
+    at ScaledScoreCard (src/components/ScoreCard.tsx:942:21)
+    at Set.forEach (<anonymous>)
+    at ScoreCard (src/components/ScoreCard.tsx:218:60)
+    at <unknown> (src/app/(app)/pages/[id]/page.tsx:429:42)
+    at Array.map (<anonymous>)
+    at OverviewTab (src/app/(app)/pages/[id]/page.tsx:390:99)
+    at PageDetail (src/app/(app)/pages/[id]/page.tsx:248:75)
+  940 |           style={{
+  941 |             position: "relative",
+> 942 |             height: resolvedChartHeight,
+      |                     ^
+  943 |             width: isLarge ? "100%" : `calc(100% + ${2 * CARD_PADDING}px)`,
+  944 |             margin: isLarge ? 0 : `0 -${CARD_PADDING}px -${CARD_PADDING}px`,
+  945 |           }}
+⚠ Fast Refresh had to perform a full reload due to a runtime error.
+✓ Compiled in 75ms
+[browser] Uncaught ReferenceError: resolvedChartHeight is not defined
+    at ScaledScoreCard (src/components/ScoreCard.tsx:943:21)
+    at ScoreCard (src/components/ScoreCard.tsx:225:35)
+    at <unknown> (src/app/(app)/pages/[id]/page.tsx:426:2)
+    at Array.map (<anonymous>)
+    at OverviewTab (src/app/(app)/pages/[id]/page.tsx:390:99)
+    at PageDetail (src/app/(app)/pages/[id]/page.tsx:248:75)
+  941 |           style={{
+  942 |             position: "relative",
+> 943 |             height: resolvedChartHeight,
+      |                     ^
+  944 |             width: isLarge ? "100%" : `calc(100% + ${2 * CARD_PADDING}px)`,
+  945 |             margin: isLarge ? 0 : `0 -${CARD_PADDING}px -${CARD_PADDING}px`,
+  946 |           }}
+ GET /pages/home 200 in 187ms (next.js: 11ms, application-code: 177ms)
+[browser] Uncaught ReferenceError: resolvedChartHeight is not defined
+    at ScaledScoreCard (src/components/ScoreCard.tsx:943:21)
+    at ScoreCard (src/components/ScoreCard.tsx:225:35)
+    at <unknown> (src/app/(app)/pages/[id]/page.tsx:466:15)
+    at Array.map (<anonymous>)
+    at OverviewTab (src/app/(app)/pages/[id]/page.tsx:456:21)
+    at PageDetail (src/app/(app)/pages/[id]/page.tsx:257:36)
+  941 |           style={{
+  942 |             position: "relative",
+> 943 |             height: resolvedChartHeight,
+      |                     ^
+  944 |             width: isLarge ? "100%" : `calc(100% + ${2 * CARD_PADDING}px)`,
+  945 |             margin: isLarge ? 0 : `0 -${CARD_PADDING}px -${CARD_PADDING}px`,
+  946 |           }}
+⚠ Fast Refresh had to perform a full reload due to a runtime error.
+✓ Compiled in 68ms
+ GET /pages/home 200 in 136ms (next.js: 7ms, application-code: 129ms)
+✓ Compiled in 71ms
+ GET /scorecard-demo 200 in 34ms (next.js: 5ms, application-code: 29ms)
+ GET /scorecard-demo 200 in 22ms (next.js: 1327µs, application-code: 21ms)
+ GET /pages/home 200 in 173ms (next.js: 19ms, application-code: 154ms)
+✓ Compiled in 90ms
+ GET /pages/home 200 in 119ms (next.js: 5ms, application-code: 113ms)
+✓ Compiled in 80ms
+ GET /pages/home 200 in 134ms (next.js: 6ms, application-code: 128ms)
+✓ Compiled in 81ms
+ GET /pages/home 200 in 106ms (next.js: 4ms, application-code: 102ms)
+ GET / 307 in 31ms (next.js: 3ms, application-code: 28ms)
+ GET /dashboard 200 in 86ms (next.js: 4ms, application-code: 82ms)
+✓ Compiled in 135ms
+ GET /scorecard-demo 200 in 60ms (next.js: 7ms, application-code: 53ms)
+ GET /pages/home 200 in 116ms (next.js: 5ms, application-code: 111ms)
+✓ Compiled in 86ms
+ GET /pages/home 200 in 118ms (next.js: 5ms, application-code: 113ms)
+ GET / 307 in 45ms (next.js: 3ms, application-code: 42ms)
+ GET /dashboard 200 in 85ms (next.js: 3ms, application-code: 82ms)
+ GET / 307 in 77ms (next.js: 10ms, application-code: 67ms)
+ GET /dashboard 200 in 112ms (next.js: 3ms, application-code: 109ms)
+ GET /manifest.webmanifest 200 in 212ms (next.js: 184ms, application-code: 28ms)
+ GET /scorecard-demo 200 in 65ms (next.js: 8ms, application-code: 57ms)
+ GET /manifest.webmanifest 200 in 17ms (next.js: 7ms, application-code: 9ms)
+✓ Compiled in 164ms
+ GET /scorecard-demo 200 in 60ms (next.js: 9ms, application-code: 51ms)
+ GET /scorecard-demo 200 in 37ms (next.js: 1693µs, application-code: 35ms)
+ GET /manifest.webmanifest 200 in 6ms (next.js: 2ms, application-code: 3ms)
+✓ Compiled in 138ms

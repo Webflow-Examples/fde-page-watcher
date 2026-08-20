@@ -16,6 +16,15 @@
   src: url("/fonts/WFVisualSanswghtopsz.woff2") format("woff2");
 }
 
+/* ── Webflow brand monospace: WF Visual Sans Mono (variable, wght + MONO axes) ── */
+@font-face {
+  font-family: "WF Visual Sans Mono";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/WFVisualSansMono[wght,MONO].ttf") format("truetype-variations");
+}
+
 /* ── Dark theme palette (from the Performance Dashboard design) ── */
 :root {
   --bg: #0b0b0c;

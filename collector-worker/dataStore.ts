@@ -1,10 +1,10 @@
-import { buildInitialState } from "../src/lib/seed";
+import { buildInitialState, buildSeedCruxEvidence, DEMO_DATA_VERSION } from "../src/lib/seed";
 import { captureAgentReadiness } from "../src/lib/agentScoring";
 import { resolveMarkerIndex } from "../src/lib/followups";
 import { mediansOf, pageTrend } from "../src/lib/scoring";
 import { effectivePerformanceThresholds } from "../src/lib/performanceThresholds";
 import { normalizeState } from "../src/lib/store/normalize";
-import type { AppState, ChangeMarker, Night } from "../src/lib/types";
+import { TENANT, type AppState, type ChangeMarker, type Night } from "../src/lib/types";
 import {
   HISTORY_STORAGE_VERSION,
   hydrateTableHistory,
@@ -79,8 +79,14 @@ export class FdeDataStore {
   async readVersionedState(seed = true): Promise<VersionedState | null> {
     const row = await this.rawState();
     if (row) {
+      const state = await this.materializedState(row);
+      if (this.datasetMode === "demo" && this.tenant === TENANT && state.demoDataVersion !== DEMO_DATA_VERSION) {
+        const refreshed = await this.writeVersionedState(buildInitialState("demo"), row.version);
+        if (refreshed.value) return refreshed.value;
+        return refreshed.conflict ?? this.readVersionedState(true);
+      }
       return {
-        state: copyState(await this.materializedState(row)),
+        state: copyState(state),
         version: row.version,
         updatedAt: row.updated_at,
       };
@@ -106,7 +112,10 @@ export class FdeDataStore {
           "ORDER BY page_id, form_factor",
       ).bind(this.tenant).all<CruxStatusRow>(),
     ]);
-    return cruxEvidenceFromRows(snapshots.results, statuses.results);
+    const evidence = cruxEvidenceFromRows(snapshots.results, statuses.results);
+    return evidence.length === 0 && this.datasetMode === "demo" && this.tenant === TENANT
+      ? buildSeedCruxEvidence()
+      : evidence;
   }
 
   /** Compare-and-swap a complete state snapshot. `null` means create only. */

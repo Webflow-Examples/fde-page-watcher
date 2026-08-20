@@ -9,12 +9,14 @@ import { SelectMenu } from "@/components/select-menu";
 import type { SelectMenuOption } from "@/components/select-menu";
 import { DeviceSegmentedControl, StatusSegmentedControl } from "@/components/segmented-control";
 import { CATEGORIES } from "@/lib/types";
-import type { AgentIgnoreSettings, CategoryKey, Night } from "@/lib/types";
+import type { AgentIgnoreSettings, Night } from "@/lib/types";
 import { agentReadinessForNight, summarizeAgentChecks } from "@/lib/agentScoring";
 import { effectivePerformanceThresholds, normalizePerformanceThresholds } from "@/lib/performanceThresholds";
 import { deltaMeta, historyForRange, pageAgentSnapshotForRange, pageRangeComparison, pageRangeLatestNightForStrategy, pageRangeSeries, pageRangeTrend, scoreMeta } from "@/lib/scoring";
 import { C, flagChip, savingsValue } from "@/lib/ui";
 import { Sparkline } from "@/components/charts";
+import { scoreCardDataForCategory } from "@/lib/scoreCardAdapter";
+import { XSmallScoreCard } from "@/components/ScoreCard";
 import { DeviceChangeLabels, FieldEvidenceChip, PerformanceIssueStatusBadge, SortHeader, WebflowClassificationChips } from "@/components/bits";
 import { isPageActivelyMonitored } from "@/lib/watchCapacity";
 import { sortDashboardRows } from "@/lib/dashboardSort";
@@ -28,7 +30,10 @@ import { compareLabAndField } from "@/lib/labFieldComparison";
 import { fieldPriorityRankForRec, recommendationEvidenceSignal } from "@/lib/fieldPrioritization";
 import { isFieldRecommendationActionable } from "@/lib/fieldOnlyRecommendations";
 
-const GRID = "minmax(170px,1fr) 142px 126px 126px 126px 126px 120px";
+// The 4 category columns each now hold an XSmall ScoreCard row cell (desktop
+// + mobile hairlines with start/end numerals) rather than a single sparkline,
+// so they're wider than the old 126px sparkline+score column.
+const GRID = "minmax(170px,1fr) 142px 190px 190px 190px 190px 120px";
 type DashboardFilter = "all" | "lowPerformance" | "agentGaps" | "regressions" | "improvements";
 type DeviceDashboardFilter = "lowPerformance" | "regressions" | "improvements";
 type DashboardRange = 3 | 7 | 30 | 90;
@@ -227,6 +232,12 @@ function DashboardContent({
       const dm = comparison ? deltaMeta(comparison.to, comparison.from) : null;
       return { key: c.key, score: v as number | null, fg: sm.fg, delta: dm?.text ?? "", deltaFg: dm?.fg ?? C.faint, series, line: sm.line, secondary, secondaryFg: secondaryMeta?.fg ?? C.faint, secondaryLabel: secondaryStrategy === "mobile" ? "M" : "D" };
     });
+    // The XSmall ScoreCard row cell draws both devices' hairlines at once (see
+    // the density handoff §4), unlike `cats` above which only tracks the
+    // selected strategy's series plus the other device's single latest value.
+    // Reuses the same adapter as the Details page's Overview tab so both
+    // surfaces agree on what's "in range."
+    const scoreCardData = CATEGORIES.map((c) => scoreCardDataForCategory(p, c.key, c.label, rangeDays));
     const sortVals: Record<string, string | number> = { title: p.title.toLowerCase(), status: trend, agent: pct };
     CATEGORIES.forEach((c) => (sortVals[c.key] = latestRangeNight?.scores[strategy][c.key].m ?? -1));
     return {
@@ -241,6 +252,7 @@ function DashboardContent({
       watchlistOrder,
       flag: flagChip(p.flag),
       cats,
+      scoreCardData,
       agentPct: total ? `${pct}%` : "—",
       agentFg: am.fg,
       agentSub: total ? `${pass}/${total}${ignored ? ` · ${ignored} ignored` : ""}` : ignored ? `${ignored} ignored` : "no scan in range",
@@ -747,7 +759,7 @@ function DashboardContent({
             )}
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: GRID, alignItems: "center", padding: "14px 24px", borderBottom: `1px solid ${C.border}`, fontSize: 11, fontWeight: 550, letterSpacing: "0.05em", textTransform: "uppercase", color: C.faint, minWidth: 880 }}>
+          <div style={{ display: "grid", gridTemplateColumns: GRID, alignItems: "center", padding: "14px 24px", borderBottom: `1px solid ${C.border}`, fontSize: 11, fontWeight: 550, letterSpacing: "0.05em", textTransform: "uppercase", color: C.faint, minWidth: 1140 }}>
             {headers.map((h) => (
               <SortHeader key={h.col} label={h.label} align={h.align} active={dashSort.col === h.col} dir={dashSort.dir} onSort={() => sortDash(h.col)} />
             ))}
@@ -765,7 +777,7 @@ function DashboardContent({
                   router.push(pathFor(`/pages/${row.id}`));
                 }
               }}
-              style={{ display: "grid", gridTemplateColumns: GRID, alignItems: "center", padding: "16px 24px", borderBottom: `1px solid ${C.rowBorder}`, cursor: "pointer", minWidth: 880 }}
+              style={{ display: "grid", gridTemplateColumns: GRID, alignItems: "center", padding: "16px 24px", borderBottom: `1px solid ${C.rowBorder}`, cursor: "pointer", minWidth: 1140 }}
             >
               <div style={{ minWidth: 0, paddingRight: 16 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
@@ -782,16 +794,9 @@ function DashboardContent({
                   labFieldComparison={visitorExperienceVisible ? row.labFieldComparison : undefined}
                 />
               </div>
-              {row.cats.map((c: { key: CategoryKey; score: number | null; fg: string; delta: string; deltaFg: string; series: number[]; line: string; secondary: number | null; secondaryFg: string; secondaryLabel: string }) => (
-                <div key={c.key} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-                  <div style={{ width: 84, height: 30 }}>
-                    <Sparkline series={c.series} color={c.line} w={84} h={30} />
-                  </div>
-                  <div style={{ display: "flex", alignItems: "baseline", gap: 5 }}>
-                    <span style={{ fontSize: 14, fontWeight: 600, color: c.fg }}>{c.score === null ? "—" : c.score}</span>
-                    <span style={{ fontSize: 10, fontWeight: 600, color: c.deltaFg }}>{c.delta}</span>
-                  </div>
-                  <div style={{ fontSize: 9.5, color: C.faint }}>{c.secondaryLabel} <span style={{ color: c.secondaryFg, fontWeight: 600 }}>{c.secondary ?? "—"}</span></div>
+              {row.scoreCardData.map((data) => (
+                <div key={data.title} onClick={(event) => event.stopPropagation()} style={{ cursor: "default" }}>
+                  <XSmallScoreCard data={data} />
                 </div>
               ))}
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>

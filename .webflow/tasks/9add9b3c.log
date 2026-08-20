@@ -1,0 +1,120 @@
+
+> fde-page-watcher@0.1.0 dev
+> next dev
+
+▲ Next.js 16.2.10 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.86.32:3000
+✓ Ready in 407ms
+
+ GET / 307 in 1071ms (next.js: 871ms, application-code: 201ms)
+ GET / 307 in 45ms (next.js: 8ms, application-code: 38ms)
+ GET / 307 in 39ms (next.js: 3ms, application-code: 36ms)
+ GET /dashboard 200 in 333ms (next.js: 18ms, application-code: 315ms)
+ GET / 307 in 130ms (next.js: 14ms, application-code: 116ms)
+ GET /dashboard 200 in 87ms (next.js: 1920µs, application-code: 85ms)
+ GET /pages 200 in 108ms (next.js: 82ms, application-code: 25ms)
+ GET /pages/pricing 200 in 400ms (next.js: 385ms, application-code: 15ms)
+✓ Compiled in 115ms
+✓ Compiled in 69ms
+✓ Compiled in 79ms
+✓ Compiled in 69ms
+[browser] Uncaught ReferenceError: CardTitle is not defined
+    at SmallScoreCard (src/components/ScoreCard.tsx:204:10)
+    at Set.forEach (<anonymous>)
+    at ScoreCard (src/components/ScoreCard.tsx:131:10)
+    at <unknown> (src/app/(app)/pages/[id]/page.tsx:341:99)
+    at Array.map (<anonymous>)
+    at OverviewTab (src/app/(app)/pages/[id]/page.tsx:341:99)
+    at PageDetail (src/app/(app)/pages/[id]/page.tsx:206:79)
+  202 |       {/* header */}
+  203 |       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-betwe...
+> 204 |         <CardTitle title={data.title} fontSize={17} color={t.ink1} />
+      |          ^
+  205 |         <div style={{ fontSize: 12.5, color: t.ink3, whiteSpace: "nowrap" }}>{rangeLabel}...
+  206 |       </div>
+  207 |
+✓ Compiled in 280ms
+⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ GET /pages/pricing 200 in 234ms (next.js: 79ms, application-code: 155ms)
+✓ Compiled in 80ms
+✓ Compiled in 71ms
+✓ Compiled in 171ms
+✓ Compiled in 84ms
+ GET /pages/pricing 200 in 153ms (next.js: 38ms, application-code: 115ms)
+ GET /pages/pricing 200 in 112ms (next.js: 2ms, application-code: 110ms)
+ GET /pages/pricing 200 in 69ms (next.js: 1757µs, application-code: 67ms)
+✓ Compiled in 131ms
+[browser] Uncaught ReferenceError: ScoreCardDensityControl is not defined
+    at PageDetail (src/app/(app)/pages/[id]/page.tsx:145:12)
+    at Set.forEach (<anonymous>)
+  143 |         </div>
+  144 |         <div className="page-controls" style={{ display: "flex", alignItems: "center", ju...
+> 145 |           <ScoreCardDensityControl value={scoreCardDensity} onChange={setScoreCardDensity...
+      |            ^
+  146 |           <SelectMenu
+  147 |             ariaLabel="Page date range"
+  148 |             value={rangeDays}
+✓ Compiled in 102ms
+⚠ Fast Refresh had to perform a full reload due to a runtime error.
+[browser] Uncaught ReferenceError: scoreCardDensity is not defined
+    at PageDetail (src/app/(app)/pages/[id]/page.tsx:147:43)
+    at Set.forEach (<anonymous>)
+  145 |         </div>
+  146 |         <div className="page-controls" style={{ display: "flex", alignItems: "center", ju...
+> 147 |           <ScoreCardDensityControl value={scoreCardDensity} onChange={setScoreCardDensity...
+      |                                           ^
+  148 |           <SelectMenu
+  149 |             ariaLabel="Page date range"
+  150 |             value={rangeDays}
+⨯ ReferenceError: scoreCardDensity is not defined
+    at PageDetail (src/app/(app)/pages/[id]/page.tsx:147:43)
+  145 |         </div>
+  146 |         <div className="page-controls" style={{ display: "flex", alignItems: "center", ju...
+> 147 |           <ScoreCardDensityControl value={scoreCardDensity} onChange={setScoreCardDensity...
+      |                                           ^
+  148 |           <SelectMenu
+  149 |             ariaLabel="Page date range"
+  150 |             value={rangeDays} {
+  digest: '3340191845'
+}
+ GET /pages/pricing 500 in 217ms (next.js: 43ms, application-code: 173ms)
+[browser] Uncaught ReferenceError: scoreCardDensity is not defined
+    at PageDetail (src/app/(app)/pages/[id]/page.tsx:147:43)
+  145 |         </div>
+  146 |         <div className="page-controls" style={{ display: "flex", alignItems: "center", ju...
+> 147 |           <ScoreCardDensityControl value={scoreCardDensity} onChange={setScoreCardDensity...
+      |                                           ^
+  148 |           <SelectMenu
+  149 |             ariaLabel="Page date range"
+  150 |             value={rangeDays}
+⚠ Fast Refresh had to perform a full reload due to a runtime error.
+✓ Compiled in 71ms
+ GET /pages/pricing 200 in 99ms (next.js: 4ms, application-code: 95ms)
+✓ Compiled in 77ms
+✓ Compiled in 75ms
+ GET /pages/pricing 200 in 185ms (next.js: 43ms, application-code: 142ms)
+ GET /pages/pricing 200 in 133ms (next.js: 1825µs, application-code: 131ms)
+ GET /pages/pricing 200 in 91ms (next.js: 6ms, application-code: 85ms)
+ GET /pages/pricing 200 in 180ms (next.js: 43ms, application-code: 137ms)
+ GET /pages/pricing 200 in 121ms (next.js: 8ms, application-code: 113ms)
+ GET /pages/pricing 200 in 80ms (next.js: 1386µs, application-code: 78ms)
+✓ Compiled in 76ms
+✓ Compiled in 76ms
+ GET / 307 in 128ms (next.js: 12ms, application-code: 116ms)
+ GET /dashboard 200 in 132ms (next.js: 9ms, application-code: 123ms)
+ GET /dashboard 200 in 123ms (next.js: 4ms, application-code: 119ms)
+ GET /pages/home 200 in 118ms (next.js: 8ms, application-code: 111ms)
+ GET /pages 200 in 126ms (next.js: 15ms, application-code: 111ms)
+ GET /pages/pricing 200 in 17ms (next.js: 5ms, application-code: 12ms)
+ GET / 307 in 25ms (next.js: 2ms, application-code: 23ms)
+ GET /dashboard 200 in 65ms (next.js: 2ms, application-code: 63ms)
+ GET /pages/pricing?tab=history 200 in 23ms (next.js: 11ms, application-code: 13ms)
+[browser] Each child in a list should have a unique "key" prop.
+
+Check the render method of `div`. It was passed a child from HistoryTab. See https://react.dev/link/warning-keys for more information. 
+ GET /pages/pricing 200 in 13ms (next.js: 3ms, application-code: 10ms)
+ GET /pages/pricing?tab=history 200 in 19ms (next.js: 5ms, application-code: 13ms)
+ GET /pages/pricing 200 in 18ms (next.js: 5ms, application-code: 13ms)
+ GET / 307 in 71ms (next.js: 32ms, application-code: 39ms)
+ GET /dashboard 200 in 115ms (next.js: 9ms, application-code: 106ms)

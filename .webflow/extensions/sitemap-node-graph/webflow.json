@@ -1,0 +1,34 @@
+{
+  "manifestVersion": 1,
+  "packageType": "extension",
+  "id": "sitemap-node-graph",
+  "name": "sitemap-node-graph",
+  "version": "1.0.0",
+  "displayName": "Sitemap Node Graph",
+  "hostEnvironments": [
+    "desktop"
+  ],
+  "entrypoints": {
+    "logic": "src/extension.ts"
+  },
+  "capabilities": [
+    "preview.openTarget",
+    "preview.openRoute"
+  ],
+  "network": {
+    "access": "none"
+  },
+  "contributes": {
+    "extensionUi": [
+      {
+        "id": "sitemap-node-graph.view",
+        "title": "Sitemap Node Graph",
+        "entry": "view.html",
+        "activationEvents": [],
+        "requiredCapabilities": []
+      }
+    ],
+    "tools": [],
+    "commands": []
+  }
+}

@@ -680,6 +680,8 @@ export interface ProjectMembership {
 
 /** The full application state — the single source of truth persisted per tenant. */
 export interface AppState {
+  /** Version of the disposable bundled demo fixture; absent from live project state. */
+  demoDataVersion?: number;
   /** Internal persistence marker: page histories are stored in the tenant-keyed history table. */
   historyStorageVersion?: 1;
   /** Project-level archive marker. Archived tenants retain data but reject collection work. */

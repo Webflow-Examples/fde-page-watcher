@@ -1,8 +1,8 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import type { AppState, ChangeMarker, Night, WatchPage } from "../types";
+import { TENANT, type AppState, type ChangeMarker, type Night, type WatchPage } from "../types";
 import type { CruxPageEvidence } from "../crux";
-import { buildInitialState } from "../seed";
+import { buildInitialState, buildSeedCruxEvidence, DEMO_DATA_VERSION } from "../seed";
 import { captureAgentReadiness } from "../agentScoring";
 import { effectivePerformanceThresholds } from "../performanceThresholds";
 import { mediansOf, pageTrend } from "../scoring";
@@ -134,6 +134,15 @@ class FsDataStore implements DataStore {
       if (env.tenant !== this.tenant) {
         throw new Error(`DataStore: tenant mismatch (${env.tenant} != ${this.tenant})`);
       }
+      if (
+        this.tenant === TENANT
+        && process.env.DATASET_MODE !== "live"
+        && env.state.demoDataVersion !== DEMO_DATA_VERSION
+      ) {
+        const seeded = buildInitialState("demo");
+        await this.persistState(seeded);
+        return copyState(seeded);
+      }
       // Mirror the durable snapshot into memory so later writes on a host
       // where disk isn't usable build on the latest persisted state.
       const normalized = normalizeState(env.state);
@@ -171,7 +180,9 @@ class FsDataStore implements DataStore {
   }
 
   async getCruxEvidence(): Promise<CruxPageEvidence[]> {
-    return [];
+    return this.tenant === TENANT && process.env.DATASET_MODE !== "live"
+      ? buildSeedCruxEvidence()
+      : [];
   }
 
   async updateState(mutate: (state: AppState) => void | Promise<void>): Promise<AppState> {

@@ -9,14 +9,18 @@ import type { AgentCheck, CategoryKey, CollectionJob, CustomerActionability, Dev
 import { agentCheckKey, agentIgnoreOverrideMode, isAgentCheckIgnored, isAgentGroupIgnored, normalizeAgentIgnoreSettings, summarizeAgentChecks } from "@/lib/agentScoring";
 import { agentReadinessHistoryPoints } from "@/lib/agentHistory";
 import { effectivePerformanceThresholds } from "@/lib/performanceThresholds";
-import { deltaMeta, historyForStrategy, nightHasStrategy, pageAgentHistoryForRange, pageAgentSnapshotForRange, pageHistoryForRange, pagePreviousPeriodMedian, pageRangeComparison, pageRangeLatestNightForStrategy, pageRangeSeries, pageRangeTrend, pageRecordedHistoryForRange, scoreMeta, statusMeta } from "@/lib/scoring";
+import { historyForStrategy, nightHasStrategy, pageAgentHistoryForRange, pageAgentSnapshotForRange, pageHistoryForRange, pagePreviousPeriodMedian, pageRangeLatestNightForStrategy, pageRangeTrend, pageRecordedHistoryForRange, scoreMeta, statusMeta } from "@/lib/scoring";
+import { scoreCardDataForCategory, scoreCardScaledDataForCategory } from "@/lib/scoreCardAdapter";
 import { auditsFor } from "@/lib/audits";
 import { C, taskLabel } from "@/lib/ui";
 import { AgentReadinessChart, HistoryChart, Sparkline } from "@/components/charts";
+import { ScoreCard, scoreCardFlexItemStyle } from "@/components/ScoreCard";
+import type { ScoreCardDensity } from "@/components/ScoreCard";
+import { ScoreCardDensityControl } from "@/components/ScoreCardDensityControl";
 import { FieldEvidenceChip, FieldRecommendationStatusBadge, PerformanceIssueStatusBadge, SegToggle, WebflowClassificationChips } from "@/components/bits";
 import { SelectMenu } from "@/components/select-menu";
 import type { SelectMenuOption } from "@/components/select-menu";
-import { DesktopIcon, MobileIcon, PlusIcon, RefreshIcon } from "@/components/icons";
+import { PlusIcon, RefreshIcon } from "@/components/icons";
 import { failedRunDetailMessage, formatSuccessfulRunAt, lastSuccessfulRunAt } from "@/lib/collectionStatus";
 import { isTaskMarker, taskMarkerText } from "@/lib/taskMarkers";
 import { VisitorExperiencePanel } from "@/components/visitor-experience";
@@ -48,18 +52,56 @@ const PAGE_RANGE_OPTIONS: ReadonlyArray<SelectMenuOption<RangeDays>> = [
   { value: 90, label: "Last 90 days" },
 ];
 
+// Persisted the same way as this page's other view preferences (see
+// inboxDescriptions in store.tsx): a reload or a shared link comes back at
+// the same density. This is page-level state — every ScoreCard on the page
+// reads the one value, never a per-card density (see the density handoff §6).
+const SCORE_CARD_DENSITY_KEY = "pageWatch.scoreCardDensity";
+
+function isScoreCardDensity(value: string | null): value is ScoreCardDensity {
+  return value === "xsmall" || value === "small" || value === "medium" || value === "large";
+}
+
 export default function PageDetail() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { id } = useParams<{ id: string }>();
   const store = useStore();
-  const { pages, recs, strategy, setStrategy, rangeDays, setRangeDays, chartCat, setChartCat } = store;
+  // Density replaces the desktop/mobile filter in this page's controls row
+  // (see the density handoff), but `strategy` itself still drives device
+  // status pills, tabs, and recommendation filtering below, so it stays.
+  const { pages, recs, strategy, rangeDays, setRangeDays, chartCat, setChartCat } = store;
   const page = pages.find((p) => p.id === id);
+  const [scoreCardDensity, setScoreCardDensityState] = useState<ScoreCardDensity>("small");
 
   useEffect(() => {
     setChartCat("perf");
   }, [id, setChartCat]);
+
+  useEffect(() => {
+    // Deferred (not read synchronously in the effect body) to match the same
+    // localStorage-preference pattern used by the store's other view
+    // preferences (see STRATEGY_PREFERENCE_KEY in store.tsx).
+    const timer = window.setTimeout(() => {
+      try {
+        const saved = window.localStorage.getItem(SCORE_CARD_DENSITY_KEY);
+        if (isScoreCardDensity(saved)) setScoreCardDensityState(saved);
+      } catch {
+        // Browser storage can be disabled; small remains a safe default.
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  const setScoreCardDensity = (next: ScoreCardDensity) => {
+    setScoreCardDensityState(next);
+    try {
+      window.localStorage.setItem(SCORE_CARD_DENSITY_KEY, next);
+    } catch {
+      // The preference still applies for the current session.
+    }
+  };
 
   if (!page) {
     return (
@@ -140,7 +182,7 @@ export default function PageDetail() {
           </div>
         </div>
         <div className="page-controls" style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, paddingBottom: 20 }}>
-          <SegToggle label="Primary page device" value={strategy} onChange={setStrategy} options={[{ value: "desktop", label: "Desktop", icon: <DesktopIcon size={13} /> }, { value: "mobile", label: "Mobile", icon: <MobileIcon size={13} /> }]} />
+          <ScoreCardDensityControl value={scoreCardDensity} onChange={setScoreCardDensity} />
           <SelectMenu
             ariaLabel="Page date range"
             value={rangeDays}
@@ -212,7 +254,7 @@ export default function PageDetail() {
           <PendingPanel page={page} store={store} />
         ) : (
           <div role="tabpanel" id={`page-panel-${tab}`} aria-labelledby={`page-tab-${tab}`} tabIndex={0}>
-            {tab === "overview" && <OverviewTab page={page} latestNight={latestRangeNight} agentChecks={agentChecks} recs={recs} strategy={strategy} rangeDays={rangeDays} apct={apct} apm={apm} pass={pass} total={total} ignored={ignored} failList={failList} store={store} />}
+            {tab === "overview" && <OverviewTab page={page} latestNight={latestRangeNight} agentChecks={agentChecks} recs={recs} strategy={strategy} rangeDays={rangeDays} apct={apct} apm={apm} pass={pass} total={total} ignored={ignored} failList={failList} store={store} scoreCardDensity={scoreCardDensity} />}
             {tab === "history" && <HistoryTab page={page} strategy={strategy} rangeDays={rangeDays} chartCat={chartCat} setChartCat={setChartCat} store={store} />}
             {tab === "audits" && <OpportunitiesTab page={page} latest={latestRangeNight} strategy={strategy} />}
             {tab === "agent" && <AgentTab page={page} checks={agentChecks} date={agentSnapshot?.date ?? null} rangeDays={rangeDays} pass={pass} fail={fail} ignored={ignored} unavailable={unavailableCount} store={store} />}
@@ -365,6 +407,7 @@ function OverviewTab({
   ignored,
   failList,
   store,
+  scoreCardDensity,
 }: {
   page: WatchPage;
   latestNight: Night | null;
@@ -379,51 +422,48 @@ function OverviewTab({
   ignored: number;
   failList: { name: string }[];
   store: ReturnType<typeof useStore>;
+  scoreCardDensity: ScoreCardDensity;
 }) {
   const pageRecs = recs.filter((r) =>
     r.pageId === page.id
     && recommendationIsCustomerActionable(r)
     && (!r.strategies?.length || r.strategies.includes(strategy)));
-  const secondaryStrategy = strategy === "mobile" ? "desktop" : "mobile";
-  const secondaryNight = pageRangeLatestNightForStrategy(page, rangeDays, secondaryStrategy);
   return (
     <div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 16, marginBottom: 20 }}>
+      {/* Desktop and mobile at equal visual weight, replacing the former
+          single-device card + secondary-number layout (see ScoreCard). Its
+          series responds to the same date-range control as the rest of the
+          tab (rangeDays), not a fixed 24-point window. The density control
+          above sets both this row's wrapping behavior and every card's
+          density at once (see the density handoff §6). Flexbox, not grid:
+          grid's `auto-fit` gives every row the same column widths across the
+          whole grid, so a wrapped last row with fewer cards still leaves a
+          gap instead of its cards stretching to fill that row. Flexbox
+          distributes each row's leftover space independently, so a card
+          that wraps down actually fills the row it lands on — per-density
+          minimums live in SCORE_CARD_MIN_WIDTH; large always shows exactly
+          1 (see scoreCardFlexItemStyle). */}
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: scoreCardDensity === "xsmall" ? 0 : 16,
+          border: scoreCardDensity === "xsmall" ? `1px solid ${C.border}` : undefined,
+          borderRadius: scoreCardDensity === "xsmall" ? 8 : undefined,
+          marginBottom: 20,
+        }}
+      >
         {CATEGORIES.map((c) => {
-          const v = latestNight?.scores[strategy][c.key].m ?? null;
-          const secondary = secondaryNight?.scores[secondaryStrategy][c.key].m ?? null;
-          const baseline = page.baseline![strategy][c.key].m;
-          const secondaryBaseline = page.baseline![secondaryStrategy][c.key].m;
-          const sm = v === null ? null : scoreMeta(v);
-          const secondaryMeta = secondary === null ? null : scoreMeta(secondary);
-          const comparison = pageRangeComparison(page, strategy, c.key, rangeDays);
-          const dm = comparison ? deltaMeta(comparison.to, comparison.from) : null;
+          // Medium/Large draw the real run-to-run range band, anomaly gap, and
+          // change markers, so they need the anomaly-inclusive adapter;
+          // small/xsmall stay on the frozen trusted-only series (see
+          // scoreCardAdapter.ts).
+          const data = scoreCardDensity === "medium" || scoreCardDensity === "large"
+            ? scoreCardScaledDataForCategory(page, c.key, c.label, rangeDays)
+            : scoreCardDataForCategory(page, c.key, c.label, rangeDays);
           return (
-            <div key={c.key} style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, padding: "18px 14px 8px" }}>
-              <div style={{ fontSize: 13, color: C.text, fontWeight: 600, marginBottom: 10 }}>{c.label}</div>
-              <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", alignItems: "end", gap: 8 }}>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 10, color: C.faint, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 5 }}>{strategy}</div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <span style={{ fontSize: 32, fontWeight: 600, lineHeight: 1, color: sm?.fg ?? C.faint }}>{v ?? "—"}</span>
-                    {dm && <span style={{ display: "inline-flex", alignItems: "center", gap: 3, flex: "none", whiteSpace: "nowrap", fontSize: 12, fontWeight: 600, padding: "3px 6px", borderRadius: 6, color: dm.fg, background: dm.chip }}>{dm.text}</span>}
-                  </div>
-                </div>
-                <div style={{ minWidth: 0, textAlign: "right", paddingBottom: 1 }}>
-                  <div style={{ fontSize: 10, color: C.faint, textTransform: "uppercase", letterSpacing: "0.04em" }}>{secondaryStrategy}</div>
-                  <div style={{ fontSize: 18, fontWeight: 600, color: secondaryMeta?.fg ?? C.faint, marginTop: 3 }}>{secondary ?? "—"}</div>
-                </div>
-              </div>
-              <div style={{ fontSize: 11, color: C.faint, marginTop: 8 }}>Baseline {strategy === "mobile" ? "M" : "D"} {baseline} · {secondaryStrategy === "mobile" ? "M" : "D"} {secondaryBaseline}</div>
-              <div style={{ height: 52, marginTop: 6 }}>
-                <Sparkline
-                  series={pageRangeSeries(page, strategy, c.key, rangeDays)}
-                  color={sm?.line ?? C.faint}
-                  h={52}
-                  sw={2}
-                  w={200}
-                />
-              </div>
+            <div key={`${c.key}:${rangeDays}`} style={scoreCardFlexItemStyle(scoreCardDensity)}>
+              <ScoreCard data={data} density={scoreCardDensity} />
             </div>
           );
         })}
