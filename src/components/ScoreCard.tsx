@@ -13,10 +13,11 @@
 // with its own unit tests; this file is only responsible for layout, DOM
 // structure, and wiring hover state to that math.
 
-import { useId, useMemo, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 import { C } from "@/lib/ui";
 import {
   bandColor,
+  bucketSeries,
   deltaColor,
   deltaFromStart,
   domain,
@@ -24,10 +25,13 @@ import {
   rgba,
   segmentLine,
   segmentRangeBand,
+  segmentRangeBandClip,
   seriesPaths,
   shownIndex,
   trustedIndexSegments,
   xFor,
+  xsmallBounds,
+  xsmallTargetPointCount,
   yFor,
 } from "@/lib/scoreCard";
 import { metricTooltipFor, SCORE_BANDS_LABEL } from "@/lib/scoreCardTooltip";
@@ -49,11 +53,18 @@ export type ScoreCardData = {
   /**
    * Scores 0-100, oldest -> newest, one per collection inside the caller's
    * selected date range (see src/lib/scoreCardAdapter.ts). Length varies with
-   * that range control rather than being fixed at 24.
+   * that range control rather than being fixed at 24. The only series a
+   * single-metric card (one with no natural device pairing, e.g. agent
+   * readiness) needs to supply.
    */
   desktop: number[];
-  /** Same length and order as `desktop`. */
-  mobile: number[];
+  /**
+   * Same length and order as `desktop`. Omit (or pass an empty array) for a
+   * metric with no natural pairing — every density then draws `desktop`
+   * alone: one line/row instead of a compared pair, no "Desktop"/"Mobile"
+   * captions, no Δ gap chip.
+   */
+  mobile?: number[];
   /**
    * Optional run-to-run range per plotted point, same length/order as
    * `desktop`/`mobile`. Only `medium`/`large` draw this (§4's range band);
@@ -136,6 +147,15 @@ export type ScoreCardProps = {
    * pipeline up for a full-detail read. See the ScoreCard density handoff.
    */
   density?: ScoreCardDensity;
+  /**
+   * Default true. Only `xsmall` honors this — its per-cell title is
+   * redundant when the caller already labels the column itself (e.g. the
+   * Pages table's "PERFORMANCE"/"AGENT" headers), so that caller passes
+   * `false` to drop the row's own label and the space it took. Every other
+   * density always shows its title: it's the only place that names the
+   * card at all.
+   */
+  showTitle?: boolean;
 };
 
 // ── Design tokens ────────────────────────────────────────────────────────
@@ -218,6 +238,11 @@ function dateAt(index: number, lastIndex: number, referenceDate = new Date()): s
   return new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+/** Whether `data` has a real second series to compare `desktop` against, at any density. */
+function hasSecondSeries(data: ScoreCardData): boolean {
+  return !!data.mobile && data.mobile.length > 0;
+}
+
 export function ScoreCard(props: ScoreCardProps) {
   const density = props.density ?? "small";
   if (density === "xsmall") return <XSmallScoreCard {...props} />;
@@ -229,38 +254,41 @@ export function ScoreCard(props: ScoreCardProps) {
 /**
  * `small` is today's production ScoreCard, frozen in full apart from the
  * metric tooltip on the title (see scoreCardTooltip.ts / density handoff §3
- * and §5). Do not change its layout, type sizes, colours, chart height,
- * spacing, numeral treatment, delta chips, or hover behaviour here.
+ * and §5) and single-metric support below. Do not change its dual-series
+ * layout, type sizes, colours, chart height, spacing, numeral treatment,
+ * delta chips, or hover behaviour here — `data.mobile` is supplied for every
+ * real caller today, so that path renders byte-identically to before.
  */
 function SmallScoreCard({ data, cardWidth = 320, theme = "dark" }: ScoreCardProps) {
   const t: MetricTheme = THEME[theme];
   const uid = useId();
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const hasMobile = hasSecondSeries(data);
 
   // The series length follows the caller's selected date range (see
   // src/lib/scoreCardAdapter.ts) rather than a fixed 24 points.
-  const pointCount = Math.min(data.desktop.length, data.mobile.length);
+  const pointCount = hasMobile ? Math.min(data.desktop.length, data.mobile!.length) : data.desktop.length;
   const last = Math.max(0, pointCount - 1);
   const idx = Math.min(shownIndex(hoverIndex, last), last);
 
   const metricSize = Math.min(72, Math.max(48, cardWidth * 0.15));
-  const bounds = useMemo(() => domain([...data.desktop, ...data.mobile]), [data.desktop, data.mobile]);
+  const bounds = useMemo(() => domain(hasMobile ? [...data.desktop, ...data.mobile!] : [...data.desktop]), [data.desktop, data.mobile, hasMobile]);
   const dp = useMemo(() => (pointCount > 0 ? seriesPaths(data.desktop, bounds) : null), [data.desktop, bounds, pointCount]);
-  const mp = useMemo(() => (pointCount > 0 ? seriesPaths(data.mobile, bounds) : null), [data.mobile, bounds, pointCount]);
+  const mp = useMemo(() => (hasMobile && pointCount > 0 ? seriesPaths(data.mobile!, bounds) : null), [hasMobile, data.mobile, bounds, pointCount]);
 
-  if (pointCount === 0 || !dp || !mp) {
+  if (pointCount === 0 || !dp) {
     return <EmptyScoreCard title={data.title} theme={t} />;
   }
 
   const dv = data.desktop[idx];
-  const mv = data.mobile[idx];
   const dDelta = deltaFromStart(data.desktop, idx);
-  const mDelta = deltaFromStart(data.mobile, idx);
   const dCol = bandColor(dv);
-  const mCol = bandColor(mv);
   const dChipCol = deltaColor(dDelta);
-  const mChipCol = deltaColor(mDelta);
-  const gap = Math.abs(dv - mv);
+  const mv = hasMobile ? data.mobile![idx] : null;
+  const mDelta = hasMobile ? deltaFromStart(data.mobile!, idx) : null;
+  const mCol = hasMobile ? bandColor(mv!) : null;
+  const mChipCol = hasMobile ? deltaColor(mDelta!) : null;
+  const gap = hasMobile ? Math.abs(dv - mv!) : null;
   const rangeLabel = hoverIndex === null ? "" : dateAt(hoverIndex, last);
 
   const gId = (k: "d" | "m") => `scorecard-${uid}-g-${k}`;
@@ -301,37 +329,42 @@ function SmallScoreCard({ data, cardWidth = 320, theme = "dark" }: ScoreCardProp
         <div style={{ fontSize: 12.5, color: t.ink3, whiteSpace: "nowrap" }}>{rangeLabel}</div>
       </div>
 
-      {/* metric row */}
+      {/* metric row — a single MetricBlock (no Δ gap chip, no device label)
+          when there's no second series to compare `desktop` against. */}
       <div style={{ display: "flex", alignItems: "stretch", gap: 8, margin: "4px 0 8px" }}>
-        <MetricBlock side="d" value={dv} color={dCol} chipColor={dChipCol} delta={dDelta} metricSize={metricSize} theme={t} />
-        <div style={{ flex: "none", alignSelf: "stretch", display: "flex", flexDirection: "column-reverse", alignItems: "center", gap: 8, padding: "0 2px", width: 45 }}>
-          <span aria-hidden="true" style={{ fontSize: 10, height: 15, lineHeight: "15px", color: "transparent" }}>·</span>
-          <div style={{ flex: "1 1 auto", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <span
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 3,
-                boxSizing: "border-box",
-                width: 41,
-                padding: "3px 4px",
-                borderRadius: 999,
-                border: `1px solid ${t.hair}`,
-                color: t.ink3,
-                fontFamily: MONO_FONT,
-                fontSize: 11.5,
-                fontWeight: 550,
-                letterSpacing: "0.03em",
-                whiteSpace: "nowrap",
-              }}
-            >
-              <span>Δ</span>
-              <span>{gap}</span>
-            </span>
+        <MetricBlock side="d" label={hasMobile ? "Desktop" : undefined} value={dv} color={dCol} chipColor={dChipCol} delta={dDelta} metricSize={metricSize} theme={t} />
+        {hasMobile && (
+          <div style={{ flex: "none", alignSelf: "stretch", display: "flex", flexDirection: "column-reverse", alignItems: "center", gap: 8, padding: "0 2px", width: 45 }}>
+            <span aria-hidden="true" style={{ fontSize: 10, height: 15, lineHeight: "15px", color: "transparent" }}>·</span>
+            <div style={{ flex: "1 1 auto", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 3,
+                  boxSizing: "border-box",
+                  width: 41,
+                  padding: "3px 4px",
+                  borderRadius: 999,
+                  border: `1px solid ${t.hair}`,
+                  color: t.ink3,
+                  fontFamily: MONO_FONT,
+                  fontSize: 11.5,
+                  fontWeight: 550,
+                  letterSpacing: "0.03em",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                <span>Δ</span>
+                <span>{gap}</span>
+              </span>
+            </div>
           </div>
-        </div>
-        <MetricBlock side="m" value={mv} color={mCol} chipColor={mChipCol} delta={mDelta} metricSize={metricSize} theme={t} />
+        )}
+        {hasMobile && (
+          <MetricBlock side="m" label="Mobile" value={mv!} color={mCol!} chipColor={mChipCol!} delta={mDelta!} metricSize={metricSize} theme={t} />
+        )}
       </div>
 
       {/* chart — clipped by its own wrapper now that the card no longer clips.
@@ -358,19 +391,23 @@ function SmallScoreCard({ data, cardWidth = 320, theme = "dark" }: ScoreCardProp
               <stop offset="0" style={{ stopColor: dCol, stopOpacity: FILL_TOP_OPACITY }} />
               <stop offset="1" style={{ stopColor: dCol, stopOpacity: FILL_END_OPACITY }} />
             </linearGradient>
-            <linearGradient id={gId("m")} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" style={{ stopColor: mCol, stopOpacity: FILL_TOP_OPACITY }} />
-              <stop offset="1" style={{ stopColor: mCol, stopOpacity: FILL_END_OPACITY }} />
-            </linearGradient>
+            {hasMobile && (
+              <linearGradient id={gId("m")} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" style={{ stopColor: mCol!, stopOpacity: FILL_TOP_OPACITY }} />
+                <stop offset="1" style={{ stopColor: mCol!, stopOpacity: FILL_END_OPACITY }} />
+              </linearGradient>
+            )}
             <clipPath id={cId("d")} clipPathUnits="objectBoundingBox">
               <path d={dp.clip} />
             </clipPath>
-            <clipPath id={cId("m")} clipPathUnits="objectBoundingBox">
-              <path d={mp.clip} />
-            </clipPath>
+            {hasMobile && mp && (
+              <clipPath id={cId("m")} clipPathUnits="objectBoundingBox">
+                <path d={mp.clip} />
+              </clipPath>
+            )}
           </defs>
           <path d={dp.area} fill={`url(#${gId("d")})`} />
-          <path d={mp.area} fill={`url(#${gId("m")})`} />
+          {hasMobile && mp && <path d={mp.area} fill={`url(#${gId("m")})`} />}
         </svg>
 
         {/* Hatch layers are clipped DOM elements, not an SVG <pattern>: a
@@ -378,13 +415,13 @@ function SmallScoreCard({ data, cardWidth = 320, theme = "dark" }: ScoreCardProp
             hatches at 45deg, mobile at -45deg — a redundant channel with color
             for the accessibility pairing. */}
         <HatchLayer clipId={cId("d")} degrees={45} color={dCol} />
-        <HatchLayer clipId={cId("m")} degrees={-45} color={mCol} />
+        {hasMobile && <HatchLayer clipId={cId("m")} degrees={-45} color={mCol!} />}
 
         {/* One <svg> per line: the glow is a CSS filter on that svg's own box,
             so drop-shadow lengths resolve in real px instead of the stretched
             0..100 x 0..40 user units. */}
         <LineSvg d={dp.line} color={dCol} />
-        <LineSvg d={mp.line} color={mCol} />
+        {hasMobile && mp && <LineSvg d={mp.line} color={mCol!} />}
 
         <div
           aria-hidden="true"
@@ -407,7 +444,7 @@ function SmallScoreCard({ data, cardWidth = 320, theme = "dark" }: ScoreCardProp
           }}
         />
         <ChartDot visible={hoverIndex !== null} left={dotLeft(idx)} top={dp.yPct(dv)} color={dCol} cardBg={t.card} />
-        <ChartDot visible={hoverIndex !== null} left={dotLeft(idx)} top={mp.yPct(mv)} color={mCol} cardBg={t.card} />
+        {hasMobile && mp && <ChartDot visible={hoverIndex !== null} left={dotLeft(idx)} top={mp.yPct(mv!)} color={mCol!} cardBg={t.card} />}
       </div>
       </ChartClipWrapper>
     </div>
@@ -427,21 +464,27 @@ function ChartClipWrapper({ children, inset = false }: { children: ReactNode; in
   // Chart inset" row. Every other density keeps the full-bleed -16px/-2px
   // treatment.
   //
+  // Clipped with `clip-path: inset()`, not `overflow: hidden`: overflow
+  // clips all four sides uniformly, but LineSvg's glow is a blurred
+  // drop-shadow that needs room to bleed upward, uncropped, when a series
+  // is pinned at the domain max — overflow: hidden sliced that blur into a
+  // hard flat edge right at the chart's top. inset()'s offsets go negative
+  // to mean "extend the clip region outward" (i.e. don't clip) on that
+  // side, so the top offset is pushed far out while left/right/bottom stay
+  // clipped flush with this box — `round` keeps the same bottom corner
+  // radius `overflow: hidden` used to provide.
+  //
   // `flex: 1 1 auto` + `minHeight: 0` let this wrapper (and the chart inside
   // it, at height: 100%) stretch to fill whatever space is left in the
   // card's fixed total height (see CARD_HEIGHT) after the header/metric
   // rows above it, instead of the chart owning a literal pixel height.
-  return (
-    <div
-      style={
-        inset
-          ? { flex: "1 1 auto", minHeight: 0, overflow: "hidden", margin: "-2px 0 0", padding: "10px 0", borderRadius: "0 0 7px 7px" }
-          : { flex: "1 1 auto", minHeight: 0, overflow: "hidden", margin: `-2px -${CARD_PADDING}px -${CARD_PADDING}px`, paddingTop: 2, borderRadius: "0 0 7px 7px" }
-      }
-    >
-      {children}
-    </div>
-  );
+  const clip = "inset(-1000px 0px 0px 0px round 0 0 7px 7px)";
+  const style = (
+    inset
+      ? { flex: "1 1 auto", minHeight: 0, clipPath: clip, WebkitClipPath: clip, margin: "-2px 0 0", padding: "10px 0" }
+      : { flex: "1 1 auto", minHeight: 0, clipPath: clip, WebkitClipPath: clip, margin: `-2px -${CARD_PADDING}px -${CARD_PADDING}px`, paddingTop: 2 }
+  ) as CSSProperties;
+  return <div style={style}>{children}</div>;
 }
 
 /**
@@ -600,6 +643,7 @@ function ChartDot({ visible, left, top, color, cardBg }: { visible: boolean; lef
 
 function MetricBlock({
   side,
+  label,
   value,
   color,
   chipColor,
@@ -608,6 +652,8 @@ function MetricBlock({
   theme,
 }: {
   side: "d" | "m";
+  /** Device caption above the numeral ("Desktop"/"Mobile"). Omit for a single-metric card, where there's no second block to disambiguate against. */
+  label?: string;
   value: number;
   color: string;
   chipColor: string;
@@ -630,7 +676,7 @@ function MetricBlock({
           color: C.muted,
         }}
       >
-        {side === "d" ? "Desktop" : "Mobile"}
+        {label}
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexDirection: side === "d" ? "row-reverse" : "row" }}>
         {/* Two stacked layers: -webkit-text-stroke centers the stroke on the
@@ -680,47 +726,64 @@ function MetricBlock({
             {value}
           </span>
         </div>
-        <span
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 5,
-            padding: "2px 4px",
-            borderRadius: 4,
-            fontFamily: MONO_FONT,
-            fontSize: 13,
-            fontWeight: 600,
-            color: theme.chipText,
-            background: rgba(chipColor, theme.chipTint),
-            border: "1px solid transparent",
-          }}
-        >
-          <span>{arrow}</span>
-          <span>{Math.abs(delta)}</span>
-        </span>
+        {/* A zero delta never renders — "→ 0" is noise, not signal, and at
+            real data rates it's the single most common case. */}
+        {delta !== 0 && (
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+              padding: "2px 4px",
+              borderRadius: 4,
+              fontFamily: MONO_FONT,
+              fontSize: 13,
+              fontWeight: 600,
+              color: theme.chipText,
+              background: rgba(chipColor, theme.chipTint),
+              border: "1px solid transparent",
+            }}
+          >
+            <span>{arrow}</span>
+            <span>{Math.abs(delta)}</span>
+          </span>
+        )}
       </div>
     </div>
   );
 }
 
 // ── XSmall — chromeless row cell ────────────────────────────────────────
-// A table-row cell, not a card: start value — hairline with the delta pill
-// riding it — current value, once per device. Reuses the same domain, band
-// color, and delta helpers as every other density (see density handoff §4).
-// Anomaly gaps are bridged (no real gap data exists in this app's model, so
-// this is naturally satisfied) and the range band collapses to a single
-// hairline. No card frame, no chart height prop — this density does not draw
-// a chart in the normal sense.
+// A table-row cell, not a card: an outlined "was" chip, a gradient hairline
+// carrying a D/M device badge, and a solid sentiment-filled "is" chip, once
+// per device (or once, for a single-metric card — see hasSecondSeries). No
+// delta pill at this density (see MetricBlock for the shared "never render
+// a zero delta" rule at small/medium/large) — the two chips a few inches
+// apart on the row make the comparison obvious without one, and it would
+// otherwise spend the row's tightest pixels on `→ 0` five times out of
+// eight. Reuses the same domain and band-color helpers as every other
+// density (see density handoff §4). Anomaly gaps are bridged (no real gap
+// data exists in this app's model, so this is naturally satisfied by never
+// segmenting the path) and the range band collapses to a single hairline.
+// No card frame, no chart height prop — this density does not draw a chart
+// in the normal sense.
 
-export function XSmallScoreCard({ data, theme = "dark" }: ScoreCardProps) {
+export function XSmallScoreCard({ data, theme = "dark", showTitle = true }: ScoreCardProps) {
   const t: MetricTheme = THEME[theme];
-  const pointCount = Math.min(data.desktop.length, data.mobile.length);
-  const bounds = useMemo(() => domain([...data.desktop, ...data.mobile]), [data.desktop, data.mobile]);
+  const uid = useId();
+  const hasMobile = hasSecondSeries(data);
+  const pointCount = hasMobile ? Math.min(data.desktop.length, data.mobile!.length) : data.desktop.length;
+  // Both device rows plot at the app-wide fixed points-per-pixel scale
+  // (see xsmallBounds) — the same visual slope means the same score change
+  // everywhere in the table, at every time range — while each still
+  // centers on its own extent so a flat line sits level with its chips.
+  const dBounds = useMemo(() => xsmallBounds(data.desktop), [data.desktop]);
+  const mBounds = useMemo(() => xsmallBounds(hasMobile ? data.mobile! : data.desktop), [hasMobile, data.mobile, data.desktop]);
 
   if (pointCount === 0) {
     return (
-      <div style={{ minWidth: 0, padding: "16px 18px 18px", display: "flex", flexDirection: "column", gap: 8, fontFamily: SANS_FONT }}>
-        <CardTitle title={data.title} fontSize={10} color="#8A8A90" uppercase />
+      <div style={{ width: "100%", minWidth: 0, boxSizing: "border-box", padding: "16px 18px 18px", display: "flex", flexDirection: "column", gap: 10, fontFamily: SANS_FONT }}>
+        {showTitle && <CardTitle title={data.title} fontSize={10} color="#8A8A90" uppercase />}
         <div style={{ color: t.ink3, fontSize: 11 }}>No collections in range.</div>
       </div>
     );
@@ -728,79 +791,230 @@ export function XSmallScoreCard({ data, theme = "dark" }: ScoreCardProps) {
 
   const last = pointCount - 1;
   const dv = data.desktop[last];
-  const mv = data.mobile[last];
-  const dDelta = deltaFromStart(data.desktop, last);
-  const mDelta = deltaFromStart(data.mobile, last);
   const dCol = bandColor(dv);
-  const mCol = bandColor(mv);
-  const dChipCol = deltaColor(dDelta);
-  const mChipCol = deltaColor(mDelta);
-  const dp = seriesPaths(data.desktop, bounds);
-  const mp = seriesPaths(data.mobile, bounds);
+  const mobile = hasMobile ? data.mobile! : null;
+  const mv = mobile ? mobile[last] : null;
+  const mCol = mobile ? bandColor(mv!) : null;
 
   return (
-    <div style={{ minWidth: 0, padding: "16px 18px 18px", display: "flex", flexDirection: "column", gap: 8, fontFamily: SANS_FONT }}>
-      <span style={{ alignSelf: "flex-start", maxWidth: "100%" }}>
-        <CardTitle title={data.title} fontSize={10} color="#8A8A90" uppercase />
-      </span>
-      <XSmallDeviceRow value={dv} startValue={data.desktop[0]} delta={dDelta} color={dCol} chipColor={dChipCol} path={dp.line} />
-      <XSmallDeviceRow value={mv} startValue={data.mobile[0]} delta={mDelta} color={mCol} chipColor={mChipCol} path={mp.line} />
+    // Explicit width: 100% (not left to an ancestor to stretch us) — this
+    // card needs a definite width for XSmallDeviceRow's `flex: 1 1 0`
+    // sparkline slot to have any free space to grow into. A grid item's
+    // default stretch happens to give us one today, but this card is a
+    // reusable export and shouldn't quietly collapse to a stub if it's ever
+    // placed somewhere that doesn't stretch it (an inline-flex wrapper, a
+    // shrink-to-fit flex row, …) — matches SmallScoreCard/ScaledScoreCard,
+    // which already set this for the same reason.
+    <div style={{ width: "100%", minWidth: 0, boxSizing: "border-box", padding: "16px 18px 18px", display: "flex", flexDirection: "column", gap: 10, fontFamily: SANS_FONT }}>
+      {showTitle && (
+        <span style={{ alignSelf: "flex-start", maxWidth: "100%" }}>
+          <CardTitle title={data.title} fontSize={10} color="#8A8A90" uppercase />
+        </span>
+      )}
+      <XSmallDeviceRow device="d" showBadge={hasMobile} values={data.desktop} trusted={data.desktopTrusted} bounds={dBounds} displayValue={dv} color={dCol} gradientId={`xsmall-${uid}-d`} panelBg={t.card} />
+      {mobile && (
+        <XSmallDeviceRow device="m" showBadge values={mobile} trusted={data.mobileTrusted} bounds={mBounds} displayValue={mv!} color={mCol!} gradientId={`xsmall-${uid}-m`} panelBg={t.card} />
+      )}
     </div>
   );
 }
 
+/** Round to 2 decimal places — plenty for a CSS percentage, tidier than a raw float. */
+function pct(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/** Below this measured slot width, XSmallDeviceRow drops the line entirely rather than draw an unreadable stub. */
+const XSMALL_MIN_SLOT_WIDTH = 48;
+
+/**
+ * Measures a ref'd element's real rendered width via ResizeObserver (same
+ * approach as charts.tsx's useResponsiveChartWidth), for callers that need
+ * to size their output to the actual box rather than an assumed one.
+ * Starts at `Infinity` rather than a guessed width, so a caller using this
+ * to decide how much to downsample never over-decimates on a wrong first
+ * guess — it just renders at full resolution until the first real
+ * measurement lands, a run or two later.
+ */
+function useMeasuredWidth<T extends HTMLElement>() {
+  const ref = useRef<T>(null);
+  const [width, setWidth] = useState(Infinity);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+
+    const updateWidth = (nextWidth: number) => {
+      if (!Number.isFinite(nextWidth) || nextWidth <= 0) return;
+      setWidth((currentWidth) => (Number.isFinite(currentWidth) && Math.abs(currentWidth - nextWidth) < 0.5 ? currentWidth : nextWidth));
+    };
+
+    updateWidth(el.getBoundingClientRect().width);
+    const observer = new ResizeObserver((entries) => updateWidth(entries[0]?.contentRect.width ?? 0));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  return { ref, width };
+}
+
 function XSmallDeviceRow({
-  value,
-  startValue,
-  delta,
+  device,
+  showBadge,
+  values,
+  trusted,
+  bounds,
+  displayValue,
   color,
-  chipColor,
-  path,
+  gradientId,
+  panelBg,
 }: {
-  value: number;
-  startValue: number;
-  delta: number;
+  device: "d" | "m";
+  /** False for a single-metric card's lone row (e.g. Agent) — there's no second device to disambiguate from, so the D/M badge would misleadingly claim this is desktop data. */
+  showBadge: boolean;
+  /** The full RAW series (data.desktop/mobile) — the source of truth for the domain, the start chip, and (after downsampling to the slot's real width) the plotted line. */
+  values: number[];
+  /** Same length/order as `values`; a `false` excludes that night from the downsample below. Omitted means every night is trusted. */
+  trusted?: boolean[];
+  /** Domain this series was plotted with — the same one seriesPaths/yFor use for the plotted points. */
+  bounds: [number, number];
+  /** Current value shown in the solid chip — may differ from `values.at(-1)` when the other device's series is shorter (see XSmallScoreCard's pointCount truncation). */
+  displayValue: number;
   color: string;
-  chipColor: string;
-  path: string;
+  gradientId: string;
+  panelBg: string;
 }) {
-  const arrow = delta < 0 ? "↘" : delta > 0 ? "↗" : "→";
+  const startValue = values[0];
+
+  // At 90 days, every raw night plotted into a ~90px slot is sub-pixel —
+  // what renders is aliasing noise, not a trend. Downsample to roughly one
+  // point per 3px of the slot's REAL width (measured, not assumed — the
+  // chips beside it are now intrinsically sized, so this slot's width
+  // varies with their digit count) before plotting; re-runs whenever the
+  // slot resizes. The chips/displayValue above read `values` directly,
+  // never this downsampled view.
+  const { ref: slotRef, width: slotWidth } = useMeasuredWidth<HTMLDivElement>();
+  // A single-metric card (no second device) has no ancestor forcing a wide
+  // column; if its own slot genuinely can't clear this floor even after
+  // XSmallScoreCard's width: 100% fix, a few-px stub reads as broken chrome
+  // rather than a chart. Below the floor, skip the line and dot entirely —
+  // two chips with a gap reads as intentional; this stays keyed off the
+  // SAME unconstrained measurement `target` below uses (not a CSS
+  // min-width on the slot, which would just make it stop being able to
+  // report a width under 48 and never trigger this at all).
+  const showLine = slotWidth >= XSMALL_MIN_SLOT_WIDTH;
+  const target = xsmallTargetPointCount(slotWidth);
+  const plotted = useMemo(() => bucketSeries(values, target, trusted), [values, target, trusted]);
+
+  const path = seriesPaths(plotted, bounds).line;
+
+  // Centered on this series' OWN rendered extent, not the viewBox's nominal
+  // middle: yFor's headroom convention (see lib/scoreCard.ts) intentionally
+  // isn't symmetric, so without this a flat or near-flat line would sit a
+  // couple percent high or low in its 16px slot. SHIFT is a pure CSS
+  // translate applied after plotting — the path's own shape/amplitude is
+  // untouched, only where it sits vertically.
+  const ys = plotted.map((v) => (yFor(v, bounds) / 40) * 100);
+  const shift = 50 - (Math.min(...ys) + Math.max(...ys)) / 2;
+  // The device badge rides the line at its horizontal midpoint (x=50%,
+  // where the badge is always positioned below). The line's points are
+  // evenly spaced, so x=50% falls exactly on a point only when there's an
+  // odd number of them — sampling "the middle index" instead would put the
+  // badge visibly off the actual stroke on any even-length series (a very
+  // steep/jagged one makes even a couple % of horizontal error obvious).
+  // Interpolating the two points straddling x=50% keeps the badge glued to
+  // the line regardless of point count.
+  const midT = (plotted.length - 1) / 2;
+  const midLo = Math.floor(midT);
+  const midHi = Math.ceil(midT);
+  const midFrac = midT - midLo;
+  const midY = ys[midLo] + (ys[midHi] - ys[midLo]) * midFrac + shift;
+
+  const strokeWidth = device === "d" ? 2 : 1.4;
+  const label = device === "d" ? "D" : "M";
+
+  const chipBase: CSSProperties = {
+    flex: "none",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    boxSizing: "border-box",
+    padding: "2px 4px",
+    borderRadius: 5,
+    fontFamily: MONO_FONT,
+    fontSize: 12,
+    fontVariantNumeric: "tabular-nums",
+  };
+
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-      <span style={{ flex: "none", minWidth: 24, textAlign: "right", fontFamily: MONO_FONT, fontSize: 16, fontVariantNumeric: "tabular-nums", color: "#ABABAB" }}>
-        {startValue}
-      </span>
-      <div style={{ flex: "1 1 0", minWidth: 0, position: "relative", height: 16 }}>
-        <svg viewBox="0 0 100 40" preserveAspectRatio="none" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible" }}>
-          <path d={path} vectorEffect="non-scaling-stroke" style={{ fill: "none", stroke: color, strokeWidth: 1.5, strokeLinejoin: "round" }} />
-        </svg>
-        <span
-          style={{
-            position: "absolute",
-            left: "50%",
-            top: "50%",
-            transform: "translate(-50%,-50%)",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 3,
-            fontFamily: MONO_FONT,
-            fontSize: 10,
-            fontWeight: 550,
-            fontVariantNumeric: "tabular-nums",
-            color: "#101010",
-            backgroundColor: chipColor,
-            border: `1px solid ${chipColor}`,
-            borderRadius: 999,
-            padding: "1px 3px",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {arrow} {Math.abs(delta)}
-        </span>
+    <div style={{ display: "flex", alignItems: "center", gap: 0 }}>
+      {/* start — outlined neutral chip ("was") */}
+      <span style={{ ...chipBase, border: "1px solid #757575", background: "transparent", fontWeight: 450, color: "#ABABAB" }}>{startValue}</span>
+
+      {/* sparkline — gradient hairline, centered on its own extent, device badge riding it.
+          Below XSMALL_MIN_SLOT_WIDTH this stays mounted (still measured, so a later resize
+          back above the floor recovers the line) but renders nothing — an unreadable few-px
+          stub is worse than an honest gap between the two chips. */}
+      <div ref={slotRef} style={{ flex: "1 1 0", minWidth: 0, position: "relative", height: 16 }}>
+        {showLine && (
+          <>
+            <svg
+              viewBox="0 0 100 40"
+              preserveAspectRatio="none"
+              style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible", transform: `translateY(${pct(shift)}%)` }}
+            >
+              <defs>
+                {/* gradientUnits="userSpaceOnUse", not the default objectBoundingBox: a
+                    perfectly flat line has a zero-height bounding box, and per the SVG
+                    spec an objectBoundingBox gradient on a zero-extent box doesn't
+                    render at all — a near-flat Accessibility/SEO line would vanish. */}
+                {/* Two stops at #ABABAB, not one: holding the neutral color flat
+                    through the first tenth before ramping to sentiment reads as
+                    a grey tail on an otherwise-sentiment line. A single stop at
+                    0.1 would start the ramp at the line's own origin instead,
+                    splitting the line into a grey half and a sentiment half.
+                    The ramp finishes at 0.7, not 1: no stop past it means the
+                    gradient holds solid sentiment through the last 30%. */}
+                <linearGradient id={gradientId} gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="100" y2="0">
+                  <stop offset="0" stopColor="#ABABAB" />
+                  <stop offset="0.1" stopColor="#ABABAB" />
+                  <stop offset="0.7" stopColor={color} />
+                </linearGradient>
+              </defs>
+              <path d={path} vectorEffect="non-scaling-stroke" style={{ fill: "none", stroke: `url(#${gradientId})`, strokeWidth, strokeLinejoin: "round", strokeLinecap: "round" }} />
+            </svg>
+            {showBadge && (
+              <span
+                style={{
+                  position: "absolute",
+                  left: "50%",
+                  top: `${pct(midY)}%`,
+                  transform: "translate(-50%, -50%)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: 12,
+                  height: 12,
+                  boxSizing: "border-box",
+                  fontFamily: MONO_FONT,
+                  fontSize: 10,
+                  fontWeight: 600,
+                  letterSpacing: "0.03em",
+                  color: "#757575",
+                  background: panelBg,
+                  borderRadius: 3,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {label}
+              </span>
+            )}
+          </>
+        )}
       </div>
-      <span style={{ flex: "none", minWidth: 26, textAlign: "right", fontFamily: MONO_FONT, fontSize: 16, fontWeight: 600, lineHeight: 1, fontVariantNumeric: "tabular-nums", color }}>
-        {value}
-      </span>
+
+      {/* current — solid sentiment chip ("is") */}
+      <span style={{ ...chipBase, border: "1px solid transparent", background: color, fontWeight: 700, color: "#0B0B0B" }}>{displayValue}</span>
     </div>
   );
 }
@@ -824,30 +1038,31 @@ function ScaledScoreCard({
   const uid = useId();
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const isLarge = density === "large";
+  const hasMobile = hasSecondSeries(data);
 
-  const pointCount = Math.min(data.desktop.length, data.mobile.length);
+  const pointCount = hasMobile ? Math.min(data.desktop.length, data.mobile!.length) : data.desktop.length;
   const last = Math.max(0, pointCount - 1);
   const idx = Math.min(shownIndex(hoverIndex, last), last);
   const metricSize = Math.max(defaultMetricSize, Math.min(72, cardWidth * 0.15));
-  const bounds = useMemo(() => domain([...data.desktop, ...data.mobile]), [data.desktop, data.mobile]);
+  const bounds = useMemo(() => domain(hasMobile ? [...data.desktop, ...data.mobile!] : [...data.desktop]), [data.desktop, data.mobile, hasMobile]);
   const dp = useMemo(() => (pointCount > 0 ? seriesPaths(data.desktop, bounds) : null), [data.desktop, bounds, pointCount]);
-  const mp = useMemo(() => (pointCount > 0 ? seriesPaths(data.mobile, bounds) : null), [data.mobile, bounds, pointCount]);
+  const mp = useMemo(() => (hasMobile && pointCount > 0 ? seriesPaths(data.mobile!, bounds) : null), [hasMobile, data.mobile, bounds, pointCount]);
   const dSegments = useMemo(() => trustedIndexSegments(data.desktopTrusted, pointCount), [data.desktopTrusted, pointCount]);
-  const mSegments = useMemo(() => trustedIndexSegments(data.mobileTrusted, pointCount), [data.mobileTrusted, pointCount]);
+  const mSegments = useMemo(() => (hasMobile ? trustedIndexSegments(data.mobileTrusted, pointCount) : []), [hasMobile, data.mobileTrusted, pointCount]);
 
-  if (pointCount === 0 || !dp || !mp) {
+  if (pointCount === 0 || !dp) {
     return <EmptyScoreCard title={data.title} theme={t} />;
   }
 
   const dv = data.desktop[idx];
-  const mv = data.mobile[idx];
   const dDelta = deltaFromStart(data.desktop, idx);
-  const mDelta = deltaFromStart(data.mobile, idx);
   const dCol = bandColor(dv);
-  const mCol = bandColor(mv);
   const dChipCol = deltaColor(dDelta);
-  const mChipCol = deltaColor(mDelta);
-  const gap = Math.abs(dv - mv);
+  const mv = hasMobile ? data.mobile![idx] : null;
+  const mDelta = hasMobile ? deltaFromStart(data.mobile!, idx) : null;
+  const mCol = hasMobile ? bandColor(mv!) : null;
+  const mChipCol = hasMobile ? deltaColor(mDelta!) : null;
+  const gap = hasMobile ? Math.abs(dv - mv!) : null;
   const rangeLabel = hoverIndex === null ? "" : dateAt(hoverIndex, last);
   const gId = (k: "d" | "m") => `scorecard-${uid}-g-${k}`;
   const cId = (k: "d" | "m") => `scorecard-${uid}-c-${k}`;
@@ -870,10 +1085,12 @@ function ScaledScoreCard({
   // Accessibility/BP/SEO) draws a bare line for that segment instead, exactly
   // like the density handoff describes — driven by data.desktopRange/
   // mobileRange, not by data.title.
-  const bandFor = (device: "d" | "m", segment: number[]) => {
+  const bandFor = (device: "d" | "m", segment: number[]): { path: string; clip: string } | null => {
     const range = device === "d" ? data.desktopRange : data.mobileRange;
     if (!range) return null;
-    return segmentRangeBand(range, segment, last, bounds);
+    const path = segmentRangeBand(range, segment, last, bounds);
+    const clip = segmentRangeBandClip(range, segment, last, bounds);
+    return path && clip ? { path, clip } : null;
   };
 
   // §4's marker labels alternate rows by index and flip to the left of their
@@ -903,35 +1120,39 @@ function ScaledScoreCard({
       </div>
 
       <div style={{ display: "flex", alignItems: "stretch", gap: 8, margin: "4px 0 8px" }}>
-        <MetricBlock side="d" value={dv} color={dCol} chipColor={dChipCol} delta={dDelta} metricSize={metricSize} theme={t} />
-        <div style={{ flex: "none", alignSelf: "stretch", display: "flex", flexDirection: "column-reverse", alignItems: "center", gap: 8, padding: "0 2px", width: 45 }}>
-          <span aria-hidden="true" style={{ fontSize: 10, height: 15, lineHeight: "15px", color: "transparent" }}>·</span>
-          <div style={{ flex: "1 1 auto", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <span
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 3,
-                boxSizing: "border-box",
-                width: 41,
-                padding: "3px 4px",
-                borderRadius: 999,
-                border: `1px solid ${t.hair}`,
-                color: t.ink3,
-                fontFamily: MONO_FONT,
-                fontSize: 11.5,
-                fontWeight: 550,
-                letterSpacing: "0.03em",
-                whiteSpace: "nowrap",
-              }}
-            >
-              <span>Δ</span>
-              <span>{gap}</span>
-            </span>
+        <MetricBlock side="d" label={hasMobile ? "Desktop" : undefined} value={dv} color={dCol} chipColor={dChipCol} delta={dDelta} metricSize={metricSize} theme={t} />
+        {hasMobile && (
+          <div style={{ flex: "none", alignSelf: "stretch", display: "flex", flexDirection: "column-reverse", alignItems: "center", gap: 8, padding: "0 2px", width: 45 }}>
+            <span aria-hidden="true" style={{ fontSize: 10, height: 15, lineHeight: "15px", color: "transparent" }}>·</span>
+            <div style={{ flex: "1 1 auto", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 3,
+                  boxSizing: "border-box",
+                  width: 41,
+                  padding: "3px 4px",
+                  borderRadius: 999,
+                  border: `1px solid ${t.hair}`,
+                  color: t.ink3,
+                  fontFamily: MONO_FONT,
+                  fontSize: 11.5,
+                  fontWeight: 550,
+                  letterSpacing: "0.03em",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                <span>Δ</span>
+                <span>{gap}</span>
+              </span>
+            </div>
           </div>
-        </div>
-        <MetricBlock side="m" value={mv} color={mCol} chipColor={mChipCol} delta={mDelta} metricSize={metricSize} theme={t} />
+        )}
+        {hasMobile && (
+          <MetricBlock side="m" label="Mobile" value={mv!} color={mCol!} chipColor={mChipCol!} delta={mDelta!} metricSize={metricSize} theme={t} />
+        )}
       </div>
 
       <ChartClipWrapper inset={isLarge}>
@@ -955,16 +1176,20 @@ function ScaledScoreCard({
                 <stop offset="0" style={{ stopColor: dCol, stopOpacity: FILL_TOP_OPACITY }} />
                 <stop offset="1" style={{ stopColor: dCol, stopOpacity: FILL_END_OPACITY }} />
               </linearGradient>
-              <linearGradient id={gId("m")} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" style={{ stopColor: mCol, stopOpacity: FILL_TOP_OPACITY }} />
-                <stop offset="1" style={{ stopColor: mCol, stopOpacity: FILL_END_OPACITY }} />
-              </linearGradient>
+              {hasMobile && (
+                <linearGradient id={gId("m")} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" style={{ stopColor: mCol!, stopOpacity: FILL_TOP_OPACITY }} />
+                  <stop offset="1" style={{ stopColor: mCol!, stopOpacity: FILL_END_OPACITY }} />
+                </linearGradient>
+              )}
               <clipPath id={cId("d")} clipPathUnits="objectBoundingBox">
                 <path d={dp.clip} />
               </clipPath>
-              <clipPath id={cId("m")} clipPathUnits="objectBoundingBox">
-                <path d={mp.clip} />
-              </clipPath>
+              {hasMobile && mp && (
+                <clipPath id={cId("m")} clipPathUnits="objectBoundingBox">
+                  <path d={mp.clip} />
+                </clipPath>
+              )}
             </defs>
           </svg>
 
@@ -977,7 +1202,7 @@ function ScaledScoreCard({
             if (!band) return null;
             const clipId = `${cId("d")}-band-${segment[0]}`;
             return (
-              <RangeBandLayer key={`d-band-${segment[0]}`} clipId={clipId} path={band} degrees={45} color={dCol} />
+              <RangeBandLayer key={`d-band-${segment[0]}`} clipId={clipId} path={band.path} clipPath={band.clip} degrees={45} color={dCol} />
             );
           })}
           {mSegments.map((segment) => {
@@ -985,14 +1210,14 @@ function ScaledScoreCard({
             if (!band) return null;
             const clipId = `${cId("m")}-band-${segment[0]}`;
             return (
-              <RangeBandLayer key={`m-band-${segment[0]}`} clipId={clipId} path={band} degrees={-45} color={mCol} />
+              <RangeBandLayer key={`m-band-${segment[0]}`} clipId={clipId} path={band.path} clipPath={band.clip} degrees={-45} color={mCol!} />
             );
           })}
 
           {/* Anomaly gap: a dashed amber block between two trusted segments,
               matching HistoryChart's anomaly presentation (§4). */}
           {Array.from({ length: pointCount }, (_, index) => index)
-            .filter((index) => !isTrusted("d", index) || !isTrusted("m", index))
+            .filter((index) => !isTrusted("d", index) || (hasMobile && !isTrusted("m", index)))
             .map((index) => (
               <AnomalyBlock key={`anomaly-${index}`} x={xFor(index, last)} width={last > 0 ? 100 / last : 100} />
             ))}
@@ -1007,8 +1232,8 @@ function ScaledScoreCard({
             {dSegments.map((segment) => (
               <LineOrDot key={`d-line-${segment[0]}`} segment={segment} values={data.desktop} bounds={bounds} last={last} color={dCol} width={isLarge ? 2.5 : 2.5} />
             ))}
-            {mSegments.map((segment) => (
-              <LineOrDot key={`m-line-${segment[0]}`} segment={segment} values={data.mobile} bounds={bounds} last={last} color={mCol} width={1.5} />
+            {hasMobile && mSegments.map((segment) => (
+              <LineOrDot key={`m-line-${segment[0]}`} segment={segment} values={data.mobile!} bounds={bounds} last={last} color={mCol!} width={1.5} />
             ))}
           </svg>
 
@@ -1034,7 +1259,7 @@ function ScaledScoreCard({
             }}
           />
           <ChartDot visible={hoverIndex !== null && isTrusted("d", idx)} left={dotLeft(idx)} top={dp.yPct(dv)} color={dCol} cardBg={t.card} />
-          <ChartDot visible={hoverIndex !== null && isTrusted("m", idx)} left={dotLeft(idx)} top={mp.yPct(mv)} color={mCol} cardBg={t.card} />
+          {hasMobile && mp && <ChartDot visible={hoverIndex !== null && isTrusted("m", idx)} left={dotLeft(idx)} top={mp.yPct(mv!)} color={mCol!} cardBg={t.card} />}
         </div>
       </ChartClipWrapper>
 
@@ -1048,7 +1273,7 @@ function ScaledScoreCard({
  * small's area-under-the-median treatment but shaped to `path` (the band's
  * own polygon) instead of the median's clip curve.
  */
-function RangeBandLayer({ clipId, path, degrees, color }: { clipId: string; path: string; degrees: number; color: string }) {
+function RangeBandLayer({ clipId, path, clipPath, degrees, color }: { clipId: string; path: string; clipPath: string; degrees: number; color: string }) {
   const style = {
     position: "absolute",
     inset: 0,
@@ -1061,8 +1286,14 @@ function RangeBandLayer({ clipId, path, degrees, color }: { clipId: string; path
     <>
       <svg viewBox="0 0 100 40" preserveAspectRatio="none" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
         <defs>
-          <clipPath id={clipId} clipPathUnits="userSpaceOnUse">
-            <path d={path} />
+          {/* objectBoundingBox (0..1 coords), not userSpaceOnUse: this
+              clipPath is applied via CSS clip-path to the plain HTML div
+              below, not to another shape inside this <svg> — userSpaceOnUse
+              would clip to the raw 100x40 viewBox units taken as literal
+              CSS px, pinning the clip to a tiny region in the div's corner
+              instead of scaling to its actual box. */}
+          <clipPath id={clipId} clipPathUnits="objectBoundingBox">
+            <path d={clipPath} />
           </clipPath>
         </defs>
         <path d={path} fill={rgba(color, 0.16)} />
