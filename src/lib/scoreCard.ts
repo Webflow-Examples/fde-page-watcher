@@ -27,15 +27,124 @@ export function deltaColor(delta: number): string {
 export const DOMAIN_HEADROOM = 0.14;
 
 /**
+ * Floor on a chart's plotted span (in score points). Real values that all
+ * sit within a few points of each other (e.g. Accessibility 95-97) would
+ * otherwise fill the entire 0..39 y-range with that few-point wobble,
+ * reading as a shapeless blob with no sense of scale — this guarantees at
+ * least a 20-point window so small, real movement stays legible.
+ */
+export const MIN_DOMAIN_SPAN = 20;
+
+/**
  * One domain per card, computed from BOTH series so desktop and mobile stay
  * comparable. Padding is added only below the minimum, so the peak of either
- * series always touches the top edge of the chart box.
+ * series always touches the top edge of the chart box — unless the data's
+ * own span is under `MIN_DOMAIN_SPAN`, in which case the domain is widened
+ * to that floor, centered on the data (and clamped to the valid 0-100 score
+ * range), since there's no real peak worth pinning to the top at that point.
  */
 export function domain(values: number[]): [lo: number, up: number] {
+  const dataLo = Math.min(...values);
+  const dataUp = Math.max(...values);
+  const span = dataUp - dataLo;
+  if (span < MIN_DOMAIN_SPAN) {
+    const mid = (dataLo + dataUp) / 2;
+    let lo = mid - MIN_DOMAIN_SPAN / 2;
+    let up = mid + MIN_DOMAIN_SPAN / 2;
+    if (up > 100) {
+      lo -= up - 100;
+      up = 100;
+    }
+    if (lo < 0) {
+      up += -lo;
+      lo = 0;
+    }
+    return [Math.max(0, lo), Math.min(100, up)];
+  }
+  const pad = span * DOMAIN_HEADROOM;
+  return [dataLo - pad, dataUp];
+}
+
+/**
+ * Fixed scale for every XSmall sparkline in the app: 1 score point is
+ * always this many px of vertical travel. A per-series floor (the earlier
+ * approach) still lets two different cards in the same row draw at two
+ * different scales, so their slopes can't be compared; a fixed
+ * points-per-pixel makes the same visual slope mean the same score change
+ * everywhere in the table, at every selected time range. Calibrated so a
+ * 1-point wobble is invisible, a 4-point move is perceptible, and a
+ * 10-point move clearly reads as a slope — tune this constant alone if
+ * that stops holding, never bring back per-series auto-fit.
+ */
+export const XSMALL_PX_PER_POINT = 0.5;
+/** XSmall's sparkline slot height (px) — see XSmallDeviceRow's fixed `height: 16` — the other half of the calculation below. */
+export const XSMALL_SLOT_HEIGHT = 16;
+/** Score-point span that exactly fills the 16px slot at `XSMALL_PX_PER_POINT`. */
+export const XSMALL_VISIBLE_SPAN = XSMALL_SLOT_HEIGHT / XSMALL_PX_PER_POINT;
+/** Headroom added on each side ONLY when a series' own spread exceeds `XSMALL_VISIBLE_SPAN` and has to be compressed to fit. */
+export const XSMALL_OVERFLOW_PADDING = 0.08;
+
+/**
+ * One device's XSmall y-domain, centered on THIS series' own extent (so a
+ * flat or near-flat line still sits level with its chips) at the app-wide
+ * fixed `XSMALL_VISIBLE_SPAN` — every card in every row uses this same
+ * span, so slopes are comparable across the whole table. Only when the
+ * series' own real spread genuinely exceeds that span does this fall back
+ * to fitting the series (padded `XSMALL_OVERFLOW_PADDING` on each side) —
+ * never per-series fitting for a series that already fits.
+ */
+export function xsmallBounds(values: number[]): [number, number] {
   const lo = Math.min(...values);
   const up = Math.max(...values);
-  const pad = (up - lo) * DOMAIN_HEADROOM || 1;
-  return [lo - pad, up];
+  const actual = up - lo;
+  if (actual > XSMALL_VISIBLE_SPAN) {
+    const pad = actual * XSMALL_OVERFLOW_PADDING;
+    return [lo - pad, up + pad];
+  }
+  const mid = (lo + up) / 2;
+  return [mid - XSMALL_VISIBLE_SPAN / 2, mid + XSMALL_VISIBLE_SPAN / 2];
+}
+
+/** At most one point rendered per ~3px of slot width, floored at 2 so a sparkline never collapses to a single point. */
+export function xsmallTargetPointCount(slotWidthPx: number): number {
+  return Math.max(2, Math.floor(slotWidthPx / 3));
+}
+
+function median(sortedAscendingInput: number[]): number {
+  const sorted = [...sortedAscendingInput].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+/**
+ * Downsamples `values` to `target` contiguous buckets (median of each,
+ * not the mean — one bad night shouldn't move the line, and the series is
+ * already a median) for a slot too narrow to plot every point without
+ * aliasing into noise. `trusted[i] === false` drops that night from its
+ * bucket; a bucket left with nothing trusted inherits the previous
+ * bucket's value, bridging the gap rather than breaking the line (XSmall
+ * never breaks its line — see the density handoff §4). The true first and
+ * last values always survive as the first and last output point no matter
+ * what their buckets computed, so the line's endpoints always match the
+ * chips exactly. A no-op when there's nothing to collapse.
+ */
+export function bucketSeries(values: number[], target: number, trusted?: boolean[]): number[] {
+  if (target < 2 || values.length <= target) return values;
+  const buckets: number[][] = Array.from({ length: target }, () => []);
+  values.forEach((value, index) => {
+    if (trusted && trusted[index] === false) return;
+    const bucketIndex = Math.min(target - 1, Math.floor((index / values.length) * target));
+    buckets[bucketIndex].push(value);
+  });
+  const out: number[] = [];
+  let previous = values[0];
+  buckets.forEach((bucket) => {
+    previous = bucket.length ? median(bucket) : previous;
+    out.push(previous);
+  });
+  out[0] = values[0];
+  out[out.length - 1] = values[values.length - 1];
+  return out;
 }
 
 /**
@@ -167,6 +276,30 @@ export function segmentRangeBand(
   if (!hasSpread) return null;
   const top = indices.map((index) => `${round(xFor(index, lastIndex))} ${round(yFor(range[index].hi, bounds))}`);
   const bottom = [...indices].reverse().map((index) => `${round(xFor(index, lastIndex))} ${round(yFor(range[index].lo, bounds))}`);
+  return "M " + [...top, ...bottom].join(" L ") + " Z";
+}
+
+/**
+ * Same band as `segmentRangeBand`, normalized to 0..1 (objectBoundingBox
+ * units) instead of the raw 0 0 100 40 viewBox. `segmentRangeBand`'s path is
+ * drawn inside an `<svg viewBox="0 0 100 40">`, where those raw units are
+ * correct; this one is for the CSS `clip-path: url(#id)` on the plain HTML
+ * div that paints the band's hatch pattern (see RangeBandLayer) — a
+ * `clipPathUnits="userSpaceOnUse"` clip built from the raw path doesn't
+ * scale to that div's box, so it clips to a tiny region pinned at the
+ * viewBox's literal 100x40 px instead of the div's actual size. Mirrors how
+ * `seriesPaths().clip` normalizes the median line's own clip path.
+ */
+export function segmentRangeBandClip(
+  range: ScoreCardRangePoint[],
+  indices: number[],
+  lastIndex: number,
+  bounds: [number, number],
+): string | null {
+  const hasSpread = indices.some((index) => range[index].hi > range[index].lo);
+  if (!hasSpread) return null;
+  const top = indices.map((index) => `${round(xFor(index, lastIndex) / 100, 1e4)} ${round(yFor(range[index].hi, bounds) / 40, 1e4)}`);
+  const bottom = [...indices].reverse().map((index) => `${round(xFor(index, lastIndex) / 100, 1e4)} ${round(yFor(range[index].lo, bounds) / 40, 1e4)}`);
   return "M " + [...top, ...bottom].join(" L ") + " Z";
 }
 

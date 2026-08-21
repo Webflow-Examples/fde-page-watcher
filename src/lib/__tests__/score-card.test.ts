@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   bandColor,
+  bucketSeries,
   deltaColor,
   deltaFromStart,
   domain,
@@ -11,6 +12,8 @@ import {
   shownIndex,
   trustedIndexSegments,
   xFor,
+  xsmallBounds,
+  xsmallTargetPointCount,
   yFor,
 } from "../scoreCard";
 
@@ -22,10 +25,10 @@ describe("domain", () => {
     expect(lo).toBeCloseTo(44.4, 5);
   });
 
-  it("falls back to a pad of 1 when every value is identical (up - lo === 0)", () => {
+  it("widens to a 20-point span centered on the data when every value is identical", () => {
     const [lo, up] = domain([70, 70, 70]);
-    expect(up).toBe(70);
-    expect(lo).toBe(69);
+    expect(lo).toBe(60);
+    expect(up).toBe(80);
   });
 
   it("considers desktop and mobile together as one shared domain", () => {
@@ -33,6 +36,104 @@ describe("domain", () => {
     expect(up).toBe(95);
     // pad = (95-40)*0.14 = 7.7
     expect(lo).toBeCloseTo(32.3, 5);
+  });
+
+  it("widens a tight real spread to the 20-point floor, centered on the data", () => {
+    // lo=95, up=97, span=2 < 20 -> mid=96, [86,106] -> clamp up to 100, shift lo by 6
+    const [lo, up] = domain([95, 97]);
+    expect(up).toBe(100);
+    expect(lo).toBe(80);
+  });
+
+  it("clamps the widened floor to the valid 0-100 score range at the low end", () => {
+    // lo=1, up=2, span=1 < 20 -> mid=1.5, [-8.5, 11.5] -> shift up by 8.5, clamp lo to 0
+    const [lo, up] = domain([1, 2]);
+    expect(lo).toBe(0);
+    expect(up).toBe(20);
+  });
+
+  it("leaves a real spread of exactly 20 or more untouched by the floor", () => {
+    const [lo, up] = domain([40, 60]);
+    expect(up).toBe(60);
+    // pad = (60-40)*0.14 = 2.8
+    expect(lo).toBeCloseTo(37.2, 5);
+  });
+});
+
+describe("xsmallBounds", () => {
+  it("uses the fixed 32-point visible span (16px slot / 0.5 px-per-point), centered on the data", () => {
+    // span=4, well under the 32-point visible span -> fixed-span branch: mid=89 +/- 16
+    const [lo, up] = xsmallBounds([87, 91]);
+    expect(lo).toBe(73);
+    expect(up).toBe(105);
+  });
+
+  it("draws the same fixed span regardless of how tight the real spread is", () => {
+    // a near-flat series still gets the full 32-point span, not a tighter per-series fit
+    const [lo, up] = xsmallBounds([95, 97]);
+    expect(lo).toBe(80);
+    expect(up).toBe(112);
+  });
+
+  it("leaves a spread exactly at the visible span on the fixed-span branch (not overflow)", () => {
+    const [lo, up] = xsmallBounds([50, 82]); // actual spread is exactly 32
+    expect(lo).toBe(50);
+    expect(up).toBe(82);
+  });
+
+  it("only falls back to fitting the series when its spread genuinely exceeds the visible span", () => {
+    // actual spread 50 > 32 -> overflow branch, padded 8% of that spread (4) on each side
+    const [lo, up] = xsmallBounds([40, 90]);
+    expect(lo).toBe(36);
+    expect(up).toBe(94);
+  });
+});
+
+describe("xsmallTargetPointCount", () => {
+  it("targets roughly one point per 3px of slot width", () => {
+    expect(xsmallTargetPointCount(90)).toBe(30);
+  });
+
+  it("floors at 2 so a sparkline never collapses to a single point", () => {
+    expect(xsmallTargetPointCount(3)).toBe(2);
+    expect(xsmallTargetPointCount(0)).toBe(2);
+  });
+});
+
+describe("bucketSeries", () => {
+  it("is a no-op when the series already fits the target", () => {
+    expect(bucketSeries([1, 2, 3], 5)).toEqual([1, 2, 3]);
+  });
+
+  it("collapses each bucket to its median, not its mean", () => {
+    const values = [1, 2, 3, 10, 10, 99, 7, 8, 9];
+    const result = bucketSeries(values, 3);
+    // middle bucket is [10,10,99]; median 10, a mean would be ~39.7
+    expect(result[1]).toBe(10);
+  });
+
+  it("always preserves the true first and last value, even after bucketing", () => {
+    const values = [5, 40, 41, 42, 43, 44, 45, 46, 47, 99];
+    const result = bucketSeries(values, 3);
+    expect(result[0]).toBe(5);
+    expect(result[result.length - 1]).toBe(99);
+  });
+
+  it("excludes untrusted nights from their bucket's median", () => {
+    const values = [10, 10, 10, 90, 10, 10];
+    const trusted = [true, true, true, false, true, true];
+    const result = bucketSeries(values, 3, trusted);
+    // middle bucket is indices [2,3]; index 3 (value 90) is untrusted and excluded,
+    // leaving only [10] — a median including the 90 would be 50
+    expect(result[1]).toBe(10);
+  });
+
+  it("an all-untrusted bucket inherits the previous bucket's computed value", () => {
+    const values = [5, 15, 99, 99, 20, 30];
+    const trusted = [true, true, false, false, true, true];
+    const result = bucketSeries(values, 3, trusted);
+    // bucket0 = [5,15] -> median 10; bucket1 has nothing trusted -> inherits 10
+    expect(result[1]).toBe(10);
   });
 });
 
