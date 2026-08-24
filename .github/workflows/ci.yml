@@ -5,6 +5,7 @@ on:
     branches: [main]
   push:
     branches: [main]
+  workflow_dispatch: {} # TEMP: manual trigger for pre-PR validation, removed before merge
 
 permissions:
   contents: read
