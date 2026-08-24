@@ -187,6 +187,20 @@ export function setVisitorExperienceVisible(
   }, dataStore);
 }
 
+/**
+ * Record or withdraw project-level consent for public external agent audits.
+ * Withdrawing consent stops future requests; evidence already stored is
+ * retained, since it is a historical reading rather than a live permission.
+ */
+export function setExternalAgentAuditEnabled(
+  enabled: boolean,
+  dataStore: DataStore = getStore(),
+): Promise<AppState> {
+  return withState((state) => {
+    state.externalAgentAuditEnabled = enabled;
+  }, dataStore);
+}
+
 export function setAlertWebhookUrl(
   value: string,
   dataStore: DataStore = getStore(),

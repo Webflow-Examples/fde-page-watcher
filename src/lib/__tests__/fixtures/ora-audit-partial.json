@@ -1,0 +1,121 @@
+{
+  "domain": "example.com",
+  "name": "Example",
+  "score": 44,
+  "scoreMax": 100,
+  "essentials": {
+    "score": null,
+    "label": "Not enough applicable checks to score",
+    "required": { "earned": 20, "available": 80, "passing": 2, "total": 8 },
+    "recommended": { "earned": 0, "available": 20, "passing": 0, "total": 3 },
+    "bonusPoints": 0,
+    "bonusSignals": 0,
+    "eligibleChecks": 11,
+    "activeSurfaces": [],
+    "accessSignals": [],
+    "checks": {
+      "sitemap": {
+        "tier": "recommended",
+        "bonus": false,
+        "fraction": 1,
+        "occurrences": 1,
+        "essentialsGain": null
+      },
+      "content-no-js": {
+        "tier": "required",
+        "bonus": false,
+        "fraction": 0,
+        "occurrences": 1,
+        "essentialsGain": 10
+      }
+    },
+    "issues": ["content-no-js"],
+    "scoreEvidence": {
+      "essential": ["content-no-js"],
+      "recommended": ["sitemap"],
+      "bonus": []
+    }
+  },
+  "grade": "F",
+  "gradeColor": "#dc2626",
+  "ctaMessage": null,
+  "scannedAt": "2026-08-24T05:01:00.000Z",
+  "durationMs": null,
+  "analysisStatus": "partial",
+  "pendingChecks": ["openapi-spec", "mcp-server", "rate-limit-headers"],
+  "layers": [
+    {
+      "id": "accessibility",
+      "name": "Access",
+      "score": 3,
+      "maxScore": 30,
+      "checks": [
+        {
+          "id": "sitemap",
+          "name": "Sitemap exists",
+          "status": "pass",
+          "score": 3,
+          "maxScore": 3,
+          "bonus": false,
+          "maturity": "verified",
+          "tier": "required",
+          "details": "sitemap.xml lists 412 URLs."
+        },
+        {
+          "id": "content-no-js",
+          "name": "Content without JavaScript",
+          "status": "fail",
+          "score": 0,
+          "maxScore": 6,
+          "estScoreGain": 6,
+          "bonus": false,
+          "maturity": "verified",
+          "tier": "required",
+          "details": "The rendered page returned an empty body with JavaScript disabled."
+        }
+      ]
+    },
+    {
+      "id": "usability",
+      "name": "Usability",
+      "score": 0,
+      "maxScore": 40,
+      "checks": [
+        {
+          "id": "openapi-spec",
+          "name": "OpenAPI spec published",
+          "status": "pending",
+          "score": 0,
+          "maxScore": 5,
+          "bonus": false,
+          "maturity": "verified",
+          "tier": "required"
+        },
+        {
+          "id": "mcp-server",
+          "name": "MCP server / manifest",
+          "status": "pending",
+          "score": 0,
+          "maxScore": 4,
+          "bonus": false,
+          "maturity": "verified",
+          "tier": "required"
+        }
+      ]
+    }
+  ],
+  "topFixes": [
+    {
+      "id": "content-no-js",
+      "layerId": "accessibility",
+      "name": "Content without JavaScript",
+      "estScoreGain": 6,
+      "bonus": false
+    }
+  ],
+  "url": "https://ora.ai/score/example.com",
+  "generatedAt": "2026-08-24T05:01:04.000Z",
+  "source": "ora.ai",
+  "contractVersion": "1.20.1",
+  "urlKind": "domain"
+}

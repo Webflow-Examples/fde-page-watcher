@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { TENANT, type AppState, type ChangeMarker, type Night, type WatchPage } from "../types";
 import type { CruxPageEvidence } from "../crux";
+import type { ExternalAgentOriginAudit } from "../agentAudit";
 import { buildInitialState, buildSeedCruxEvidence, DEMO_DATA_VERSION } from "../seed";
 import { captureAgentReadiness } from "../agentScoring";
 import { effectivePerformanceThresholds } from "../performanceThresholds";
@@ -30,6 +31,12 @@ export interface DataStore {
   getState(): Promise<AppState>;
   /** Weekly rolling visitor-experience evidence, stored separately from PSI history. */
   getCruxEvidence(): Promise<CruxPageEvidence[]>;
+  /**
+   * Origin-scoped external agent-readiness audits. Held apart from page history
+   * and from the local agent scan: an external provider evaluates a whole
+   * origin, and its readings never feed page status or collection completion.
+   */
+  getExternalAgentAudits(): Promise<ExternalAgentOriginAudit[]>;
   /**
    * Atomically re-read, mutate, and commit the tenant state. Filesystem
    * adapters serialize this callback; durable adapters can map it to a
@@ -183,6 +190,11 @@ class FsDataStore implements DataStore {
     return this.tenant === TENANT && process.env.DATASET_MODE !== "live"
       ? buildSeedCruxEvidence()
       : [];
+  }
+
+  /** No local fixture: external audits only ever come from a real provider read. */
+  async getExternalAgentAudits(): Promise<ExternalAgentOriginAudit[]> {
+    return [];
   }
 
   async updateState(mutate: (state: AppState) => void | Promise<void>): Promise<AppState> {

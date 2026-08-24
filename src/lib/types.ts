@@ -696,6 +696,14 @@ export interface AppState {
   alertDigests?: DailyAlertDigest[];
   /** Presentation-only feature flag. CrUX collection continues while hidden. */
   visitorExperienceVisible?: boolean;
+  /**
+   * Project-level consent for external agent audits. Off until a project
+   * explicitly enables it, because a provider scan is public: the result enters
+   * the provider's directory and is readable by anyone. This is a consent
+   * record, not a presentation flag — no external request may be made while it
+   * is false.
+   */
+  externalAgentAuditEnabled?: boolean;
   agentIgnoreDefaults?: AgentIgnoreSettings;
   performanceThresholds?: PerformanceThresholds;
   collectionSchedule?: CollectionSchedule;

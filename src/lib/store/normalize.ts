@@ -16,6 +16,9 @@ export function normalizeState(state: AppState): AppState {
   state.alertWebhookUrl = normalizeAlertWebhookUrl(state.alertWebhookUrl);
   state.alertDigests = (state.alertDigests ?? []).slice(-30);
   state.visitorExperienceVisible = state.visitorExperienceVisible === true;
+  // Consent defaults closed: anything other than an explicit true means no
+  // external provider request is permitted for this project.
+  state.externalAgentAuditEnabled = state.externalAgentAuditEnabled === true;
   state.agentIgnoreDefaults = normalizeAgentIgnoreSettings(state.agentIgnoreDefaults);
   state.performanceThresholds = normalizePerformanceThresholds(state.performanceThresholds);
   if (normalizeWatchCapacity(state.pages)) delete state.watcherNote;

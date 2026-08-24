@@ -19,8 +19,20 @@ describe("state normalization", () => {
     expect(normalized.agentIgnoreDefaults).toEqual({ checks: [], groups: [] });
     expect(normalized.performanceThresholds).toEqual(DEFAULT_PERFORMANCE_THRESHOLDS);
     expect(normalized.visitorExperienceVisible).toBe(false);
+    // External audit consent defaults closed on legacy state: no prior project
+    // is treated as having agreed to a public provider scan.
+    expect(normalized.externalAgentAuditEnabled).toBe(false);
     expect(normalized.pages[0].agentIgnores).toEqual({ checks: [checkKey], groups: [] });
     expect(normalized.pages[0].agentIgnoreRestores).toEqual({ checks: [], groups: [] });
+  });
+
+  it("only accepts an explicit true as external audit consent", () => {
+    for (const value of [undefined, null, false, 0, "true", 1, {}]) {
+      const state = { pages: [], recs: [], externalAgentAuditEnabled: value } as unknown as AppState;
+      expect(normalizeState(state).externalAgentAuditEnabled).toBe(false);
+    }
+    const consented = { pages: [], recs: [], externalAgentAuditEnabled: true } as AppState;
+    expect(normalizeState(consented).externalAgentAuditEnabled).toBe(true);
   });
 
   it("freezes legacy per-run checks into immutable readiness snapshots", () => {
