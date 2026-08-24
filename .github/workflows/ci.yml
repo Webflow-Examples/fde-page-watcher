@@ -4,8 +4,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main]
-  workflow_dispatch: {} # TEMP: manual trigger for pre-PR validation, removed before merge
+    branches: [main, chore/add-github-actions-ci] # TEMP: validate pre-PR, branch removed before merge
 
 permissions:
   contents: read
