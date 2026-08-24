@@ -183,9 +183,9 @@ describe("operation coverage", () => {
     const fetchFn = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
       if (url.includes("/api/scan/checks")) {
-        return Response.json({ contractVersion: "1.20.1", results: [{ id: "a", status: "pass" }] });
+        return Response.json({ contractVersion: "1.21.0", results: [{ id: "a", status: "pass" }] });
       }
-      return Response.json({ contractVersion: "1.20.1", analysisStatus: "complete" });
+      return Response.json({ contractVersion: "1.21.0", analysisStatus: "complete" });
     }) as unknown as typeof fetch;
 
     await getCachedOraAudit("https://example.com", { fetchFn, onOperation });

@@ -39,7 +39,7 @@ function finding(
 function snapshot(overrides: Partial<ExternalAgentAuditSnapshot> = {}): ExternalAgentAuditSnapshot {
   return {
     schemaVersion: 1,
-    contractVersion: "1.20.1",
+    contractVersion: "1.21.0",
     provider: "ora",
     origin: "https://example.com",
     target: "https://example.com",
@@ -236,7 +236,7 @@ describe("source card reading", () => {
       stale: false,
       partial: false,
       reportUrl: "https://ora.ai/score/example.com",
-      contractVersion: "1.20.1",
+      contractVersion: "1.21.0",
     });
     // Nothing in the reading is a composite of the two.
     expect(reading?.essentialsScore).not.toBe(reading?.providerScore);

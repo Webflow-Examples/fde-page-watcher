@@ -131,7 +131,7 @@ describe("external agent audit persistence", () => {
     expect(envelope.tenant).toBe(TENANT);
     expect(envelope.provider).toBe("ora");
     expect(envelope.origin).toBe(ORIGIN);
-    expect(envelope.contractVersion).toBe("1.20.1");
+    expect(envelope.contractVersion).toBe("1.21.0");
     // The untruncated provider body is retained exactly as received.
     expect(envelope.response).toEqual(fixture("complete"));
     expect(envelope.request).toEqual({ url: ORIGIN, maxAgeSeconds: 86_400 });
@@ -156,7 +156,7 @@ describe("external agent audit persistence", () => {
       ORIGIN,
       "2026-08-24T04:12:09.482Z",
       "2026-08-24T06:00:00.000Z",
-      "1.20.1",
+      "1.21.0",
       61,
       63,
     ]);
@@ -280,7 +280,7 @@ describe("external agent audit reads", () => {
         origin: ORIGIN,
         scanned_at: snapshot.scannedAt,
         fetched_at: snapshot.fetchedAt,
-        contract_version: "1.20.1",
+        contract_version: "1.21.0",
         score: 61,
         essentials_score: 63,
         summary_json: JSON.stringify(externalAgentAuditSummary(snapshot)),
@@ -325,7 +325,7 @@ describe("agent audit data plane", () => {
         origin: ORIGIN,
         scanned_at: snapshot.scannedAt,
         fetched_at: snapshot.fetchedAt,
-        contract_version: "1.20.1",
+        contract_version: "1.21.0",
         score: 61,
         essentials_score: 63,
         summary_json: JSON.stringify(externalAgentAuditSummary(snapshot)),

@@ -14,7 +14,7 @@ import {
 function snapshot(overrides: Partial<ExternalAgentAuditSnapshot> = {}): ExternalAgentAuditSnapshot {
   return {
     schemaVersion: 1,
-    contractVersion: "1.20.1",
+    contractVersion: "1.21.0",
     provider: "ora",
     origin: "https://example.com",
     target: "https://example.com",

@@ -418,7 +418,7 @@
   "url": "https://ora.ai/score/example.com",
   "generatedAt": "2026-08-24T04:12:28.001Z",
   "source": "ora.ai",
-  "contractVersion": "1.20.1",
+  "contractVersion": "1.21.0",
   "urlKind": "domain",
   "category": "Infrastructure & DevOps",
   "agenticSummary": "Agents can find the site but cannot read its primary content or its API contract.",

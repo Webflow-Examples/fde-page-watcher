@@ -126,7 +126,7 @@ function fetcher(handler: (url: string, body: unknown) => Response) {
 }
 
 function checksResponse(results: Array<{ id: string; status: string }>) {
-  return Response.json({ contractVersion: "1.20.1", domain: "example.com", results });
+  return Response.json({ contractVersion: "1.21.0", domain: "example.com", results });
 }
 
 describe("selective re-check", () => {
