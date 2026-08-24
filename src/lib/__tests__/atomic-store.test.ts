@@ -9,6 +9,7 @@ import { agentCheckKey } from "../agentScoring";
 import { captureBaseline, insertRecommendations, runNightly, runPage } from "../collector";
 import type { AppState, CategoryScore, NightScores, Rec } from "../types";
 import type { DailyDigestWebhookPayload } from "../webhook";
+import { collectResult } from "./helpers/collectResult";
 
 const roots: string[] = [];
 
@@ -61,12 +62,7 @@ function deferred<T>() {
 }
 
 function collection(perf = 75) {
-  return {
-    scores: scores(perf),
-    opportunities: [],
-    sampleSize: 5,
-    raws: [{ ok: true }],
-  };
+  return collectResult(scores(perf), { raws: [{ ok: true }] });
 }
 
 describe("atomic tenant updates", () => {

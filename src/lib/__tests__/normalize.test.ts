@@ -105,7 +105,8 @@ describe("state normalization", () => {
 
     const normalized = normalizeState(legacy);
 
-    expect(normalized.productEscalations).toBeUndefined();
+    // Deliberately absent from AppState; normalizeState strips any legacy value.
+    expect((normalized as unknown as Record<string, unknown>).productEscalations).toBeUndefined();
     expect("productEscalations" in normalized).toBe(false);
   });
 });

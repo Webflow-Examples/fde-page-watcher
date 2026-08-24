@@ -95,7 +95,7 @@ describe("PSI collection quality", () => {
 
     const request = runPsiOnce("https://example.com", "mobile");
     await expect(request).rejects.toThrow("HTTP 429: Quota exceeded");
-    await expect(request).rejects.toMatchObject<PsiRequestError>({ status: 429 });
+    await expect(request).rejects.toMatchObject({ status: 429 });
   });
 
   it("rejects missing category scores instead of converting them to zero", async () => {
