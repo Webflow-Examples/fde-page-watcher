@@ -149,7 +149,7 @@ describe("native Webflow element detection", () => {
       title: "Homepage",
       url: "https://example.test",
       history: [scanNight(0, scan.findings)],
-    } as WatchPage;
+    } as unknown as WatchPage;
     expect(siteNativeElementRollups([page])).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: "webflow-background-video", pageCount: 1, instanceCount: 1 }),
       expect.objectContaining({ id: "webflow-image-unresponsive", pageCount: 1, instanceCount: 1 }),
@@ -173,7 +173,7 @@ describe("native Webflow element detection", () => {
       url: "https://example.test",
       history: [scanNight(0, scan.findings)],
       nativeElementControls: controls,
-    } as WatchPage;
+    } as unknown as WatchPage;
     const rollups = siteNativeElementRollups([page]);
     expect(rollups.some((item) => item.id === "webflow-background-video")).toBe(false);
     expect(rollups.find((item) => item.id === "webflow-image-unresponsive")).toMatchObject({ acknowledgedCount: 1 });

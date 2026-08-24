@@ -15,7 +15,7 @@ This repo uses a **branch + pull request** workflow. Don't commit directly to `m
 2. Make the change and verify locally:
    ```
    npm run lint
-   npx tsc --noEmit
+   npm run typecheck
    npm run build
    ```
    Then drive the affected route(s) against the dev server (`npm run dev`, http://localhost:3100).

@@ -108,19 +108,21 @@ describe("durable collection jobs", () => {
   it("stagger-dispatches baseline batches with the minimum trusted PSI sample count", async () => {
     const dataStore = await store();
     await dataStore.updateState((state) => {
-      state.pages.push(pendingPage("page-two", "Pricing", "https://webflow.com/pricing", "watch"));
+      state.pages.push(pendingPage("page-two", "Pricing", "https://webflow.com/pricing", "watching"));
     });
     await enqueueCollectionJob("page", "baseline", { dataStore, id: "batch-one" });
     await enqueueCollectionJob("page-two", "baseline", { dataStore, id: "batch-two" });
     vi.stubEnv("COLLECTOR_URL", "https://collector.example.test/jobs");
     vi.stubEnv("CRON_SECRET", "shared-secret");
     vi.stubEnv("PSI_RUNS", "");
-    const fetchFn = vi.fn(async () => Response.json({ workflowIds: ["batch-one", "batch-two"] }, { status: 202 }));
+    // Typed so the recorded call tuple exposes the request init.
+    const fetchFn = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(async () =>
+      Response.json({ workflowIds: ["batch-one", "batch-two"] }, { status: 202 }));
     vi.stubGlobal("fetch", fetchFn);
 
     await dispatchCollectionJobs(["batch-one", "batch-two"], dataStore);
 
-    const request = fetchFn.mock.calls[0][1] as RequestInit;
+    const request = fetchFn.mock.calls[0][1]!;
     expect(JSON.parse(String(request.body))).toMatchObject({
       jobs: [
         { jobId: "batch-one", runs: 3, startDelayMinutes: 0 },
