@@ -113,7 +113,11 @@ Put these in `.env.local`.
   `Night.agent`, the frozen `AgentReadinessSnapshot`, Lighthouse, CrUX, page
   status, or whether a collection is complete. An authenticated `GET
   /data/:tenant/agent-audits` returns the compact read model. No scan is
-  triggered automatically and no external score is shown in the product yet. The
+  triggered automatically and no external score is shown in the product yet.
+  Webflow staging hosts (`webflow.io` and any subdomain) are refused before any
+  outbound request: a normal external scan is public and attributes a subdomain
+  to its parent company's leaderboard row, so a staging hostname and grade would
+  be published under Webflow's own row. Page Watch audits production URLs. The
   phased rollout is described in
   [docs/ora-agent-readiness-integration-plan.md](docs/ora-agent-readiness-integration-plan.md).
 - **Storage** — the production source of truth is the FDE-owned

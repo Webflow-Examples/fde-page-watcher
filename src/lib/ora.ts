@@ -68,7 +68,33 @@ export type OraTargetRejection =
   | "invalid-url"
   | "unsupported-scheme"
   | "credentials-present"
-  | "private-host";
+  | "private-host"
+  | "preview-host";
+
+/**
+ * Staging hosts that must never be sent to an external scanner.
+ *
+ * A normal Ora scan is public: the result enters the leaderboard, the
+ * sites-scanned coverage count, research statistics, and score history, and is
+ * readable by anyone through the unauthenticated score route. Ora also
+ * attributes a subdomain to its parent company's leaderboard row, so scanning
+ * `site.webflow.io` would publish a customer's staging hostname and its
+ * agent-readiness grade under Webflow's own public row.
+ *
+ * `ephemeral: true` is not a usable mitigation here: Ora rejects it with
+ * `EPHEMERAL_CLOBBER` once a domain already has a real stored scan.
+ *
+ * Page Watch audits published production URLs. Staging targets are refused
+ * before any outbound request is possible.
+ */
+export const ORA_PREVIEW_HOST_SUFFIXES: readonly string[] = ["webflow.io"];
+
+/** True when a host is a Webflow staging host (the apex or any subdomain). */
+export function isOraPreviewHost(host: string): boolean {
+  const normalized = host.trim().toLowerCase().replace(/\.$/, "");
+  return ORA_PREVIEW_HOST_SUFFIXES.some((suffix) =>
+    normalized === suffix || normalized.endsWith(`.${suffix}`));
+}
 
 export class OraTargetError extends Error {
   constructor(readonly code: OraTargetRejection, message: string) {
@@ -164,6 +190,12 @@ export function normalizeOraTarget(input: string): { origin: string; host: strin
     || isBlockedAddress(host)
   ) {
     throw new OraTargetError("private-host", "Private and local targets cannot be audited");
+  }
+  if (isOraPreviewHost(host)) {
+    throw new OraTargetError(
+      "preview-host",
+      "Webflow staging domains cannot be audited externally; connect the production domain",
+    );
   }
 
   return { origin: url.origin, host };

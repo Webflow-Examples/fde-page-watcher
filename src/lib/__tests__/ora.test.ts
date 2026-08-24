@@ -5,6 +5,7 @@ import {
   classifyOraResponse,
   clampOraMaxAgeSeconds,
   isAuditableOraTarget,
+  isOraPreviewHost,
   normalizeOraTarget,
   oraAvailabilityFromOutcome,
   oraCheckResult,
@@ -77,6 +78,11 @@ describe("Ora target normalization", () => {
     ["https://169.254.169.254", "private-host"],
     ["https://[::1]", "private-host"],
     ["https://[fd00::1]", "private-host"],
+    ["https://client-site.webflow.io", "preview-host"],
+    ["https://client-site.webflow.io/pricing", "preview-host"],
+    ["https://webflow.io", "preview-host"],
+    ["https://deep.nested.webflow.io", "preview-host"],
+    ["WEBFLOW.IO", "preview-host"],
   ])("refuses %s before any request can be made", (input, code) => {
     expect(() => normalizeOraTarget(input)).toThrow(OraTargetError);
     try {
@@ -89,6 +95,24 @@ describe("Ora target normalization", () => {
 
   it("accepts an ordinary public origin", () => {
     expect(isAuditableOraTarget("https://webflow.com/blog")).toBe(true);
+  });
+
+  it("refuses Webflow staging hosts but not lookalikes", () => {
+    // A public Ora scan attributes a subdomain to its parent company's
+    // leaderboard row, so staging hostnames must never leave Page Watch.
+    expect(isOraPreviewHost("client-site.webflow.io")).toBe(true);
+    expect(isOraPreviewHost("webflow.io")).toBe(true);
+    expect(isOraPreviewHost("webflow.io.")).toBe(true);
+    expect(isOraPreviewHost("Client-Site.WEBFLOW.IO")).toBe(true);
+
+    // Production domains, including Webflow's own, stay auditable.
+    expect(isOraPreviewHost("webflow.com")).toBe(false);
+    expect(isOraPreviewHost("blog.webflow.com")).toBe(false);
+    // Not a subdomain of webflow.io, despite the shared substring.
+    expect(isOraPreviewHost("notwebflow.io")).toBe(false);
+    expect(isOraPreviewHost("mywebflow.io")).toBe(false);
+    expect(isOraPreviewHost("webflow.io.evil.test")).toBe(false);
+    expect(isAuditableOraTarget("https://acme.com")).toBe(true);
   });
 });
 
