@@ -121,6 +121,7 @@ interface StoreValue extends AppState {
   setExternalAgentAuditEnabled: (enabled: boolean) => void;
   refreshExternalAgentAudit: (pageId: string) => void;
   addAgentIssueTask: (pageId: string, caseKey: string) => void;
+  verifyAgentIssueTask: (recKey: string) => void;
   externalAgentAuditRefreshing: boolean;
   removePage: (id: string) => void;
   saveTask: (key: string) => void;
@@ -762,6 +763,49 @@ export function StoreProvider({
     [flash, pathFor],
   );
 
+  const verifyAgentIssueTask = useCallback(
+    (recKey: string) => {
+      void (async () => {
+        try {
+          const response = await fetch(pathFor("/api/agent-audits/verify"), {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ recKey }),
+            cache: "no-store",
+          });
+          const body = (await response.json().catch(() => null)) as {
+            status?: string;
+            refusedReason?: string;
+            code?: string;
+          } | null;
+          if (!response.ok && !body?.status) {
+            // A provider that cannot answer leaves the task verifying. Say so
+            // plainly rather than implying the fix failed.
+            flash(
+              body?.refusedReason === "not-consented"
+                ? "Enable external agent audits to verify this fix automatically"
+                : body?.code === "ORA_SCAN_DISABLED"
+                  ? "External verification is turned off for this deployment"
+                  : "Couldn't reach the provider — this fix stays unverified",
+            );
+            return;
+          }
+          flash(
+            body?.status === "resolved" ? "Provider re-check passed — issue resolved"
+              : body?.status === "returned" ? "Provider re-check still failing — issue returned to open work"
+                : "Provider could not confirm yet — still verifying",
+          );
+          const state = await fetch(pathFor("/api/state"), { cache: "no-store" });
+          const payload = (await state.json().catch(() => null)) as { state?: AppState } | null;
+          if (payload?.state) apply(normalizeState(payload.state));
+        } catch {
+          flash("Couldn't reach the provider — this fix stays unverified");
+        }
+      })();
+    },
+    [apply, flash, pathFor],
+  );
+
   const addAgentIssueTask = useCallback(
     (pageId: string, caseKey: string) => {
       // No optimistic apply: the server re-assembles the case from stored
@@ -895,6 +939,12 @@ export function StoreProvider({
           { url: `/api/pages/${rec.pageId}/markers`, body: { text, date, recKey: key, taskStatus: "done" } },
           { success: `Task completed — change marker logged on ${rec.pageTitle}`, failure: "Couldn't complete the task — try again" },
         );
+        // Marker-triggered verification. The existing change marker and the
+        // 2/7/30-day follow-ups above are untouched; this only adds the
+        // provider re-check of the ids this task recorded.
+        if (rec.source === "agent-readiness" && (rec.agentIssue?.verificationCheckIds.length ?? 0) > 0) {
+          verifyAgentIssueTask(key);
+        }
       } else {
         const optimistic = structuredClone(cur);
         const optimisticRec = optimistic.recs.find((item) => item.key === key);
@@ -909,7 +959,7 @@ export function StoreProvider({
         );
       }
     },
-    [mutate],
+    [mutate, verifyAgentIssueTask],
   );
 
   const setForm = useCallback((f: Partial<AddForm>) => setFormState((prev) => ({ ...prev, ...f })), []);
@@ -1159,6 +1209,7 @@ export function StoreProvider({
     setExternalAgentAuditEnabled,
     refreshExternalAgentAudit,
     addAgentIssueTask,
+    verifyAgentIssueTask,
     externalAgentAuditRefreshing,
     updateAlertWebhookUrl,
     setVisitorExperienceVisible,

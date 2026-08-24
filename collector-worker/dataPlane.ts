@@ -9,12 +9,14 @@ import {
   type WebflowBindings,
 } from "./webflow";
 import { refreshExternalAgentAudits } from "./oraRefresh";
+import { verifyAgentIssueTask } from "./oraVerify";
 
 type DataRoute =
   | { kind: "state"; tenant: string }
   | { kind: "crux"; tenant: string }
   | { kind: "agent-audits"; tenant: string }
   | { kind: "agent-audits-refresh"; tenant: string }
+  | { kind: "agent-audits-verify"; tenant: string }
   | { kind: "report"; tenant: string; pageId: string; key: string }
   | { kind: "webflow-connection"; tenant: string }
   | { kind: "webflow-sync"; tenant: string };
@@ -49,6 +51,11 @@ function route(pathname: string): DataRoute | null {
   if (crux) {
     const tenant = decode(crux[1]);
     return safeIdentifier(tenant, true) ? { kind: "crux", tenant } : null;
+  }
+  const agentAuditVerify = pathname.match(/^\/data\/([^/]+)\/agent-audits\/ora\/verify$/);
+  if (agentAuditVerify) {
+    const tenant = decode(agentAuditVerify[1]);
+    return safeIdentifier(tenant, true) ? { kind: "agent-audits-verify", tenant } : null;
   }
   const agentAuditRefresh = pathname.match(/^\/data\/([^/]+)\/agent-audits\/ora\/refresh$/);
   if (agentAuditRefresh) {
@@ -174,6 +181,38 @@ export async function handleDataPlaneRequest(
   if (matched.kind === "agent-audits") {
     if (request.method !== "GET") return Response.json({ error: "method not allowed" }, { status: 405 });
     return noStore(Response.json({ audits: await store.getExternalAgentAudits() }));
+  }
+  if (matched.kind === "agent-audits-verify") {
+    if (request.method !== "POST") {
+      return Response.json({ error: "method not allowed" }, { status: 405 });
+    }
+    if (bindings.ORA_SCAN_ENABLED !== "true") {
+      return noStore(Response.json({
+        error: "external agent scanning is disabled for this deployment",
+        code: "ORA_SCAN_DISABLED",
+      }, { status: 503 }));
+    }
+    let body: unknown;
+    try {
+      body = await boundedJson(request, 4 * 1024);
+    } catch (error) {
+      return Response.json(
+        { error: error instanceof RangeError ? error.message : "invalid JSON" },
+        { status: 400 },
+      );
+    }
+    const input = (body ?? {}) as { recKey?: unknown };
+    // Only a task key is accepted. Check ids are resolved server-side from
+    // stored state, so an arbitrary check set can never be submitted.
+    if (typeof input.recKey !== "string" || !input.recKey || input.recKey.length > 400) {
+      return Response.json({ error: "recKey is required" }, { status: 400 });
+    }
+    const result = await verifyAgentIssueTask(bindings, matched.tenant, input.recKey);
+    const status = result.refusedReason
+      ? (result.refusedReason === "not-consented" ? 409
+        : result.refusedReason === "task-not-found" ? 404 : 400)
+      : 200;
+    return noStore(Response.json(result, { status }));
   }
   if (matched.kind === "agent-audits-refresh") {
     if (request.method !== "POST") {

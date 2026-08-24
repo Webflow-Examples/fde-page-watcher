@@ -43,6 +43,12 @@ import {
 } from "../src/lib/collectionRetry";
 import { createFdeStore } from "./dataStore";
 import { handleDataPlaneRequest } from "./dataPlane";
+import {
+  oraScheduleLogEvent,
+  ORA_REFRESH_CRON,
+  ORA_SCHEDULER_STATUS_KEY,
+  runScheduledOraRefresh,
+} from "./oraSchedule";
 import { dispatchFdeNightly, type DispatchPayload } from "./nightly";
 import {
   runWeeklyDataAudit,
@@ -1211,6 +1217,45 @@ const worker = {
   },
   async scheduled(controller: ScheduledController, env: Env): Promise<void> {
     const observedAt = new Date().toISOString();
+
+    // The external agent-audit refresh is handled entirely here and returns
+    // before the collection scheduler machinery is touched, so it can never
+    // block, delay, or change the outcome of a Page Watch collection.
+    if (controller.cron === ORA_REFRESH_CRON) {
+      try {
+        const result = await runScheduledOraRefresh(env, await activeProjectTenants(env), {
+          now: new Date(controller.scheduledTime),
+        });
+        await env.REPORTS.put(ORA_SCHEDULER_STATUS_KEY, JSON.stringify({
+          status: result.enabled ? (result.ok ? "succeeded" : "partial") : "disabled",
+          cron: controller.cron,
+          scheduledAt: new Date(controller.scheduledTime).toISOString(),
+          observedAt,
+          response: result,
+        }), {
+          httpMetadata: { contentType: "application/json" },
+          customMetadata: {
+            status: result.enabled ? (result.ok ? "succeeded" : "partial") : "disabled",
+            originsRefreshed: String(result.originsRefreshed),
+            originsDeferred: String(result.originsDeferred),
+            keyed: String(result.keyed),
+          },
+        });
+        console.log(oraScheduleLogEvent(result));
+      } catch (error) {
+        // A failed external refresh is logged and dropped. It has no bearing on
+        // any other scheduler, and there is nothing to roll back.
+        console.error(JSON.stringify({
+          message: "External agent audit scheduled refresh failed",
+          operation: "scheduled-refresh",
+          provider: "ora",
+          observedAt,
+          error: error instanceof Error ? error.message.slice(0, 300) : "unknown",
+        }));
+      }
+      return;
+    }
+
     const kind = controller.cron === WEEKLY_AUDIT_CRON
       ? "audit"
       : controller.cron === CRUX_COLLECTION_CRON

@@ -230,6 +230,11 @@ export function oraScoreUrl(domain: string): string {
   return `${ORA_ORIGIN}/api/score/${encodeURIComponent(domain)}?format=audit&include=essentials`;
 }
 
+/** Build the audit-shaped selective re-check URL. */
+export function oraScoreChecksUrl(): string {
+  return `${ORA_ORIGIN}${ORA_SCAN_CHECKS_PATH}?format=audit`;
+}
+
 /** The only route a `202` may direct polling to. */
 export const ORA_SCORE_PATH_PREFIX = "/api/score/";
 

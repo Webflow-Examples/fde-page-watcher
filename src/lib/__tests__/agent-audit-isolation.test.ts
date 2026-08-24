@@ -79,20 +79,51 @@ describe("external agent audit isolation", () => {
     expect(collector).not.toContain("ORA_SCAN_ENABLED");
   });
 
-  it("runs no scheduled or automatic external scan", () => {
-    // No cron handler may reach the client or the refresh orchestrator: an
-    // external audit only ever happens because someone asked for one.
-    for (const modulePath of ["collector-worker/index.ts", "collector-worker/nightly.ts"]) {
+  it("keeps the scheduled refresh out of the collection workflow", () => {
+    // The collection path must never reach the external client or orchestrator,
+    // so a provider problem cannot delay or fail a Page Watch collection.
+    for (const modulePath of [
+      "collector-worker/nightly.ts",
+      "collector-worker/crux.ts",
+      "collector-worker/kitesurf.ts",
+      "collector-worker/weeklyAudit.ts",
+    ]) {
       const text = source(modulePath);
       expect(text).not.toContain("oraRefresh");
       expect(text).not.toContain("oraClient");
+      expect(text).not.toContain("oraSchedule");
       expect(text).not.toContain("refreshExternalAgentAudits");
     }
+    // The worker dispatches the external refresh on its own cron and returns
+    // before the shared collection scheduler machinery is entered.
+    const index = source("collector-worker/index.ts");
+    const branch = index.indexOf("controller.cron === ORA_REFRESH_CRON");
+    const sharedKind = index.indexOf("const kind = controller.cron === WEEKLY_AUDIT_CRON");
+    expect(branch).toBeGreaterThan(-1);
+    expect(branch).toBeLessThan(sharedKind);
+    expect(index).not.toContain("runNightlyAcrossProjects(env, tenants, { scheduled: true, ora");
+  });
+
+  it("ships the deployment gate closed on its own cron", () => {
     const wrangler = source("collector-worker/wrangler.jsonc");
-    // The worker's schedule is unchanged: still the three pre-existing crons.
-    expect([...wrangler.matchAll(/"\s*[\d*]+[^"]*\*[^"]*"/g)]).toHaveLength(3);
-    // The deployment gate ships closed.
+    const crons = [...wrangler.matchAll(/"\s*[\d*]+[^"]*\*[^"]*"/g)].map((match) => match[0]);
+    // Three pre-existing collection crons plus one dedicated external refresh.
+    expect(crons).toHaveLength(4);
+    expect(crons.at(-1)).toContain("45 6 * * 3");
     expect(wrangler).toContain('"ORA_SCAN_ENABLED": "false"');
+  });
+
+  it("never lets a caller choose which provider checks are re-run", () => {
+    const verify = source("collector-worker/oraVerify.ts");
+    // Targets come from stored state only.
+    expect(verify).toContain("verificationTargetsFor(rec)");
+    const dataPlane = source("collector-worker/dataPlane.ts");
+    const verifyBlock = dataPlane.slice(
+      dataPlane.indexOf('matched.kind === "agent-audits-verify"'),
+      dataPlane.indexOf('matched.kind === "agent-audits-refresh"'),
+    );
+    expect(verifyBlock).toContain("recKey");
+    expect(verifyBlock).not.toContain("checkIds");
   });
 
   it("checks project consent before resolving any target", () => {

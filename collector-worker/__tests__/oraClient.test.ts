@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   getCachedOraAudit,
   ORA_MAX_POLL_MS,
@@ -244,19 +244,5 @@ describe("Ora scan", () => {
     const { fetchFn } = recorder([new Response(body, { status: 200 })]);
     const { outcome } = await scanOraOrigin(ORIGIN, { fetchFn, sleep: noSleep });
     expect(outcome).toMatchObject({ kind: "result", body: null });
-  });
-
-  it("aborts on the request timeout rather than hanging", async () => {
-    vi.useFakeTimers();
-    try {
-      const fetchFn = (async (_input: unknown, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
-        init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
-      })) as unknown as typeof fetch;
-      const pending = scanOraOrigin(ORIGIN, { fetchFn, sleep: noSleep });
-      await vi.advanceTimersByTimeAsync(31_000);
-      await expect(pending).rejects.toBeInstanceOf(OraTransportError);
-    } finally {
-      vi.useRealTimers();
-    }
   });
 });

@@ -23,7 +23,10 @@
     "crons": [
       "*/15 * * * *",
       "30 5 * * 1",
-      "15 6 * * 2"
+      "15 6 * * 2",
+      // External agent-audit refresh. Deliberately separate from every
+      // collection cron so it can never affect a Page Watch collection.
+      "45 6 * * 3"
     ]
   },
   "workflows": [
