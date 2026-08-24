@@ -11,6 +11,8 @@ import type { AgentIgnoreOverrideMode, AgentIgnoreScope, AppState, CollectionSch
 import { defaultNewPageFlag, flagCapacityError } from "./watchCapacity";
 import { applyWatchlistPageOrder, changePageFlagOrder, sortWatchlistPages } from "./watchlistOrder";
 import { removeTaskMarker } from "./taskMarkers";
+import { promoteAgentIssueToTask } from "./agentIssueTasks";
+import type { AgentIssueCase } from "./agentIssueCases";
 import { isKnownNativeElementId } from "./nativeElements";
 import type { NativeElementDisposition } from "./types";
 import { alertWebhookUrlIsValid } from "./webhook";
@@ -192,6 +194,22 @@ export function setVisitorExperienceVisible(
  * Withdrawing consent stops future requests; evidence already stored is
  * retained, since it is a historical reading rather than a live permission.
  */
+/**
+ * Promote one agent-access issue case into a task, retaining the provider check
+ * ids and success criteria so the fix can be verified later.
+ */
+export function addAgentIssueTask(
+  pageId: string,
+  issue: AgentIssueCase,
+  origin?: string,
+  dataStore: DataStore = getStore(),
+  now: Date = new Date(),
+): Promise<AppState> {
+  return withState((state) => {
+    promoteAgentIssueToTask(state, pageId, issue, now, origin);
+  }, dataStore);
+}
+
 export function setExternalAgentAuditEnabled(
   enabled: boolean,
   dataStore: DataStore = getStore(),

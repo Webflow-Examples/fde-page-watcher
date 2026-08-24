@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import type { ExternalAgentCheckResult } from "../agentAudit";
+import type { AgentIssueCheckResult } from "../types";
 
 /**
  * Structural guard for the Phase 1 boundary: external provider evidence must
@@ -77,20 +79,51 @@ describe("external agent audit isolation", () => {
     expect(collector).not.toContain("ORA_SCAN_ENABLED");
   });
 
-  it("runs no scheduled or automatic external scan", () => {
-    // No cron handler may reach the client or the refresh orchestrator: an
-    // external audit only ever happens because someone asked for one.
-    for (const modulePath of ["collector-worker/index.ts", "collector-worker/nightly.ts"]) {
+  it("keeps the scheduled refresh out of the collection workflow", () => {
+    // The collection path must never reach the external client or orchestrator,
+    // so a provider problem cannot delay or fail a Page Watch collection.
+    for (const modulePath of [
+      "collector-worker/nightly.ts",
+      "collector-worker/crux.ts",
+      "collector-worker/kitesurf.ts",
+      "collector-worker/weeklyAudit.ts",
+    ]) {
       const text = source(modulePath);
       expect(text).not.toContain("oraRefresh");
       expect(text).not.toContain("oraClient");
+      expect(text).not.toContain("oraSchedule");
       expect(text).not.toContain("refreshExternalAgentAudits");
     }
+    // The worker dispatches the external refresh on its own cron and returns
+    // before the shared collection scheduler machinery is entered.
+    const index = source("collector-worker/index.ts");
+    const branch = index.indexOf("controller.cron === ORA_REFRESH_CRON");
+    const sharedKind = index.indexOf("const kind = controller.cron === WEEKLY_AUDIT_CRON");
+    expect(branch).toBeGreaterThan(-1);
+    expect(branch).toBeLessThan(sharedKind);
+    expect(index).not.toContain("runNightlyAcrossProjects(env, tenants, { scheduled: true, ora");
+  });
+
+  it("ships the deployment gate closed on its own cron", () => {
     const wrangler = source("collector-worker/wrangler.jsonc");
-    // The worker's schedule is unchanged: still the three pre-existing crons.
-    expect([...wrangler.matchAll(/"\s*[\d*]+[^"]*\*[^"]*"/g)]).toHaveLength(3);
-    // The deployment gate ships closed.
+    const crons = [...wrangler.matchAll(/"\s*[\d*]+[^"]*\*[^"]*"/g)].map((match) => match[0]);
+    // Three pre-existing collection crons plus one dedicated external refresh.
+    expect(crons).toHaveLength(4);
+    expect(crons.at(-1)).toContain("45 6 * * 3");
     expect(wrangler).toContain('"ORA_SCAN_ENABLED": "false"');
+  });
+
+  it("never lets a caller choose which provider checks are re-run", () => {
+    const verify = source("collector-worker/oraVerify.ts");
+    // Targets come from stored state only.
+    expect(verify).toContain("verificationTargetsFor(rec)");
+    const dataPlane = source("collector-worker/dataPlane.ts");
+    const verifyBlock = dataPlane.slice(
+      dataPlane.indexOf('matched.kind === "agent-audits-verify"'),
+      dataPlane.indexOf('matched.kind === "agent-audits-refresh"'),
+    );
+    expect(verifyBlock).toContain("recKey");
+    expect(verifyBlock).not.toContain("checkIds");
   });
 
   it("checks project consent before resolving any target", () => {
@@ -122,13 +155,21 @@ describe("external agent audit isolation", () => {
     expect(dataPlane).not.toContain("agent-audits/ora/verify");
   });
 
-  it("adds no external score to the dashboard", () => {
-    // External findings belong under the page's own evidence, never as another
-    // top-level dashboard number.
+  it("shows the Page Watch verdict on the dashboard, never a provider score", () => {
     const dashboard = source("src/app/(app)/dashboard/page.tsx");
-    expect(dashboard).not.toContain("externalAgentAudits");
-    expect(dashboard).not.toContain("ExternalAgentAudit");
-    expect(dashboard).not.toContain("externalAgentEvidence");
+    // The verdict is a Page Watch conclusion and belongs here.
+    expect(dashboard).toContain("agentAccessSummary");
+    // Provider numbers stay on the page's own evidence surface.
+    for (const forbidden of [
+      "essentialsScore",
+      "providerScore",
+      "providerGrade",
+      "externalAgentSourceReading",
+      "ExternalAgentAuditPanel",
+      "reportUrl",
+    ]) {
+      expect(dashboard, `dashboard must not surface ${forbidden}`).not.toContain(forbidden);
+    }
   });
 
   it("never composites a provider score with the local check percentage", () => {
@@ -142,13 +183,27 @@ describe("external agent audit isolation", () => {
     }
   });
 
+  it("keeps the duplicated result union in step with the provider one", () => {
+    // AppState must not import provider modules, so AgentIssueCheckResult is a
+    // deliberate copy. These two assignments only compile while the unions are
+    // identical in both directions.
+    const fromProvider: AgentIssueCheckResult = "partial" as ExternalAgentCheckResult;
+    const toProvider: ExternalAgentCheckResult = "partial" as AgentIssueCheckResult;
+    expect(fromProvider).toBe("partial");
+    expect(toProvider).toBe("partial");
+  });
+
   it("keeps provider evidence out of AppState", () => {
     // AppState carries the consent record only. Provider readings travel beside
     // the state so they cannot be written back through a state mutation.
     const types = source("src/lib/types.ts");
     expect(types).toContain("externalAgentAuditEnabled");
+    // Verification identifiers are allowed on a task; provider evidence
+    // payloads are not.
     expect(types).not.toContain("ExternalAgentAuditSnapshot");
     expect(types).not.toContain("ExternalAgentOriginAudit");
+    expect(types).not.toContain("ExternalAgentFinding");
+    expect(importedModules("src/lib/types.ts")).toEqual([]);
     const normalize = source("src/lib/store/normalize.ts");
     expect(normalize).not.toContain("ExternalAgentAudit");
   });

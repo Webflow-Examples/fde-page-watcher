@@ -116,14 +116,27 @@ Put these in `.env.local`.
   status, or whether a collection is complete. An authenticated `GET
   /data/:tenant/agent-audits` returns the compact read model, and an
   authenticated `POST /data/:tenant/agent-audits/ora/refresh` runs one
-  user-triggered audit. Nothing is ever scanned on a schedule: a refresh needs
-  the collector's `ORA_SCAN_ENABLED` gate *and* the project's own opt-in in Watch
-  List settings, which carries the public-scan disclosure. Refreshes deduplicate
+  user-triggered audit. Nothing runs without the collector's `ORA_SCAN_ENABLED`
+  gate *and* the project's own opt-in in Watch List settings, which carries the
+  public-scan disclosure. A separate Wednesday 06:45 UTC cron refreshes audits,
+  capped at 8 origins per run so scheduled work takes only a small slice of the
+  shared keyless quota; it dispatches before the collection scheduler is entered
+  and never blocks or changes a Page Watch collection. Refreshes deduplicate
   by origin, read Ora's stored score before spending scan quota, and preserve the
   last successful audit when the provider is rate-limited or unavailable. The
   Agent-readiness tab shows the Is Agentic essentials reading with Ora's own
   score and report link under advanced evidence; the two are never averaged with
   each other or with the Page Watch check percentage.
+  Findings are merged into canonical issue cases — one entry per problem,
+  corroborated across sources, keeping ignored, not-applicable, unavailable,
+  partial, and failed distinct — and the tab leads with a Ready / Needs
+  attention / Blocked / Unknown verdict rather than a score. Essential blockers
+  file themselves into the Inbox; anything else is promoted on request.
+  Completing an agent task re-runs only the provider checks that task recorded
+  (`POST /data/:tenant/agent-audits/ora/verify`, which resolves check ids from
+  stored state rather than from the request), resolving the issue when they
+  pass, returning it when they do not, and leaving it verifying and retryable
+  when the provider cannot answer.
   Webflow staging hosts (`webflow.io` and any subdomain) are refused before any
   outbound request: a normal external scan is public and attributes a subdomain
   to its parent company's leaderboard row, so a staging hostname and grade would
@@ -180,9 +193,13 @@ remain protected separately by `CRON_SECRET`.
    `WEBFLOW_TOKEN_ENCRYPTION_KEY` generated with `openssl rand -base64 32`.
    `ORA_SCAN_ENABLED` defaults to `false`; set it to `true` only when external
    agent audits should be available, and optionally add an `ORA_SCAN_API_KEY`
-   secret to lift the shared public scan quota.
+   secret to lift the shared public scan quota. Without a key the deployment
+   draws on Ora's public budget of 30 scans per rolling 24h per Worker egress
+   IP, shared by every project's user-triggered refreshes, scheduled refreshes,
+   and verifications.
    Its D1, R2, Workflow, 15-minute due-page/Webflow-activity scheduler, Monday
-   05:30 UTC audit, and Tuesday 06:15 UTC CrUX Cron bindings are declared in
+   05:30 UTC audit, Tuesday 06:15 UTC CrUX, and Wednesday 06:45 UTC external
+   agent-audit Cron bindings are declared in
    that config. Each schedule resolves the shared project registry and runs
    every active tenant independently; one project's failure does not block the
    remaining projects.

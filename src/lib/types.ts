@@ -569,7 +569,65 @@ export interface CollectionResult {
 
 export type RecStatus = "inbox" | "task" | "ignored";
 export type TaskStatus = "todo" | "in-progress" | "done";
-export type RecommendationSource = "lighthouse" | "native-elements" | "crux-field-only";
+export type RecommendationSource = "lighthouse" | "native-elements" | "crux-field-only" | "agent-readiness";
+
+/**
+ * Mirrors `ExternalAgentCheckResult` in agentAudit.ts. Duplicated deliberately:
+ * AppState must not import provider modules, so the two are kept in step by a
+ * consistency test rather than by a shared import.
+ */
+export type AgentIssueCheckResult =
+  | "pass"
+  | "partial"
+  | "failed"
+  | "not-applicable"
+  | "unavailable";
+
+export type AgentIssueVerificationStatus =
+  | "not-started"
+  | "verifying"
+  | "resolved"
+  | "returned"
+  | "unavailable";
+
+export interface AgentIssueVerificationResult {
+  checkId: string;
+  result: AgentIssueCheckResult;
+  observedAt: string;
+}
+
+/**
+ * Outcome of re-running the provider checks tied to an implemented fix.
+ * `unavailable` means the provider could not answer, which leaves the issue
+ * verifying and retryable rather than marking the remediation unsuccessful.
+ */
+export interface AgentIssueVerification {
+  status: AgentIssueVerificationStatus;
+  requestedAt?: string;
+  lastCheckedAt?: string;
+  results?: AgentIssueVerificationResult[];
+  errorCode?: string;
+  errorMessage?: string;
+}
+
+/**
+ * What a task retains from the agent issue case it came from, so a fix can be
+ * verified later without re-deriving the issue. Holds identifiers and Page
+ * Watch's own remediation steps — never a provider evidence payload.
+ */
+export interface AgentIssueTaskEvidence {
+  caseKey: string;
+  title: string;
+  scope: "origin" | "page";
+  origin?: string;
+  /** Evidence timestamp when the issue was captured, for the audit trail. */
+  capturedAt: string;
+  remediation: string[];
+  successCriteria: string;
+  /** Provider check ids re-run to verify the fix. Empty when none applies. */
+  verificationCheckIds: string[];
+  verification?: AgentIssueVerification;
+}
 export type FieldOnlyMetricKey = "lcp" | "responsiveness" | "cls" | "ttfb";
 
 /** Exact-URL visitor evidence retained on a synthetic field-only recommendation. */
@@ -627,6 +685,8 @@ export interface Rec {
   added: string;
   doneDate: string | null;
   aiSummary?: string; // Claude-written plain-English explanation, generated once when the rec is created
+  /** Present on recommendations created from an agent-access issue case. */
+  agentIssue?: AgentIssueTaskEvidence;
 }
 
 /** A failing Lighthouse audit / opportunity shown on the page detail. */

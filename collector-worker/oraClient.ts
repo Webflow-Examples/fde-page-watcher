@@ -20,6 +20,7 @@ import {
   normalizeOraTarget,
   oraRetryAfterSeconds,
   oraScanUrl,
+  oraScoreChecksUrl,
   oraScoreUrl,
   type OraResponseOutcome,
 } from "../src/lib/ora";
@@ -199,6 +200,52 @@ export async function scanOraOrigin(
     current = next.complete ? next : { ...next, pollUrl: current.pollUrl };
   }
   return { outcome: current, polls };
+}
+
+export interface OraCheckOutcome {
+  kind: "results";
+  contractVersion?: string;
+  results: Array<{ id: string; status: string }>;
+}
+
+/**
+ * Re-run a named set of checks against one origin. Always executes live, so it
+ * is only ever called for an explicit post-remediation verification, never on a
+ * schedule and never for checks the caller supplied directly.
+ */
+export async function runOraChecks(
+  origin: string,
+  checkIds: string[],
+  options: OraClientOptions = {},
+): Promise<OraResponseOutcome | OraCheckOutcome> {
+  const { host } = normalizeOraTarget(origin);
+  const unique = [...new Set(checkIds)].filter((id) => typeof id === "string" && id.trim());
+  if (unique.length === 0) {
+    throw new TypeError("runOraChecks requires at least one check id");
+  }
+  const raw = await request(oraScoreChecksUrl(), {
+    method: "POST",
+    body: JSON.stringify({ url: host, checkIds: unique }),
+  }, options);
+
+  if (raw.status !== 200) return outcome(raw);
+  const body = raw.body as { contractVersion?: unknown; results?: unknown } | null;
+  const results = Array.isArray(body?.results) ? body.results : null;
+  // A 200 that is not the documented envelope is a contract failure, not a
+  // silent empty verification.
+  if (!results) {
+    return { kind: "provider-error", status: 200, code: "MALFORMED_CHECKS", retryable: false };
+  }
+  return {
+    kind: "results",
+    ...(typeof body?.contractVersion === "string" ? { contractVersion: body.contractVersion } : {}),
+    results: results.flatMap((entry) => {
+      const item = entry as { id?: unknown; status?: unknown };
+      return typeof item?.id === "string" && typeof item?.status === "string"
+        ? [{ id: item.id, status: item.status }]
+        : [];
+    }),
+  };
 }
 
 /** Seconds until the provider will accept another request, when it told us. */

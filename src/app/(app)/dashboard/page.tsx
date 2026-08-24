@@ -14,6 +14,9 @@ import { agentReadinessForNight, summarizeAgentChecks } from "@/lib/agentScoring
 import { effectivePerformanceThresholds, normalizePerformanceThresholds } from "@/lib/performanceThresholds";
 import { deltaMeta, historyForRange, pageAgentSnapshotForRange, pageRangeComparison, pageRangeLatestNightForStrategy, pageRangeSeries, pageRangeTrend, scoreMeta } from "@/lib/scoring";
 import { C, flagChip, savingsValue } from "@/lib/ui";
+import { AgentAccessChip } from "@/components/agent-access";
+import { agentAccessSummary, assembleAgentIssueCases } from "@/lib/agentIssueCases";
+import { externalAuditForPage } from "@/lib/externalAgentEvidence";
 import { scoreCardDataForCategory } from "@/lib/scoreCardAdapter";
 import { XSmallScoreCard } from "@/components/ScoreCard";
 import { DeviceChangeLabels, FieldEvidenceChip, PerformanceIssueStatusBadge, SortHeader, WebflowClassificationChips } from "@/components/bits";
@@ -137,6 +140,7 @@ function DashboardContent({
     pages,
     recs,
     agentIgnoreDefaults,
+    externalAgentAudits,
     performanceThresholds,
     collectionSchedule,
     measurementIncident,
@@ -256,6 +260,15 @@ function DashboardContent({
       flag: flagChip(p.flag),
       cats,
       scoreCardData,
+      // The Page Watch verdict, not a provider score. Provider numbers stay on
+      // the page's own Agent-readiness tab.
+      agentVerdict: agentAccessSummary(assembleAgentIssueCases({
+        checks: rangeAgentSnapshot?.checks ?? [],
+        ignores: p.agentIgnores,
+        ignoreDefaults: agentIgnoreDefaults,
+        ignoreRestores: p.agentIgnoreRestores,
+        audit: externalAuditForPage(externalAgentAudits, p.url),
+      })).verdict,
       // Legacy pages may only have a latest page-level scan. A single point is
       // shown as a flat sparkline until the next retained collection arrives.
       agentSeries: total ? (readinessSeries.length ? readinessSeries : [pct]) : ([] as number[]),
@@ -798,11 +811,18 @@ function DashboardContent({
                   <XSmallScoreCard data={data} showTitle={false} />
                 </div>
               ))}
-              <div
-                aria-label={`Agent readiness history: ${row.agentSeries.length} retained ${row.agentSeries.length === 1 ? "snapshot" : "snapshots"} in this range`}
-                title={row.agentSeries.length === 1 ? "One retained readiness snapshot; trend appears after the next scan." : undefined}
-              >
-                <XSmallScoreCard data={{ title: "Agent", desktop: row.agentSeries }} showTitle={false} />
+              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                <div
+                  aria-label={`Agent readiness history: ${row.agentSeries.length} retained ${row.agentSeries.length === 1 ? "snapshot" : "snapshots"} in this range`}
+                  title={row.agentSeries.length === 1 ? "One retained readiness snapshot; trend appears after the next scan." : undefined}
+                >
+                  <XSmallScoreCard data={{ title: "Agent", desktop: row.agentSeries }} showTitle={false} />
+                </div>
+                {/* The Page Watch verdict sits under the readiness trend; the
+                    trend is a percentage over time, the verdict is a conclusion. */}
+                <div style={{ display: "flex", justifyContent: "center" }}>
+                  <AgentAccessChip verdict={row.agentVerdict} />
+                </div>
               </div>
             </div>
           ))}
