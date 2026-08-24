@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Lint, typecheck, test, build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: ".nvmrc"
+          cache: npm
+
+      # AGENTS.md: install must always run under npm 10.9.7, never whatever
+      # npm ships with the chosen Node version. npm 11 strips Vitest's nested
+      # esbuild records from package-lock.json, breaking `npm ci` on
+      # Webflow Cloud.
+      - name: Pin npm to 10.9.7
+        run: npm install -g npm@10.9.7
+
+      - name: Print tool versions
+        run: |
+          node --version
+          npm --version
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      # Runs before `build` deliberately: `build` writes .next/types/*, which
+      # tsconfig.json's include picks up, so typechecking after a build
+      # checks generated route types too. Checking source-only first keeps
+      # this step's result independent of a prior build in the same job.
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test -- --run
+
+      - name: Build
+        run: npm run build
+
+      - name: Typecheck collector worker
+        run: npm run collector:check
+
+      - name: Dry-run collector worker deploy
+        run: npm run collector:dry-run
+
+      - name: Typecheck auth gateway
+        run: npm run gateway:check
+
+      - name: Dry-run auth gateway deploy
+        run: npm run gateway:dry-run
