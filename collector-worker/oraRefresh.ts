@@ -42,6 +42,13 @@ import {
   scanOraOrigin,
   type OraClientOptions,
 } from "./oraClient";
+import {
+  emptyOraRunCounters,
+  oraOperationLogEvent,
+  oraRunLogEvent,
+  safeOraHost,
+  type OraRunCounters,
+} from "./oraTelemetry";
 
 /** Public scan quota is shared per Worker egress IP, so stay conservative. */
 const MAX_CONCURRENCY = 2;
@@ -255,7 +262,32 @@ export async function refreshExternalAgentAudits(
     ...(options.now ? { now: () => nowMs } : {}),
   };
 
+  const counters: OraRunCounters = emptyOraRunCounters();
   const results = await mapConcurrent(origins, MAX_CONCURRENCY, async (origin) => {
+    const host = safeOraHost(origin);
+    // One structured line per provider request. The client supplies timing and
+    // HTTP status; the tenant and host are added here.
+    const clientForOrigin: OraClientOptions = {
+      ...client,
+      onOperation: (operation) => {
+        if (operation.operation === "cached-read") counters.cachedReads += 1;
+        if (operation.operation === "full-scan") counters.scansAttempted += 1;
+        if (operation.operation === "full-scan" && operation.httpStatus === 429) {
+          counters.scansRateLimited += 1;
+        }
+        if (operation.operation === "full-scan" && operation.httpStatus < 300) {
+          counters.scansSucceeded += 1;
+        }
+        console.log(oraOperationLogEvent({
+          operation: operation.operation,
+          tenant,
+          host,
+          status: operation.httpStatus < 300 ? "ok" : "provider",
+          httpStatus: operation.httpStatus,
+          durationMs: operation.durationMs,
+        }));
+      },
+    };
     const audit = existing.get(origin) ?? null;
     const deferral = deferralFor(audit?.status ?? null, nowMs, force);
     if (deferral) {
@@ -264,7 +296,7 @@ export async function refreshExternalAgentAudits(
 
     try {
       // Read Ora's stored score first: a cached read consumes no scan quota.
-      const cached = await getCachedOraAudit(origin, client);
+      const cached = await getCachedOraAudit(origin, clientForOrigin);
       let outcome = cached;
       let scanned = false;
       const cachedIsUsable = cached.kind === "result"
@@ -272,9 +304,10 @@ export async function refreshExternalAgentAudits(
         && !force
         && usableScannedAt(cached.body, nowMs, maxAgeSeconds);
 
+      if (cachedIsUsable) counters.cacheHits += 1;
       if (!cachedIsUsable) {
         const scan = await scanOraOrigin(origin, {
-          ...client,
+          ...clientForOrigin,
           maxAgeSeconds,
           ...(force ? { force: true } : {}),
         });
@@ -326,6 +359,17 @@ export async function refreshExternalAgentAudits(
         rawReportKeyBase.scannedAt,
       );
       const snapshot = { ...rawReportKeyBase, rawReportKey };
+      console.log(oraOperationLogEvent({
+        operation: "persist",
+        tenant,
+        host,
+        status: snapshot.status,
+        servedFromCache: !scanned,
+        ...(snapshot.resultAgeSeconds === undefined
+          ? {}
+          : { resultAgeSeconds: snapshot.resultAgeSeconds }),
+        checkCount: snapshot.findings.length,
+      }));
       const persisted = await persistExternalAgentAudit(env, tenant, snapshot, {
         rawResponse: outcome.body,
         request: { origin, maxAgeSeconds, force, servedFromCache: !scanned },
@@ -340,6 +384,7 @@ export async function refreshExternalAgentAudits(
       } satisfies OriginRefreshOutcome;
     } catch (error) {
       const safe = safeError(error);
+      if (safe.code === "OraContractError") counters.contractFailures += 1;
       const status: ExternalAgentAuditAvailability =
         error instanceof OraTargetError ? "error" : "unavailable";
       await recordExternalAgentAuditStatus(env, {
@@ -351,18 +396,19 @@ export async function refreshExternalAgentAudits(
         errorCode: safe.code,
         errorMessage: safe.message,
       });
-      console.error(JSON.stringify({
-        message: "External agent audit refresh failed",
+      // Hostname only: never the full URL, query string, or provider body.
+      console.error(oraOperationLogEvent({
+        operation: "persist",
         tenant,
-        provider: "ora",
-        // Hostname only: never the full URL, query string, or provider body.
-        host: safeHost(origin),
-        errorCode: safe.code,
+        host,
+        status: "failed",
+        providerErrorCode: safe.code,
       }));
       return { origin, status, errorCode: safe.code } satisfies OriginRefreshOutcome;
     }
   });
 
+  console.log(oraRunLogEvent(tenant, counters, { operation: "refresh", origins: origins.length }));
   const count = (status: OriginRefreshOutcome["status"]) =>
     results.filter((result) => result.status === status).length;
   return {
@@ -377,14 +423,6 @@ export async function refreshExternalAgentAudits(
     skipped: count("skipped"),
     results,
   };
-}
-
-function safeHost(origin: string): string {
-  try {
-    return new URL(origin).hostname;
-  } catch {
-    return "invalid";
-  }
 }
 
 /** Whether a cached provider body is recent enough to skip a live scan. */

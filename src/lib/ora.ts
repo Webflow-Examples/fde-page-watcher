@@ -44,7 +44,7 @@ export const ORA_SCAN_CHECKS_PATH = "/api/scan/checks";
 export const ORA_AUDIT_CONTRACT_MAJOR = 1;
 
 /** The contract this module was written and fixture-tested against. */
-export const ORA_AUDIT_CONTRACT_VERSION = "1.20.1";
+export const ORA_AUDIT_CONTRACT_VERSION = "1.21.0";
 
 /** Documented server-side clamp for the freshness window, in seconds. */
 export const ORA_MIN_MAX_AGE_SECONDS = 3_600;
@@ -465,15 +465,24 @@ function normalizedFindings(
 }
 
 /**
- * A response `domain` is Ora's normalized (often apex) form of what we asked
- * about, so an exact match is the wrong test. Accept either direction of the
- * suffix relationship and reject only an unrelated host.
+ * Verify a response describes the host we asked about.
+ *
+ * Measured against the live API on 2026-08-24: the score route echoes the full
+ * hostname rather than folding to the registrable domain — `webflow.com` for
+ * the apex and `university.webflow.com` for a subdomain. So an exact match is
+ * the normal case.
+ *
+ * The one tolerated difference is a `www.` prefix on either side, which a
+ * redirect can introduce. Any broader suffix tolerance would accept a reply
+ * about a shared parent (`webflow.io`) when we asked about a tenant beneath it
+ * (`customer.webflow.io`) — a different site entirely.
  */
 export function oraDomainMatchesHost(domain: string, host: string): boolean {
-  const left = domain.trim().toLowerCase().replace(/\.$/, "");
-  const right = host.trim().toLowerCase().replace(/\.$/, "");
-  if (!left || !right) return false;
-  return left === right || left.endsWith(`.${right}`) || right.endsWith(`.${left}`);
+  const normalize = (value: string) =>
+    value.trim().toLowerCase().replace(/\.$/, "").replace(/^www\./, "");
+  const left = normalize(domain);
+  const right = normalize(host);
+  return !!left && !!right && left === right;
 }
 
 function assertContractVersion(value: unknown): string {

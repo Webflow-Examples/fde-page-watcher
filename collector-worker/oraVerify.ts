@@ -26,6 +26,12 @@ import {
 import type { AgentIssueVerificationResult, Rec } from "../src/lib/types";
 import { createFdeStore, type FdeStoreBindings } from "./dataStore";
 import { runOraChecks, OraTransportError, type OraClientOptions } from "./oraClient";
+import {
+  emptyOraRunCounters,
+  oraOperationLogEvent,
+  oraRunLogEvent,
+  safeOraHost,
+} from "./oraTelemetry";
 
 export type VerifyRefusal =
   | "not-consented"
@@ -101,9 +107,22 @@ export async function verifyAgentIssueTask(
     if (target) beginAgentVerification(target, now);
   });
 
+  const counters = emptyOraRunCounters();
+  const host = safeOraHost(origin);
   const client: OraClientOptions = {
     ...(env.ORA_SCAN_API_KEY ? { apiKey: env.ORA_SCAN_API_KEY } : {}),
     ...(options.fetchFn ? { fetchFn: options.fetchFn } : {}),
+    onOperation: (operation) => {
+      console.log(oraOperationLogEvent({
+        operation: operation.operation,
+        tenant,
+        host,
+        status: operation.httpStatus < 300 ? "ok" : "provider",
+        httpStatus: operation.httpStatus,
+        durationMs: operation.durationMs,
+        checkCount: checkIds.length,
+      }));
+    },
   };
 
   let outcome: Awaited<ReturnType<typeof runOraChecks>>;
@@ -116,6 +135,8 @@ export async function verifyAgentIssueTask(
       const target = draft.recs.find((item) => item.key === recKey);
       if (target) recordAgentVerificationFailure(target, { code, message }, now);
     });
+    counters.verificationsUnconfirmed += 1;
+    console.log(oraRunLogEvent(tenant, counters, { operation: "verify" }));
     return { ok: false, tenant, recKey, status: "verifying", errorCode: code };
   }
 
@@ -127,6 +148,9 @@ export async function verifyAgentIssueTask(
       const target = draft.recs.find((item) => item.key === recKey);
       if (target) recordAgentVerificationFailure(target, { code, message }, now);
     });
+    if (code === "MALFORMED_CHECKS") counters.contractFailures += 1;
+    counters.verificationsUnconfirmed += 1;
+    console.log(oraRunLogEvent(tenant, counters, { operation: "verify" }));
     // Still verifying, and retryable: the remediation is unproven, not failed.
     return { ok: false, tenant, recKey, status: "verifying", errorCode: code };
   }
@@ -149,6 +173,11 @@ export async function verifyAgentIssueTask(
     // A returned issue goes back into open work so it reappears in the list.
     commit.reopened = reopenReturnedAgentTask(target);
   });
+
+  if (commit.status === "resolved") counters.verificationsResolved += 1;
+  else if (commit.status === "returned") counters.verificationsReturned += 1;
+  else counters.verificationsUnconfirmed += 1;
+  console.log(oraRunLogEvent(tenant, counters, { operation: "verify" }));
 
   return {
     ok: commit.status === "resolved",

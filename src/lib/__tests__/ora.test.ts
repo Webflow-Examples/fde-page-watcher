@@ -179,13 +179,26 @@ describe("Ora status and tier mapping", () => {
     expect(oraIssueKeyForCheck("__proto__")).toBeUndefined();
   });
 
-  it("tolerates Ora's apex-domain normalization without accepting an unrelated host", () => {
+  it("matches the exact host, tolerating only a www. prefix", () => {
+    // Measured 2026-08-24: the provider echoes the full hostname, so exact
+    // match is the normal case.
     expect(oraDomainMatchesHost("example.com", "example.com")).toBe(true);
+    expect(oraDomainMatchesHost("EXAMPLE.COM.", "example.com")).toBe(true);
+    expect(oraDomainMatchesHost("docs.example.com", "docs.example.com")).toBe(true);
+    // A redirect can add or drop www on either side.
     expect(oraDomainMatchesHost("example.com", "www.example.com")).toBe(true);
     expect(oraDomainMatchesHost("www.example.com", "example.com")).toBe(true);
-    expect(oraDomainMatchesHost("EXAMPLE.COM.", "example.com")).toBe(true);
+
     expect(oraDomainMatchesHost("notexample.com", "example.com")).toBe(false);
     expect(oraDomainMatchesHost("", "example.com")).toBe(false);
+  });
+
+  it("refuses a reply about a shared parent of the host we asked about", () => {
+    // The reason the guard exists: on a shared domain, folding to the parent
+    // would describe an entirely different site.
+    expect(oraDomainMatchesHost("webflow.io", "customer.webflow.io")).toBe(false);
+    expect(oraDomainMatchesHost("example.com", "docs.example.com")).toBe(false);
+    expect(oraDomainMatchesHost("docs.example.com", "example.com")).toBe(false);
   });
 });
 
@@ -194,7 +207,7 @@ describe("Ora audit fixture round-trip", () => {
     const snapshot = parse("complete");
     expect(snapshot.schemaVersion).toBe(1);
     expect(snapshot.provider).toBe("ora");
-    expect(snapshot.contractVersion).toBe("1.20.1");
+    expect(snapshot.contractVersion).toBe("1.21.0");
     expect(snapshot.status).toBe("available");
     expect(snapshot.origin).toBe(ORIGIN);
     expect(snapshot.target).toBe(ORIGIN);
