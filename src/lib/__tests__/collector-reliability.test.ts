@@ -6,6 +6,7 @@ import { createFsStore, normalizeState, type DataStore } from "../store/fsStore"
 import { pendingPage, recoverStaleRuns, requestPageRun, RUN_STALE_AFTER_MS } from "../mutations";
 import { captureBaseline, executePageRun, runNightly, runPage } from "../collector";
 import type { AppState, CategoryScore, NightScores, PageStatus, StrategyScores } from "../types";
+import { collectResult } from "./helpers/collectResult";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -14,7 +15,7 @@ afterEach(async () => {
 
 const score = (m: number): CategoryScore => ({ m, lo: m - 2, hi: m + 2 });
 const scores = (perf: number): NightScores => ({ perf: score(perf), a11y: score(92), bp: score(96), seo: score(99) });
-const result = (perf: number) => ({ scores: scores(perf), opportunities: [], sampleSize: 5, raws: [{ perf }] });
+const result = (perf: number) => collectResult(scores(perf), { raws: [{ perf }] });
 
 async function dataStore(pages = [pendingPage("page", "Page", "https://example.com/page", "priority")]): Promise<DataStore> {
   const root = await mkdtemp(path.join(tmpdir(), "fde-collector-"));
