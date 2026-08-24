@@ -14,6 +14,9 @@ import { agentReadinessForNight, summarizeAgentChecks } from "@/lib/agentScoring
 import { effectivePerformanceThresholds, normalizePerformanceThresholds } from "@/lib/performanceThresholds";
 import { deltaMeta, historyForRange, pageAgentSnapshotForRange, pageRangeComparison, pageRangeLatestNightForStrategy, pageRangeSeries, pageRangeTrend, scoreMeta } from "@/lib/scoring";
 import { C, flagChip, savingsValue } from "@/lib/ui";
+import { AgentAccessChip } from "@/components/agent-access";
+import { agentAccessSummary, assembleAgentIssueCases } from "@/lib/agentIssueCases";
+import { externalAuditForPage } from "@/lib/externalAgentEvidence";
 import { Sparkline } from "@/components/charts";
 import { scoreCardDataForCategory } from "@/lib/scoreCardAdapter";
 import { XSmallScoreCard } from "@/components/ScoreCard";
@@ -133,6 +136,7 @@ function DashboardContent({
     pages,
     recs,
     agentIgnoreDefaults,
+    externalAgentAudits,
     performanceThresholds,
     collectionSchedule,
     measurementIncident,
@@ -253,6 +257,15 @@ function DashboardContent({
       flag: flagChip(p.flag),
       cats,
       scoreCardData,
+      // The Page Watch verdict, not a provider score. Provider numbers stay on
+      // the page's own Agent-readiness tab.
+      agentVerdict: agentAccessSummary(assembleAgentIssueCases({
+        checks: rangeAgentSnapshot?.checks ?? [],
+        ignores: p.agentIgnores,
+        ignoreDefaults: agentIgnoreDefaults,
+        ignoreRestores: p.agentIgnoreRestores,
+        audit: externalAuditForPage(externalAgentAudits, p.url),
+      })).verdict,
       agentPct: total ? `${pct}%` : "—",
       agentFg: am.fg,
       agentSub: total ? `${pass}/${total}${ignored ? ` · ${ignored} ignored` : ""}` : ignored ? `${ignored} ignored` : "no scan in range",
@@ -809,6 +822,7 @@ function DashboardContent({
                   </div>
                 <div style={{ fontSize: 14, fontWeight: 600, lineHeight: 1, color: row.agentFg }}>{row.agentPct}</div>
                 <div style={{ fontSize: 10, lineHeight: 1.2, color: C.faint, textAlign: "center", whiteSpace: "nowrap" }}>{row.agentSub}</div>
+                <div style={{ marginTop: 4 }}><AgentAccessChip verdict={row.agentVerdict} /></div>
               </div>
             </div>
           ))}

@@ -25,6 +25,10 @@ import { failedRunDetailMessage, formatSuccessfulRunAt, lastSuccessfulRunAt } fr
 import { isTaskMarker, taskMarkerText } from "@/lib/taskMarkers";
 import { VisitorExperiencePanel } from "@/components/visitor-experience";
 import { ExternalAgentAuditPanel } from "@/components/agent-audit";
+import { AgentAccessVerdictCard, AgentIssueCaseList } from "@/components/agent-access";
+import { agentAccessSummary, assembleAgentIssueCases } from "@/lib/agentIssueCases";
+import { externalAuditAgeLabel } from "@/lib/externalAgentEvidence";
+import { latestExternalAgentSnapshot } from "@/lib/agentAudit";
 import { externalAuditForPage } from "@/lib/externalAgentEvidence";
 import {
   evidenceForPage,
@@ -1429,11 +1433,42 @@ function AgentTab({
   const defaults = normalizeAgentIgnoreSettings(store.agentIgnoreDefaults);
   const allApplicableUnavailable = checks.length > 0 && pass === 0 && fail === 0 && unavailable > 0;
   const latestKitesurf = [...pageAgentHistoryForRange(page, rangeDays)].reverse().find((night) => night.kitesurf)?.kitesurf ?? null;
+  const audit = externalAuditForPage(store.externalAgentAudits, page.url);
+  // One issue per problem, merged across every source. The per-check lists
+  // below remain available as source detail rather than as the headline.
+  const issueCases = assembleAgentIssueCases({
+    checks,
+    ...(date ? { checksObservedAt: date } : {}),
+    ignores,
+    ignoreDefaults: defaults,
+    ignoreRestores: restores,
+    audit,
+    kitesurf: latestKitesurf,
+  });
+  const summary = agentAccessSummary(issueCases);
+  const trackedKeys = new Set(
+    store.recs
+      .filter((rec) => rec.pageId === page.id && rec.source === "agent-readiness")
+      .map((rec) => rec.agentIssue?.caseKey ?? rec.id.replace(/^agent-issue:/, "")),
+  );
+  const auditAge = audit
+    ? externalAuditAgeLabel(latestExternalAgentSnapshot(audit))
+    : undefined;
   return (
     <div>
+      <AgentAccessVerdictCard summary={summary} freshness={auditAge} />
+      <AgentIssueCaseList
+        cases={issueCases}
+        canManage={store.canManageProject}
+        trackedKeys={trackedKeys}
+        onAddToTasks={(issue) => store.addAgentIssueTask(page.id, issue.key)}
+      />
       <KitesurfProbeCard evidence={latestKitesurf} />
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20, padding: "15px 18px", background: C.panel, border: `1px solid ${C.border}`, borderRadius: 11 }}>
-        <div style={{ fontSize: 13, color: C.faint2 }}>{date ? `Recorded per check on ${date}.` : `No scan recorded in the selected ${rangeDays}-day range.`} Watch List defaults apply unless overridden here.</div>
+        <div style={{ fontSize: 13, color: C.faint2 }}>
+          <span style={{ fontWeight: 600, color: C.dim }}>Page Watch checks · </span>
+          {date ? `Recorded per check on ${date}.` : `No scan recorded in the selected ${rangeDays}-day range.`} One of the sources behind the verdict above. Watch List defaults apply unless overridden here.
+        </div>
         <div style={{ marginLeft: "auto", display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 16, fontSize: 12.5, fontWeight: 500 }}>
           <span style={{ color: C.green }}>{pass} passing</span>
           <span style={{ color: C.red }}>{fail} failing</span>

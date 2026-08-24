@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import type { ExternalAgentCheckResult } from "../agentAudit";
+import type { AgentIssueCheckResult } from "../types";
 
 /**
  * Structural guard for the Phase 1 boundary: external provider evidence must
@@ -122,13 +124,21 @@ describe("external agent audit isolation", () => {
     expect(dataPlane).not.toContain("agent-audits/ora/verify");
   });
 
-  it("adds no external score to the dashboard", () => {
-    // External findings belong under the page's own evidence, never as another
-    // top-level dashboard number.
+  it("shows the Page Watch verdict on the dashboard, never a provider score", () => {
     const dashboard = source("src/app/(app)/dashboard/page.tsx");
-    expect(dashboard).not.toContain("externalAgentAudits");
-    expect(dashboard).not.toContain("ExternalAgentAudit");
-    expect(dashboard).not.toContain("externalAgentEvidence");
+    // The verdict is a Page Watch conclusion and belongs here.
+    expect(dashboard).toContain("agentAccessSummary");
+    // Provider numbers stay on the page's own evidence surface.
+    for (const forbidden of [
+      "essentialsScore",
+      "providerScore",
+      "providerGrade",
+      "externalAgentSourceReading",
+      "ExternalAgentAuditPanel",
+      "reportUrl",
+    ]) {
+      expect(dashboard, `dashboard must not surface ${forbidden}`).not.toContain(forbidden);
+    }
   });
 
   it("never composites a provider score with the local check percentage", () => {
@@ -142,13 +152,27 @@ describe("external agent audit isolation", () => {
     }
   });
 
+  it("keeps the duplicated result union in step with the provider one", () => {
+    // AppState must not import provider modules, so AgentIssueCheckResult is a
+    // deliberate copy. These two assignments only compile while the unions are
+    // identical in both directions.
+    const fromProvider: AgentIssueCheckResult = "partial" as ExternalAgentCheckResult;
+    const toProvider: ExternalAgentCheckResult = "partial" as AgentIssueCheckResult;
+    expect(fromProvider).toBe("partial");
+    expect(toProvider).toBe("partial");
+  });
+
   it("keeps provider evidence out of AppState", () => {
     // AppState carries the consent record only. Provider readings travel beside
     // the state so they cannot be written back through a state mutation.
     const types = source("src/lib/types.ts");
     expect(types).toContain("externalAgentAuditEnabled");
+    // Verification identifiers are allowed on a task; provider evidence
+    // payloads are not.
     expect(types).not.toContain("ExternalAgentAuditSnapshot");
     expect(types).not.toContain("ExternalAgentOriginAudit");
+    expect(types).not.toContain("ExternalAgentFinding");
+    expect(importedModules("src/lib/types.ts")).toEqual([]);
     const normalize = source("src/lib/store/normalize.ts");
     expect(normalize).not.toContain("ExternalAgentAudit");
   });

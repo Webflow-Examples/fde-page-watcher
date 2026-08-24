@@ -14,6 +14,7 @@ import { defaultNewPageFlag, flagCapacityError } from "@/lib/watchCapacity";
 import { applyWatchlistPageOrder, changePageFlagOrder } from "@/lib/watchlistOrder";
 import { isTaskMarker, removeTaskMarker, taskMarkerText } from "@/lib/taskMarkers";
 import { pageTrend } from "@/lib/scoring";
+import { normalizeState } from "@/lib/store/normalize";
 import type { Project } from "@/lib/projects";
 import { LAST_PROJECT_KEY } from "@/lib/projectSelection";
 
@@ -119,6 +120,7 @@ interface StoreValue extends AppState {
   setVisitorExperienceVisible: (visible: boolean) => void;
   setExternalAgentAuditEnabled: (enabled: boolean) => void;
   refreshExternalAgentAudit: (pageId: string) => void;
+  addAgentIssueTask: (pageId: string, caseKey: string) => void;
   externalAgentAuditRefreshing: boolean;
   removePage: (id: string) => void;
   saveTask: (key: string) => void;
@@ -760,6 +762,33 @@ export function StoreProvider({
     [flash, pathFor],
   );
 
+  const addAgentIssueTask = useCallback(
+    (pageId: string, caseKey: string) => {
+      // No optimistic apply: the server re-assembles the case from stored
+      // evidence, so the authoritative task is whatever it returns.
+      void (async () => {
+        try {
+          const response = await fetch(pathFor(`/api/pages/${encodeURIComponent(pageId)}/agent-issues`), {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ caseKey }),
+            cache: "no-store",
+          });
+          const body = (await response.json().catch(() => null)) as { state?: AppState } | null;
+          if (!response.ok || !body?.state) {
+            flash("Couldn't add this to Tasks — try again");
+            return;
+          }
+          apply(normalizeState(body.state));
+          flash("Added to Tasks with its verification target");
+        } catch {
+          flash("Couldn't add this to Tasks — try again");
+        }
+      })();
+    },
+    [apply, flash, pathFor],
+  );
+
   const setExternalAgentAuditEnabled = useCallback(
     (enabled: boolean) => {
       const cur = dataRef.current;
@@ -1129,6 +1158,7 @@ export function StoreProvider({
     updateCollectionSchedule,
     setExternalAgentAuditEnabled,
     refreshExternalAgentAudit,
+    addAgentIssueTask,
     externalAgentAuditRefreshing,
     updateAlertWebhookUrl,
     setVisitorExperienceVisible,
