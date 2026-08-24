@@ -137,6 +137,15 @@ Put these in `.env.local`.
   stored state rather than from the request), resolving the issue when they
   pass, returning it when they do not, and leaving it verifying and retryable
   when the provider cannot answer.
+  Two limits worth knowing: the provider owns its own methodology, so a change
+  on its side can move a score or reclassify a check without anything changing
+  on the site — readings are stored with the provider contract version they were
+  parsed against, and Page Watch pins the contract's major version so a breaking
+  change fails loudly rather than silently altering a verdict. And because the
+  audit is origin-scoped, it cannot distinguish two watched pages on the same
+  origin. Ora's methodology is published at <https://is-agentic.com/methodology>,
+  and each stored reading links to its own provider report under advanced
+  evidence.
   Webflow staging hosts (`webflow.io` and any subdomain) are refused before any
   outbound request: a normal external scan is public and attributes a subdomain
   to its parent company's leaderboard row, so a staging hostname and grade would

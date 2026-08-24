@@ -34,7 +34,19 @@ export const ORA_REQUEST_TIMEOUT_MS = 30_000;
 export const ORA_MAX_POLL_MS = 45_000;
 export const ORA_POLL_INTERVAL_MS = 5_000;
 
+/** Observed for one provider request. Timing and status only. */
+export interface OraClientOperation {
+  operation: "cached-read" | "full-scan" | "poll" | "selective-checks";
+  httpStatus: number;
+  durationMs: number;
+}
+
 export interface OraClientOptions {
+  /**
+   * Called once per provider request so the caller can log and count it. The
+   * client deliberately does not log: only the orchestrator knows the tenant.
+   */
+  onOperation?: (operation: OraClientOperation) => void;
   /** Removes public scan-family rate limits. Absent is valid and supported. */
   apiKey?: string;
   fetchFn?: typeof fetch;
@@ -104,8 +116,10 @@ async function request(
   url: string,
   init: RequestInit,
   options: OraClientOptions,
+  operation?: OraClientOperation["operation"],
 ): Promise<RawResponse> {
   const fetchFn = options.fetchFn ?? fetch;
+  const startedAt = (options.now ?? Date.now)();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ORA_REQUEST_TIMEOUT_MS);
   const headers = new Headers({ accept: "application/json", ...init.headers });
@@ -119,11 +133,15 @@ async function request(
       signal: controller.signal,
       redirect: "error",
     });
-    return {
-      status: response.status,
-      headers: response.headers,
-      body: await boundedJson(response),
-    };
+    const body = await boundedJson(response);
+    if (operation && options.onOperation) {
+      options.onOperation({
+        operation,
+        httpStatus: response.status,
+        durationMs: (options.now ?? Date.now)() - startedAt,
+      });
+    }
+    return { status: response.status, headers: response.headers, body };
   } catch (error) {
     const aborted = error instanceof DOMException && error.name === "AbortError";
     throw new OraTransportError(
@@ -150,7 +168,7 @@ export async function getCachedOraAudit(
   options: OraClientOptions = {},
 ): Promise<OraResponseOutcome> {
   const { host } = normalizeOraTarget(origin);
-  return outcome(await request(oraScoreUrl(host), { method: "GET" }, options));
+  return outcome(await request(oraScoreUrl(host), { method: "GET" }, options, "cached-read"));
 }
 
 export interface ScanOraOriginOptions extends OraClientOptions {
@@ -181,7 +199,7 @@ export async function scanOraOrigin(
       maxAgeSeconds: clampOraMaxAgeSeconds(options.maxAgeSeconds),
       ...(options.force ? { force: true } : {}),
     }),
-  }, options));
+  }, options, "full-scan"));
 
   if (first.kind !== "result" || first.complete) return { outcome: first, polls: 0 };
 
@@ -192,7 +210,7 @@ export async function scanOraOrigin(
     if (now() + ORA_POLL_INTERVAL_MS > deadline) break;
     await sleep(ORA_POLL_INTERVAL_MS);
     polls += 1;
-    const next = outcome(await request(current.pollUrl, { method: "GET" }, options));
+    const next = outcome(await request(current.pollUrl, { method: "GET" }, options, "poll"));
     // A poll that is rate-limited or fails leaves the partial result standing:
     // partial evidence is better than discarding what the scan already scored.
     if (next.kind !== "result") return { outcome: current, polls };
@@ -226,7 +244,7 @@ export async function runOraChecks(
   const raw = await request(oraScoreChecksUrl(), {
     method: "POST",
     body: JSON.stringify({ url: host, checkIds: unique }),
-  }, options);
+  }, options, "selective-checks");
 
   if (raw.status !== 200) return outcome(raw);
   const body = raw.body as { contractVersion?: unknown; results?: unknown } | null;
