@@ -335,7 +335,9 @@ function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
     alertWebhookUrl,
     updateAlertWebhookUrl,
     visitorExperienceVisible,
+    externalAgentAuditEnabled,
     setVisitorExperienceVisible,
+    setExternalAgentAuditEnabled,
     canManageProject,
   } = useStore();
   const orderedPages = useMemo(() => sortWatchlistPages(pages), [pages]);
@@ -736,6 +738,35 @@ function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
                 { value: "hidden", label: "Hidden" },
               ]}
             />
+          </div>
+        </section>
+
+        <section aria-labelledby="external-agent-audit-heading" style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, padding: "17px 20px", marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 24 }}>
+            <div>
+              <div id="external-agent-audit-heading" style={{ fontSize: 13.5, fontWeight: 600 }}>External agent audit</div>
+              <div style={{ maxWidth: 720, fontSize: 12, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>
+                Adds an independent, origin-level agent-readiness audit from Ora, the scanner behind Is Agentic. It runs
+                only when you ask for it, and it never changes your Page Watch checks, performance scores, or page status.
+              </div>
+              <div style={{ maxWidth: 720, fontSize: 11.5, color: C.faint, marginTop: 7, lineHeight: 1.5 }}>
+                Enabling this sends the production origin of each watched page to Ora. <strong style={{ color: C.muted, fontWeight: 600 }}>Ora scans
+                are public:</strong>{" "}
+                the result is stored in Ora&apos;s directory, can appear in its leaderboard and research
+                statistics, and is readable by anyone. Webflow staging domains are never sent.
+              </div>
+            </div>
+            <div style={{ flex: "none" }}>
+              <SegToggle
+                label="External agent audit"
+                value={externalAgentAuditEnabled ? "enabled" : "disabled"}
+                onChange={(value) => setExternalAgentAuditEnabled(value === "enabled")}
+                options={[
+                  { value: "enabled", label: "Enabled" },
+                  { value: "disabled", label: "Off" },
+                ]}
+              />
+            </div>
           </div>
         </section>
 

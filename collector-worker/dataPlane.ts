@@ -8,16 +8,23 @@ import {
   WebflowIntegrationError,
   type WebflowBindings,
 } from "./webflow";
+import { refreshExternalAgentAudits } from "./oraRefresh";
 
 type DataRoute =
   | { kind: "state"; tenant: string }
   | { kind: "crux"; tenant: string }
   | { kind: "agent-audits"; tenant: string }
+  | { kind: "agent-audits-refresh"; tenant: string }
   | { kind: "report"; tenant: string; pageId: string; key: string }
   | { kind: "webflow-connection"; tenant: string }
   | { kind: "webflow-sync"; tenant: string };
 
-type DataPlaneBindings = FdeStoreBindings & WebflowBindings;
+type DataPlaneBindings = FdeStoreBindings & WebflowBindings & {
+  /** Deployment gate for outbound external scans. "true" enables refresh. */
+  ORA_SCAN_ENABLED?: string;
+  /** Optional partner key. Absent means keyless, public-quota operation. */
+  ORA_SCAN_API_KEY?: string;
+};
 
 function decode(value: string): string | null {
   try {
@@ -42,6 +49,11 @@ function route(pathname: string): DataRoute | null {
   if (crux) {
     const tenant = decode(crux[1]);
     return safeIdentifier(tenant, true) ? { kind: "crux", tenant } : null;
+  }
+  const agentAuditRefresh = pathname.match(/^\/data\/([^/]+)\/agent-audits\/ora\/refresh$/);
+  if (agentAuditRefresh) {
+    const tenant = decode(agentAuditRefresh[1]);
+    return safeIdentifier(tenant, true) ? { kind: "agent-audits-refresh", tenant } : null;
   }
   const agentAudits = pathname.match(/^\/data\/([^/]+)\/agent-audits$/);
   if (agentAudits) {
@@ -160,9 +172,49 @@ export async function handleDataPlaneRequest(
     return noStore(Response.json({ evidence: await store.getCruxEvidence() }));
   }
   if (matched.kind === "agent-audits") {
-    // Read-only in Phase 1: external audits are never written or refreshed here.
     if (request.method !== "GET") return Response.json({ error: "method not allowed" }, { status: 405 });
     return noStore(Response.json({ audits: await store.getExternalAgentAudits() }));
+  }
+  if (matched.kind === "agent-audits-refresh") {
+    if (request.method !== "POST") {
+      return Response.json({ error: "method not allowed" }, { status: 405 });
+    }
+    // Deployment-level kill switch, independent of the project's consent record.
+    if (bindings.ORA_SCAN_ENABLED !== "true") {
+      return noStore(Response.json({
+        error: "external agent scanning is disabled for this deployment",
+        code: "ORA_SCAN_DISABLED",
+      }, { status: 503 }));
+    }
+    let body: unknown = {};
+    if (request.headers.get("content-length") || request.headers.get("content-type")) {
+      try {
+        body = await boundedJson(request, 4 * 1024);
+      } catch (error) {
+        return Response.json(
+          { error: error instanceof RangeError ? error.message : "invalid JSON" },
+          { status: 400 },
+        );
+      }
+    }
+    const input = (body ?? {}) as { pageId?: unknown; origin?: unknown; force?: unknown };
+    if (
+      (input.pageId !== undefined && typeof input.pageId !== "string")
+      || (input.origin !== undefined && typeof input.origin !== "string")
+      || (input.force !== undefined && typeof input.force !== "boolean")
+    ) {
+      return Response.json({ error: "invalid refresh request" }, { status: 400 });
+    }
+    const result = await refreshExternalAgentAudits(bindings, matched.tenant, {
+      ...(typeof input.pageId === "string" ? { pageId: input.pageId } : {}),
+      ...(typeof input.origin === "string" ? { origin: input.origin } : {}),
+      ...(input.force === true ? { force: true } : {}),
+    });
+    // A refused request is a client-visible precondition, not a server fault.
+    const status = result.refusedReason
+      ? (result.refusedReason === "not-consented" ? 409 : 400)
+      : 200;
+    return noStore(Response.json(result, { status }));
   }
   if (matched.kind === "state") {
     if (request.method === "GET") {

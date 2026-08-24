@@ -1,7 +1,8 @@
 # Page Watch UX and jobs-to-be-done audit
 
-Date: 2026-08-21  
-Scope: dashboard, external alert contract, Pages, Inbox, page detail, Opportunities, History, Agent-readiness, Tasks, and Guide.  
+Original audit: 2026-08-21  
+Updated: 2026-08-24 to incorporate Ora and the Is Agentic essentials model.  
+Scope: dashboard, external alert contract, Pages, Inbox, page detail, Opportunities, History, Agent Access, Tasks, Guide, Page Watch HTTP checks, Kitesurf, Ora, and Is Agentic.  
 Primary journey: receive an alert or open Page Watch, understand what changed, decide whether to act, create work, and verify the outcome.
 
 ## Executive verdict
@@ -23,6 +24,17 @@ The most damaging trust problems are semantic, not visual:
 
 These inconsistencies make users question the analysis even when the underlying collection is sound.
 
+Adding Ora does not change this conclusion; it makes the decision layer more important. Ora can provide stronger applicability, broader behavioral checks, evidence-backed remediation, and selective post-fix verification. Is Agentic is a website-focused Essential/Recommended/Bonus interpretation of the same underlying Ora scan. If these are exposed as additional scores, tabs, and finding lists, Page Watch will intensify the overload identified in this audit. They should instead strengthen canonical issue cases behind a single Page Watch verdict.
+
+Page Watch should therefore act as the interpreter of four distinct evidence layers:
+
+- **Page Watch HTTP checks:** frequent, deterministic evidence for an exact watched page and its origin resources.
+- **Kitesurf:** rendered-page DOM, accessibility, network, runtime, and control evidence.
+- **Ora:** independent, origin-level, applicability-aware audit evidence and remediation.
+- **Is Agentic essentials:** Ora's simplified website-focused interpretation, not a separate scan.
+
+These readings should never be averaged. Their value comes from independent corroboration, clear scope, and an evidence ledger that explains agreement, disagreement, freshness, and limitations.
+
 ## Jobs to be done
 
 ### When I open the app normally
@@ -42,6 +54,8 @@ These inconsistencies make users question the analysis even when the underlying 
 - Give me a plain-language diagnosis before metrics and source names.
 - Show the supporting and conflicting evidence in one place.
 - Explain what Page Watch measured, what it inferred, and what it cannot know.
+- Explain whether evidence is page-level or origin-level and whether it came from Page Watch, Kitesurf, Ora, or the Is Agentic interpretation.
+- Distinguish Failed, Partial, Not applicable, Unavailable, and Ignored instead of forcing everything into pass/fail.
 - Let me inspect sample counts, ranges, source timestamps, exclusions, and raw reports only when I need them.
 
 ### When I decide to act
@@ -52,6 +66,7 @@ These inconsistencies make users question the analysis even when the underlying 
 ### When work is complete
 
 - Record the change, schedule verification, and tell me whether the expected improvement actually appeared.
+- Re-run only the relevant Ora checks when an external finding was part of the diagnosis.
 - Keep “done implementing” separate from “verified resolved.”
 
 ## Current flow and health
@@ -110,6 +125,10 @@ What works: Kitesurf is explicitly described as diagnostic-only and excluded fro
 
 What breaks: a failed check such as ACP is shown without a plain-language consequence, why it matters for this page, evidence details, or remediation. The most prominent available action is “Ignore,” which trains users to manage noise instead of solve problems.
 
+Ora sharpens the diagnosis of this problem. The current local model treats many emerging standards as failures when their signals cannot be observed or may not apply, leaving users to repair applicability through Ignore controls. Ora supplies explicit applicability and richer states such as Partial and Not applicable. Page Watch should adopt those semantics at the normalized issue layer while keeping existing local history backward compatible.
+
+The improved experience must not become a provider score stack such as “Page Watch 72%, Is Agentic 63%, Ora B, Kitesurf Rendered.” It should lead with one product conclusion, one primary issue, and one next action. Provider readings belong in an expanded “How we know” ledger with scope and timestamps.
+
 ### 9. Tasks — mixed
 
 What works: the Inbox-to-Tasks transition is simple, and marking work done automatically creates a change marker and schedules follow-up measurement. That closed-loop verification is a product differentiator.
@@ -125,7 +144,10 @@ What breaks: 63 glossary terms represent substantial product training overhead. 
 ## Keep doing
 
 - Keep the multi-source evidence model. Lighthouse, CrUX, Kitesurf, native-element detection, and retained reports create a uniquely strong diagnostic foundation.
+- Add Ora to that multi-source model as independent origin-level evidence; present Is Agentic essentials as an interpretation of the same Ora scan, not a separate provider run.
 - Keep strict source boundaries. Explicitly saying what does and does not affect status is excellent trust behavior.
+- Keep the local Page Watch HTTP scan for frequent page-level monitoring instead of replacing it with a slower external provider.
+- Keep provider evidence independent. Corroborate findings, but do not average incompatible scores or rewrite one provider's historical result through another provider's methodology.
 - Keep evidence gates, recurrence counts, ranges, timestamps, confidence, and exclusions.
 - Keep Inbox as a deliberate commitment boundary, not an automatically generated task dump.
 - Keep change markers and 2/7/30-day follow-up measurement. This closes the loop from recommendation to verified outcome.
@@ -145,6 +167,11 @@ What breaks: 63 glossary terms represent substantial product training overhead. 
 - Stop exposing every stable category and device by default in the Pages inventory.
 - Stop adding terminology to solve terminology. Inline translation should handle the common path; the Guide should remain optional.
 - Stop presenting “Ignore,” “Suppress,” and “Acknowledge” as near-equivalent noise controls. Define one lifecycle with clear consequences.
+- Stop treating every absent agent standard as a failure. A provider- or policy-supported Not applicable state is different from Ignore.
+- Stop collapsing Partial, Not applicable, Unavailable, and Ignored into pass/fail.
+- Stop presenting the local pass percentage as a comprehensive agent-readiness verdict.
+- Stop organizing Agent Access around provider names or adding separate Ora and Is Agentic tabs before explaining the diagnosed issue.
+- Stop alerting on an external score change alone; methodology, applicability, freshness, or provider behavior can change without the site regressing.
 
 ## Add
 
@@ -225,6 +252,49 @@ Separate four concepts visually and verbally:
 
 This removes much of the current apparent contradiction.
 
+For agent evidence, add a separate result vocabulary beneath those four product concepts:
+
+- **Passed:** the applicable check succeeded.
+- **Partial:** usable evidence exists, but the condition is incomplete.
+- **Failed:** an applicable condition did not succeed.
+- **Not applicable:** the surface or capability is not relevant to this site.
+- **Unavailable:** the provider could not determine the result.
+- **Ignored:** the user intentionally excluded an otherwise applicable result from Page Watch policy.
+
+### 7. Add Ora as an external evidence provider, not a new destination
+
+Integrate directly with Ora's versioned audit response and request the `include=essentials` interpretation used by Is Agentic. Keep the provider integration origin-scoped and independent of per-page Lighthouse collection.
+
+The default Agent Access summary should read like:
+
+> **Agent access needs attention**  
+> Three essential blockers are supported by two independent sources.  
+> **Primary issue:** Agents cannot reliably discover machine-readable API documentation.  
+> **Next action:** Publish the OpenAPI document and expose it through the API catalog.
+
+Expanded evidence can then show:
+
+- Page Watch HTTP check, exact-page scope, and collection time.
+- Ora check ID, origin scope, result, evidence, recommendation, and scan time.
+- Is Agentic essentials score and methodology label.
+- Kitesurf rendered evidence or availability state.
+- Conflicting, stale, or missing evidence.
+
+Use Ora's selected-check endpoint after an implementation so the relevant provider checks can confirm the result without rerunning unrelated work. Provider failure should leave the issue in Verifying and retryable; it must never mark the website as regressed or the remediation as unsuccessful.
+
+### 8. Make external scanning an explicit trust boundary
+
+Ora audits public sites and may retain normal scans in public history or directory surfaces. Page Watch should:
+
+- require project-level opt-in before initiating external scans;
+- strip queries, credentials, and fragments and normalize watched URLs to public origins;
+- reject authenticated, private, preview, localhost, and network-local targets;
+- disclose provider scope, freshness, storage behavior, and methodology-change risk;
+- preserve the last successful snapshot when Ora is unavailable or rate-limited;
+- deduplicate scans across watched pages that share an origin.
+
+Cached reads and external refreshes should never delay or invalidate the normal Page Watch collection workflow.
+
 ## Recommended information architecture
 
 Primary navigation:
@@ -240,20 +310,25 @@ Within a page:
 1. **Summary** — health, active issues, next action.
 2. **Issues** — canonical issue cases affecting this page.
 3. **Evidence** — trends, lab/visitor comparison, source ledger, raw reports.
-4. **Agent access** — agent-readiness checks, each with meaning and remediation.
+4. **Agent access** — Page Watch verdict, active agent issues, and next action first; expandable Page Watch, Kitesurf, Ora, and Is Agentic evidence second.
 5. **Settings** — calibration and page-specific policy.
 
 Tasks can remain a view inside Action Center or as a focused work-management view, but they should use the same issue object.
 
+Ora audit history belongs at the project/origin evidence level and should be reused by every watched page on that origin. It should not be copied into every page's nightly history. Page-specific Page Watch and Kitesurf evidence can attach to the same issue case with a narrower scope.
+
 ## Highest-impact sequence
 
-1. Fix contradictory summaries and define the four status concepts.
-2. Create one canonical issue case and render it in Dashboard, Inbox, page detail, and Tasks.
-3. Add remediation steps, owner, success criteria, and Implemented → Verifying → Resolved states.
-4. Replace the dashboard with the three-queue Action Center.
-5. Move dense source evidence and configuration behind progressive disclosure.
-6. Add alert deep links and “why this alert fired” context.
-7. Simplify Pages and add inline explanations for remaining technical terms.
+1. Fix contradictory summaries and define the four product status concepts plus the six agent-evidence result states.
+2. Add Ora as independent origin-level evidence with explicit consent, freshness, provider status, and no effect on normal collection completion.
+3. Create one canonical issue case that deduplicates Page Watch, Kitesurf, Ora, and Is Agentic evidence.
+4. Render the issue case consistently in Dashboard, Inbox, page detail, and Tasks.
+5. Add remediation steps, owner, success criteria, provider check IDs, and Implemented → Verifying → Resolved/Returned states.
+6. Add selective Ora verification for completed agent-readiness work.
+7. Replace the dashboard with the three-queue Action Center.
+8. Move dense source evidence and configuration behind progressive disclosure.
+9. Add alert deep links and “why this alert fired” context; alert on new essential issues or corroborated regressions, not score movement alone.
+10. Simplify Pages and add inline explanations for remaining technical terms.
 
 ## Accessibility observations
 
@@ -280,7 +355,11 @@ Verification limits:
 
 ## Bottom line
 
-The measurement sophistication is not the problem. The product currently asks users to understand that sophistication before it earns the right to recommend an action. Reorganize the experience around a canonical issue case and a decision lifecycle, then let Lighthouse, CrUX, Kitesurf, and retained reports serve as the evidence behind that case. That will make the app faster to understand for non-experts while increasing—rather than reducing—the trust available to experts.
+The measurement sophistication is not the problem. The product currently asks users to understand that sophistication before it earns the right to recommend an action. Ora strengthens Page Watch only if it improves applicability, diagnosis, remediation, and verification behind the scenes. If Ora and Is Agentic appear as more competing scores and taxonomies, they worsen the central UX problem.
+
+Reorganize the experience around a canonical issue case and a decision lifecycle, then let Lighthouse, CrUX, Page Watch HTTP checks, Kitesurf, Ora, Is Agentic essentials, and retained reports serve as evidence behind that case. Page Watch should own the conclusion, explain the source boundaries, and keep every provider's methodology and history intact. That will make the app faster to understand for non-experts while increasing—rather than reducing—the trust available to experts.
+
+Implementation details for the Ora provider, storage, quotas, privacy, rollout, and verification loop are defined in [`docs/ora-agent-readiness-integration-plan.md`](./ora-agent-readiness-integration-plan.md).
 
 ## Visual companion
 

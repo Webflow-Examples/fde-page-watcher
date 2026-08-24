@@ -46,6 +46,8 @@ All are optional for local development — the app runs without them.
 | `PSI_RUNS`                   | Samples per strategy (1–5, default 5).                                                                         |
 | `ANTHROPIC_API_KEY`          | Enables post-commit recommendation explanations and Watcher narratives on the app.                           |
 | `ANTHROPIC_MOCK`             | Uses deterministic placeholder AI text without making Anthropic requests.                                    |
+| `ORA_SCAN_ENABLED`           | Collector gate for outbound external agent audits. Defaults to `false`; a project must also opt in.            |
+| `ORA_SCAN_API_KEY`           | Optional Ora partner key. Absent means keyless operation on the shared public quota.                          |
 | `WEBFLOW_TOKEN_ENCRYPTION_KEY` | Collector-only base64 AES-256 key used to encrypt tenant Webflow site tokens before D1 persistence.         |
 | `AUTH_BROKER_URL`            | Access-protected gateway origin used only for the email-code identity step.                                   |
 | `AUTH_PUBLIC_ORIGIN`         | Fixed public app origin used as the signed handoff audience and callback origin.                              |
@@ -112,8 +114,16 @@ Put these in `.env.local`.
   averaged with the local pass percentage, and provider readings never affect
   `Night.agent`, the frozen `AgentReadinessSnapshot`, Lighthouse, CrUX, page
   status, or whether a collection is complete. An authenticated `GET
-  /data/:tenant/agent-audits` returns the compact read model. No scan is
-  triggered automatically and no external score is shown in the product yet.
+  /data/:tenant/agent-audits` returns the compact read model, and an
+  authenticated `POST /data/:tenant/agent-audits/ora/refresh` runs one
+  user-triggered audit. Nothing is ever scanned on a schedule: a refresh needs
+  the collector's `ORA_SCAN_ENABLED` gate *and* the project's own opt-in in Watch
+  List settings, which carries the public-scan disclosure. Refreshes deduplicate
+  by origin, read Ora's stored score before spending scan quota, and preserve the
+  last successful audit when the provider is rate-limited or unavailable. The
+  Agent-readiness tab shows the Is Agentic essentials reading with Ora's own
+  score and report link under advanced evidence; the two are never averaged with
+  each other or with the Page Watch check percentage.
   Webflow staging hosts (`webflow.io` and any subdomain) are refused before any
   outbound request: a normal external scan is public and attributes a subdomain
   to its parent company's leaderboard row, so a staging hostname and grade would
@@ -168,6 +178,9 @@ remain protected separately by `CRON_SECRET`.
    Kitesurf and needs `PAGESPEED_API_KEY`,
    `CRUX_API_KEY`, `CRON_SECRET`, and a base64-encoded 32-byte
    `WEBFLOW_TOKEN_ENCRYPTION_KEY` generated with `openssl rand -base64 32`.
+   `ORA_SCAN_ENABLED` defaults to `false`; set it to `true` only when external
+   agent audits should be available, and optionally add an `ORA_SCAN_API_KEY`
+   secret to lift the shared public scan quota.
    Its D1, R2, Workflow, 15-minute due-page/Webflow-activity scheduler, Monday
    05:30 UTC audit, and Tuesday 06:15 UTC CrUX Cron bindings are declared in
    that config. Each schedule resolves the shared project registry and runs

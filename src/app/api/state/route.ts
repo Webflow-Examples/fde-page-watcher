@@ -58,7 +58,10 @@ export async function GET(request: Request) {
     });
   }
   const visitorExperience = await dataStore.getCruxEvidence().catch(() => []);
-  const response = NextResponse.json({ state, visitorExperience });
+  // Origin-scoped external evidence travels beside the state, never inside it,
+  // so provider readings cannot be written back through a state mutation.
+  const externalAgentAudits = await dataStore.getExternalAgentAudits().catch(() => []);
+  const response = NextResponse.json({ state, visitorExperience, externalAgentAudits });
   const requestedProjectId = new URL(request.url).searchParams.get("project");
   if (requestedProjectId) {
     response.cookies.set(PROJECT_SELECTION_COOKIE, requestedProjectId, projectSelectionCookieOptions());

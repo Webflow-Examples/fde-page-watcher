@@ -74,14 +74,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     );
   }
   const dataStore = getStore(project.tenant);
-  const [state, visitorExperience] = await Promise.all([
+  const [state, visitorExperience, externalAgentAudits] = await Promise.all([
     dataStore.getState(),
     dataStore.getCruxEvidence().catch(() => []),
+    dataStore.getExternalAgentAudits().catch(() => []),
   ]);
   return (
     <StoreProvider
       initial={state}
       initialVisitorExperience={visitorExperience}
+      initialExternalAgentAudits={externalAgentAudits}
       basePath={basePath}
       projects={projects}
       adminProjects={allProjects}

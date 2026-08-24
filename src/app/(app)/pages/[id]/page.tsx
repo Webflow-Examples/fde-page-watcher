@@ -24,6 +24,8 @@ import { PlusIcon, RefreshIcon } from "@/components/icons";
 import { failedRunDetailMessage, formatSuccessfulRunAt, lastSuccessfulRunAt } from "@/lib/collectionStatus";
 import { isTaskMarker, taskMarkerText } from "@/lib/taskMarkers";
 import { VisitorExperiencePanel } from "@/components/visitor-experience";
+import { ExternalAgentAuditPanel } from "@/components/agent-audit";
+import { externalAuditForPage } from "@/lib/externalAgentEvidence";
 import {
   evidenceForPage,
   formatVisitorMetric,
@@ -1537,6 +1539,14 @@ function AgentTab({
           </div>
         </div>
       )}
+      <ExternalAgentAuditPanel
+        audit={externalAuditForPage(store.externalAgentAudits, page.url)}
+        pageUrl={page.url}
+        enabled={store.externalAgentAuditEnabled === true}
+        canManage={store.canManageProject}
+        refreshing={store.externalAgentAuditRefreshing}
+        onRefresh={() => store.refreshExternalAgentAudit(page.id)}
+      />
     </div>
   );
 }

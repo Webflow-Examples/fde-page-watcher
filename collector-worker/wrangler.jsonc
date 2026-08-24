@@ -13,7 +13,11 @@
     ]
   },
   "vars": {
-    "NIGHTLY_TENANT": "brand-studio:live"
+    "NIGHTLY_TENANT": "brand-studio:live",
+    // Deployment gate for outbound external agent-readiness scans. Scans are
+    // public, so this stays "false" until a deployment deliberately enables the
+    // user-triggered refresh. A project's own consent record is checked too.
+    "ORA_SCAN_ENABLED": "false"
   },
   "triggers": {
     "crons": [
