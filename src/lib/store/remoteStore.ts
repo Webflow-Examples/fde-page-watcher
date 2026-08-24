@@ -7,6 +7,7 @@ import { getEnv } from "../env";
 import type { DataStore } from "./fsStore";
 import { normalizeState } from "./normalize";
 import type { CruxPageEvidence } from "../crux";
+import type { ExternalAgentOriginAudit } from "../agentAudit";
 
 interface VersionedStateResponse {
   state: AppState;
@@ -65,6 +66,16 @@ export class RemoteDataStore implements DataStore {
     const response = await this.request(`/data/${segment(this.tenant)}/crux`);
     if (!response.ok) throw new Error(`FDE CrUX read ${response.status}: ${(await response.text()).slice(0, 300)}`);
     return (await response.json() as { evidence: CruxPageEvidence[] }).evidence;
+  }
+
+  async getExternalAgentAudits(): Promise<ExternalAgentOriginAudit[]> {
+    const response = await this.request(`/data/${segment(this.tenant)}/agent-audits`);
+    if (!response.ok) {
+      throw new Error(`FDE agent audit read ${response.status}: ${(await response.text()).slice(0, 300)}`);
+    }
+    const value = await response.json() as { audits?: ExternalAgentOriginAudit[] };
+    // Tolerate a collector that predates the external-audit route.
+    return Array.isArray(value.audits) ? value.audits : [];
   }
 
   async updateState(mutate: (state: AppState) => void | Promise<void>): Promise<AppState> {

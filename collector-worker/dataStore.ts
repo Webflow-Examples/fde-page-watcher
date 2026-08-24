@@ -17,6 +17,8 @@ import {
   type CruxSnapshotRow,
   type CruxStatusRow,
 } from "../src/lib/crux";
+import type { ExternalAgentOriginAudit } from "../src/lib/agentAudit";
+import { readExternalAgentAudits } from "./ora";
 
 export interface FdeStoreBindings {
   DB: D1Database;
@@ -116,6 +118,11 @@ export class FdeDataStore {
     return evidence.length === 0 && this.datasetMode === "demo" && this.tenant === TENANT
       ? buildSeedCruxEvidence()
       : evidence;
+  }
+
+  /** Origin-scoped external audits. No demo fixture: these come only from a provider. */
+  async getExternalAgentAudits(): Promise<ExternalAgentOriginAudit[]> {
+    return readExternalAgentAudits(this.bindings.DB, this.tenant);
   }
 
   /** Compare-and-swap a complete state snapshot. `null` means create only. */

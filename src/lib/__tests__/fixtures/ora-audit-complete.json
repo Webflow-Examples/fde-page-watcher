@@ -1,0 +1,426 @@
+{
+  "domain": "example.com",
+  "name": "Example",
+  "score": 61,
+  "scoreMax": 100,
+  "essentials": {
+    "score": 63,
+    "label": "Needs attention",
+    "required": { "earned": 50, "available": 80, "passing": 5, "total": 8 },
+    "recommended": { "earned": 13, "available": 20, "passing": 2, "total": 3 },
+    "bonusPoints": 1.5,
+    "bonusSignals": 1,
+    "eligibleChecks": 11,
+    "activeSurfaces": [
+      { "id": "web", "label": "Web", "score": 72, "passing": 4, "total": 6 },
+      { "id": "api", "label": "API", "score": 40, "passing": 2, "total": 5 }
+    ],
+    "accessSignals": [
+      {
+        "id": "crawlable",
+        "label": "Crawlable",
+        "description": "Agents can reach and read the site",
+        "state": "mixed",
+        "passing": 2,
+        "total": 3
+      }
+    ],
+    "checks": {
+      "brand-search-accuracy": {
+        "tier": "recommended",
+        "bonus": false,
+        "fraction": 1,
+        "occurrences": 1,
+        "essentialsGain": null
+      },
+      "sitemap": {
+        "tier": "recommended",
+        "bonus": false,
+        "fraction": 1,
+        "occurrences": 1,
+        "essentialsGain": null
+      },
+      "content-no-js": {
+        "tier": "required",
+        "bonus": false,
+        "fraction": 0,
+        "occurrences": 1,
+        "essentialsGain": 10,
+        "recommendation": "Server-render the primary content so an agent without JavaScript sees the same page a browser does."
+      },
+      "openapi-spec": {
+        "tier": "required",
+        "bonus": false,
+        "fraction": 0,
+        "occurrences": 1,
+        "essentialsGain": 10
+      },
+      "markdown-negotiation-vary": {
+        "tier": "required",
+        "bonus": true,
+        "fraction": 0.5,
+        "occurrences": 1,
+        "essentialsGain": 5
+      },
+      "json-error-responses": {
+        "tier": "required",
+        "bonus": false,
+        "fraction": 1,
+        "occurrences": 1,
+        "essentialsGain": null
+      },
+      "agent-friendly-404": {
+        "tier": "required",
+        "bonus": false,
+        "fraction": 0,
+        "occurrences": 1,
+        "essentialsGain": 10
+      },
+      "mcp-resource-listing": {
+        "tier": "required",
+        "bonus": false,
+        "fraction": 1,
+        "occurrences": 2,
+        "essentialsGain": null
+      },
+      "rate-limit-headers": {
+        "tier": "recommended",
+        "bonus": false,
+        "fraction": 0,
+        "occurrences": 1,
+        "essentialsGain": 6.7
+      },
+      "scoped-permissions": {
+        "tier": "required",
+        "bonus": false,
+        "fraction": 1,
+        "occurrences": 1,
+        "essentialsGain": null
+      },
+      "mcp-server": {
+        "tier": "recommended",
+        "bonus": false,
+        "fraction": 1,
+        "occurrences": 1,
+        "essentialsGain": null
+      },
+      "wikipedia-presence": {
+        "tier": "recommended",
+        "bonus": true,
+        "fraction": 0,
+        "occurrences": 1,
+        "essentialsGain": 1.5
+      },
+      "x402-support": {
+        "tier": "emerging",
+        "bonus": true,
+        "fraction": 0,
+        "occurrences": 1,
+        "essentialsGain": null
+      }
+    },
+    "issues": [
+      "content-no-js",
+      "openapi-spec",
+      "agent-friendly-404",
+      "markdown-negotiation-vary",
+      "rate-limit-headers"
+    ],
+    "scoreEvidence": {
+      "essential": [
+        "content-no-js",
+        "openapi-spec",
+        "json-error-responses",
+        "agent-friendly-404",
+        "mcp-resource-listing",
+        "scoped-permissions",
+        "markdown-negotiation-vary"
+      ],
+      "recommended": ["brand-search-accuracy", "sitemap", "mcp-server", "rate-limit-headers"],
+      "bonus": []
+    }
+  },
+  "grade": "C",
+  "gradeColor": "#d97706",
+  "ctaMessage": "Three essential blockers are keeping agents out.",
+  "scannedAt": "2026-08-24T04:12:09.482Z",
+  "durationMs": 18342,
+  "analysisStatus": "complete",
+  "layers": [
+    {
+      "id": "discovery",
+      "name": "Discovery",
+      "score": 12,
+      "maxScore": 20,
+      "checks": [
+        {
+          "id": "robots-ai-policy-quality",
+          "name": "robots.txt AI crawler policy",
+          "status": "pass",
+          "score": 3,
+          "maxScore": 3,
+          "bonus": false,
+          "maturity": "verified",
+          "tier": "required",
+          "details": "robots.txt allows GPTBot, ClaudeBot, and PerplexityBot."
+        },
+        {
+          "id": "brand-search-accuracy",
+          "name": "Brand name discoverability",
+          "status": "pass",
+          "score": 4,
+          "maxScore": 4,
+          "bonus": false,
+          "maturity": "verified",
+          "tier": "required",
+          "details": "The brand resolves to this domain in agent search."
+        },
+        {
+          "id": "wikipedia-presence",
+          "name": "Wikipedia / Wikidata entity presence",
+          "status": "fail",
+          "score": 0,
+          "maxScore": 2,
+          "estScoreGain": 1.2,
+          "bonus": true,
+          "maturity": "verified",
+          "tier": "recommended",
+          "details": "No Wikidata entity was found for this brand.",
+          "recommendation": "Create a Wikidata entity linking the brand to this domain."
+        }
+      ]
+    },
+    {
+      "id": "accessibility",
+      "name": "Access",
+      "score": 14,
+      "maxScore": 30,
+      "checks": [
+        {
+          "id": "sitemap",
+          "name": "Sitemap exists",
+          "status": "pass",
+          "score": 3,
+          "maxScore": 3,
+          "bonus": false,
+          "maturity": "verified",
+          "tier": "required",
+          "specUrl": "https://www.sitemaps.org/protocol.html",
+          "details": "sitemap.xml lists 412 URLs."
+        },
+        {
+          "id": "content-no-js",
+          "name": "Content without JavaScript",
+          "status": "fail",
+          "score": 0,
+          "maxScore": 6,
+          "estScoreGain": 6,
+          "bonus": false,
+          "maturity": "verified",
+          "tier": "required",
+          "details": "The rendered page returned an empty body with JavaScript disabled.",
+          "recommendation": "Server-render the main content, or provide a no-JS fallback for the primary route."
+        },
+        {
+          "id": "openapi-spec",
+          "name": "OpenAPI spec published",
+          "status": "fail",
+          "score": 0,
+          "maxScore": 5,
+          "estScoreGain": 5,
+          "bonus": false,
+          "maturity": "verified",
+          "tier": "required",
+          "specUrl": "https://spec.openapis.org/oas/latest.html",
+          "details": "No OpenAPI document was reachable from the documented locations.",
+          "recommendation": "Publish an OpenAPI 3.1 document and link it from the API documentation."
+        },
+        {
+          "id": "markdown-negotiation-vary",
+          "name": "Markdown content negotiation (acceptmarkdown.com)",
+          "status": "warning",
+          "score": 1,
+          "maxScore": 2,
+          "estScoreGain": 1,
+          "bonus": true,
+          "maturity": "verified",
+          "tier": "recommended",
+          "specUrl": "https://acceptmarkdown.com/",
+          "details": "Markdown is served for Accept: text/markdown but the response omits Vary: Accept.",
+          "recommendation": "Add Vary: Accept to negotiated responses so caches do not serve HTML to agents."
+        },
+        {
+          "id": "pricing-info",
+          "name": "Pricing info accessible",
+          "status": "na",
+          "score": 0,
+          "maxScore": 0,
+          "bonus": false,
+          "maturity": "verified",
+          "tier": "required",
+          "naReason": "This domain does not publish a commercial offering, so pricing does not apply."
+        }
+      ]
+    },
+    {
+      "id": "usability",
+      "name": "Usability",
+      "score": 29,
+      "maxScore": 40,
+      "checks": [
+        {
+          "id": "json-error-responses",
+          "name": "JSON error responses",
+          "status": "pass",
+          "score": 5,
+          "maxScore": 5,
+          "bonus": false,
+          "maturity": "verified",
+          "tier": "required",
+          "details": "Error responses use application/json with a stable shape."
+        },
+        {
+          "id": "agent-friendly-404",
+          "name": "Agent-friendly 404s",
+          "status": "fail",
+          "score": 0,
+          "maxScore": 4,
+          "estScoreGain": 4,
+          "bonus": false,
+          "maturity": "verified",
+          "tier": "recommended",
+          "details": "A missing path returned 200 with a marketing page instead of 404.",
+          "recommendation": "Return a real 404 status with a short machine-readable body for unknown paths."
+        },
+        {
+          "id": "mcp-resource-listing",
+          "name": "MCP resources exposed",
+          "status": "pass",
+          "score": 3,
+          "maxScore": 3,
+          "bonus": false,
+          "maturity": "verified",
+          "tier": "recommended",
+          "mcpKind": "product",
+          "mcpUrl": "https://example.com/mcp",
+          "details": "resources/list returned 14 resources."
+        },
+        {
+          "id": "mcp-resource-listing",
+          "name": "MCP resources exposed",
+          "status": "warning",
+          "score": 1,
+          "maxScore": 3,
+          "estScoreGain": 1.4,
+          "bonus": false,
+          "maturity": "verified",
+          "tier": "recommended",
+          "mcpKind": "docs",
+          "mcpUrl": "https://docs.example.com/mcp",
+          "details": "The docs MCP server exposed resources but omitted descriptions."
+        },
+        {
+          "id": "rate-limit-headers",
+          "name": "Rate limit response headers",
+          "status": "fail",
+          "score": 0,
+          "maxScore": 3,
+          "estScoreGain": 3,
+          "bonus": false,
+          "maturity": "verified",
+          "tier": "recommended",
+          "details": "No RateLimit headers were present on API responses.",
+          "recommendation": "Send RateLimit-Limit, RateLimit-Remaining, and RateLimit-Reset on API responses."
+        },
+        {
+          "id": "scoped-permissions",
+          "name": "Scoped permissions",
+          "status": "pass",
+          "score": 3,
+          "maxScore": 3,
+          "bonus": false,
+          "maturity": "verified",
+          "tier": "recommended",
+          "details": "OAuth scopes are documented and enforced per endpoint."
+        },
+        {
+          "id": "mcp-server",
+          "name": "MCP server / manifest",
+          "status": "pass",
+          "score": 4,
+          "maxScore": 4,
+          "bonus": false,
+          "maturity": "verified",
+          "tier": "required",
+          "details": "An MCP server responded to initialize over streamable HTTP."
+        },
+        {
+          "id": "function-calling-compat",
+          "name": "Function calling compatibility",
+          "status": "error",
+          "score": 0,
+          "maxScore": 2,
+          "bonus": false,
+          "maturity": "verified",
+          "tier": "recommended",
+          "details": "The probe could not complete: the endpoint closed the connection."
+        }
+      ]
+    },
+    {
+      "id": "payments",
+      "name": "Payments",
+      "score": 0,
+      "maxScore": 10,
+      "checks": [
+        {
+          "id": "x402-support",
+          "name": "x402 payment protocol",
+          "status": "fail",
+          "score": 0,
+          "maxScore": 4,
+          "estScoreGain": 0.9,
+          "bonus": true,
+          "maturity": "emerging",
+          "tier": "required",
+          "details": "No x402 payment challenge was offered.",
+          "recommendation": "Support the x402 challenge if agents should be able to pay for access."
+        }
+      ]
+    }
+  ],
+  "topFixes": [
+    {
+      "id": "content-no-js",
+      "layerId": "accessibility",
+      "name": "Content without JavaScript",
+      "estScoreGain": 6,
+      "bonus": false,
+      "recommendation": "Server-render the main content, or provide a no-JS fallback for the primary route."
+    },
+    {
+      "id": "openapi-spec",
+      "layerId": "accessibility",
+      "name": "OpenAPI spec published",
+      "estScoreGain": 5,
+      "bonus": false,
+      "recommendation": "Publish an OpenAPI 3.1 document and link it from the API documentation."
+    },
+    {
+      "id": "agent-friendly-404",
+      "layerId": "usability",
+      "name": "Agent-friendly 404s",
+      "estScoreGain": 4,
+      "bonus": false,
+      "recommendation": "Return a real 404 status with a short machine-readable body for unknown paths."
+    }
+  ],
+  "url": "https://ora.ai/score/example.com",
+  "generatedAt": "2026-08-24T04:12:28.001Z",
+  "source": "ora.ai",
+  "contractVersion": "1.20.1",
+  "urlKind": "domain",
+  "category": "Infrastructure & DevOps",
+  "agenticSummary": "Agents can find the site but cannot read its primary content or its API contract.",
+  "finalUrl": "https://example.com/"
+}

@@ -1,0 +1,20 @@
+{
+  "domain": "example.com",
+  "name": "Example",
+  "score": 0,
+  "scoreMax": 100,
+  "grade": "F",
+  "gradeColor": "#dc2626",
+  "ctaMessage": null,
+  "scannedAt": "2026-08-24T05:30:00.000Z",
+  "durationMs": 812,
+  "analysisStatus": "complete",
+  "layers": [],
+  "topFixes": [],
+  "url": "https://ora.ai/score/example.com",
+  "generatedAt": "2026-08-24T05:30:01.000Z",
+  "source": "ora.ai",
+  "contractVersion": "1.20.1",
+  "mcpAuthRequired": true,
+  "urlKind": "mcp"
+}

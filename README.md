@@ -100,6 +100,22 @@ Put these in `.env.local`.
   unavailable, stores rolling 28-day p75 metrics and histograms in dedicated
   D1 tables, and retains the complete provider response in R2. An authenticated
   `POST /crux/collect` runs the same collection manually.
+- **External agent-readiness evidence** — an origin-scoped store for
+  third-party agent audits (currently Ora, which also powers Is Agentic) sits
+  beside the existing evidence rather than on top of it. Page Watch's own HTTP
+  checks and the Kitesurf probe are page-level; an external auditor evaluates a
+  whole origin/product, so one reading is shared by every watched page on that
+  origin instead of being copied into each night's record. Compact summaries and
+  provider-operation status live in `agent_audit_snapshots` and
+  `agent_audit_status` (60 snapshots retained per origin); the untruncated
+  provider payload stays in R2 under `agent-audits/`. Provider scores are never
+  averaged with the local pass percentage, and provider readings never affect
+  `Night.agent`, the frozen `AgentReadinessSnapshot`, Lighthouse, CrUX, page
+  status, or whether a collection is complete. An authenticated `GET
+  /data/:tenant/agent-audits` returns the compact read model. No scan is
+  triggered automatically and no external score is shown in the product yet. The
+  phased rollout is described in
+  [docs/ora-agent-readiness-integration-plan.md](docs/ora-agent-readiness-integration-plan.md).
 - **Storage** — the production source of truth is the FDE-owned
   `page-watcher-fde` D1 database plus the `page-watcher-reports` R2 bucket. The
   Webflow app uses a tenant-scoped remote `DataStore`; D1 state updates use

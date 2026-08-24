@@ -38,6 +38,45 @@ describe("FDE remote store", () => {
     expect(writes).toBe(2);
   });
 
+  it("reads external agent audits from the authenticated data plane", async () => {
+    vi.stubEnv("FDE_DATA_URL", "https://collector.example.test");
+    vi.stubEnv("CRON_SECRET", "shared-secret");
+    const fetchFn = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      expect(new Headers(init?.headers).get("authorization")).toBe("Bearer shared-secret");
+      expect(String(input)).toBe("https://collector.example.test/data/tenant/agent-audits");
+      expect(init?.method ?? "GET").toBe("GET");
+      return Response.json({
+        audits: [{
+          provider: "ora",
+          origin: "https://example.com",
+          status: { provider: "ora", origin: "https://example.com", status: "available", lastAttemptedAt: "2026-08-24T06:00:00.000Z" },
+          snapshots: [],
+        }],
+      });
+    }) as typeof fetch;
+    const store = new RemoteDataStore("tenant", fetchFn);
+    const audits = await store.getExternalAgentAudits();
+    expect(audits).toHaveLength(1);
+    expect(audits[0].origin).toBe("https://example.com");
+  });
+
+  it("treats a collector without the external-audit route as no evidence", async () => {
+    vi.stubEnv("FDE_DATA_URL", "https://collector.example.test");
+    vi.stubEnv("CRON_SECRET", "shared-secret");
+    // An older collector answers 200 with an unrelated body rather than `audits`.
+    const fetchFn = vi.fn(async () => Response.json({})) as typeof fetch;
+    await expect(new RemoteDataStore("tenant", fetchFn).getExternalAgentAudits()).resolves.toEqual([]);
+  });
+
+  it("surfaces an external-audit read failure instead of reporting empty evidence", async () => {
+    vi.stubEnv("FDE_DATA_URL", "https://collector.example.test");
+    vi.stubEnv("CRON_SECRET", "shared-secret");
+    const fetchFn = vi.fn(async () =>
+      Response.json({ error: "unauthorized" }, { status: 401 })) as typeof fetch;
+    await expect(new RemoteDataStore("tenant", fetchFn).getExternalAgentAudits())
+      .rejects.toThrow(/FDE agent audit read 401/);
+  });
+
   it("stores and reads raw reports through authenticated FDE endpoints", async () => {
     vi.stubEnv("FDE_DATA_URL", "https://collector.example.test");
     vi.stubEnv("CRON_SECRET", "shared-secret");

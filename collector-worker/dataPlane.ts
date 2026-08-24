@@ -12,6 +12,7 @@ import {
 type DataRoute =
   | { kind: "state"; tenant: string }
   | { kind: "crux"; tenant: string }
+  | { kind: "agent-audits"; tenant: string }
   | { kind: "report"; tenant: string; pageId: string; key: string }
   | { kind: "webflow-connection"; tenant: string }
   | { kind: "webflow-sync"; tenant: string };
@@ -41,6 +42,11 @@ function route(pathname: string): DataRoute | null {
   if (crux) {
     const tenant = decode(crux[1]);
     return safeIdentifier(tenant, true) ? { kind: "crux", tenant } : null;
+  }
+  const agentAudits = pathname.match(/^\/data\/([^/]+)\/agent-audits$/);
+  if (agentAudits) {
+    const tenant = decode(agentAudits[1]);
+    return safeIdentifier(tenant, true) ? { kind: "agent-audits", tenant } : null;
   }
   const webflow = pathname.match(/^\/data\/([^/]+)\/webflow\/(connection|sync)$/);
   if (webflow) {
@@ -152,6 +158,11 @@ export async function handleDataPlaneRequest(
   if (matched.kind === "crux") {
     if (request.method !== "GET") return Response.json({ error: "method not allowed" }, { status: 405 });
     return noStore(Response.json({ evidence: await store.getCruxEvidence() }));
+  }
+  if (matched.kind === "agent-audits") {
+    // Read-only in Phase 1: external audits are never written or refreshed here.
+    if (request.method !== "GET") return Response.json({ error: "method not allowed" }, { status: 405 });
+    return noStore(Response.json({ audits: await store.getExternalAgentAudits() }));
   }
   if (matched.kind === "state") {
     if (request.method === "GET") {

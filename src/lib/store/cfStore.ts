@@ -20,6 +20,14 @@ import {
   type CruxSnapshotRow,
   type CruxStatusRow,
 } from "../crux";
+import {
+  EXTERNAL_AGENT_AUDIT_SNAPSHOT_QUERY,
+  EXTERNAL_AGENT_AUDIT_STATUS_QUERY,
+  externalAgentAuditsFromRows,
+  type ExternalAgentAuditSnapshotRow,
+  type ExternalAgentAuditStatusRow,
+  type ExternalAgentOriginAudit,
+} from "../agentAudit";
 
 export interface CfEnv {
   DB: D1Database;
@@ -137,6 +145,17 @@ class CfDataStore implements DataStore {
     return evidence.length === 0 && this.tenant === TENANT && getEnv("DATASET_MODE") !== "live"
       ? buildSeedCruxEvidence()
       : evidence;
+  }
+
+  async getExternalAgentAudits(): Promise<ExternalAgentOriginAudit[]> {
+    const { DB } = getLocalCloudflareBindings();
+    const [snapshots, statuses] = await Promise.all([
+      DB.prepare(EXTERNAL_AGENT_AUDIT_SNAPSHOT_QUERY)
+        .bind(this.tenant).all<ExternalAgentAuditSnapshotRow>(),
+      DB.prepare(EXTERNAL_AGENT_AUDIT_STATUS_QUERY)
+        .bind(this.tenant).all<ExternalAgentAuditStatusRow>(),
+    ]);
+    return externalAgentAuditsFromRows(snapshots.results, statuses.results);
   }
 
   /**

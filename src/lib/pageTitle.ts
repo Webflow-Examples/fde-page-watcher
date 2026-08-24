@@ -64,7 +64,12 @@ function ipv4Octets(value: string): number[] | null {
   return octets.every((part) => part >= 0 && part <= 255) ? octets : null;
 }
 
-function isBlockedAddress(address: string): boolean {
+/**
+ * Private, loopback, link-local, and reserved literal addresses that must never
+ * be fetched or handed to an external scanner. Shared with the external
+ * agent-audit target guard so both use one policy.
+ */
+export function isBlockedAddress(address: string): boolean {
   const normalized = address.toLowerCase().replace(/^\[|\]$/g, "");
   const ipv4 = ipv4Octets(normalized);
   if (ipv4) {
