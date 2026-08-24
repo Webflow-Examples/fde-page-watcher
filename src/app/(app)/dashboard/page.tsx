@@ -17,7 +17,6 @@ import { C, flagChip, savingsValue } from "@/lib/ui";
 import { AgentAccessChip } from "@/components/agent-access";
 import { agentAccessSummary, assembleAgentIssueCases } from "@/lib/agentIssueCases";
 import { externalAuditForPage } from "@/lib/externalAgentEvidence";
-import { Sparkline } from "@/components/charts";
 import { scoreCardDataForCategory } from "@/lib/scoreCardAdapter";
 import { XSmallScoreCard } from "@/components/ScoreCard";
 import { DeviceChangeLabels, FieldEvidenceChip, PerformanceIssueStatusBadge, SortHeader, WebflowClassificationChips } from "@/components/bits";
@@ -35,8 +34,13 @@ import { isFieldRecommendationActionable } from "@/lib/fieldOnlyRecommendations"
 
 // The 4 category columns each now hold an XSmall ScoreCard row cell (desktop
 // + mobile hairlines with start/end numerals) rather than a single sparkline,
-// so they're wider than the old 126px sparkline+score column.
-const GRID = "minmax(170px,1fr) 142px 190px 190px 190px 190px 120px";
+// so they're wider than the old 126px sparkline+score column. Agent matches
+// that same 190px — it's a single-metric XSmall cell (one hairline, not a
+// pair), and a narrower column just means a shorter, harder-to-read line for
+// no layout benefit; the row already stretches to fill whatever width it's
+// given (see XSmallScoreCard), so the two sparklines read at a comparable
+// length only because their columns are the same width.
+const GRID = "minmax(170px,1fr) 142px 190px 190px 190px 190px 190px";
 type DashboardFilter = "all" | "lowPerformance" | "agentGaps" | "regressions" | "improvements";
 type DeviceDashboardFilter = "lowPerformance" | "regressions" | "improvements";
 type DashboardRange = 3 | 7 | 30 | 90;
@@ -190,9 +194,8 @@ function DashboardContent({
     const secondaryStrategy = strategy === "mobile" ? "desktop" : "mobile";
     const rangeAgentSnapshot = pageAgentSnapshotForRange(p, rangeDays);
     const rangeAgentSummary = summarizeAgentChecks(rangeAgentSnapshot?.checks ?? [], p.agentIgnores, agentIgnoreDefaults, p.agentIgnoreRestores);
-    const { pass, total, ignored, percent: pct } = rangeAgentSummary;
+    const { total, percent: pct } = rangeAgentSummary;
     const readinessSeries = agentSeries(historyForRange(p.history, rangeDays), p.agentIgnores, agentIgnoreDefaults, p.agentIgnoreRestores);
-    const am = scoreMeta(pct);
     const latestMobileNight = pageRangeLatestNightForStrategy(p, rangeDays, "mobile");
     const latestDesktopNight = pageRangeLatestNightForStrategy(p, rangeDays, "desktop");
     const latestRangeNight = strategy === "mobile" ? latestMobileNight : latestDesktopNight;
@@ -266,13 +269,9 @@ function DashboardContent({
         ignoreRestores: p.agentIgnoreRestores,
         audit: externalAuditForPage(externalAgentAudits, p.url),
       })).verdict,
-      agentPct: total ? `${pct}%` : "—",
-      agentFg: am.fg,
-      agentSub: total ? `${pass}/${total}${ignored ? ` · ${ignored} ignored` : ""}` : ignored ? `${ignored} ignored` : "no scan in range",
       // Legacy pages may only have a latest page-level scan. A single point is
       // shown as a flat sparkline until the next retained collection arrives.
       agentSeries: total ? (readinessSeries.length ? readinessSeries : [pct]) : ([] as number[]),
-      agentLine: am.line,
       combinedLowPerformance: combinedSignals.lowPerformance,
       lowPerformanceByDevice: {
         mobile: combinedSignals.mobileLowPerformance,
@@ -809,20 +808,21 @@ function DashboardContent({
               </div>
               {row.scoreCardData.map((data) => (
                 <div key={data.title} onClick={(event) => event.stopPropagation()} style={{ cursor: "default" }}>
-                  <XSmallScoreCard data={data} />
+                  <XSmallScoreCard data={data} showTitle={false} />
                 </div>
               ))}
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-                  <div
-                    aria-label={`Agent readiness history: ${row.agentSeries.length} retained ${row.agentSeries.length === 1 ? "snapshot" : "snapshots"} in this range`}
-                    title={row.agentSeries.length === 1 ? "One retained readiness snapshot; trend appears after the next scan." : undefined}
-                    style={{ width: 84, height: 30 }}
-                  >
-                    <Sparkline series={row.agentSeries} color={row.agentLine} w={84} h={30} />
-                  </div>
-                <div style={{ fontSize: 14, fontWeight: 600, lineHeight: 1, color: row.agentFg }}>{row.agentPct}</div>
-                <div style={{ fontSize: 10, lineHeight: 1.2, color: C.faint, textAlign: "center", whiteSpace: "nowrap" }}>{row.agentSub}</div>
-                <div style={{ marginTop: 4 }}><AgentAccessChip verdict={row.agentVerdict} /></div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                <div
+                  aria-label={`Agent readiness history: ${row.agentSeries.length} retained ${row.agentSeries.length === 1 ? "snapshot" : "snapshots"} in this range`}
+                  title={row.agentSeries.length === 1 ? "One retained readiness snapshot; trend appears after the next scan." : undefined}
+                >
+                  <XSmallScoreCard data={{ title: "Agent", desktop: row.agentSeries }} showTitle={false} />
+                </div>
+                {/* The Page Watch verdict sits under the readiness trend; the
+                    trend is a percentage over time, the verdict is a conclusion. */}
+                <div style={{ display: "flex", justifyContent: "center" }}>
+                  <AgentAccessChip verdict={row.agentVerdict} />
+                </div>
               </div>
             </div>
           ))}

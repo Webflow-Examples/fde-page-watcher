@@ -11,7 +11,7 @@
 
 - [ ] `npm run build` passes
 - [ ] `npm run lint` passes
-- [ ] `npx tsc --noEmit` passes
+- [ ] `npm run typecheck` passes
 - [ ] Drove the affected route(s) in the browser (dev server on :3100)
 
 ## Notes
