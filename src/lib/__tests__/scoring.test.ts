@@ -24,17 +24,30 @@ describe("median / range", () => {
 });
 
 describe("deltaMeta", () => {
-  it("treats a drop at exactly DROP_THRESHOLD as a significant regression", () => {
-    expect(deltaMeta(80 - DROP_THRESHOLD, 80)).toMatchObject({ fg: "#FF5C6C", d: -DROP_THRESHOLD });
+  // deltaMeta used to answer three questions in one hue: direction, size, and
+  // a "-8 is bad" verdict. Direction is now shape (the arrow), size is the
+  // number, and the verdict lives on the health chip. So the assertions moved
+  // from colours to the trend and the signed delta.
+  it("reads a drop at exactly DROP_THRESHOLD as regressing", () => {
+    expect(deltaMeta(80 - DROP_THRESHOLD, 80)).toMatchObject({ trend: "regressing", d: -DROP_THRESHOLD });
   });
-  it("treats a drop just short of DROP_THRESHOLD as ordinary noise", () => {
-    expect(deltaMeta(80 - DROP_THRESHOLD + 1, 80)).toMatchObject({ fg: "#FF9A3D", d: -(DROP_THRESHOLD - 1) });
+  it("reads a drop just short of DROP_THRESHOLD as regressing too", () => {
+    // The old function split these two into amber and red. Severity is a health
+    // verdict (R1) and belongs on the health chip, not on the delta — so both
+    // are simply "down".
+    expect(deltaMeta(80 - DROP_THRESHOLD + 1, 80)).toMatchObject({ trend: "regressing", d: -(DROP_THRESHOLD - 1) });
   });
-  it("treats any positive delta as an improvement", () => {
-    expect(deltaMeta(81, 80)).toMatchObject({ fg: "#35D07F", d: 1 });
+  it("reads any positive delta as improving", () => {
+    expect(deltaMeta(81, 80)).toMatchObject({ trend: "improving", d: 1 });
   });
-  it("treats no change as neutral", () => {
-    expect(deltaMeta(80, 80)).toMatchObject({ fg: "#8A8A90", d: 0, text: "→ 0" });
+  it("reads no change as no_change", () => {
+    expect(deltaMeta(80, 80)).toMatchObject({ trend: "no_change", d: 0, text: "\u2192 0" });
+  });
+  it("returns no colour of any kind", () => {
+    const meta = deltaMeta(74, 80);
+    expect(meta).not.toHaveProperty("fg");
+    expect(meta).not.toHaveProperty("chip");
+    expect(JSON.stringify(meta)).not.toMatch(/#[0-9a-fA-F]{3,8}/);
   });
 });
 

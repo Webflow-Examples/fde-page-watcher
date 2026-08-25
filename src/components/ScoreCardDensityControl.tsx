@@ -6,9 +6,15 @@
 // that sits in a page's filter row and drives every ScoreCard on that page.
 // This is page-level state owned by the caller (not this component and not
 // a card group), so two card groups on one page can never disagree.
+//
+// Colour here is chrome and selection only: nothing in this control is a
+// health verdict, a work state, or a trend, so no token from those families
+// appears. Selection is the app's uniform selected-state treatment — a raised
+// `--surface-raised` ground plus a `--border-strong` outline — which is the
+// same answer the tab underlines and the active nav item use.
 
 import { useState } from "react";
-import type { ScoreCardDensity } from "./ScoreCard";
+import { TOOLTIP_SURFACE, type ScoreCardDensity } from "./ScoreCard";
 
 const DENSITY_OPTIONS: { key: ScoreCardDensity; bars: number; barWidth: number; label: string }[] = [
   { key: "xsmall", bars: 4, barWidth: 2, label: "XSmall" },
@@ -27,7 +33,15 @@ export function ScoreCardDensityControl({ value, onChange }: ScoreCardDensityCon
     <div
       role="group"
       aria-label="Score card density"
-      style={{ display: "flex", gap: 2, background: "#0A0A0A", border: "1px solid #232323", borderRadius: 6, padding: 2 }}
+      style={{
+        display: "flex",
+        gap: 2,
+        // The recessed track the raised pill sits in.
+        background: "var(--surface-page)",
+        border: "1px solid var(--border-hairline)",
+        borderRadius: 6,
+        padding: 2,
+      }}
     >
       {DENSITY_OPTIONS.map((option) => (
         <DensityButton
@@ -51,7 +65,7 @@ function DensityButton({
   onSelect: () => void;
 }) {
   const [hovered, setHovered] = useState(false);
-  const barColor = selected ? "#FFFFFF" : "#898989";
+  const barColor = selected ? "var(--text-body)" : "var(--text-muted)";
   return (
     <button
       type="button"
@@ -63,11 +77,21 @@ function DensityButton({
       style={{
         position: "relative",
         appearance: "none",
-        border: 0,
         cursor: "pointer",
         padding: "8px 12px",
         borderRadius: 4,
-        background: selected ? "#1E1E1E" : "transparent",
+        // The selected pill used to be a hand-picked near-black, lighter than
+        // every surface in the app, so it read as raised purely by being the
+        // brightest thing in the row. There is no token at that value, and
+        // inventing one would put a fifth surface into a four-surface scale.
+        // `--surface-raised` plus a `--border-strong` outline keeps the raised
+        // read with tokens that already exist, and holds up in both themes
+        // where a fixed dark grey could not. The outline also means selection
+        // survives at all for anyone who cannot see the fill difference; the
+        // transparent-but-same-width border on the unselected buttons stops
+        // the row from shifting 2px when selection moves.
+        background: selected ? "var(--surface-raised)" : "transparent",
+        border: `1px solid ${selected ? "var(--border-strong)" : "transparent"}`,
         display: "flex",
         alignItems: "center",
         gap: 2,
@@ -87,15 +111,14 @@ function DensityButton({
             right: 0,
             zIndex: 5,
             whiteSpace: "nowrap",
-            background: "#1A1A1A",
-            border: "1px solid #2E2E2E",
-            borderRadius: 6,
+            // Shared with ScoreCard's metric tooltip. These two were the same
+            // popover with two different hand-picked shadows; one surface
+            // constant is what stops them drifting again.
+            ...TOOLTIP_SURFACE,
             padding: "8px 10px",
-            boxShadow: "0 8px 24px rgba(0,0,0,0.55)",
             fontSize: 12,
             fontWeight: 600,
-            color: "#fff",
-            pointerEvents: "none",
+            color: "var(--text-body)",
           }}
         >
           {option.label}

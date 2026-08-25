@@ -1,42 +1,19 @@
-import type { Flag, Rec, TaskStatus } from "./types";
+import type { Flag, Rec } from "./types";
+import type { Tone } from "./vocabulary";
 
-/** Shared palette (mirrors globals.css vars) for inline styles ported from the design. */
-export const C = {
-  bg: "#0B0B0C",
-  bgElev: "#0E0E10",
-  panel: "#131315",
-  panel2: "#161619",
-  border: "#1E1E22",
-  border2: "#26262A",
-  rowBorder: "#17171A",
-  text: "#F4F4F5",
-  dim: "#C4C4C8",
-  muted: "#8A8A90",
-  faint: "#6C6C72",
-  faint2: "#9A9AA0",
-  accent: "#146EF5",
-  accentBright: "#3B89FF",
-  accentSoft: "#5EA0FF",
-  violet: "#8A5CF6",
-  violetSoft: "#B79CFF",
-  green: "#35D07F",
-  amber: "#FF9A3D",
-  red: "#FF5C6C",
-  redSoft: "#FF9A9F",
-} as const;
-
-export function flagChip(flag: Flag): { label: string; fg: string; bg: string } {
-  if (flag === "priority") return { label: "Priority", fg: C.accentSoft, bg: "rgba(59,137,255,0.16)" };
-  if (flag === "paused") return { label: "Paused", fg: C.amber, bg: "rgba(255,154,61,0.12)" };
-  return { label: "Watching", fg: C.faint2, bg: "rgba(255,255,255,0.06)" };
-}
-
-export function taskLabel(ts: TaskStatus): string {
-  return ts === "todo" ? "To do" : ts === "in-progress" ? "In progress" : "Done";
-}
-
-export function taskAccent(ts: TaskStatus): string {
-  return ts === "todo" ? C.muted : ts === "in-progress" ? C.accentSoft : C.green;
+/**
+ * A watch flag is not one of the seven work states, so it does not go through
+ * `<StatusChip>` — but it is the same kind of label, so it resolves the same
+ * tone tokens. This returns the tone NAME; the colour is named once, in
+ * globals.css.
+ *
+ * "Paused" used to be amber. Pausing a page is a deliberate monitoring choice,
+ * not something going wrong, so it carries the neutral tone.
+ */
+export function flagChip(flag: Flag): { label: string; tone: Tone } {
+  if (flag === "priority") return { label: "Priority", tone: "information" };
+  if (flag === "paused") return { label: "Paused", tone: "neutral" };
+  return { label: "Watching", tone: "neutral" };
 }
 
 /** Numeric savings (seconds) parsed from a "1.8 s" label, for sorting. */

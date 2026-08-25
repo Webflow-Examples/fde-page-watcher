@@ -5,8 +5,6 @@ import type { AgentIgnoreSettings, CategoryKey, ChangeMarker, Night, Strategy } 
 import { agentReadinessHistoryPoints } from "@/lib/agentHistory";
 import { historyForStrategy, type PreviousPeriodMedian } from "@/lib/scoring";
 import { formatHistoryTooltipDate, placeMarkerLabelRows, plottedSparklineSeries, snappedHistoryIndex, trustedHistorySegments } from "@/lib/charting";
-import { C } from "@/lib/ui";
-import { isTaskMarker } from "@/lib/taskMarkers";
 
 const HISTORY_CHART_DEFAULT_WIDTH = 900;
 const HISTORY_CATEGORY_LABELS: Record<CategoryKey, string> = {
@@ -15,6 +13,26 @@ const HISTORY_CATEGORY_LABELS: Record<CategoryKey, string> = {
   bp: "Best practices",
   seo: "SEO",
 };
+
+/**
+ * The closed set of paints a chart mark may take.
+ *
+ * Chart hue is identity, never judgment: a mark says *which series* it belongs
+ * to, or that it is a neutral change marker. Health, trend, and work-state
+ * colours are deliberately absent, so a caller that reaches for one is a
+ * compile error rather than a silent rule break.
+ */
+type SeriesToken = "--series-mobile" | "--series-desktop";
+type ChartMarkToken = SeriesToken | "--series-marker";
+
+/** Device identity for a plotted series. */
+function seriesToken(device: Strategy): SeriesToken {
+  return device === "desktop" ? "--series-desktop" : "--series-mobile";
+}
+
+function paint(token: ChartMarkToken): string {
+  return `var(${token})`;
+}
 
 function useResponsiveChartWidth(defaultWidth: number) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -40,10 +58,15 @@ function useResponsiveChartWidth(defaultWidth: number) {
   return { containerRef, width };
 }
 
-/** Compact area sparkline (ported from the design's buildSpark). */
+/**
+ * Compact area sparkline (ported from the design's buildSpark).
+ *
+ * Takes the device the series belongs to, never a colour: the line is an
+ * identity, so it must not change hue with the value it is plotting.
+ */
 export function Sparkline({
   series,
-  color,
+  device,
   w = 70,
   h = 30,
   pad = 3,
@@ -51,7 +74,7 @@ export function Sparkline({
   dot = 2.6,
 }: {
   series: number[];
-  color: string;
+  device: Strategy;
   w?: number;
   h?: number;
   pad?: number;
@@ -59,6 +82,8 @@ export function Sparkline({
   dot?: number;
 }) {
   if (series.length === 0) return null;
+  const token = seriesToken(device);
+  const stroke = paint(token);
   const plotted = plottedSparklineSeries(series);
   let lo = Math.min(...plotted);
   let hi = Math.max(...plotted);
@@ -78,10 +103,10 @@ export function Sparkline({
   return (
     <div style={{ position: "relative", width: "100%", height: h }}>
       <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h} preserveAspectRatio="none" style={{ display: "block" }}>
-        <polygon points={area} fill={color} opacity={0.13} />
-        <polyline points={pts} fill="none" stroke={color} strokeWidth={sw} strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <polygon points={area} opacity={0.13} style={{ fill: stroke }} />
+        <polyline points={pts} strokeWidth={sw} strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" style={{ fill: "none", stroke }} />
       </svg>
-      <FixedChartDot kind="sparkline" x={x(n - 1)} y={y(last)} viewWidth={w} viewHeight={h} radius={dot} color={color} />
+      <FixedChartDot kind="sparkline" x={x(n - 1)} y={y(last)} viewWidth={w} viewHeight={h} radius={dot} token={token} />
     </div>
   );
 }
@@ -129,8 +154,10 @@ export function HistoryChart({
   }, []);
   const trustedSegments = trustedHistorySegments(timeline);
   const H = 264;
-  const padL = 38;
-  const padR = 20;
+  // Pads carry 12px axis type: padL clears a right-aligned "100" tick, padR a
+  // centre-aligned date at the last point. Mirrored by charting.ts's defaults.
+  const padL = 44;
+  const padR = 24;
   const padT = 22;
   const padB = 30;
   const at = (d: Night, which: "m" | "lo" | "hi") => d.scores[strategy][catKey][which];
@@ -144,8 +171,9 @@ export function HistoryChart({
   const x = (i: number) => padL + (i / (n - 1)) * (W - padL - padR);
   const xForNight = (night: Night) => x(timelineIndexByNight.get(night.i) ?? 0);
   const y = (v: number) => padT + (1 - (v - lo) / (hi - lo)) * (H - padT - padB);
-  const line = strategy === "desktop" ? C.violetSoft : C.accentBright;
-  const band = strategy === "desktop" ? "rgba(183,156,255,0.15)" : "rgba(59,137,255,0.16)";
+  // Device identity — the one place in this file where hue carries meaning.
+  const lineToken = seriesToken(strategy);
+  const line = paint(lineToken);
   const ticks = [lo, Math.round((lo + hi) / 2), hi];
   const xLabels = [...new Set([0, Math.round((n - 1) / 2), n - 1])];
   const latestTrustedNight = h[h.length - 1];
@@ -193,16 +221,33 @@ export function HistoryChart({
       style={{ position: "relative", width: "100%", height: H, cursor: "crosshair" }}
     >
       <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} style={{ display: "block" }}>
+        {/* Quarantine bands paint under the grid: the neutral fill is close in value
+            to the gridlines, so drawing over them would erase the y-reference
+            exactly where a reader is inspecting an excluded run. */}
+        {anomalyGroups.map((group) => {
+          const startX = xForNight(group[0]);
+          const endX = xForNight(group[group.length - 1]);
+          return (
+            <rect
+              key={`anomaly-band-${group[0].i}`}
+              x={Math.max(padL, startX - 6)}
+              y={padT}
+              width={Math.max(12, endX - startX + 12)}
+              height={H - padT - padB}
+              style={{ fill: "var(--series-anomaly-fill)" }}
+            />
+          );
+        })}
         {ticks.map((t, k) => (
           <g key={`g${k}`}>
-            <line x1={padL} x2={W - padR} y1={y(t)} y2={y(t)} stroke="#24242A" strokeWidth={1} />
-            <text x={padL - 8} y={y(t) + 3.5} textAnchor="end" fontSize={10} fill={C.faint}>
+            <line x1={padL} x2={W - padR} y1={y(t)} y2={y(t)} strokeWidth={1} style={{ stroke: "var(--series-grid)" }} />
+            <text x={padL - 8} y={y(t) + 4} textAnchor="end" fontSize={12} style={{ fill: "var(--series-axis)" }}>
               {t}
             </text>
           </g>
         ))}
         {xLabels.map((i, k) => (
-          <text key={`x${k}`} x={x(i)} y={H - 10} textAnchor="middle" fontSize={10} fill={C.faint}>
+          <text key={`x${k}`} x={x(i)} y={H - 10} textAnchor="middle" fontSize={12} style={{ fill: "var(--series-axis)" }}>
             {timeline[i].date}
           </text>
         ))}
@@ -213,23 +258,20 @@ export function HistoryChart({
           const nearRightEdge = markerX >= padL + (W - padL - padR) * 0.75;
           return (
             <g key={`anomaly-${group[0].i}`} data-history-anomaly>
-              <rect
-                x={Math.max(padL, startX - 6)}
-                y={padT}
-                width={Math.max(12, endX - startX + 12)}
-                height={H - padT - padB}
-                fill="rgba(255,165,72,0.10)"
-              />
-              <line x1={startX} x2={startX} y1={padT - 4} y2={H - padB} stroke={C.amber} strokeWidth={1.4} strokeDasharray="4 3" />
-              {endX !== startX && <line x1={endX} x2={endX} y1={padT - 4} y2={H - padB} stroke={C.amber} strokeWidth={1.4} strokeDasharray="4 3" />}
-              <path d={`M ${markerX} ${padT - 8} l 5 5 l -5 5 l -5 -5 z`} fill={C.amber} />
+              {/* The dash pattern, not a hue, is what marks the quarantine edge. */}
+              <line x1={startX} x2={startX} y1={padT - 4} y2={H - padB} strokeWidth={1.4} strokeDasharray="4 3" style={{ stroke: "var(--series-anomaly-edge)" }} />
+              {endX !== startX && <line x1={endX} x2={endX} y1={padT - 4} y2={H - padB} strokeWidth={1.4} strokeDasharray="4 3" style={{ stroke: "var(--series-anomaly-edge)" }} />}
+              <path d={`M ${markerX} ${padT - 8} l 5 5 l -5 5 l -5 -5 z`} style={{ fill: "var(--series-anomaly-edge)" }} />
               <text
                 x={markerX + (nearRightEdge ? -8 : 8)}
                 y={anomalyLabelYs[index]}
                 textAnchor={nearRightEdge ? "end" : "start"}
-                fontSize={10.5}
+                fontSize={12}
                 fontWeight={650}
-                fill={C.amber}
+                // The words take a text token, not the hairline the band's edge
+                // uses: --series-anomaly-edge is a 1.4px rule value and measures
+                // 1.8:1 as 12px type on the band it sits on.
+                style={{ fill: "var(--text-muted)" }}
               >
                 PSI anomaly · excluded
               </text>
@@ -240,10 +282,11 @@ export function HistoryChart({
           if (segment.length < 2) return null;
           const bandTop = segment.map((night) => `${xForNight(night)},${y(at(night, "hi"))}`).join(" ");
           const bandBot = [...segment].reverse().map((night) => `${xForNight(night)},${y(at(night, "lo"))}`).join(" ");
-          return <polygon key={`band-${segment[0].i}`} points={`${bandTop} ${bandBot}`} fill={band} />;
+          // Alpha lives on fillOpacity so the hue itself can stay a token.
+          return <polygon key={`band-${segment[0].i}`} points={`${bandTop} ${bandBot}`} fillOpacity={0.16} style={{ fill: line }} />;
         })}
-        <line x1={padL} x2={W - padR} y1={y(baseline)} y2={y(baseline)} stroke="#5A5A62" strokeWidth={1.2} strokeDasharray="5 4" />
-        <text x={W - padR} y={baselineLabelY} textAnchor="end" fontSize={10} fill={C.muted}>
+        <line x1={padL} x2={W - padR} y1={y(baseline)} y2={y(baseline)} strokeWidth={1.2} strokeDasharray="5 4" style={{ stroke: "var(--border-strong)" }} />
+        <text x={W - padR} y={baselineLabelY} textAnchor="end" fontSize={12} style={{ fill: "var(--series-axis)" }}>
           original benchmark {baseline}
         </text>
         {previousPeriod && (
@@ -253,11 +296,11 @@ export function HistoryChart({
               x2={W - padR}
               y1={y(previousPeriod.value)}
               y2={y(previousPeriod.value)}
-              stroke={C.faint2}
               strokeWidth={1.2}
               strokeDasharray="2 4"
+              style={{ stroke: "var(--border-strong)" }}
             />
-            <text x={W - padR} y={previousPeriodLabelY} textAnchor="end" fontSize={10} fill={C.faint2}>
+            <text x={W - padR} y={previousPeriodLabelY} textAnchor="end" fontSize={12} style={{ fill: "var(--series-axis)" }}>
               previous {previousPeriod.days}-day period {previousPeriod.value}
             </text>
           </>
@@ -266,31 +309,30 @@ export function HistoryChart({
           <polyline
             key={`line-${segment[0].i}`}
             points={segment.map((night) => `${xForNight(night)},${y(at(night, "m"))}`).join(" ")}
-            fill="none"
-            stroke={line}
             strokeWidth={2.4}
             strokeLinejoin="round"
             strokeLinecap="round"
+            style={{ fill: "none", stroke: line }}
           />
         ) : (
-          <circle key={`line-${segment[0].i}`} cx={xForNight(segment[0])} cy={y(at(segment[0], "m"))} r={2.2} fill={line} />
+          <circle key={`line-${segment[0].i}`} cx={xForNight(segment[0])} cy={y(at(segment[0], "m"))} r={2.2} style={{ fill: line }} />
         ))}
         {visibleMarkers.map(({ marker: mk, markerIndex }, k) => {
           const markerX = x(markerIndex);
           const plotWidth = W - padL - padR;
           const nearRightEdge = markerX >= padL + plotWidth * 0.75;
-          const custom = !isTaskMarker(mk);
-          const markerColor = custom ? C.green : "#9564FF";
           return (
             <g key={`mk${k}`}>
-              <line x1={markerX} x2={markerX} y1={padT - 4} y2={H - padB} stroke={markerColor} strokeWidth={1.4} strokeDasharray="4 3" />
+              {/* Provenance is not a verdict: every marker is neutral. Task markers
+                  are told apart by their "Completed: " label prefix, not by hue. */}
+              <line x1={markerX} x2={markerX} y1={padT - 4} y2={H - padB} strokeWidth={1.4} strokeDasharray="4 3" style={{ stroke: "var(--series-marker)" }} />
               <text
                 x={markerX + (nearRightEdge ? -7 : 7)}
                 y={markerLabelYs[k]}
                 textAnchor={nearRightEdge ? "end" : "start"}
-                fontSize={10.5}
+                fontSize={12}
                 fontWeight={600}
-                fill={custom ? C.green : C.violetSoft}
+                style={{ fill: "var(--series-marker)" }}
               >
                 {mk.text}
               </text>
@@ -299,16 +341,24 @@ export function HistoryChart({
         })}
         {hoveredNight && hoveredMedian !== null && hoveredX !== null && (
           <g aria-hidden="true">
-            <line x1={hoveredX} x2={hoveredX} y1={padT} y2={H - padB} stroke={hoveredAnomaly ? C.amber : C.text} strokeWidth={1} opacity={0.7} />
-            {!hoveredAnomaly && <circle cx={hoveredX} cy={y(hoveredMedian)} r={4.5} fill={line} stroke={C.panel} strokeWidth={2} />}
+            <line
+              x1={hoveredX}
+              x2={hoveredX}
+              y1={padT}
+              y2={H - padB}
+              strokeWidth={1}
+              opacity={0.7}
+              style={{ stroke: hoveredAnomaly ? "var(--series-anomaly-edge)" : "var(--border-strong)" }}
+            />
+            {/* The halo must equal the card ground or the dot seams against it. */}
+            {!hoveredAnomaly && <circle cx={hoveredX} cy={y(hoveredMedian)} r={4.5} strokeWidth={2} style={{ fill: line, stroke: "var(--surface-card)" }} />}
           </g>
         )}
       </svg>
-      <FixedChartDot kind="history-line" x={xForNight(latestTrustedNight)} y={y(at(latestTrustedNight, "m"))} viewWidth={W} viewHeight={H} radius={4} color={line} borderColor={C.panel} borderWidth={2} />
-      {visibleMarkers.map(({ marker: mk, markerIndex }, index) => {
-        const custom = !isTaskMarker(mk);
-        return <FixedChartDot key={`${mk.id}-${markerIndex}-${index}`} kind="history-marker" x={x(markerIndex)} y={padT - 4} viewWidth={W} viewHeight={H} radius={3.5} color={custom ? C.green : "#9564FF"} />;
-      })}
+      <FixedChartDot kind="history-line" x={xForNight(latestTrustedNight)} y={y(at(latestTrustedNight, "m"))} viewWidth={W} viewHeight={H} radius={4} token={lineToken} halo />
+      {visibleMarkers.map(({ marker: mk, markerIndex }, index) => (
+        <FixedChartDot key={`${mk.id}-${markerIndex}-${index}`} kind="history-marker" x={x(markerIndex)} y={padT - 4} viewWidth={W} viewHeight={H} radius={3.5} token="--series-marker" />
+      ))}
       {hoveredNight && hoveredMedian !== null && hoveredX !== null && (
         <div
           role="tooltip"
@@ -320,27 +370,27 @@ export function HistoryChart({
             width: hoveredAnomaly ? 210 : 154,
             padding: "10px 12px",
             borderRadius: 8,
-            border: `1px solid ${C.border2}`,
-            background: "rgba(24,24,28,0.97)",
-            boxShadow: "0 10px 28px rgba(0,0,0,0.38)",
-            color: C.text,
+            border: "1px solid var(--border-strong)",
+            background: "var(--surface-card)",
+            boxShadow: "var(--shadow-popover)",
+            color: "var(--text-body)",
             pointerEvents: "none",
             transform: `translate(${tooltipOnLeft ? "calc(-100% - 10px)" : "10px"}, ${tooltipAbove ? "calc(-100% - 10px)" : "10px"})`,
           }}
         >
-          <div style={{ fontSize: 11.5, fontWeight: 650, color: hoveredAnomaly ? C.amber : C.text }}>
+          <div style={{ fontSize: 12, fontWeight: 650, color: hoveredAnomaly ? "var(--text-muted)" : "var(--text-body)" }}>
             {hoveredAnomaly ? "PSI anomaly · excluded" : HISTORY_CATEGORY_LABELS[catKey]}
           </div>
-          <div style={{ marginTop: 2, fontSize: 10.5, color: C.faint }}>{formatHistoryTooltipDate(hoveredNight.date, hoveredNight.iso)}</div>
+          <div style={{ marginTop: 2, fontSize: 12, color: "var(--text-muted)" }}>{formatHistoryTooltipDate(hoveredNight.date, hoveredNight.iso)}</div>
           <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginTop: 9 }}>
-            <span style={{ fontSize: 10.5, color: C.muted }}>{hoveredAnomaly ? "Observed median" : "Median"}</span>
-            <span style={{ fontSize: 22, lineHeight: 1, fontWeight: 650, color: hoveredAnomaly ? C.amber : line }}>{hoveredMedian}</span>
+            <span style={{ fontSize: 12, color: "var(--magnitude-unit)" }}>{hoveredAnomaly ? "Observed median" : "Median"}</span>
+            <span style={{ fontSize: 22, lineHeight: 1, fontWeight: 650, color: "var(--magnitude-value)" }}>{hoveredMedian}</span>
           </div>
-          <div style={{ marginTop: 6, paddingTop: 6, borderTop: `1px solid ${C.rowBorder}`, fontSize: 10.5, color: C.muted }}>
-            Range <span style={{ color: C.dim, fontWeight: 600 }}>{at(hoveredNight, "lo")}–{at(hoveredNight, "hi")}</span>
+          <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid var(--border-hairline)", fontSize: 12, color: "var(--magnitude-unit)" }}>
+            Range <span style={{ color: "var(--magnitude-value)", fontWeight: 650 }}>{at(hoveredNight, "lo")}–{at(hoveredNight, "hi")}</span>
           </div>
           {hoveredAnomaly && (
-            <div style={{ marginTop: 7, fontSize: 10.5, lineHeight: 1.4, color: C.faint2 }}>
+            <div style={{ marginTop: 7, fontSize: 12, lineHeight: 1.4, color: "var(--text-muted)" }}>
               Retained for diagnosis; not used in status, trend, or recommendations.
             </div>
           )}
@@ -371,8 +421,9 @@ export function AgentReadinessChart({
   if (points.length === 0) return null;
 
   const H = 220;
-  const padL = 38;
-  const padR = 20;
+  // Pads carry 12px axis type: padL clears a right-aligned "100%" tick.
+  const padL = 44;
+  const padR = 24;
   const padT = 22;
   const padB = 30;
   const n = points.length;
@@ -413,14 +464,14 @@ export function AgentReadinessChart({
       <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} role="img" aria-label="Agent readiness percentage over time" style={{ display: "block", overflow: "visible" }}>
         {ticks.map((tick) => (
           <g key={tick}>
-            <line x1={padL} x2={W - padR} y1={y(tick)} y2={y(tick)} stroke="#24242A" strokeWidth={1} />
-            <text x={padL - 8} y={y(tick) + 3.5} textAnchor="end" fontSize={10} fill={C.faint}>
+            <line x1={padL} x2={W - padR} y1={y(tick)} y2={y(tick)} strokeWidth={1} style={{ stroke: "var(--series-grid)" }} />
+            <text x={padL - 8} y={y(tick) + 4} textAnchor="end" fontSize={12} style={{ fill: "var(--series-axis)" }}>
               {tick}%
             </text>
           </g>
         ))}
         {xLabels.map((index) => (
-          <text key={index} x={x(index)} y={H - 10} textAnchor={n === 1 ? "end" : "middle"} fontSize={10} fill={C.faint}>
+          <text key={index} x={x(index)} y={H - 10} textAnchor={n === 1 ? "end" : "middle"} fontSize={12} style={{ fill: "var(--series-axis)" }}>
             {points[index].night.date}
           </text>
         ))}
@@ -429,34 +480,30 @@ export function AgentReadinessChart({
           x2={W - padR}
           y1={y(clampedThreshold)}
           y2={y(clampedThreshold)}
-          stroke="#5A5A62"
           strokeWidth={1.2}
           strokeDasharray="5 4"
+          style={{ stroke: "var(--border-strong)" }}
         />
-        <text x={W - padR} y={y(clampedThreshold) - 6} textAnchor="end" fontSize={10} fill={C.muted}>
+        <text x={W - padR} y={y(clampedThreshold) - 6} textAnchor="end" fontSize={12} style={{ fill: "var(--series-axis)" }}>
           threshold {clampedThreshold}%
         </text>
         {n > 1 && (
-          <polyline points={linePoints} fill="none" stroke={C.violetSoft} strokeWidth={2.4} strokeLinejoin="round" strokeLinecap="round" />
+          // A single-series chart has exactly one identity, and desktop is it — there is no
+          // mobile line in this viewport to confuse it with.
+          <polyline points={linePoints} strokeWidth={2.4} strokeLinejoin="round" strokeLinecap="round" style={{ fill: "none", stroke: "var(--series-desktop)" }} />
         )}
-        {points.map((point, index) => {
-          const eventColor = point.fixedNames.length
-            ? C.green
-            : point.ignoredNames.length
-              ? C.accentSoft
-              : C.violetSoft;
-          return (
-            <circle
-              key={point.night.runId ?? point.night.i}
-              cx={x(index)}
-              cy={y(point.snapshot.percent)}
-              r={activeIndex === index ? 4.5 : 3.5}
-              fill={eventColor}
-              stroke={C.panel}
-              strokeWidth={2}
-            />
-          );
-        })}
+        {points.map((point, index) => (
+          // Fixed/newly-dismissed events are named in the tooltip and the aria-label;
+          // the point itself stays a neutral marker rather than a three-way verdict.
+          <circle
+            key={point.night.runId ?? point.night.i}
+            cx={x(index)}
+            cy={y(point.snapshot.percent)}
+            r={activeIndex === index ? 4.5 : 3.5}
+            strokeWidth={2}
+            style={{ fill: "var(--series-marker)", stroke: "var(--surface-card)" }}
+          />
+        ))}
       </svg>
       {points.map((point, index) => (
         <button
@@ -487,7 +534,7 @@ export function AgentReadinessChart({
             transform: "translate(-50%, -50%)",
             cursor: "default",
             outline: "none",
-            boxShadow: activeIndex === index ? "0 0 0 3px rgba(59,137,255,0.25)" : "none",
+            boxShadow: activeIndex === index ? "0 0 0 3px color-mix(in srgb, var(--focus-ring) 35%, transparent)" : "none",
           }}
         />
       ))}
@@ -503,28 +550,51 @@ export function AgentReadinessChart({
             width: 218,
             padding: "9px 10px",
             borderRadius: 8,
-            border: `1px solid ${C.border2}`,
-            background: "#19191F",
-            boxShadow: "0 12px 28px rgba(0,0,0,0.42)",
-            color: C.dim,
-            fontSize: 11.5,
+            border: "1px solid var(--border-strong)",
+            background: "var(--surface-card)",
+            boxShadow: "var(--shadow-popover)",
+            color: "var(--text-body)",
+            fontSize: 12,
             lineHeight: 1.45,
             pointerEvents: "none",
           }}
         >
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, color: C.text, fontWeight: 600 }}>
-            <span>{active.night.date}</span>
-            <span>{active.snapshot.percent}%</span>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+            <span style={{ color: "var(--text-muted)", fontWeight: 600 }}>{active.night.date}</span>
+            <span>
+              <span style={{ color: "var(--magnitude-value)", fontWeight: 650 }}>{active.snapshot.percent}</span>
+              <span style={{ color: "var(--magnitude-unit)" }}>%</span>
+            </span>
           </div>
-          <div style={{ marginTop: 3 }}>{active.snapshot.pass}/{active.snapshot.total} passing{active.snapshot.ignored ? ` · ${active.snapshot.ignored} ignored` : ""}</div>
-          {active.fixedNames.length > 0 && <div style={{ color: C.green, marginTop: 3 }}>Fixed: {active.fixedNames.join(", ")}</div>}
-          {active.ignoredNames.length > 0 && <div style={{ color: C.accentSoft, marginTop: 3 }}>Ignored: {active.ignoredNames.join(", ")}</div>}
+          <div style={{ marginTop: 3, color: "var(--magnitude-unit)" }}>
+            <span style={{ color: "var(--magnitude-value)", fontWeight: 650 }}>{active.snapshot.pass}</span>
+            {"/"}
+            <span style={{ color: "var(--magnitude-value)", fontWeight: 650 }}>{active.snapshot.total}</span>
+            {" passing"}
+            {active.snapshot.ignored ? (
+              <>
+                {" · "}
+                <span style={{ color: "var(--magnitude-value)", fontWeight: 650 }}>{active.snapshot.ignored}</span>
+                {" ignored"}
+              </>
+            ) : null}
+          </div>
+          {active.fixedNames.length > 0 && <div style={{ color: "var(--text-muted)", marginTop: 3 }}>Fixed: {active.fixedNames.join(", ")}</div>}
+          {active.ignoredNames.length > 0 && <div style={{ color: "var(--text-muted)", marginTop: 3 }}>Ignored: {active.ignoredNames.join(", ")}</div>}
         </div>
       )}
     </div>
   );
 }
 
+/**
+ * An HTML dot positioned over an SVG chart so it keeps a true circle under
+ * `preserveAspectRatio="none"`.
+ *
+ * `token` is a closed union rather than a colour string, and the optional halo
+ * is a boolean rather than a colour, because the knockout ring must equal the
+ * card ground — anything else seams against it.
+ */
 function FixedChartDot({
   kind,
   x,
@@ -532,9 +602,8 @@ function FixedChartDot({
   viewWidth,
   viewHeight,
   radius,
-  color,
-  borderColor,
-  borderWidth = 0,
+  token,
+  halo = false,
 }: {
   kind: "sparkline" | "history-line" | "history-marker";
   x: number;
@@ -542,9 +611,8 @@ function FixedChartDot({
   viewWidth: number;
   viewHeight: number;
   radius: number;
-  color: string;
-  borderColor?: string;
-  borderWidth?: number;
+  token: ChartMarkToken;
+  halo?: boolean;
 }) {
   return (
     <span
@@ -559,8 +627,8 @@ function FixedChartDot({
         boxSizing: "content-box",
         display: "block",
         borderRadius: "50%",
-        background: color,
-        border: borderWidth && borderColor ? `${borderWidth}px solid ${borderColor}` : "none",
+        background: paint(token),
+        border: halo ? "2px solid var(--surface-card)" : "none",
         transform: "translate(-50%, -50%)",
         pointerEvents: "none",
       }}

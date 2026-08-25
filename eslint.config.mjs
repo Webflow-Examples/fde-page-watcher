@@ -1,10 +1,33 @@
 import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
+import vocabulary, { ALLOWLISTED_FILES } from "./eslint-rules/no-banned-vocabulary.mjs";
+
+/**
+ * minimatch reads `[id]` as a character class, so a dynamic route segment has
+ * to be escaped to match the literal directory name.
+ */
+const escapeGlob = (filePath) => filePath.replace(/[[\]]/g, "\\$&");
 
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
+  {
+    files: ["src/**/*.{ts,tsx}"],
+    plugins: { vocabulary },
+    rules: { "vocabulary/no-banned-vocabulary": "error" },
+  },
+  {
+    // Files with copy that predates the vocabulary decision. The list lives in
+    // vocabulary.json under banned_global.allowlist, where each entry names the
+    // chunk that clears it — this just consumes it, so there is one place to
+    // look and no second list to keep in sync.
+    //
+    // It may only shrink; `vocabulary.test.ts` asserts that. A new file with
+    // retired vocabulary in it fails the rule, which is the point.
+    files: ALLOWLISTED_FILES.map(escapeGlob),
+    rules: { "vocabulary/no-banned-vocabulary": "off" },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:

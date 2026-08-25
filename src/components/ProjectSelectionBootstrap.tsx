@@ -43,11 +43,15 @@ export function ProjectSelectionBootstrap({
   return (
     <main
       aria-busy={!failed}
-      style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "#0b0b0c", color: "#f4f4f5", padding: 24 }}
+      style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "var(--surface-page)", color: "var(--text-body)", padding: 24 }}
     >
       <section style={{ textAlign: "center" }}>
-        <div style={{ color: "#68a6ff", fontSize: 12, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase" }}>Page Watch</div>
-        <p style={{ color: "#a1a1aa", margin: "12px 0 0" }}>
+        <div style={{ color: "var(--action-primary-ink)", fontSize: 12, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase" }}>Page Watch</div>
+        {/*
+          A failed project fetch is a request error, not a page-health verdict,
+          so it reads through --status-danger-text and never --health-poor-text.
+        */}
+        <p style={{ color: failed ? "var(--status-danger-text)" : "var(--text-muted)", margin: "12px 0 0" }}>
           {failed ? "Couldn't load your project. Refresh to try again." : "Loading your project…"}
         </p>
       </section>

@@ -4,25 +4,40 @@
 // visual weight, with a scrubbable 24-day chart driving every number in the
 // card. Ported pixel-for-pixel from the design reference
 // (ScoreCard.reference.html) onto this codebase's conventions: inline
-// `style={}` objects with the shared `C` palette (see src/lib/ui.ts), the
-// same pattern used by every other card in this app (see bits.tsx / the
-// Overview tab in pages/[id]/page.tsx) rather than Tailwind utility classes,
-// which this app has wired up but does not use for component styling.
+// `style={}` objects, the same pattern used by every other card in this app
+// (see bits.tsx / the Overview tab in pages/[id]/page.tsx) rather than
+// Tailwind utility classes, which this app has wired up but does not use for
+// component styling. Every colour is an app token (`var(--…)`, declared in
+// src/app/globals.css) — this file names no colour value of its own, and has
+// no light/dark record: the tokens carry the theme.
+//
+// Two colour vocabularies live in this card and must not be mixed:
+//   · the NUMERALS and the XSmall "is" chip are a health verdict, so they are
+//     `--health-{good,warn,poor}-*`, banded by score (see bandColor);
+//   · every CHART MARK — line, fill, hatch, glow, range band, hover dot — is
+//     the SERIES' identity, so it is `--series-desktop` / `--series-mobile`
+//     by device and never changes with the data (R4).
+// A card can therefore show a purple desktop line under a red 38: one line
+// about which device, one about whether the score is good. Painting both with
+// the same hue is what this migration removed.
 //
 // All geometry/color math lives in a separate pure module (src/lib/scoreCard.ts)
 // with its own unit tests; this file is only responsible for layout, DOM
 // structure, and wiring hover state to that math.
 
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
-import { C } from "@/lib/ui";
 import {
   bandColor,
+  bandVar,
   bucketSeries,
-  deltaColor,
   deltaFromStart,
+  deltaTrend,
   domain,
   hatchBackgroundImage,
-  rgba,
+  SCORE_BAD,
+  SCORE_GOOD,
+  SCORE_NEUTRAL,
+  SCORE_WARN,
   segmentLine,
   segmentRangeBand,
   segmentRangeBandClip,
@@ -35,6 +50,8 @@ import {
   yFor,
 } from "@/lib/scoreCard";
 import { metricTooltipFor, SCORE_BANDS_LABEL } from "@/lib/scoreCardTooltip";
+import { Magnitude } from "@/components/magnitude";
+import { TrendArrow } from "@/components/trend-arrow";
 
 /** Run-to-run low/high spread behind one plotted median point (see CategoryScore in lib/types.ts). */
 export type ScoreCardRange = { lo: number; hi: number };
@@ -138,8 +155,6 @@ export type ScoreCardProps = {
    * sense). Retained on the prop type for backward compatibility.
    */
   chartHeight?: number;
-  /** Default 'dark'. */
-  theme?: "dark" | "light";
   /**
    * Default 'small' — today's production card, byte-identical apart from the
    * metric tooltip (see scoreCardTooltip.ts). 'xsmall' is a chromeless row
@@ -159,46 +174,79 @@ export type ScoreCardProps = {
 };
 
 // ── Design tokens ────────────────────────────────────────────────────────
-// This app's shared palette (src/lib/ui.ts `C`) already carries the dark-theme
-// card / border / text tokens and the four status colors used below, so this
-// card reuses `C` directly rather than re-declaring them. The light theme has
-// no equivalent anywhere in this app (it is exclusively dark-themed), so its
-// values are the literal hex from the README with a TODO left in place.
-interface MetricTheme {
-  page: string;
-  card: string;
-  hair: string;
-  ink1: string;
-  ink2: string;
-  ink3: string;
-  chipText: string;
-  chipTint: number;
+// This card used to carry its own hand-rolled `THEME` record: a `dark` half
+// aliasing the retired `C` palette and a `light` half of literal hex from the
+// README, threaded through every subcomponent as a `theme`/`t` prop. Both
+// halves are now redundant — `globals.css` declares one token set per surface
+// and the browser picks, so a card just names the role and never the value.
+// The prop is gone with them; no caller ever passed it.
+
+const CARD_SURFACE = "var(--surface-card)";
+const CARD_HAIRLINE = "var(--border-hairline)";
+const INK_BODY = "var(--text-body)";
+const INK_MUTED = "var(--text-muted)";
+
+/**
+ * R4: a chart mark's hue is which SERIES it is, never a verdict about the
+ * values in it. The desktop line reads `--series-desktop` at a score of 95
+ * and at 12; the verdict lives on the numeral and the XSmall chip, which are
+ * health-banded. Painting the line with the band hue made one fact look like
+ * two agreeing signals, and left desktop and mobile indistinguishable
+ * whenever they happened to land in the same band.
+ *
+ * A single-metric card (Agent readiness — no device pairing, see
+ * hasSecondSeries) draws only its `desktop` series and so borrows the desktop
+ * identity. That is safe because mobile never appears in the same card to
+ * contrast against; the caption/hatch angle carry the device where there is
+ * one to carry.
+ */
+const SERIES_VAR: Record<"d" | "m", string> = {
+  d: "var(--series-desktop)",
+  m: "var(--series-mobile)",
+};
+
+/**
+ * Alpha comes from `color-mix`, never from gluing digits onto a colour string
+ * — appending alpha nibbles to a `var(…)` is invalid CSS and renders nothing
+ * with no error, which is exactly how the deleted hex-to-rgba helper failed.
+ * Verified in-browser: `color-mix()` resolves inside `filter: drop-shadow()`,
+ * inside both gradient functions, in a dashed border, and in an SVG `fill`
+ * set via `style`.
+ */
+function mix(color: string, percent: number): string {
+  return `color-mix(in srgb, ${color} ${Math.round(percent)}%, transparent)`;
 }
 
-const THEME: Record<"dark" | "light", MetricTheme> = {
-  dark: {
-    page: "#060606", // TODO: token — no page-background equivalent in `C`; only used behind the demo grid, not the card itself.
-    card: C.panel,
-    hair: C.border,
-    ink1: C.text,
-    ink2: "#ABABAB", // TODO: token — close to but distinct from C.dim (#C4C4C8); kept literal to match the reference exactly.
-    ink3: C.faint2,
-    chipText: "#FFFFFFCB",
-    chipTint: 0.16,
-  },
-  light: {
-    // TODO: token — this app has no light theme anywhere; every value below is
-    // the literal hex from the README rather than a mapped app token.
-    page: "#F0F0F0",
-    card: "#FFFFFF",
-    hair: "#E0E0E0",
-    ink1: "#080808",
-    ink2: "#5A5A5A",
-    ink3: "#5A5A5A",
-    chipText: "#080808CB",
-    chipTint: 0.12,
-  },
-} as const;
+/**
+ * The paired ground/ink for a score's health band. `bandColor` is the single
+ * place the 90/50 thresholds live, so this maps its answer onto the matching
+ * `-bg`/`-text` pair rather than restating the bands — and the `-text` token
+ * IS the on-colour for its own `-bg`, so a solid chip never hand-picks ink.
+ */
+const BAND_CHIP: Record<string, { bg: string; text: string }> = {
+  [SCORE_GOOD]: { bg: "var(--health-good-bg)", text: "var(--health-good-text)" },
+  [SCORE_WARN]: { bg: "var(--health-warn-bg)", text: "var(--health-warn-text)" },
+  [SCORE_BAD]: { bg: "var(--health-poor-bg)", text: "var(--health-poor-text)" },
+};
+const NO_VERDICT_CHIP = { bg: "var(--health-none-bg)", text: `var(${SCORE_NEUTRAL})` };
+
+function bandChip(value: number): { bg: string; text: string } {
+  return BAND_CHIP[bandColor(value)] ?? NO_VERDICT_CHIP;
+}
+
+/**
+ * The one popover surface in this component pair. ScoreCard's metric tooltip
+ * and ScoreCardDensityControl's label tooltip were byte-identical apart from
+ * two different shadow alphas; sharing the surface is what stops them being
+ * tokenised twice, differently, the next time either one is touched.
+ */
+export const TOOLTIP_SURFACE: CSSProperties = {
+  background: CARD_SURFACE,
+  border: "1px solid var(--border-strong)",
+  borderRadius: 6,
+  boxShadow: "var(--shadow-popover)",
+  pointerEvents: "none",
+};
 
 const CARD_PADDING = 16;
 const CARD_RADIUS = 8;
@@ -259,8 +307,7 @@ export function ScoreCard(props: ScoreCardProps) {
  * delta chips, or hover behaviour here — `data.mobile` is supplied for every
  * real caller today, so that path renders byte-identically to before.
  */
-function SmallScoreCard({ data, cardWidth = 320, theme = "dark" }: ScoreCardProps) {
-  const t: MetricTheme = THEME[theme];
+function SmallScoreCard({ data, cardWidth = 320 }: ScoreCardProps) {
   const uid = useId();
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const hasMobile = hasSecondSeries(data);
@@ -277,17 +324,17 @@ function SmallScoreCard({ data, cardWidth = 320, theme = "dark" }: ScoreCardProp
   const mp = useMemo(() => (hasMobile && pointCount > 0 ? seriesPaths(data.mobile!, bounds) : null), [hasMobile, data.mobile, bounds, pointCount]);
 
   if (pointCount === 0 || !dp) {
-    return <EmptyScoreCard title={data.title} theme={t} />;
+    return <EmptyScoreCard title={data.title} />;
   }
 
   const dv = data.desktop[idx];
   const dDelta = deltaFromStart(data.desktop, idx);
-  const dCol = bandColor(dv);
-  const dChipCol = deltaColor(dDelta);
+  // Numerals answer "is this good?" (health, banded); chart marks answer
+  // "which device is this?" (series, fixed). See SERIES_VAR.
+  const dInk = bandVar(dv);
   const mv = hasMobile ? data.mobile![idx] : null;
   const mDelta = hasMobile ? deltaFromStart(data.mobile!, idx) : null;
-  const mCol = hasMobile ? bandColor(mv!) : null;
-  const mChipCol = hasMobile ? deltaColor(mDelta!) : null;
+  const mInk = hasMobile ? bandVar(mv!) : null;
   const gap = hasMobile ? Math.abs(dv - mv!) : null;
   const rangeLabel = hoverIndex === null ? "" : dateAt(hoverIndex, last);
 
@@ -313,8 +360,8 @@ function SmallScoreCard({ data, cardWidth = 320, theme = "dark" }: ScoreCardProp
         // No overflow: hidden here — the metric tooltip below needs to escape
         // the card. The full-bleed chart clips itself via its own wrapper
         // (ChartClipWrapper below) instead.
-        background: t.card,
-        border: `1px solid ${t.hair}`,
+        background: CARD_SURFACE,
+        border: `1px solid ${CARD_HAIRLINE}`,
         borderRadius: CARD_RADIUS,
         padding: CARD_PADDING,
         display: "flex",
@@ -325,45 +372,17 @@ function SmallScoreCard({ data, cardWidth = 320, theme = "dark" }: ScoreCardProp
     >
       {/* header */}
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
-        <CardTitle title={data.title} fontSize={17} color={t.ink1} />
-        <div style={{ fontSize: 12.5, color: t.ink3, whiteSpace: "nowrap" }}>{rangeLabel}</div>
+        <CardTitle title={data.title} fontSize={17} color={INK_BODY} />
+        <div style={{ fontSize: 12.5, color: INK_MUTED, whiteSpace: "nowrap" }}>{rangeLabel}</div>
       </div>
 
       {/* metric row — a single MetricBlock (no Δ gap chip, no device label)
           when there's no second series to compare `desktop` against. */}
       <div style={{ display: "flex", alignItems: "stretch", gap: 8, margin: "4px 0 8px" }}>
-        <MetricBlock side="d" label={hasMobile ? "Desktop" : undefined} value={dv} color={dCol} chipColor={dChipCol} delta={dDelta} metricSize={metricSize} theme={t} />
+        <MetricBlock side="d" label={hasMobile ? "Desktop" : undefined} value={dv} color={dInk} delta={dDelta} metricSize={metricSize} />
+        {hasMobile && <GapChip gap={gap!} />}
         {hasMobile && (
-          <div style={{ flex: "none", alignSelf: "stretch", display: "flex", flexDirection: "column-reverse", alignItems: "center", gap: 8, padding: "0 2px", width: 45 }}>
-            <span aria-hidden="true" style={{ fontSize: 10, height: 15, lineHeight: "15px", color: "transparent" }}>·</span>
-            <div style={{ flex: "1 1 auto", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <span
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 3,
-                  boxSizing: "border-box",
-                  width: 41,
-                  padding: "3px 4px",
-                  borderRadius: 999,
-                  border: `1px solid ${t.hair}`,
-                  color: t.ink3,
-                  fontFamily: MONO_FONT,
-                  fontSize: 11.5,
-                  fontWeight: 550,
-                  letterSpacing: "0.03em",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                <span>Δ</span>
-                <span>{gap}</span>
-              </span>
-            </div>
-          </div>
-        )}
-        {hasMobile && (
-          <MetricBlock side="m" label="Mobile" value={mv!} color={mCol!} chipColor={mChipCol!} delta={mDelta!} metricSize={metricSize} theme={t} />
+          <MetricBlock side="m" label="Mobile" value={mv!} color={mInk!} delta={mDelta!} metricSize={metricSize} />
         )}
       </div>
 
@@ -388,13 +407,13 @@ function SmallScoreCard({ data, cardWidth = 320, theme = "dark" }: ScoreCardProp
         >
           <defs>
             <linearGradient id={gId("d")} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" style={{ stopColor: dCol, stopOpacity: FILL_TOP_OPACITY }} />
-              <stop offset="1" style={{ stopColor: dCol, stopOpacity: FILL_END_OPACITY }} />
+              <stop offset="0" style={{ stopColor: SERIES_VAR.d, stopOpacity: FILL_TOP_OPACITY }} />
+              <stop offset="1" style={{ stopColor: SERIES_VAR.d, stopOpacity: FILL_END_OPACITY }} />
             </linearGradient>
             {hasMobile && (
               <linearGradient id={gId("m")} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" style={{ stopColor: mCol!, stopOpacity: FILL_TOP_OPACITY }} />
-                <stop offset="1" style={{ stopColor: mCol!, stopOpacity: FILL_END_OPACITY }} />
+                <stop offset="0" style={{ stopColor: SERIES_VAR.m, stopOpacity: FILL_TOP_OPACITY }} />
+                <stop offset="1" style={{ stopColor: SERIES_VAR.m, stopOpacity: FILL_END_OPACITY }} />
               </linearGradient>
             )}
             <clipPath id={cId("d")} clipPathUnits="objectBoundingBox">
@@ -412,16 +431,16 @@ function SmallScoreCard({ data, cardWidth = 320, theme = "dark" }: ScoreCardProp
 
         {/* Hatch layers are clipped DOM elements, not an SVG <pattern>: a
             pattern shears under this svg's preserveAspectRatio="none". Desktop
-            hatches at 45deg, mobile at -45deg — a redundant channel with color
-            for the accessibility pairing. */}
-        <HatchLayer clipId={cId("d")} degrees={45} color={dCol} />
-        {hasMobile && <HatchLayer clipId={cId("m")} degrees={-45} color={mCol!} />}
+            hatches at 45deg, mobile at -45deg — a redundant channel with the
+            series colour for the accessibility pairing. */}
+        <HatchLayer clipId={cId("d")} degrees={45} color={SERIES_VAR.d} />
+        {hasMobile && <HatchLayer clipId={cId("m")} degrees={-45} color={SERIES_VAR.m} />}
 
         {/* One <svg> per line: the glow is a CSS filter on that svg's own box,
             so drop-shadow lengths resolve in real px instead of the stretched
             0..100 x 0..40 user units. */}
-        <LineSvg d={dp.line} color={dCol} />
-        {hasMobile && mp && <LineSvg d={mp.line} color={mCol!} />}
+        <LineSvg d={dp.line} color={SERIES_VAR.d} />
+        {hasMobile && mp && <LineSvg d={mp.line} color={SERIES_VAR.m} />}
 
         <div
           aria-hidden="true"
@@ -430,7 +449,7 @@ function SmallScoreCard({ data, cardWidth = 320, theme = "dark" }: ScoreCardProp
             top: 0,
             bottom: 0,
             width: 1,
-            background: t.ink2,
+            background: INK_MUTED,
             opacity: 0.35,
             display: hoverIndex === null ? "none" : "block",
             left: `${(hoverIndex ?? 0) / last * 100}%`,
@@ -443,8 +462,8 @@ function SmallScoreCard({ data, cardWidth = 320, theme = "dark" }: ScoreCardProp
             pointerEvents: "none",
           }}
         />
-        <ChartDot visible={hoverIndex !== null} left={dotLeft(idx)} top={dp.yPct(dv)} color={dCol} cardBg={t.card} />
-        {hasMobile && mp && <ChartDot visible={hoverIndex !== null} left={dotLeft(idx)} top={mp.yPct(mv!)} color={mCol!} cardBg={t.card} />}
+        <ChartDot visible={hoverIndex !== null} left={dotLeft(idx)} top={dp.yPct(dv)} color={SERIES_VAR.d} />
+        {hasMobile && mp && <ChartDot visible={hoverIndex !== null} left={dotLeft(idx)} top={mp.yPct(mv!)} color={SERIES_VAR.m} />}
       </div>
       </ChartClipWrapper>
     </div>
@@ -531,22 +550,21 @@ function CardTitle({ title, fontSize, color, uppercase = false }: { title: strin
             gap: 6,
             textAlign: "left",
             whiteSpace: "normal",
-            background: "#1A1A1A",
-            border: "1px solid #2E2E2E",
-            borderRadius: 6,
+            ...TOOLTIP_SURFACE,
             padding: "10px 11px",
-            boxShadow: "0 10px 30px rgba(0,0,0,0.6)",
-            pointerEvents: "none",
           }}
         >
-          <span style={{ fontFamily: MONO_FONT, fontSize: 10, fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase", color: "#8A8A90" }}>
+          <span style={{ fontFamily: MONO_FONT, fontSize: 12, fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase", color: INK_MUTED }}>
             {copy.unit}
           </span>
-          <span style={{ fontFamily: SANS_FONT, fontSize: 11.5, lineHeight: 1.45, color: "#C9C9C9" }}>{copy.body}</span>
-          <span style={{ display: "flex", flexWrap: "wrap", gap: "4px 12px", paddingTop: 8, borderTop: "1px solid #2A2A2A", fontFamily: MONO_FONT, fontSize: 10, color: "#8A8A90", whiteSpace: "nowrap" }}>
+          <span style={{ fontFamily: SANS_FONT, fontSize: 12, lineHeight: 1.45, color: INK_BODY }}>{copy.body}</span>
+          {/* The band key is a legend, not decoration — 12px, and each swatch
+              resolves the same token `bandColor()` returns for that band, so
+              the key and the numerals cannot drift apart. */}
+          <span style={{ display: "flex", flexWrap: "wrap", gap: "4px 12px", paddingTop: 8, borderTop: `1px solid ${CARD_HAIRLINE}`, fontFamily: MONO_FONT, fontSize: 12, color: INK_MUTED, whiteSpace: "nowrap" }}>
             {SCORE_BANDS_LABEL.map((band) => (
               <span key={band.text} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-                <span style={{ width: 6, height: 6, borderRadius: "50%", background: band.color }} />
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: `var(${band.token})` }} />
                 {band.text}
               </span>
             ))}
@@ -558,14 +576,14 @@ function CardTitle({ title, fontSize, color, uppercase = false }: { title: strin
 }
 
 /** Nothing collected inside the selected range: keep the card shell so the grid doesn't reflow, but show no fabricated chart or numerals. */
-function EmptyScoreCard({ title, theme }: { title: string; theme: MetricTheme }) {
+function EmptyScoreCard({ title }: { title: string }) {
   return (
     <div
       style={{
         width: "100%",
         boxSizing: "border-box",
-        background: theme.card,
-        border: `1px solid ${theme.hair}`,
+        background: CARD_SURFACE,
+        border: `1px solid ${CARD_HAIRLINE}`,
         borderRadius: CARD_RADIUS,
         padding: CARD_PADDING,
         display: "flex",
@@ -575,14 +593,18 @@ function EmptyScoreCard({ title, theme }: { title: string; theme: MetricTheme })
       }}
     >
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
-        <CardTitle title={title} fontSize={17} color={theme.ink1} />
+        <CardTitle title={title} fontSize={17} color={INK_BODY} />
       </div>
-      <div style={{ padding: "20px 0", color: theme.ink3, fontSize: 12.5 }}>No collections in the selected range.</div>
+      <div style={{ padding: "20px 0", color: INK_MUTED, fontSize: 12.5 }}>No collections in the selected range.</div>
     </div>
   );
 }
 
 function HatchLayer({ clipId, degrees, color }: { clipId: string; degrees: number; color: string }) {
+  // A mask CHANNEL, not a paint colour: the two black stops below differ only
+  // in alpha, which sets how much of the hatch survives top-to-bottom; the
+  // colour channels are discarded by the mask. Tokenising this would be
+  // meaningless — see the no-literals rule's mask/alpha-ramp allowance.
   const mask = "linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,0.3) 100%)";
   // WebkitMaskImage / WebkitClipPath are valid CSS properties browsers honor,
   // but aren't part of React's CSSProperties typings; cast narrowly here
@@ -595,20 +617,29 @@ function HatchLayer({ clipId, degrees, color }: { clipId: string; degrees: numbe
     WebkitClipPath: `url(#${clipId})`,
     clipPath: `url(#${clipId})`,
     pointerEvents: "none",
-    backgroundImage: hatchBackgroundImage(degrees, rgba(color, PATTERN_STRENGTH)),
+    backgroundImage: hatchBackgroundImage(degrees, mix(color, PATTERN_STRENGTH * 100)),
   } as CSSProperties;
   return <div aria-hidden="true" style={style} />;
 }
 
 function LineSvg({ d, color }: { d: string; color: string }) {
-  const glow = `drop-shadow(0 0 ${GLOW_SPREAD / 2}px ${rgba(color, GLOW_OPACITY)}) drop-shadow(0 0 ${GLOW_SPREAD}px ${rgba(color, GLOW_OPACITY * 0.6)})`;
+  const glow = `drop-shadow(0 0 ${GLOW_SPREAD / 2}px ${mix(color, GLOW_OPACITY * 100)}) drop-shadow(0 0 ${GLOW_SPREAD}px ${mix(color, GLOW_OPACITY * 60)})`;
   return (
     <svg
       viewBox="0 0 100 40"
       preserveAspectRatio="none"
       style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible", pointerEvents: "none", filter: glow }}
     >
-      <path d={d} vectorEffect="non-scaling-stroke" fill="none" stroke={color} strokeWidth={LINE_WIDTH} strokeLinejoin="round" strokeLinecap="butt" />
+      {/* `stroke` lives in `style`, not as a presentation attribute: a
+          presentation attribute is not guaranteed to resolve a custom
+          property across engines, and it silently paints nothing when it
+          doesn't. Geometry (strokeWidth, vectorEffect) stays an attribute. */}
+      <path
+        d={d}
+        vectorEffect="non-scaling-stroke"
+        strokeWidth={LINE_WIDTH}
+        style={{ fill: "none", stroke: color, strokeLinejoin: "round", strokeLinecap: "butt" }}
+      />
     </svg>
   );
 }
@@ -620,7 +651,7 @@ function LineSvg({ d, color }: { d: string; color: string }) {
  * border edge, not its small corner radius, so the card's `overflow: hidden`
  * does not crop it into a visible crescent.
  */
-function ChartDot({ visible, left, top, color, cardBg }: { visible: boolean; left: string; top: string; color: string; cardBg: string }) {
+function ChartDot({ visible, left, top, color }: { visible: boolean; left: string; top: string; color: string }) {
   return (
     <div
       aria-hidden="true"
@@ -630,7 +661,8 @@ function ChartDot({ visible, left, top, color, cardBg }: { visible: boolean; lef
         height: 8,
         margin: "-4px 0 0 -4px",
         borderRadius: "50%",
-        background: cardBg,
+        // Knockout centre: must be the card's own surface or the ring seams.
+        background: CARD_SURFACE,
         border: `2px solid ${color}`,
         display: visible ? "block" : "none",
         left,
@@ -646,34 +678,35 @@ function MetricBlock({
   label,
   value,
   color,
-  chipColor,
   delta,
   metricSize,
-  theme,
 }: {
   side: "d" | "m";
   /** Device caption above the numeral ("Desktop"/"Mobile"). Omit for a single-metric card, where there's no second block to disambiguate against. */
   label?: string;
-  value: number;
+  /** The numeral's HEALTH ink — `bandVar(value)`. Not a series colour: this is the verdict, not the identity. */
   color: string;
-  chipColor: string;
+  value: number;
   delta: number;
   metricSize: number;
-  theme: MetricTheme;
 }) {
   const deg = side === "d" ? 45 : -45;
-  const arrow = delta < 0 ? "↘" : delta > 0 ? "↗" : "→";
   return (
     <div style={{ flex: "1 1 0", minWidth: 0, display: "flex", flexDirection: "column-reverse", gap: 0, alignItems: "center" }}>
       <div
         style={{
-          fontSize: 10,
-          height: 10,
+          // 12px, not the old 10 — a device caption is the only thing telling
+          // these two numerals apart, so it carries meaning. `height` moves to
+          // 15 with it: at height 10 against a 15px line box the caption
+          // already overflowed its own row, and at 12px it would have clipped.
+          // 15 also matches GapChip's spacer, so the three columns line up.
+          fontSize: 12,
+          height: 15,
           lineHeight: "15px",
           fontWeight: 500,
           letterSpacing: "0.4px",
           textTransform: "uppercase",
-          color: C.muted,
+          color: INK_MUTED,
         }}
       >
         {label}
@@ -714,10 +747,10 @@ function MetricBlock({
             style={{
               position: "relative",
               color: "transparent",
-              backgroundColor: theme.card,
+              backgroundColor: CARD_SURFACE,
               backgroundImage: [
-                hatchBackgroundImage(deg, rgba(color, Math.min(1, PATTERN_STRENGTH * 2.6))),
-                `linear-gradient(to bottom, ${rgba(color, Math.min(1, 0.67 + 0.4))} 0%, ${rgba(color, 0.67 * 0.3)} 100%)`,
+                hatchBackgroundImage(deg, mix(color, Math.min(100, PATTERN_STRENGTH * 260))),
+                `linear-gradient(to bottom, ${mix(color, Math.min(100, 67 + 40))} 0%, ${mix(color, 67 * 0.3)} 100%)`,
               ].join(", "),
               WebkitBackgroundClip: "text",
               backgroundClip: "text",
@@ -728,24 +761,15 @@ function MetricBlock({
         </div>
         {/* A zero delta never renders — "→ 0" is noise, not signal, and at
             real data rates it's the single most common case. */}
+        {/* Direction is shape (R2) and size is weight (R3), so the delta is an
+            arrow plus its F1 label plus the magnitude — no tint, no hue that
+            varies by direction. The label is visually hidden here because the
+            block is a dense metric card, but it still reaches assistive tech,
+            which is more than the old bare "↗ 8" chip offered. */}
         {delta !== 0 && (
-          <span
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 5,
-              padding: "2px 4px",
-              borderRadius: 4,
-              fontFamily: MONO_FONT,
-              fontSize: 13,
-              fontWeight: 600,
-              color: theme.chipText,
-              background: rgba(chipColor, theme.chipTint),
-              border: "1px solid transparent",
-            }}
-          >
-            <span>{arrow}</span>
-            <span>{Math.abs(delta)}</span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+            <TrendArrow trend={deltaTrend(delta)} labelHidden />
+            <Magnitude value={Math.abs(delta)} style={{ fontFamily: MONO_FONT }} />
           </span>
         )}
       </div>
@@ -753,24 +777,67 @@ function MetricBlock({
   );
 }
 
+/**
+ * The Δ badge between two MetricBlocks: how far apart desktop and mobile are
+ * at the shown index. A magnitude, so it takes no hue at any gap size —
+ * "desktop is 40 ahead of mobile" is a quantity, and whether that is bad is
+ * the numerals' job to say. Extracted because small and medium/large carried
+ * byte-identical copies of it, which is how two of the same thing get
+ * tokenised differently.
+ */
+function GapChip({ gap }: { gap: number }) {
+  return (
+    <div style={{ flex: "none", alignSelf: "stretch", display: "flex", flexDirection: "column-reverse", alignItems: "center", gap: 8, padding: "0 2px", width: 50 }}>
+      {/* Invisible spacer holding the row that MetricBlock's device caption
+          occupies, so the badge sits level with the numerals rather than the
+          captions. Decoration — it renders no glyph anyone can see — so it is
+          one of the two sites exempt from the 12px floor. */}
+      <span aria-hidden="true" style={{ fontSize: 11, height: 15, lineHeight: "15px", color: "transparent" }}>·</span>
+      <div style={{ flex: "1 1 auto", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 3,
+            boxSizing: "border-box",
+            // 46, not 41: the label went 11.5 -> 12px and a three-digit gap
+            // has to keep fitting. The column widened to match.
+            width: 46,
+            padding: "3px 4px",
+            borderRadius: 999,
+            border: `1px solid ${CARD_HAIRLINE}`,
+            fontFamily: MONO_FONT,
+            fontSize: 12,
+            fontWeight: 550,
+            letterSpacing: "0.03em",
+            whiteSpace: "nowrap",
+          }}
+        >
+          <span style={{ color: "var(--magnitude-unit)" }}>Δ</span>
+          <span style={{ color: "var(--magnitude-value)", fontWeight: 650, fontVariantNumeric: "tabular-nums" }}>{gap}</span>
+        </span>
+      </div>
+    </div>
+  );
+}
+
 // ── XSmall — chromeless row cell ────────────────────────────────────────
-// A table-row cell, not a card: an outlined "was" chip, a gradient hairline
-// carrying a D/M device badge, and a solid sentiment-filled "is" chip, once
-// per device (or once, for a single-metric card — see hasSecondSeries). No
-// delta pill at this density (see MetricBlock for the shared "never render
-// a zero delta" rule at small/medium/large) — the two chips a few inches
-// apart on the row make the comparison obvious without one, and it would
-// otherwise spend the row's tightest pixels on `→ 0` five times out of
-// eight. Reuses the same domain and band-color helpers as every other
+// A table-row cell, not a card: an outlined neutral "was" chip, a series-
+// coloured hairline carrying a D/M device badge, and a health-banded "is"
+// chip, once per device (or once, for a single-metric card — see
+// hasSecondSeries). No delta pill at this density (see MetricBlock for the
+// shared "never render a zero delta" rule at small/medium/large) — the two
+// chips a few inches apart on the row make the comparison obvious without
+// one, and it would otherwise spend the row's tightest pixels on `→ 0` five
+// times out of eight. Reuses the same domain and band helpers as every other
 // density (see density handoff §4). Anomaly gaps are bridged (no real gap
 // data exists in this app's model, so this is naturally satisfied by never
 // segmenting the path) and the range band collapses to a single hairline.
 // No card frame, no chart height prop — this density does not draw a chart
 // in the normal sense.
 
-export function XSmallScoreCard({ data, theme = "dark", showTitle = true }: ScoreCardProps) {
-  const t: MetricTheme = THEME[theme];
-  const uid = useId();
+export function XSmallScoreCard({ data, showTitle = true }: ScoreCardProps) {
   const hasMobile = hasSecondSeries(data);
   const pointCount = hasMobile ? Math.min(data.desktop.length, data.mobile!.length) : data.desktop.length;
   // Both device rows plot at the app-wide fixed points-per-pixel scale
@@ -783,18 +850,18 @@ export function XSmallScoreCard({ data, theme = "dark", showTitle = true }: Scor
   if (pointCount === 0) {
     return (
       <div style={{ width: "100%", minWidth: 0, boxSizing: "border-box", padding: "16px 18px 18px", display: "flex", flexDirection: "column", gap: 10, fontFamily: SANS_FONT }}>
-        {showTitle && <CardTitle title={data.title} fontSize={10} color="#8A8A90" uppercase />}
-        <div style={{ color: t.ink3, fontSize: 11 }}>No collections in range.</div>
+        {showTitle && <CardTitle title={data.title} fontSize={12} color={INK_MUTED} uppercase />}
+        <div style={{ color: INK_MUTED, fontSize: 12 }}>No collections in range.</div>
       </div>
     );
   }
 
   const last = pointCount - 1;
   const dv = data.desktop[last];
-  const dCol = bandColor(dv);
+  const dChip = bandChip(dv);
   const mobile = hasMobile ? data.mobile! : null;
   const mv = mobile ? mobile[last] : null;
-  const mCol = mobile ? bandColor(mv!) : null;
+  const mChip = mobile ? bandChip(mv!) : null;
 
   return (
     // Explicit width: 100% (not left to an ancestor to stretch us) — this
@@ -808,12 +875,12 @@ export function XSmallScoreCard({ data, theme = "dark", showTitle = true }: Scor
     <div style={{ width: "100%", minWidth: 0, boxSizing: "border-box", padding: "16px 18px 18px", display: "flex", flexDirection: "column", gap: 10, fontFamily: SANS_FONT }}>
       {showTitle && (
         <span style={{ alignSelf: "flex-start", maxWidth: "100%" }}>
-          <CardTitle title={data.title} fontSize={10} color="#8A8A90" uppercase />
+          <CardTitle title={data.title} fontSize={12} color={INK_MUTED} uppercase />
         </span>
       )}
-      <XSmallDeviceRow device="d" showBadge={hasMobile} values={data.desktop} trusted={data.desktopTrusted} bounds={dBounds} displayValue={dv} color={dCol} gradientId={`xsmall-${uid}-d`} panelBg={t.card} />
+      <XSmallDeviceRow device="d" showBadge={hasMobile} values={data.desktop} trusted={data.desktopTrusted} bounds={dBounds} displayValue={dv} chip={dChip} />
       {mobile && (
-        <XSmallDeviceRow device="m" showBadge values={mobile} trusted={data.mobileTrusted} bounds={mBounds} displayValue={mv!} color={mCol!} gradientId={`xsmall-${uid}-m`} panelBg={t.card} />
+        <XSmallDeviceRow device="m" showBadge values={mobile} trusted={data.mobileTrusted} bounds={mBounds} displayValue={mv!} chip={mChip!} />
       )}
     </div>
   );
@@ -865,9 +932,7 @@ function XSmallDeviceRow({
   trusted,
   bounds,
   displayValue,
-  color,
-  gradientId,
-  panelBg,
+  chip,
 }: {
   device: "d" | "m";
   /** False for a single-metric card's lone row (e.g. Agent) — there's no second device to disambiguate from, so the D/M badge would misleadingly claim this is desktop data. */
@@ -880,9 +945,8 @@ function XSmallDeviceRow({
   bounds: [number, number];
   /** Current value shown in the solid chip — may differ from `values.at(-1)` when the other device's series is shorter (see XSmallScoreCard's pointCount truncation). */
   displayValue: number;
-  color: string;
-  gradientId: string;
-  panelBg: string;
+  /** The health band's paired ground + ink for `displayValue` — see bandChip. The line does NOT take this; it takes the device's series identity. */
+  chip: { bg: string; text: string };
 }) {
   const startValue = values[0];
 
@@ -948,13 +1012,16 @@ function XSmallDeviceRow({
 
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 0 }}>
-      {/* start — outlined neutral chip ("was") */}
-      <span style={{ ...chipBase, border: "1px solid #757575", background: "transparent", fontWeight: 450, color: "#ABABAB" }}>{startValue}</span>
+      {/* start — outlined neutral chip ("was"). No verdict on it: it is the
+          window's opening value, and what matters is the distance to the
+          chip at the other end, not whether the past was good. */}
+      <span style={{ ...chipBase, border: "1px solid var(--border-strong)", background: "transparent", fontWeight: 450, color: INK_MUTED }}>{startValue}</span>
 
-      {/* sparkline — gradient hairline, centered on its own extent, device badge riding it.
-          Below XSMALL_MIN_SLOT_WIDTH this stays mounted (still measured, so a later resize
-          back above the floor recovers the line) but renders nothing — an unreadable few-px
-          stub is worse than an honest gap between the two chips. */}
+      {/* sparkline — one flat series-coloured hairline, centered on its own extent,
+          device badge riding it. Below XSMALL_MIN_SLOT_WIDTH this stays mounted (still
+          measured, so a later resize back above the floor recovers the line) but renders
+          nothing — an unreadable few-px stub is worse than an honest gap between the
+          two chips. */}
       <div ref={slotRef} style={{ flex: "1 1 0", minWidth: 0, position: "relative", height: 16 }}>
         {showLine && (
           <>
@@ -963,25 +1030,19 @@ function XSmallDeviceRow({
               preserveAspectRatio="none"
               style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible", transform: `translateY(${pct(shift)}%)` }}
             >
-              <defs>
-                {/* gradientUnits="userSpaceOnUse", not the default objectBoundingBox: a
-                    perfectly flat line has a zero-height bounding box, and per the SVG
-                    spec an objectBoundingBox gradient on a zero-extent box doesn't
-                    render at all — a near-flat Accessibility/SEO line would vanish. */}
-                {/* Two stops at #ABABAB, not one: holding the neutral color flat
-                    through the first tenth before ramping to sentiment reads as
-                    a grey tail on an otherwise-sentiment line. A single stop at
-                    0.1 would start the ramp at the line's own origin instead,
-                    splitting the line into a grey half and a sentiment half.
-                    The ramp finishes at 0.7, not 1: no stop past it means the
-                    gradient holds solid sentiment through the last 30%. */}
-                <linearGradient id={gradientId} gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="100" y2="0">
-                  <stop offset="0" stopColor="#ABABAB" />
-                  <stop offset="0.1" stopColor="#ABABAB" />
-                  <stop offset="0.7" stopColor={color} />
-                </linearGradient>
-              </defs>
-              <path d={path} vectorEffect="non-scaling-stroke" style={{ fill: "none", stroke: `url(#${gradientId})`, strokeWidth, strokeLinejoin: "round", strokeLinecap: "round" }} />
+              {/* This used to be a neutral -> verdict gradient: the line started
+                  grey and ramped into the band hue of its own final value, so a
+                  page that fell below 50 got a red line and the same page at 91
+                  got a green one. That is the R4 violation in miniature — the
+                  mark's hue answering "is this good?" instead of "which series
+                  is this?". One flat series token now, and the verdict is left
+                  to the chip at the end of the row, which is the only element
+                  on this row that is actually claiming one. */}
+              <path
+                d={path}
+                vectorEffect="non-scaling-stroke"
+                style={{ fill: "none", stroke: SERIES_VAR[device], strokeWidth, strokeLinejoin: "round", strokeLinecap: "round" }}
+              />
             </svg>
             {showBadge && (
               <span
@@ -993,15 +1054,18 @@ function XSmallDeviceRow({
                   display: "inline-flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  width: 12,
-                  height: 12,
+                  // 14, up from 12: the "D"/"M" went to 12px and needs the room.
+                  width: 14,
+                  height: 14,
                   boxSizing: "border-box",
                   fontFamily: MONO_FONT,
-                  fontSize: 10,
+                  fontSize: 12,
                   fontWeight: 600,
                   letterSpacing: "0.03em",
-                  color: "#757575",
-                  background: panelBg,
+                  color: INK_MUTED,
+                  // Knocks the line out behind the letter — must be the surface
+                  // this row sits on.
+                  background: CARD_SURFACE,
                   borderRadius: 3,
                   whiteSpace: "nowrap",
                 }}
@@ -1013,8 +1077,10 @@ function XSmallDeviceRow({
         )}
       </div>
 
-      {/* current — solid sentiment chip ("is") */}
-      <span style={{ ...chipBase, border: "1px solid transparent", background: color, fontWeight: 700, color: "#0B0B0B" }}>{displayValue}</span>
+      {/* current — the health verdict ("is"). The band's own `-text` token is
+          the on-colour for its `-bg`, so this pairs by construction instead of
+          hand-picking ink for a solid fill. */}
+      <span style={{ ...chipBase, border: "1px solid transparent", background: chip.bg, fontWeight: 700, color: chip.text }}>{displayValue}</span>
     </div>
   );
 }
@@ -1032,9 +1098,7 @@ function ScaledScoreCard({
   cardWidth = 320,
   defaultMetricSize,
   density,
-  theme = "dark",
 }: ScoreCardProps & { density: "medium" | "large"; defaultMetricSize: number }) {
-  const t: MetricTheme = THEME[theme];
   const uid = useId();
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const isLarge = density === "large";
@@ -1051,17 +1115,17 @@ function ScaledScoreCard({
   const mSegments = useMemo(() => (hasMobile ? trustedIndexSegments(data.mobileTrusted, pointCount) : []), [hasMobile, data.mobileTrusted, pointCount]);
 
   if (pointCount === 0 || !dp) {
-    return <EmptyScoreCard title={data.title} theme={t} />;
+    return <EmptyScoreCard title={data.title} />;
   }
 
   const dv = data.desktop[idx];
   const dDelta = deltaFromStart(data.desktop, idx);
-  const dCol = bandColor(dv);
-  const dChipCol = deltaColor(dDelta);
+  // Health ink for the numerals only — every chart mark below reads
+  // SERIES_VAR instead. See the file header.
+  const dInk = bandVar(dv);
   const mv = hasMobile ? data.mobile![idx] : null;
   const mDelta = hasMobile ? deltaFromStart(data.mobile!, idx) : null;
-  const mCol = hasMobile ? bandColor(mv!) : null;
-  const mChipCol = hasMobile ? deltaColor(mDelta!) : null;
+  const mInk = hasMobile ? bandVar(mv!) : null;
   const gap = hasMobile ? Math.abs(dv - mv!) : null;
   const rangeLabel = hoverIndex === null ? "" : dateAt(hoverIndex, last);
   const gId = (k: "d" | "m") => `scorecard-${uid}-g-${k}`;
@@ -1104,8 +1168,8 @@ function ScaledScoreCard({
         minWidth: 0,
         height: CARD_HEIGHT[density],
         boxSizing: "border-box",
-        background: t.card,
-        border: `1px solid ${t.hair}`,
+        background: CARD_SURFACE,
+        border: `1px solid ${CARD_HAIRLINE}`,
         borderRadius: CARD_RADIUS,
         padding: CARD_PADDING,
         display: "flex",
@@ -1115,43 +1179,15 @@ function ScaledScoreCard({
       }}
     >
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
-        <CardTitle title={data.title} fontSize={17} color={t.ink1} />
-        <span style={{ fontFamily: MONO_FONT, fontSize: 12, fontVariantNumeric: "tabular-nums", color: "#898989", whiteSpace: "nowrap" }}>{rangeLabel}</span>
+        <CardTitle title={data.title} fontSize={17} color={INK_BODY} />
+        <span style={{ fontFamily: MONO_FONT, fontSize: 12, fontVariantNumeric: "tabular-nums", color: INK_MUTED, whiteSpace: "nowrap" }}>{rangeLabel}</span>
       </div>
 
       <div style={{ display: "flex", alignItems: "stretch", gap: 8, margin: "4px 0 8px" }}>
-        <MetricBlock side="d" label={hasMobile ? "Desktop" : undefined} value={dv} color={dCol} chipColor={dChipCol} delta={dDelta} metricSize={metricSize} theme={t} />
+        <MetricBlock side="d" label={hasMobile ? "Desktop" : undefined} value={dv} color={dInk} delta={dDelta} metricSize={metricSize} />
+        {hasMobile && <GapChip gap={gap!} />}
         {hasMobile && (
-          <div style={{ flex: "none", alignSelf: "stretch", display: "flex", flexDirection: "column-reverse", alignItems: "center", gap: 8, padding: "0 2px", width: 45 }}>
-            <span aria-hidden="true" style={{ fontSize: 10, height: 15, lineHeight: "15px", color: "transparent" }}>·</span>
-            <div style={{ flex: "1 1 auto", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <span
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 3,
-                  boxSizing: "border-box",
-                  width: 41,
-                  padding: "3px 4px",
-                  borderRadius: 999,
-                  border: `1px solid ${t.hair}`,
-                  color: t.ink3,
-                  fontFamily: MONO_FONT,
-                  fontSize: 11.5,
-                  fontWeight: 550,
-                  letterSpacing: "0.03em",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                <span>Δ</span>
-                <span>{gap}</span>
-              </span>
-            </div>
-          </div>
-        )}
-        {hasMobile && (
-          <MetricBlock side="m" label="Mobile" value={mv!} color={mCol!} chipColor={mChipCol!} delta={mDelta!} metricSize={metricSize} theme={t} />
+          <MetricBlock side="m" label="Mobile" value={mv!} color={mInk!} delta={mDelta!} metricSize={metricSize} />
         )}
       </div>
 
@@ -1173,13 +1209,13 @@ function ScaledScoreCard({
           >
             <defs>
               <linearGradient id={gId("d")} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" style={{ stopColor: dCol, stopOpacity: FILL_TOP_OPACITY }} />
-                <stop offset="1" style={{ stopColor: dCol, stopOpacity: FILL_END_OPACITY }} />
+                <stop offset="0" style={{ stopColor: SERIES_VAR.d, stopOpacity: FILL_TOP_OPACITY }} />
+                <stop offset="1" style={{ stopColor: SERIES_VAR.d, stopOpacity: FILL_END_OPACITY }} />
               </linearGradient>
               {hasMobile && (
                 <linearGradient id={gId("m")} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0" style={{ stopColor: mCol!, stopOpacity: FILL_TOP_OPACITY }} />
-                  <stop offset="1" style={{ stopColor: mCol!, stopOpacity: FILL_END_OPACITY }} />
+                  <stop offset="0" style={{ stopColor: SERIES_VAR.m, stopOpacity: FILL_TOP_OPACITY }} />
+                  <stop offset="1" style={{ stopColor: SERIES_VAR.m, stopOpacity: FILL_END_OPACITY }} />
                 </linearGradient>
               )}
               <clipPath id={cId("d")} clipPathUnits="objectBoundingBox">
@@ -1196,13 +1232,16 @@ function ScaledScoreCard({
           {isLarge && <LargeChartAxes bounds={bounds} last={last} data={data} />}
 
           {/* Run-to-run range band per trusted segment, one hatch layer per band —
-              replaces small's area-under-the-median fill (§4). */}
+              replaces small's area-under-the-median fill (§4). The band is the
+              spread of the SAME series, so it takes that series' colour, not the
+              health band of the median inside it: how far apart two runs landed
+              is not a verdict about either of them. */}
           {dSegments.map((segment) => {
             const band = bandFor("d", segment);
             if (!band) return null;
             const clipId = `${cId("d")}-band-${segment[0]}`;
             return (
-              <RangeBandLayer key={`d-band-${segment[0]}`} clipId={clipId} path={band.path} clipPath={band.clip} degrees={45} color={dCol} />
+              <RangeBandLayer key={`d-band-${segment[0]}`} clipId={clipId} path={band.path} clipPath={band.clip} degrees={45} color={SERIES_VAR.d} />
             );
           })}
           {mSegments.map((segment) => {
@@ -1210,12 +1249,14 @@ function ScaledScoreCard({
             if (!band) return null;
             const clipId = `${cId("m")}-band-${segment[0]}`;
             return (
-              <RangeBandLayer key={`m-band-${segment[0]}`} clipId={clipId} path={band.path} clipPath={band.clip} degrees={-45} color={mCol!} />
+              <RangeBandLayer key={`m-band-${segment[0]}`} clipId={clipId} path={band.path} clipPath={band.clip} degrees={-45} color={SERIES_VAR.m} />
             );
           })}
 
-          {/* Anomaly gap: a dashed amber block between two trusted segments,
-              matching HistoryChart's anomaly presentation (§4). */}
+          {/* Anomaly gap: a dashed NEUTRAL block between two trusted segments,
+              matching HistoryChart's anomaly presentation (§4). An excluded run
+              is an evidence-quarantine fact, not a warning about the page — the
+              broken line and the dashed edges are the signal. */}
           {Array.from({ length: pointCount }, (_, index) => index)
             .filter((index) => !isTrusted("d", index) || (hasMobile && !isTrusted("m", index)))
             .map((index) => (
@@ -1230,10 +1271,10 @@ function ScaledScoreCard({
             style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible", pointerEvents: "none" }}
           >
             {dSegments.map((segment) => (
-              <LineOrDot key={`d-line-${segment[0]}`} segment={segment} values={data.desktop} bounds={bounds} last={last} color={dCol} width={isLarge ? 2.5 : 2.5} />
+              <LineOrDot key={`d-line-${segment[0]}`} segment={segment} values={data.desktop} bounds={bounds} last={last} color={SERIES_VAR.d} width={2.5} />
             ))}
             {hasMobile && mSegments.map((segment) => (
-              <LineOrDot key={`m-line-${segment[0]}`} segment={segment} values={data.mobile!} bounds={bounds} last={last} color={mCol!} width={1.5} />
+              <LineOrDot key={`m-line-${segment[0]}`} segment={segment} values={data.mobile!} bounds={bounds} last={last} color={SERIES_VAR.m} width={1.5} />
             ))}
           </svg>
 
@@ -1250,7 +1291,7 @@ function ScaledScoreCard({
               top: 0,
               bottom: 0,
               width: 1,
-              background: t.ink2,
+              background: INK_MUTED,
               opacity: 0.35,
               display: hoverIndex === null ? "none" : "block",
               left: `${(hoverIndex ?? 0) / last * 100}%`,
@@ -1258,8 +1299,8 @@ function ScaledScoreCard({
               pointerEvents: "none",
             }}
           />
-          <ChartDot visible={hoverIndex !== null && isTrusted("d", idx)} left={dotLeft(idx)} top={dp.yPct(dv)} color={dCol} cardBg={t.card} />
-          {hasMobile && mp && <ChartDot visible={hoverIndex !== null && isTrusted("m", idx)} left={dotLeft(idx)} top={mp.yPct(mv!)} color={mCol!} cardBg={t.card} />}
+          <ChartDot visible={hoverIndex !== null && isTrusted("d", idx)} left={dotLeft(idx)} top={dp.yPct(dv)} color={SERIES_VAR.d} />
+          {hasMobile && mp && <ChartDot visible={hoverIndex !== null && isTrusted("m", idx)} left={dotLeft(idx)} top={mp.yPct(mv!)} color={SERIES_VAR.m} />}
         </div>
       </ChartClipWrapper>
 
@@ -1280,7 +1321,7 @@ function RangeBandLayer({ clipId, path, clipPath, degrees, color }: { clipId: st
     WebkitClipPath: `url(#${clipId})`,
     clipPath: `url(#${clipId})`,
     pointerEvents: "none",
-    backgroundImage: hatchBackgroundImage(degrees, rgba(color, PATTERN_STRENGTH)),
+    backgroundImage: hatchBackgroundImage(degrees, mix(color, PATTERN_STRENGTH * 100)),
   } as CSSProperties;
   return (
     <>
@@ -1296,14 +1337,24 @@ function RangeBandLayer({ clipId, path, clipPath, degrees, color }: { clipId: st
             <path d={clipPath} />
           </clipPath>
         </defs>
-        <path d={path} fill={rgba(color, 0.16)} />
+        {/* `fill` in `style`, not as a presentation attribute — see LineSvg. */}
+        <path d={path} style={{ fill: mix(color, 16) }} />
       </svg>
       <div aria-hidden="true" style={style} />
     </>
   );
 }
 
-/** Dashed amber block between two trusted segments — the anomaly gap (§4), one 0..100 unit wide per point. */
+/**
+ * Dashed neutral block between two trusted segments — the anomaly gap (§4),
+ * one 0..100 unit wide per point.
+ *
+ * This was a dashed amber block. Amber is a health warning, and a quarantined
+ * PSI run is not a warning about the page: it is a statement that this night's
+ * measurement is not being counted. The shape (a break in the line plus dashed
+ * edges) is the whole signal, so the fill and the edges are neutral series
+ * tokens and the reader is not told the page got worse when it did not.
+ */
 function AnomalyBlock({ x, width }: { x: number; width: number }) {
   return (
     <div
@@ -1314,9 +1365,9 @@ function AnomalyBlock({ x, width }: { x: number; width: number }) {
         bottom: 0,
         left: `${Math.max(0, x - width / 2)}%`,
         width: `${width}%`,
-        background: "rgba(255,154,61,0.08)",
-        borderLeft: "1px dashed rgba(255,154,61,0.65)",
-        borderRight: "1px dashed rgba(255,154,61,0.65)",
+        background: "var(--series-anomaly-fill)",
+        borderLeft: "1px dashed var(--series-anomaly-edge)",
+        borderRight: "1px dashed var(--series-anomaly-edge)",
         pointerEvents: "none",
       }}
     />
@@ -1341,30 +1392,39 @@ function LineOrDot({
 }) {
   if (segment.length === 1) {
     const index = segment[0];
-    return <circle cx={xFor(index, last)} cy={yFor(values[index], bounds)} r={0.9} fill={color} />;
+    // Geometry stays an attribute; paint moves to `style` so the custom
+    // property resolves (see LineSvg).
+    return <circle cx={xFor(index, last)} cy={yFor(values[index], bounds)} r={0.9} style={{ fill: color }} />;
   }
   return (
     <path
       d={segmentLine(values, segment, last, bounds)}
       vectorEffect="non-scaling-stroke"
-      fill="none"
-      stroke={color}
       strokeWidth={width}
-      strokeLinejoin="round"
-      style={{ filter: `drop-shadow(0 0 ${GLOW_SPREAD / 2}px ${rgba(color, GLOW_OPACITY)}) drop-shadow(0 0 ${GLOW_SPREAD}px ${rgba(color, GLOW_OPACITY * 0.6)})` }}
+      style={{
+        fill: "none",
+        stroke: color,
+        strokeLinejoin: "round",
+        filter: `drop-shadow(0 0 ${GLOW_SPREAD / 2}px ${mix(color, GLOW_OPACITY * 100)}) drop-shadow(0 0 ${GLOW_SPREAD}px ${mix(color, GLOW_OPACITY * 60)})`,
+      }}
     />
   );
 }
 
 /**
- * One change marker: dashed vertical line, dot, and label. Neutral
- * ("#ABABAB", square dot) for a user marker, violet ("#9564FF", round dot)
- * for a task/completion marker (§4's marker kinds). Labels alternate between
- * two rows by index and flip to the line's left past the horizontal
+ * One change marker: dashed vertical line, dot, and label. Labels alternate
+ * between two rows by index and flip to the line's left past the horizontal
  * midpoint so a late marker never runs off the card.
+ *
+ * Both kinds of marker are one neutral `--series-marker`. Provenance is not a
+ * verdict, and the old violet-for-task / grey-for-user split was carrying that
+ * distinction in hue alone at the same time as two other channels already
+ * carried it: the dot is round for a task and square for a user marker, and a
+ * task marker's own text is prefixed "Completed: " by taskMarkers.ts. Colour
+ * was the only one of the three a colour-blind reader could not use.
  */
 function MarkerLine({ marker, x, rowIndex }: { marker: ScoreCardMarker; x: number; rowIndex: number }) {
-  const color = marker.isTask ? "#9564FF" : "#ABABAB";
+  const color = "var(--series-marker)";
   const pastMidpoint = x > 50;
   const top = rowIndex % 2 === 0 ? 2 : 22;
   return (
@@ -1392,7 +1452,7 @@ function MarkerLine({ marker, x, rowIndex }: { marker: ScoreCardMarker; x: numbe
             flex: "none",
           }}
         />
-        <span style={{ fontFamily: MONO_FONT, fontSize: 10.5, fontWeight: 600, color, background: "#0D0D0DE0", padding: "1px 4px", borderRadius: 3 }}>
+        <span style={{ fontFamily: MONO_FONT, fontSize: 12, fontWeight: 600, color, background: CARD_SURFACE, padding: "1px 4px", borderRadius: 3 }}>
           {marker.text}
         </span>
       </span>
@@ -1422,14 +1482,17 @@ function LargeChartAxes({ bounds, last, data }: { bounds: [number, number]; last
     <>
       {ticks.map((tick) => (
         <div key={tick.key} aria-hidden="true">
-          <div style={{ position: "absolute", left: 0, right: 0, top: `${tick.pct}%`, borderTop: "1px solid #1C1C1C", pointerEvents: "none" }} />
-          <span style={{ position: "absolute", left: 0, top: `${tick.pct}%`, transform: "translateY(-50%)", background: "#0D0D0D", paddingRight: 5, fontFamily: MONO_FONT, fontSize: 10.5, fontVariantNumeric: "tabular-nums", color: "#6A6A6A", pointerEvents: "none" }}>
+          <div style={{ position: "absolute", left: 0, right: 0, top: `${tick.pct}%`, borderTop: "1px solid var(--series-grid)", pointerEvents: "none" }} />
+          <span style={{ position: "absolute", left: 0, top: `${tick.pct}%`, transform: "translateY(-50%)", background: CARD_SURFACE, paddingRight: 5, fontFamily: MONO_FONT, fontSize: 12, fontVariantNumeric: "tabular-nums", color: "var(--series-axis)", pointerEvents: "none" }}>
             {tick.value}
           </span>
         </div>
       ))}
       {last > 0 && (
-        <div style={{ position: "absolute", left: 0, right: 0, top: `${benchmarkPct}%`, borderTop: "1px dashed #6A6A6A66", pointerEvents: "none" }} aria-hidden="true" />
+        // Reference line, deliberately heavier than the gridlines and lighter
+        // than a series: the dash pattern is what tells it apart, the alpha
+        // only keeps it from competing with the data.
+        <div style={{ position: "absolute", left: 0, right: 0, top: `${benchmarkPct}%`, borderTop: `1px dashed ${mix("var(--border-strong)", 40)}`, pointerEvents: "none" }} aria-hidden="true" />
       )}
     </>
   );
@@ -1443,7 +1506,7 @@ function LargeDateAxis({ last }: { last: number }) {
   const middle = dateAt(mid, last);
   const end = dateAt(last, last);
   return (
-    <div style={{ flex: "none", display: "flex", alignItems: "baseline", gap: 24, marginTop: 8, fontFamily: MONO_FONT, fontSize: 10.5, color: "#6A6A6A" }}>
+    <div style={{ flex: "none", display: "flex", alignItems: "baseline", gap: 24, marginTop: 8, fontFamily: MONO_FONT, fontSize: 12, color: "var(--series-axis)" }}>
       <span style={{ flex: "1 1 0", display: "flex", justifyContent: "flex-start" }}>{first}</span>
       <span style={{ flex: "1 1 0", display: "flex", justifyContent: "center" }}>{middle}</span>
       <span style={{ flex: "1 1 0", display: "flex", justifyContent: "flex-end" }}>{end}</span>

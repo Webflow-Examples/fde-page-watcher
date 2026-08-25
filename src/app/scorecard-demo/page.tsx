@@ -45,14 +45,22 @@ export default function ScoreCardDemoPage() {
   const [density, setDensity] = useState<ScoreCardDensity>("small");
 
   return (
-    <div style={{ minHeight: "100vh", background: "#060606", padding: 24 }}>
-      <div style={{ maxWidth: 1200, margin: "0 auto 24px", color: "#F4F4F5", fontFamily: "var(--font-brand, system-ui, sans-serif)" }}>
+    <div style={{ minHeight: "100vh", background: "var(--surface-page)", padding: 24 }}>
+      <div style={{ maxWidth: 1200, margin: "0 auto 24px", color: "var(--text-body)", fontFamily: "var(--font-brand, system-ui, sans-serif)" }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 20 }}>
           <div>
             <h1 style={{ fontSize: 20, fontWeight: 600, margin: "0 0 6px" }}>ScoreCard — demo</h1>
-            <p style={{ fontSize: 13, color: "#8A8A90", margin: 0, maxWidth: 640, lineHeight: 1.5 }}>
-              Hover any chart to scrub the 24-day window. Every numeral, delta chip, Δ badge, range label,
-              dot position, and series color derives from the hovered index.
+            <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0, maxWidth: 640, lineHeight: 1.5 }}>
+              Hover any chart to scrub the 24-day window: the numerals, the trend arrow beside each one,
+              the Δ badge, the range label and the dot positions all follow the hovered index.
+            </p>
+            <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "8px 0 0", maxWidth: 640, lineHeight: 1.5 }}>
+              Two colour vocabularies are in play and they answer different questions. The numerals and the
+              XSmall &ldquo;is&rdquo; chip are a health verdict, banded green / orange / red at 90 and 50, so
+              they change as you scrub. Every chart mark — line, fill, hatch, range band, hover dot — is the
+              series&rsquo; identity instead, fixed per device, so a line never changes hue with its own data.
+              Direction is an arrow rather than a colour, and the delta and Δ figures carry their size in
+              weight rather than in hue.
             </p>
           </div>
           <ScoreCardDensityControl value={density} onChange={setDensity} />
@@ -65,7 +73,7 @@ export default function ScoreCardDemoPage() {
           gap: density === "xsmall" ? 0 : 16,
           maxWidth: 1200,
           margin: "0 auto",
-          border: density === "xsmall" ? "1px solid #1F1F1F" : undefined,
+          border: density === "xsmall" ? "1px solid var(--border-hairline)" : undefined,
           borderRadius: density === "xsmall" ? 8 : undefined,
         }}
       >

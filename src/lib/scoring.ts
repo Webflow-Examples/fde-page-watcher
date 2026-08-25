@@ -1,62 +1,170 @@
 import type { AgentCheck, CategoryKey, Night, PageStatus, PerformanceThresholds, RangeDays, ScoreByCategory, Strategy, WatchPage } from "./types";
+import type { Tone, Trend } from "./vocabulary";
+import { TREND_LABEL } from "./vocabulary";
+import { deltaTrend } from "./scoreCard";
 
-// ── Colors (dark-theme Lighthouse bands) ──────────────────────────────────
+// ── Score band, trend, and delta ──────────────────────────────────────────
+//
+// Nothing in this file names a colour value. The one place colour values are
+// named is the token block in `globals.css`; these helpers return token NAMES,
+// vocabulary terms, and numbers, and the caller decides how to paint them.
+//
+// Three different questions used to arrive here as one hue:
+//
+//   scoreMeta   "is this good right now?"  -> a health band (R1: hue)
+//   statusMeta  "which way is it moving?"  -> a Trend, for <TrendArrow>  (R2: shape)
+//   deltaMeta   "by how much?"             -> a number, for <Magnitude>  (R3: weight)
+//
+// statusMeta and deltaMeta answered the second question in green/amber/red,
+// which put a direction into the same visual vocabulary as a verdict — an
+// improving arrow and a poor score are both true at once, and painting both
+// made them argue. Neither returns colour any more.
 
+/** The three Lighthouse score bands. */
+export type ScoreBand = "good" | "warn" | "poor";
+
+/**
+ * Token names as closed unions, so a caller cannot quietly widen one back to
+ * an arbitrary colour string — that is a compile error now.
+ */
+export type HealthTextToken = `--health-${ScoreBand}-text`;
+export type HealthBgToken = `--health-${ScoreBand}-bg`;
+export type HealthBorderToken = `--health-${ScoreBand}-border`;
+
+/** A token name wrapped ready to use as a CSS value. */
+export type CssVar<Token extends string> = `var(${Token})`;
+
+/**
+ * Token NAMES. `fg`/`line` are the text token, `bg` the ground, `ring` the
+ * border. These are names, not CSS values: `color: scoreMeta(v).fg` renders
+ * nothing. Use `scoreMetaVars` when assigning straight into a style object.
+ */
 export interface ScoreMeta {
-  fg: string;
-  line: string;
-  bg: string;
-  ring: string;
+  readonly band: ScoreBand;
+  readonly fg: HealthTextToken;
+  readonly line: HealthTextToken;
+  readonly bg: HealthBgToken;
+  readonly ring: HealthBorderToken;
 }
 
-/** Lighthouse score bands: >=90 green, >=50 amber, else red. */
+/** The same band, ready to drop into a style object or a template literal. */
+export interface ScoreMetaVars {
+  readonly band: ScoreBand;
+  readonly fg: CssVar<HealthTextToken>;
+  readonly line: CssVar<HealthTextToken>;
+  readonly bg: CssVar<HealthBgToken>;
+  readonly ring: CssVar<HealthBorderToken>;
+}
+
+const SCORE_META: Record<ScoreBand, ScoreMeta> = {
+  good: { band: "good", fg: "--health-good-text", line: "--health-good-text", bg: "--health-good-bg", ring: "--health-good-border" },
+  warn: { band: "warn", fg: "--health-warn-text", line: "--health-warn-text", bg: "--health-warn-bg", ring: "--health-warn-border" },
+  poor: { band: "poor", fg: "--health-poor-text", line: "--health-poor-text", bg: "--health-poor-bg", ring: "--health-poor-border" },
+};
+
+const SCORE_META_VARS: Record<ScoreBand, ScoreMetaVars> = {
+  good: { band: "good", fg: "var(--health-good-text)", line: "var(--health-good-text)", bg: "var(--health-good-bg)", ring: "var(--health-good-border)" },
+  warn: { band: "warn", fg: "var(--health-warn-text)", line: "var(--health-warn-text)", bg: "var(--health-warn-bg)", ring: "var(--health-warn-border)" },
+  poor: { band: "poor", fg: "var(--health-poor-text)", line: "var(--health-poor-text)", bg: "var(--health-poor-bg)", ring: "var(--health-poor-border)" },
+};
+
+/** Lighthouse score bands: >=90 good, >=50 needs work, else poor. */
+export function scoreBand(v: number): ScoreBand {
+  return v >= 90 ? "good" : v >= 50 ? "warn" : "poor";
+}
+
+/** The health band for a score, as token names. */
 export function scoreMeta(v: number): ScoreMeta {
-  if (v >= 90) return { fg: "#35D07F", line: "#35D07F", bg: "rgba(53,208,127,0.14)", ring: "#35D07F" };
-  if (v >= 50) return { fg: "#FF9A3D", line: "#FF9A3D", bg: "rgba(255,154,61,0.14)", ring: "#FF9A3D" };
-  return { fg: "#FF5C6C", line: "#FF5C6C", bg: "rgba(255,92,108,0.14)", ring: "#FF5C6C" };
+  return SCORE_META[scoreBand(v)];
 }
 
-export interface StatusMeta {
-  label: string;
-  fg: string;
-  bg: string;
-  shape: "circle" | "triangle" | "square";
+/** The health band for a score, as ready-to-use `var(...)` values. */
+export function scoreMetaVars(v: number): ScoreMetaVars {
+  return SCORE_META_VARS[scoreBand(v)];
 }
 
-/** Status vocabulary with its accessibility shape (REQ-009). */
+/**
+ * The accessibility shape that rides along with a direction (REQ-009).
+ * Redundancy for the arrow, never a substitute for the label.
+ */
+export type StatusShapeName = "circle" | "triangle" | "square";
+
+/**
+ * A `PageStatus` is two different things wearing one name.
+ *
+ * `improving` / `stable` / `regressing` are directions, so they come back as
+ * an F1 `Trend` for `<TrendArrow>` to render. `pending` is not a fourth
+ * direction — it means no verdict has been reached yet — so it comes back as
+ * a tone NAME the caller renders as a neutral chip
+ * (`--status-neutral-text` on `--status-neutral-bg`).
+ *
+ * The `kind` discriminant is what stops a caller collapsing the two back into
+ * one free-form string and colouring it.
+ */
+export type StatusMeta =
+  | {
+    readonly kind: "trend";
+    readonly trend: Trend;
+    readonly label: string;
+    readonly shape: StatusShapeName;
+  }
+  | {
+    readonly kind: "pending";
+    readonly tone: Extract<Tone, "neutral">;
+    readonly label: string;
+    readonly shape: StatusShapeName;
+  };
+
+const TREND_SHAPE: Record<Trend, StatusShapeName> = {
+  improving: "triangle",
+  no_change: "circle",
+  regressing: "square",
+};
+
+/**
+ * Arrow glyphs for a direction. Kept in step with the `TREND_GLYPH` map in
+ * `src/components/trend-arrow.tsx`, which is the one renderer — this copy
+ * exists only so `deltaMeta().text` can stay a plain string. If the two ever
+ * need to change, the honest fix is to hoist one map into `vocabulary.ts`
+ * (chunk F1 owns that file).
+ */
+export const TREND_ARROW: Record<Trend, string> = {
+  improving: "↑",
+  no_change: "→",
+  regressing: "↓",
+};
+
+/** Direction of the score line, with its label and shape. Never a colour. */
 export function statusMeta(st: PageStatus): StatusMeta {
-  if (st === "stable") return { label: "Stable", fg: "#5EA0FF", bg: "rgba(59,137,255,0.13)", shape: "circle" };
-  if (st === "improving") return { label: "Improving", fg: "#35D07F", bg: "rgba(53,208,127,0.13)", shape: "triangle" };
-  if (st === "pending") return { label: "Pending", fg: "#8A8A90", bg: "rgba(255,255,255,0.06)", shape: "circle" };
-  return { label: "Regressing", fg: "#FF5C6C", bg: "rgba(255,92,108,0.13)", shape: "square" };
+  if (st === "pending") {
+    return { kind: "pending", tone: "neutral", label: "Pending", shape: "circle" };
+  }
+  const trend: Trend = st === "improving" ? "improving" : st === "regressing" ? "regressing" : "no_change";
+  return { kind: "trend", trend, label: TREND_LABEL[trend], shape: TREND_SHAPE[trend] };
 }
 
+/**
+ * A score delta: direction plus size, with no hue anywhere.
+ *
+ * The old version also returned a red/amber split at `DROP_THRESHOLD`. That
+ * severity judgment was only ever expressed as a colour, and R3 puts size in
+ * the numeral's weight; `d` is returned signed, so any caller that still needs
+ * the distinction can compare it against the exported `DROP_THRESHOLD`.
+ */
 export interface DeltaMeta {
-  text: string;
-  fg: string;
-  chip: string;
-  d: number;
+  readonly trend: Trend;
+  readonly arrow: string;
+  /** Arrow plus the unsigned size, e.g. "↑ 3". */
+  readonly text: string;
+  /** Signed delta. */
+  readonly d: number;
 }
 
 export function deltaMeta(cur: number, base: number): DeltaMeta {
   const d = cur - base;
-  const arrow = d > 0 ? "↗" : d < 0 ? "↘" : "→";
-  const text = `${arrow} ${Math.abs(d)}`;
-  let fg: string, chip: string;
-  if (d > 0) {
-    fg = "#35D07F";
-    chip = "rgba(53,208,127,0.14)";
-  } else if (d <= -DROP_THRESHOLD) {
-    fg = "#FF5C6C";
-    chip = "rgba(255,92,108,0.14)";
-  } else if (d < 0) {
-    fg = "#FF9A3D";
-    chip = "rgba(255,154,61,0.14)";
-  } else {
-    fg = "#8A8A90";
-    chip = "rgba(255,255,255,0.06)";
-  }
-  return { text, fg, chip, d };
+  const trend = deltaTrend(d);
+  const arrow = TREND_ARROW[trend];
+  return { trend, arrow, text: `${arrow} ${Math.abs(d)}`, d };
 }
 
 // ── Statistics (real backend) ─────────────────────────────────────────────
@@ -253,7 +361,7 @@ function hasConfirmedDrop(
 /**
  * Classify the latest Performance result relative to its stored baseline.
  * This is deliberately a trend, not an overall health score: absolute quality
- * is communicated independently by each metric's Lighthouse color band.
+ * is communicated independently by each metric's Lighthouse health band.
  *  - improving: above baseline by more than normal historical noise.
  *  - regressing: below baseline by more than normal historical noise.
  *  - stable: within the historical noise band.

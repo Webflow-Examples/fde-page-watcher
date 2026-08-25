@@ -17,6 +17,7 @@ import { pageTrend } from "@/lib/scoring";
 import { normalizeState } from "@/lib/store/normalize";
 import type { Project } from "@/lib/projects";
 import { LAST_PROJECT_KEY } from "@/lib/projectSelection";
+import { APPEARANCE_STORAGE_KEY, isAppearance, resolveSurface, type Appearance } from "./appearance";
 
 type SortDir = "asc" | "desc";
 interface SortState {
@@ -60,6 +61,9 @@ interface StoreValue extends AppState {
   setStrategy: (s: Strategy) => void;
   preferredStrategy: Strategy;
   setPreferredStrategy: (s: Strategy) => void;
+  // Auto / Light / Dark. Persisted beside the device preference above.
+  appearance: Appearance;
+  setAppearance: (a: Appearance) => void;
   rangeDays: RangeDays;
   setRangeDays: (days: RangeDays) => void;
   // dashboard sort
@@ -139,6 +143,8 @@ const Ctx = createContext<StoreValue | null>(null);
 const STRATEGY_PREFERENCE_KEY = "page-watcher:preferred-strategy";
 const INBOX_DESCRIPTIONS_PREFERENCE_KEY = "page-watcher:inbox-descriptions";
 const TASK_DESCRIPTIONS_PREFERENCE_KEY = "page-watcher:task-descriptions";
+// The appearance key lives in appearance.tsx because the pre-paint script in
+// (app)/layout.tsx reads the same one before any bundle has loaded.
 
 export function useStore(): StoreValue {
   const v = useContext(Ctx);
@@ -205,6 +211,9 @@ export function StoreProvider({
   }, []);
 
   const [strategy, setStrategy] = useState<Strategy>("desktop");
+  // "auto" until the stored preference is read below, matching the pre-paint
+  // script's own default so the two never briefly disagree.
+  const [appearance, setAppearanceState] = useState<Appearance>("auto");
   const [preferredStrategy, setPreferredStrategyState] = useState<Strategy>("desktop");
   // Range is shared by every route under this provider, but intentionally
   // starts fresh at seven days after a full app reload.
@@ -263,6 +272,8 @@ export function StoreProvider({
         if (savedTaskDescriptions === "show" || savedTaskDescriptions === "hide") {
           setTaskDescriptionsState(savedTaskDescriptions);
         }
+        const savedAppearance = window.localStorage.getItem(APPEARANCE_STORAGE_KEY);
+        if (isAppearance(savedAppearance)) setAppearanceState(savedAppearance);
       } catch {
         // Browser storage can be disabled; desktop remains a safe default.
       }
@@ -279,6 +290,34 @@ export function StoreProvider({
       // The preference still applies for the current session.
     }
   }, []);
+
+  const setAppearance = useCallback((next: Appearance) => {
+    setAppearanceState(next);
+    try {
+      window.localStorage.setItem(APPEARANCE_STORAGE_KEY, next);
+    } catch {
+      // The preference still applies for the current session.
+    }
+  }, []);
+
+  /**
+   * Keep `data-surface` in step with the preference.
+   *
+   * The pre-paint script in (app)/layout.tsx sets this attribute before first
+   * paint; this effect owns it from then on. Under "auto" it also subscribes to
+   * the device setting, so a system theme change is followed live rather than
+   * only on the next reload.
+   */
+  useEffect(() => {
+    const query = window.matchMedia("(prefers-color-scheme: dark)");
+    const apply = () => {
+      document.documentElement.setAttribute("data-surface", resolveSurface(appearance, query.matches));
+    };
+    apply();
+    if (appearance !== "auto") return;
+    query.addEventListener("change", apply);
+    return () => query.removeEventListener("change", apply);
+  }, [appearance]);
 
   const setRangeDays = useCallback((next: RangeDays) => setRangeDaysState(next), []);
 
@@ -1156,6 +1195,8 @@ export function StoreProvider({
     restoreProject,
     strategy,
     setStrategy,
+    appearance,
+    setAppearance,
     preferredStrategy,
     setPreferredStrategy,
     rangeDays,

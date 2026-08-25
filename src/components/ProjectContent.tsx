@@ -10,7 +10,7 @@ export function ProjectContent({ children }: { children: React.ReactNode }) {
       {projectSwitching ? (
         <div
           aria-busy="true"
-          style={{ flex: 1, display: "grid", placeItems: "center", color: "#71717a", fontSize: 13 }}
+          style={{ flex: 1, display: "grid", placeItems: "center", color: "var(--text-muted)", fontSize: 13 }}
         >
           Loading project…
         </div>

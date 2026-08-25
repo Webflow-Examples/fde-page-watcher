@@ -1,7 +1,6 @@
 import type { AgentIgnoreSettings, PerformanceThresholds, RangeDays, Rec, Strategy, WatchPage } from "./types";
 import { summarizeAgentChecks } from "./agentScoring";
 import { DEFAULT_PERFORMANCE_THRESHOLDS, effectivePerformanceThresholds, normalizePerformanceThresholds } from "./performanceThresholds";
-import { C } from "./ui";
 import { savingsValue } from "./ui";
 import {
   pageAgentSnapshotForRange,
@@ -24,7 +23,6 @@ function listJoin(names: string[]): string {
 
 export interface WatcherBullet {
   lead: string;
-  leadColor: string;
   text: string;
 }
 
@@ -253,10 +251,10 @@ export function buildWatcher(
   const corroboratedPages = activePages.filter((page) => hasExactUrlSignal(page, "corroborated"));
   const fieldOnlyPages = activePages.filter((page) => hasExactUrlSignal(page, "fieldOnly"));
   if (corroboratedPages.length) {
-    changed.push({ lead: listJoin(corroboratedPages.map((page) => page.title)), leadColor: C.redSoft, text: "has visitor issues reproduced in Lighthouse." });
+    changed.push({ lead: listJoin(corroboratedPages.map((page) => page.title)), text: "has visitor issues reproduced in Lighthouse." });
   }
   if (fieldOnlyPages.length) {
-    changed.push({ lead: listJoin(fieldOnlyPages.map((page) => page.title)), leadColor: C.amber, text: "has visitor issues that Lighthouse did not reproduce." });
+    changed.push({ lead: listJoin(fieldOnlyPages.map((page) => page.title)), text: "has visitor issues that Lighthouse did not reproduce." });
   }
 
   // Evaluate Accessibility and SEO over the same selected range instead of
@@ -268,7 +266,7 @@ export function buildWatcher(
         (pageRangeComparison(p, strategy, key, rangeDays)?.delta ?? 0) <= -effectivePerformanceThresholds(teamThresholds, p).regression
         && (pageRangeComparison(p, strategy, key, rangeDays)?.to ?? 100) < effectivePerformanceThresholds(teamThresholds, p).regressionFloor);
       if (dropped.length === 0) stableCategories.push(label);
-      else changed.push({ lead: listJoin(dropped.map((p) => p.title)), leadColor: C.amber, text: `dropped on ${label} over the last ${rangeDays} days.` });
+      else changed.push({ lead: listJoin(dropped.map((p) => p.title)), text: `dropped on ${label} over the last ${rangeDays} days.` });
     }
   }
   const winning = stableCategories.length

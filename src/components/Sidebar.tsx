@@ -4,15 +4,19 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useStore } from "./store";
-import { C } from "@/lib/ui";
+import { MAGNITUDE_WEIGHT } from "./magnitude";
 import { normalizeCollectionSchedule } from "@/lib/collectionSchedule";
-import { ClockIcon, DashboardIcon, EyeIcon, InboxIcon, PagesIcon, TasksIcon } from "./icons";
-import { BookOpenTextIcon, GearIcon, ShieldCheckIcon, SignOutIcon } from "@phosphor-icons/react";
-import { isFieldRecommendationActionable } from "@/lib/fieldOnlyRecommendations";
+import { ClockIcon, EyeIcon, PagesIcon } from "./icons";
+import { GearIcon, ShieldCheckIcon, SignOutIcon, WarningDiamondIcon } from "@phosphor-icons/react";
+import { decideQueueCount } from "@/lib/decideQueue";
+import { DESTINATION_LABEL, DESTINATION_PATH, QUEUE_LABEL } from "@/lib/vocabulary";
+import type { Destination } from "@/lib/vocabulary";
 import { SelectMenu } from "./select-menu";
 import webflowSocialLogo from "../../public/webflow-social.png";
+import type { ComponentType } from "react";
 import { useState } from "react";
 import { clearPageWatchBrowserState } from "@/lib/clientLogout";
+import { AppearanceControl } from "./appearance";
 
 const ACCESS_LOGOUT_STEP_MS = 1_500;
 
@@ -20,30 +24,62 @@ function wait(duration: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, duration));
 }
 
-const primaryNavItems = [
-  { href: "/dashboard", label: "Dashboard", Icon: DashboardIcon, badge: null as "inbox" | "tasks" | "watchlist" | null },
-  { href: "/pages", label: "Pages", Icon: PagesIcon, badge: null },
+interface NavItem {
+  destination: Destination;
+  Icon: ComponentType<{ size?: number }>;
+  /** Only Issues carries a count, and only ever the one. */
+  showsDecisionCount?: boolean;
+  requiresProjectAdmin?: boolean;
+}
+
+/**
+ * One flat register of destinations — no groups, no dividers. Labels and paths
+ * come from the vocabulary registry so the nav cannot drift from it.
+ */
+const navItems: readonly NavItem[] = [
+  { destination: "issues", Icon: WarningDiamondIcon, showsDecisionCount: true },
+  { destination: "pages", Icon: PagesIcon },
+  { destination: "watchlist", Icon: EyeIcon, requiresProjectAdmin: true },
+  { destination: "settings", Icon: GearIcon, requiresProjectAdmin: true },
 ];
 
-const activityNavItems = [
-  { href: "/inbox", label: "Inbox", Icon: InboxIcon, badge: "inbox" as const },
-  { href: "/tasks", label: "Tasks", Icon: TasksIcon, badge: "tasks" as const },
-];
-
-const managementNavItems = [
-  { href: "/watchlist", label: "Watchlist", Icon: EyeIcon, badge: "watchlist" as const },
-  { href: "/settings", label: "Settings", Icon: GearIcon, badge: null },
-];
-
-const guideNavItems = [
-  { href: "/guide", label: "Guide", Icon: BookOpenTextIcon, badge: null },
-];
+/**
+ * The sidebar's one numeric badge: how many issue cases are waiting in Decide.
+ * The count itself comes from `decideQueueCount`, so chunk F2 can repoint it at
+ * real issue cases without touching this file.
+ *
+ * It is a magnitude, not a work state (F3 R3): weight carries the emphasis and
+ * the pill is plain chrome. Deliberately not a <StatusChip> — a queue depth is
+ * a quantity, and giving it a status tone would put "how many are waiting"
+ * into the same vocabulary as "what state is this case in".
+ */
+function DecisionBadge({ count }: { count: number }) {
+  return (
+    <span
+      aria-label={`${count} in ${QUEUE_LABEL.decide}`}
+      style={{
+        marginLeft: "auto",
+        // 12px, not 11: the count carries meaning, and the registry's chip rule
+        // and F3's type floor both settled on 12 as the minimum for anything
+        // that does.
+        fontSize: 12,
+        fontWeight: MAGNITUDE_WEIGHT,
+        color: "var(--magnitude-value)",
+        fontVariantNumeric: "tabular-nums",
+        background: "var(--surface-input)",
+        padding: "1px 8px",
+        borderRadius: 20,
+      }}
+    >
+      {count}
+    </span>
+  );
+}
 
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const {
-    pages,
     recs,
     pathFor,
     collectionSchedule,
@@ -53,17 +89,15 @@ export function Sidebar() {
     switchProject,
     user,
     canManageProject,
+    appearance,
+    setAppearance,
   } = useStore();
   const [devEmail, setDevEmail] = useState(user.email);
   const [signingOut, setSigningOut] = useState(false);
-  const inboxCount = recs.filter((r) => r.status === "inbox" && isFieldRecommendationActionable(r)).length;
-  const taskCount = recs.filter((r) => r.status === "task").length;
-  const watchlistCount = pages.length;
+  const decisionCount = decideQueueCount(recs);
 
   const schedule = normalizeCollectionSchedule(collectionSchedule);
-  const navGroups = canManageProject
-    ? [primaryNavItems, activityNavItems, managementNavItems, guideNavItems]
-    : [primaryNavItems, activityNavItems, guideNavItems];
+  const visibleNavItems = navItems.filter((item) => canManageProject || !item.requiresProjectAdmin);
 
   return (
     <aside
@@ -71,8 +105,8 @@ export function Sidebar() {
       style={{
         width: 244,
         flex: "none",
-        background: C.bgElev,
-        borderRight: `1px solid ${C.border}`,
+        background: "var(--surface-page)",
+        borderRight: "1px solid var(--border-hairline)",
         display: "flex",
         flexDirection: "column",
         position: "sticky",
@@ -106,20 +140,19 @@ export function Sidebar() {
           onChange={async (nextProjectId) => {
             const switched = await switchProject(nextProjectId);
             if (!switched) throw new Error("Project switch failed");
-            router.push(pathFor("/dashboard"));
+            router.push(pathFor(DESTINATION_PATH.issues));
           }}
         />
       </div>
 
       <nav className="sidebar-nav" style={{ display: "flex", flexDirection: "column", gap: 3, padding: "6px 12px" }}>
-        {navGroups.map((group, groupIndex) => <div key={groupIndex} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-        {groupIndex > 0 && <hr style={{ width: "100%", margin: "7px 0", border: 0, borderTop: `1px solid ${C.border}` }} />}
-        {group.map(({ href, label, Icon, badge }) => {
+        {visibleNavItems.map(({ destination, Icon, showsDecisionCount }) => {
+          const href = DESTINATION_PATH[destination];
+          const label = DESTINATION_LABEL[destination];
           const resolvedHref = pathFor(href);
           const active = pathname === resolvedHref
-            || (href === "/dashboard" && pathname === pathFor("/"))
-            || (href === "/pages" && pathname.startsWith(`${resolvedHref}/`));
-          const count = badge === "inbox" ? inboxCount : badge === "tasks" ? taskCount : badge === "watchlist" ? watchlistCount : 0;
+            || (destination === "issues" && pathname === pathFor("/"))
+            || (destination === "pages" && pathname.startsWith(`${resolvedHref}/`));
           return (
             <Link
               key={href}
@@ -134,49 +167,22 @@ export function Sidebar() {
                 fontSize: 13.5,
                 fontWeight: 500,
                 textDecoration: "none",
-                color: active ? "#FFFFFF" : C.faint2,
-                background: active ? "rgba(255,255,255,0.07)" : "transparent",
+                // Selected state is uniform across the app: the mark is
+                // --action-primary-bg, the surface is --surface-raised.
+                color: active ? "var(--action-primary-ink)" : "var(--text-muted)",
+                background: active ? "var(--surface-raised)" : "transparent",
               }}
             >
               <Icon size={17} />
               <span className="sidebar-link-label">{label}</span>
-              {badge && !projectSwitching && count > 0 && (
-                <span
-                  style={{
-                    marginLeft: "auto",
-                    fontSize: 11,
-                    fontWeight: 600,
-                    color: badge === "inbox" ? C.accentSoft : badge === "tasks" ? C.green : "inherit",
-                    background: badge === "inbox"
-                      ? "rgba(59,137,255,0.16)"
-                      : badge === "tasks"
-                        ? "rgba(53,208,127,0.16)"
-                        : "transparent",
-                    padding: "1px 8px",
-                    borderRadius: 20,
-                  }}
-                >
-                  {count}
-                </span>
+              {showsDecisionCount && !projectSwitching && decisionCount > 0 && (
+                <DecisionBadge count={decisionCount} />
               )}
             </Link>
           );
         })}
-        </div>)}
-        <hr style={{ width: "100%", margin: "7px 0 0", border: 0, borderTop: `1px solid ${C.border}` }} />
       </nav>
 
-      <div className="sidebar-schedule" style={{ marginTop: 8, padding: "12px 20px" }}>
-        <div style={{ fontSize: 10.5, fontWeight: 550, letterSpacing: "0.06em", color: C.faint, textTransform: "uppercase", marginBottom: 10 }}>
-          Next nightly run
-        </div>
-        <div style={{ border: `1px solid ${C.border}`, background: C.panel, borderRadius: 9, padding: "13px 14px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: C.text, fontWeight: 500 }}>
-            <ClockIcon size={15} style={{ color: C.accentBright }} />
-            {projectSwitching ? "Loading project…" : `Daily · ${schedule.localTime} ${schedule.timeZone}`}
-          </div>
-        </div>
-      </div>
       <div className="sidebar-admin" style={{ marginTop: "auto", padding: "0 12px 18px" }}>
         {user.isAppAdmin && <Link
           href={pathFor("/admin")}
@@ -187,8 +193,8 @@ export function Sidebar() {
             gap: 10,
             padding: "9px 10px",
             borderRadius: 7,
-            color: pathname === pathFor("/admin") ? C.text : C.muted,
-            background: pathname === pathFor("/admin") ? "rgba(255,255,255,0.07)" : "transparent",
+            color: pathname === pathFor("/admin") ? "var(--action-primary-ink)" : "var(--text-muted)",
+            background: pathname === pathFor("/admin") ? "var(--surface-raised)" : "transparent",
             textDecoration: "none",
             fontSize: 12.5,
             fontWeight: 500,
@@ -198,9 +204,53 @@ export function Sidebar() {
           <span>Admin</span>
         </Link>
         }
-        <div style={{ borderTop: `1px solid ${C.border}`, marginTop: 8, padding: "12px 10px 0", fontSize: 11.5, color: C.muted }}>
+        {/*
+          The schedule is one row of chrome now, not an eyebrow over a card.
+          It keeps the `sidebar-schedule` class so the narrow-rail rule that
+          hides it still matches.
+
+          12px, not the 11.5px the chunk first specified: a run time is
+          meaning, and the registry withdrew the 11px floor as contradicting
+          F3. `--text-secondary` does not exist in the token layer either, so
+          this takes `--text-muted`, where the migration mapping sends the
+          greys it was standing in for.
+        */}
+        <div
+          className="sidebar-schedule"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            borderTop: "1px solid var(--border-hairline)",
+            marginTop: 8,
+            padding: "12px 10px 0",
+            fontSize: 12,
+            color: "var(--text-muted)",
+          }}
+        >
+          {/* Decoration beside the schedule, not an action — plain chrome. */}
+          <ClockIcon size={14} style={{ flex: "none" }} />
+          {/* Wraps rather than truncates: an ellipsised zone ("America/Chic…")
+              is worse than a second line, because the zone is the half that
+              tells you whether 02:30 is your 02:30. */}
+          <span style={{ minWidth: 0, lineHeight: 1.4 }}>
+            {projectSwitching ? "Loading project…" : `Next run ${schedule.localTime} ${schedule.timeZone}`}
+          </span>
+        </div>
+
+        <div style={{ marginTop: 12, padding: "0 10px" }}>
+          <AppearanceControl value={appearance} onChange={setAppearance} />
+        </div>
+
+        <div style={{ borderTop: "1px solid var(--border-hairline)", marginTop: 12, padding: "12px 10px 0", fontSize: 12, color: "var(--text-muted)" }}>
           <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.email}</div>
-          <div style={{ marginTop: 3, color: C.faint }}>{user.isAppAdmin ? "App admin" : project.accessRole === "project_admin" ? "Project admin" : "Project viewer"}</div>
+          {/*
+            The two greys this line and its sibling used to split now both
+            land on --text-muted, so it inherits. The two-step grey ramp
+            that used to separate the email from the role is gone by design;
+            flagged for review rather than re-created with a second grey.
+          */}
+          <div style={{ marginTop: 3 }}>{user.isAppAdmin ? "App admin" : project.accessRole === "project_admin" ? "Project admin" : "Project viewer"}</div>
           {user.development && (
             <form
               style={{ display: "flex", gap: 6, marginTop: 10 }}
@@ -219,9 +269,9 @@ export function Sidebar() {
                 type="email"
                 value={devEmail}
                 onChange={(event) => setDevEmail(event.target.value)}
-                style={{ minWidth: 0, width: "100%", border: `1px solid ${C.border}`, borderRadius: 6, background: C.panel, color: C.text, padding: "6px 7px", fontSize: 10.5 }}
+                style={{ minWidth: 0, width: "100%", border: "1px solid var(--border-hairline)", borderRadius: 6, background: "var(--surface-input)", color: "var(--text-body)", padding: "6px 7px", fontSize: 12 }}
               />
-              <button type="submit" style={{ border: `1px solid ${C.border}`, borderRadius: 6, background: C.panel2, color: C.text, padding: "0 8px", cursor: "pointer" }}>Use</button>
+              <button type="submit" style={{ border: "1px solid var(--border-hairline)", borderRadius: 6, background: "var(--surface-raised)", color: "var(--text-body)", padding: "0 8px", cursor: "pointer" }}>Use</button>
             </form>
           )}
           {!user.development && (

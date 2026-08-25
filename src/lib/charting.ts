@@ -5,13 +5,19 @@ export function plottedSparklineSeries(series: number[]): number[] {
   return series.length === 1 ? [series[0], series[0]] : series;
 }
 
-/** Snap a pointer's chart-local x coordinate to the nearest history point. */
+/**
+ * Snap a pointer's chart-local x coordinate to the nearest history point.
+ *
+ * The pad defaults mirror `HistoryChart`'s own pads, which are sized to clear
+ * 12px axis labels; a caller relying on the defaults must stay in step or the
+ * pointer snaps against a plot area the chart never drew.
+ */
 export function snappedHistoryIndex(
   pointerX: number,
   chartWidth: number,
   pointCount: number,
-  padLeft = 38,
-  padRight = 20,
+  padLeft = 44,
+  padRight = 24,
 ): number {
   if (pointCount <= 1) return 0;
   const plotWidth = Math.max(1, chartWidth - padLeft - padRight);
@@ -19,13 +25,18 @@ export function snappedHistoryIndex(
   return Math.round(((clampedX - padLeft) / plotWidth) * (pointCount - 1));
 }
 
-/** Assign marker labels to in-chart rows without colliding with reference labels. */
+/**
+ * Assign marker labels to in-chart rows without colliding with reference labels.
+ *
+ * `gap` is the row pitch in user units. It must clear the in-chart label's line
+ * box: at 12px type that is ~14.4px, so 14 would let adjacent rows touch.
+ */
 export function placeMarkerLabelRows(
   count: number,
   blockedYs: number[],
   minY: number,
   maxY: number,
-  gap = 14,
+  gap = 16,
 ): number[] {
   const rows: number[] = [];
   for (let y = minY; y <= maxY; y += gap) rows.push(y);

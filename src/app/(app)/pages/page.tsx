@@ -1,4 +1,4 @@
-import { PagesPageContent } from "../dashboard/page";
+import { PagesPageContent } from "./pages-content";
 
 interface PagesPageProps {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
