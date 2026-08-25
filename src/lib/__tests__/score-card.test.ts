@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   bandColor,
   bucketSeries,
-  deltaColor,
+  bandVar,
+  deltaTrend,
   deltaFromStart,
   domain,
   hatchLineWidth,
@@ -164,23 +165,48 @@ describe("xFor", () => {
 
 describe("bandColor", () => {
   it("classifies score bands at their exact boundaries", () => {
-    expect(bandColor(90)).toBe("#35D07F");
-    expect(bandColor(89)).toBe("#FF9A3D");
-    expect(bandColor(50)).toBe("#FF9A3D");
-    expect(bandColor(49)).toBe("#FF5C6C");
-    expect(bandColor(100)).toBe("#35D07F");
-    expect(bandColor(0)).toBe("#FF5C6C");
+    expect(bandColor(90)).toBe("--health-good-text");
+    expect(bandColor(89)).toBe("--health-warn-text");
+    expect(bandColor(50)).toBe("--health-warn-text");
+    expect(bandColor(49)).toBe("--health-poor-text");
+    expect(bandColor(100)).toBe("--health-good-text");
+    expect(bandColor(0)).toBe("--health-poor-text");
+  });
+
+  it("returns a token name, never a colour value", () => {
+    // The two token blocks in globals.css are the only place a colour value is
+    // named. A hex leaking back through here is how the layer comes apart.
+    for (const score of [0, 25, 49, 50, 75, 89, 90, 100]) {
+      expect(bandColor(score)).toMatch(/^--health-(good|warn|poor)-text$/);
+    }
   });
 });
 
-describe("deltaColor", () => {
-  it("classifies delta chip colors independent of the score band", () => {
-    expect(deltaColor(1)).toBe("#35D07F");
-    expect(deltaColor(0)).toBe("#8A8A90");
-    expect(deltaColor(-1)).toBe("#FF9A3D");
-    expect(deltaColor(-7)).toBe("#FF9A3D");
-    expect(deltaColor(-8)).toBe("#FF5C6C");
-    expect(deltaColor(-20)).toBe("#FF5C6C");
+describe("bandVar", () => {
+  it("wraps the band token so it drops straight into a style value", () => {
+    expect(bandVar(95)).toBe("var(--health-good-text)");
+    expect(bandVar(70)).toBe("var(--health-warn-text)");
+    expect(bandVar(10)).toBe("var(--health-poor-text)");
+  });
+});
+
+describe("deltaTrend", () => {
+  // Replaced deltaColor. Direction is shape, not hue (R2), and the old -8
+  // severity band was a health verdict living on the delta — health belongs on
+  // the health chip, so a row can show "Poor" and an upward arrow at once.
+  it("reads direction off the sign, with no severity band", () => {
+    expect(deltaTrend(1)).toBe("improving");
+    expect(deltaTrend(20)).toBe("improving");
+    expect(deltaTrend(0)).toBe("no_change");
+    expect(deltaTrend(-1)).toBe("regressing");
+    expect(deltaTrend(-7)).toBe("regressing");
+    expect(deltaTrend(-8)).toBe("regressing");
+    expect(deltaTrend(-20)).toBe("regressing");
+  });
+
+  it("is independent of the health band, so both can be shown together", () => {
+    expect(bandColor(34)).toBe("--health-poor-text");
+    expect(deltaTrend(6)).toBe("improving");
   });
 });
 

@@ -5,6 +5,7 @@ import type {
   WebflowPerformanceMetric,
   WebflowRemediationLevel,
 } from "./types";
+import type { Tone } from "./vocabulary";
 
 type CatalogEntry = Pick<
   WebflowPerformanceClassification,
@@ -312,14 +313,37 @@ export function webflowClassificationFor(item: {
   return item.webflow?.actionability ? { ...current, actionability: item.webflow.actionability } : current;
 }
 
-export function remediationTone(level: WebflowRemediationLevel): { color: string; background: string } {
-  if (level === "blocked") return { color: "#FF9A9F", background: "rgba(255,92,108,0.13)" };
-  if (level === "partial") return { color: "#FFB766", background: "rgba(255,154,61,0.13)" };
-  if (level === "available") return { color: "#61D996", background: "rgba(53,208,127,0.13)" };
-  return { color: "#9A9AA0", background: "rgba(255,255,255,0.06)" };
+/**
+ * The tones remediation and actionability can take. A subset of the five
+ * vocabulary tones: "what can the customer do about this?" is a system state,
+ * not a health verdict, so it never reaches for `--health-*`, and no
+ * remediation level is informational.
+ */
+export type RemediationTone = Extract<Tone, "danger" | "warning" | "success" | "neutral">;
+
+/**
+ * The tone for a remediation level — a NAME, never a colour value.
+ *
+ * Callers resolve it themselves, exactly as `status-chip.tsx` does:
+ * `color: var(--status-${tone}-text)`, `background: var(--status-${tone}-bg)`,
+ * `border-color: var(--status-${tone}-border)`. Those tokens are defined for
+ * all five tones in both theme blocks of `globals.css`.
+ *
+ * Do not map these onto `--health-*`. A page with an available remediation is
+ * by definition still broken, so green here would answer the wrong question.
+ * The lighter orange and green this helper used to return were near-duplicates
+ * of the health palette and are deliberately not carried over as tokens, so the
+ * remediation chips change appearance slightly.
+ */
+export function remediationTone(level: WebflowRemediationLevel): RemediationTone {
+  if (level === "blocked") return "danger";
+  if (level === "partial") return "warning";
+  if (level === "available") return "success";
+  return "neutral";
 }
 
-export function actionabilityTone(actionability: CustomerActionability): { color: string; background: string } {
+/** The tone for a customer actionability, delegating to its remediation equivalent. */
+export function actionabilityTone(actionability: CustomerActionability): RemediationTone {
   if (actionability === "none") return remediationTone("blocked");
   if (actionability === "workaround") return remediationTone("partial");
   if (actionability === "direct") return remediationTone("available");
@@ -338,10 +362,35 @@ export function customerActionabilityFor(item: {
     ?? defaultActionability(classification.remediation, item.id.trim().toLowerCase());
 }
 
+/**
+ * A finding's measured impact, split so a renderer can weight the magnitude
+ * and the unit separately (`--magnitude-value` at weight 650, `--magnitude-unit`)
+ * without parsing a display string back apart.
+ */
+export interface DiagnosticImpact {
+  /** The magnitude when `measured`, otherwise the plain fallback label. */
+  value: string;
+  /** The unit paired with `value`; empty when `value` is a label, not a number. */
+  unit: string;
+  /** False when nothing was measured — render `value` as plain text, not a magnitude. */
+  measured: boolean;
+}
+
+/** Structured impact for renderers. Prefer this over parsing `formatDiagnosticImpact`. */
+export function diagnosticImpact(item: { savingsMs: number; savingsBytes?: number }): DiagnosticImpact {
+  if (item.savingsMs > 0) return { value: (item.savingsMs / 1000).toFixed(1), unit: "s", measured: true };
+  if ((item.savingsBytes ?? 0) > 0) return { value: String(Math.round((item.savingsBytes ?? 0) / 1024)), unit: "KB", measured: true };
+  return { value: "Detected", unit: "", measured: false };
+}
+
+/**
+ * Display form of {@link diagnosticImpact}, for the stored `savings` string on
+ * a recommendation or audit. UI that styles the number should call
+ * `diagnosticImpact` instead.
+ */
 export function formatDiagnosticImpact(item: { savingsMs: number; savingsBytes?: number }): string {
-  if (item.savingsMs > 0) return `${(item.savingsMs / 1000).toFixed(1)} s`;
-  if ((item.savingsBytes ?? 0) > 0) return `${Math.round((item.savingsBytes ?? 0) / 1024)} KB`;
-  return "Detected";
+  const impact = diagnosticImpact(item);
+  return impact.unit ? `${impact.value} ${impact.unit}` : impact.value;
 }
 
 export function effortLabel(item: { estTime: string; id: string; title?: string; webflow?: WebflowPerformanceClassification }): string {

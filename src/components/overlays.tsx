@@ -2,8 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useStore } from "./store";
-import { C } from "@/lib/ui";
-import { scoreMeta } from "@/lib/scoring";
+import { scoreMetaVars } from "@/lib/scoring";
 import { CheckIcon, CloseIcon } from "./icons";
 import { defaultNewPageFlag, MAX_ACTIVE_PAGES, watchCapacity } from "@/lib/watchCapacity";
 
@@ -19,20 +18,22 @@ function Toast() {
         bottom: 26,
         left: "50%",
         transform: "translateX(-50%)",
-        background: C.border,
-        border: "1px solid #313136",
-        color: C.text,
+        // This is the toast's own surface, not a hairline: it floats above the
+        // page and needs a card ground, with the border doing the edge work.
+        background: "var(--surface-card)",
+        border: "1px solid var(--border-strong)",
+        color: "var(--text-body)",
         fontSize: 13,
         padding: "12px 20px",
         borderRadius: 9,
-        boxShadow: "0 12px 40px rgba(0,0,0,0.5)",
+        boxShadow: "var(--shadow-popover)",
         zIndex: 60,
         display: "flex",
         alignItems: "center",
         gap: 10,
       }}
     >
-      <CheckIcon size={16} style={{ color: C.green }} />
+      <CheckIcon size={16} style={{ color: "var(--status-success-text)" }} />
       {toast}
     </div>
   );
@@ -89,7 +90,7 @@ function ModalShell({ width = 460, onClose, label, children }: { width?: number;
   return (
     <div
       onClick={onClose}
-      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 70, padding: 24 }}
+      style={{ position: "fixed", inset: 0, background: "var(--overlay-scrim)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 70, padding: 24 }}
     >
       <div
         ref={ref}
@@ -98,7 +99,7 @@ function ModalShell({ width = 460, onClose, label, children }: { width?: number;
         aria-label={label}
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
-        style={{ background: "#141416", border: `1px solid ${C.border2}`, borderRadius: 15, width, maxWidth: "100%", maxHeight: "82vh", overflow: "auto", boxShadow: "0 24px 70px rgba(0,0,0,0.6)", outline: "none" }}
+        style={{ background: "var(--surface-card)", border: "1px solid var(--border-strong)", borderRadius: 15, width, maxWidth: "100%", maxHeight: "82vh", overflow: "auto", boxShadow: "var(--shadow-overlay)", outline: "none" }}
       >
         {children}
       </div>
@@ -110,14 +111,18 @@ const inputStyle: React.CSSProperties = {
   width: "100%",
   fontSize: 13.5,
   padding: "10px 12px",
-  background: C.bgElev,
-  color: C.text,
-  border: `1px solid ${C.border2}`,
+  background: "var(--surface-input)",
+  color: "var(--text-body)",
+  border: "1px solid var(--border-strong)",
   borderRadius: 7,
 };
-const labelStyle: React.CSSProperties = { display: "block", fontSize: 12, fontWeight: 550, color: C.muted, marginBottom: 6 };
-const cancelBtn: React.CSSProperties = { border: `1px solid ${C.border2}`, background: "rgba(255,255,255,0.03)", color: C.text, fontSize: 13, fontWeight: 500, padding: "9px 16px", borderRadius: 7, cursor: "pointer" };
-const primaryBtn: React.CSSProperties = { border: "none", background: C.accent, color: "#fff", fontSize: 13, fontWeight: 550, padding: "9px 18px", borderRadius: 7, cursor: "pointer" };
+const labelStyle: React.CSSProperties = { display: "block", fontSize: 12, fontWeight: 550, color: "var(--text-muted)", marginBottom: 6 };
+const cancelBtn: React.CSSProperties = { border: "1px solid var(--border-strong)", background: "var(--surface-input)", color: "var(--text-body)", fontSize: 13, fontWeight: 500, padding: "9px 16px", borderRadius: 7, cursor: "pointer" };
+const primaryBtn: React.CSSProperties = { border: "none", background: "var(--action-primary-bg)", color: "var(--action-primary-text)", fontSize: 13, fontWeight: 550, padding: "9px 18px", borderRadius: 7, cursor: "pointer" };
+// Destructive controls are bordered, never filled — a filled red button beside
+// a red health verdict is the collision F3 removes. Shared with cancelBtn and
+// primaryBtn so a second destructive control cannot invent its own treatment.
+const destructiveBtn: React.CSSProperties = { border: "1px solid var(--action-destructive-border)", background: "transparent", color: "var(--action-destructive-text)", fontSize: 13, fontWeight: 500, padding: "9px 16px", borderRadius: 7, cursor: "pointer" };
 
 function AddModal() {
   const { pages, form, setForm, submitAdd, closeModal, pathFor } = useStore();
@@ -178,7 +183,7 @@ function AddModal() {
     <ModalShell onClose={closeModal} label="Add a page to the watchlist">
       <div style={{ padding: "22px 24px 0" }}>
         <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>Add a page to the watchlist</h3>
-        <p style={{ margin: "7px 0 0", fontSize: 13, color: C.muted }}>Enter a URL and we’ll fill in its page title when available.</p>
+        <p style={{ margin: "7px 0 0", fontSize: 13, color: "var(--text-muted)" }}>Enter a URL and we’ll fill in its page title when available.</p>
       </div>
       <div style={{ padding: "20px 24px" }}>
         <label htmlFor="add-page-url" style={labelStyle}>URL</label>
@@ -201,7 +206,9 @@ function AddModal() {
           style={{ ...inputStyle, marginBottom: lookupMessage ? 6 : 16 }}
         />
         {lookupMessage && (
-          <div aria-live="polite" style={{ minHeight: 16, marginBottom: 10, fontSize: 11.5, color: titleLookup === "unavailable" ? C.amber : C.faint }}>
+          // All three lookup states read the same: the sentence says which one
+          // it is. A failed title lookup is not a warning about the page.
+          <div aria-live="polite" style={{ minHeight: 16, marginBottom: 10, fontSize: 12, color: "var(--text-muted)" }}>
             {lookupMessage}
           </div>
         )}
@@ -222,12 +229,12 @@ function AddModal() {
           <div
             role="alert"
             style={{
-              border: "1px solid rgba(255,154,61,0.28)",
-              background: "rgba(255,154,61,0.08)",
+              border: "1px solid var(--status-warning-border)",
+              background: "var(--status-warning-bg)",
               borderRadius: 8,
               padding: "10px 12px",
-              color: C.amber,
-              fontSize: 11.5,
+              color: "var(--status-warning-text)",
+              fontSize: 12,
               lineHeight: 1.45,
             }}
           >
@@ -249,7 +256,7 @@ function MarkerModal() {
     <ModalShell onClose={closeModal} label="Log a change marker">
       <div style={{ padding: "22px 24px 0" }}>
         <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>{markerEditingId ? "Edit change marker" : "Log a change marker"}</h3>
-        <p style={{ margin: "7px 0 0", fontSize: 13, color: C.muted }}>Marks the timeline and schedules 2, 7 &amp; 30-day follow-up reports to Slack.</p>
+        <p style={{ margin: "7px 0 0", fontSize: 13, color: "var(--text-muted)" }}>Marks the timeline and schedules 2, 7 &amp; 30-day follow-up reports to Slack.</p>
       </div>
       <div style={{ padding: "20px 24px" }}>
         <label htmlFor="marker-description" style={labelStyle}>Description</label>
@@ -259,10 +266,10 @@ function MarkerModal() {
       </div>
       <div style={{ padding: "0 24px 22px", display: "flex", justifyContent: "flex-end", gap: 10 }}>
         {markerEditingId && (
-          <button onClick={deleteMarker} style={{ ...cancelBtn, marginRight: "auto", color: C.redSoft }}>Delete marker</button>
+          <button onClick={deleteMarker} style={{ ...destructiveBtn, marginRight: "auto" }}>Delete marker</button>
         )}
         <button onClick={closeModal} style={cancelBtn}>Cancel</button>
-        <button onClick={submitMarker} style={{ ...primaryBtn, background: C.green, color: C.bg }}>{markerEditingId ? "Save marker" : "Log marker"}</button>
+        <button onClick={submitMarker} style={primaryBtn}>{markerEditingId ? "Save marker" : "Log marker"}</button>
       </div>
     </ModalShell>
   );
@@ -274,29 +281,31 @@ function ReportModal() {
   return (
     <ModalShell width={600} onClose={closeModal} label={`Full report · ${report.date}`}>
       <div
-        style={{ padding: "22px 24px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, background: "#141416" }}
+        // Must resolve to the same surface as ModalShell's panel, or the sticky
+        // header seams against the body on scroll.
+        style={{ padding: "22px 24px", borderBottom: "1px solid var(--border-hairline)", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, background: "var(--surface-card)" }}
       >
         <div>
           <h3 style={{ margin: 0, fontSize: 17, fontWeight: 600 }}>Full report · {report.date}</h3>
-          <div style={{ fontSize: 12.5, color: C.muted, marginTop: 3 }}>{report.url}</div>
+          <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 3 }}>{report.url}</div>
         </div>
-        <button onClick={closeModal} style={{ border: `1px solid ${C.border2}`, background: "rgba(255,255,255,0.03)", padding: "7px 9px", borderRadius: 7, cursor: "pointer", display: "flex" }}>
-          <CloseIcon size={15} style={{ color: C.text }} />
+        <button onClick={closeModal} style={{ border: "1px solid var(--border-strong)", background: "var(--surface-input)", padding: "7px 9px", borderRadius: 7, cursor: "pointer", display: "flex" }}>
+          <CloseIcon size={15} style={{ color: "var(--text-body)" }} />
         </button>
       </div>
       <div style={{ padding: "22px 24px" }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 12, marginBottom: 22 }}>
           {report.cats.map((rc) => (
-            <div key={rc.key} style={{ border: `1px solid ${C.border2}`, background: C.bgElev, borderRadius: 10, padding: 13 }}>
-              <div style={{ fontSize: 11, color: C.muted }}>{rc.label}</div>
-              <div style={{ fontSize: 22, fontWeight: 600, color: scoreMeta(rc.median).fg, marginTop: 3 }}>{rc.median}</div>
-              <div style={{ fontSize: 11, color: C.faint }}>range {rc.range}</div>
+            <div key={rc.key} style={{ border: "1px solid var(--border-strong)", background: "var(--surface-card)", borderRadius: 10, padding: 13 }}>
+              <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{rc.label}</div>
+              <div style={{ fontSize: 22, fontWeight: 600, color: scoreMetaVars(rc.median).fg, marginTop: 3 }}>{rc.median}</div>
+              <div style={{ fontSize: 12, color: "var(--text-muted)" }}>range {rc.range}</div>
             </div>
           ))}
         </div>
-        <div style={{ fontSize: 11, fontWeight: 550, letterSpacing: "0.05em", textTransform: "uppercase", color: C.faint, marginBottom: 8 }}>Raw PSI payload (object storage)</div>
+        <div style={{ fontSize: 12, fontWeight: 550, letterSpacing: "0.05em", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: 8 }}>Raw PSI payload (object storage)</div>
         <pre
-          style={{ margin: 0, fontFamily: "ui-monospace, SFMono-Regular, monospace", fontSize: 11.5, lineHeight: 1.6, background: "#08080A", color: C.faint2, border: `1px solid ${C.border}`, padding: 16, borderRadius: 9, overflow: "auto" }}
+          style={{ margin: 0, fontFamily: "ui-monospace, SFMono-Regular, monospace", fontSize: 12, lineHeight: 1.6, background: "var(--surface-page)", color: "var(--text-muted)", border: "1px solid var(--border-hairline)", padding: 16, borderRadius: 9, overflow: "auto" }}
         >
           {report.raw}
         </pre>

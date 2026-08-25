@@ -1,0 +1,864 @@
+/**
+ * The canonical issue case.
+ *
+ * Page Watch grew four independent lifecycles over the same problem —
+ * `Rec.status`, `Rec.taskStatus`, the per-strategy field lifecycle, and the
+ * agent verification status. Nothing stopped them contradicting each other, so
+ * a record could be untriaged and finished at the same time and every screen
+ * picked a different field to trust. That is the mechanism behind the audit's
+ * "same finding explained four different ways".
+ *
+ * This module replaces all four with one object holding one lifecycle field.
+ * The old lifecycles survive only as inputs to the adapters at the bottom of
+ * this file and as the derived getters `recStatusOf` / `taskStatusOf`, which
+ * exist so screens can be moved over one at a time and deleted when the last
+ * reader is gone.
+ *
+ * Three rules this module keeps:
+ *
+ *   1. Nothing user-facing is authored here. Status words come from
+ *      `vocabulary.ts`; titles, remediation, and diagnoses come from the data.
+ *      A logic module that writes copy is how two vocabularies start.
+ *   2. Two sources are never averaged, summed, or composited into one number.
+ *      The ledger keeps each reading in its own source's words, and confidence
+ *      is a count of agreement, not a score.
+ *   3. Every state change goes through the registry's transition table. An
+ *      illegal move throws rather than being quietly allowed.
+ */
+
+import type {
+  CustomerActionability,
+  FieldOnlyRecommendationSignal,
+  Rec,
+  RecStatus,
+  Strategy,
+  TaskStatus,
+} from "./types";
+import {
+  COUNTED_QUEUES,
+  DISMISS_REASONS,
+  ISSUE_TRANSITIONS,
+  QUEUE_HOLDS,
+  WORK_STATES,
+  type DismissReason,
+  type IssueAction,
+  type Queue,
+  type WorkState,
+} from "./vocabulary";
+import { isFieldRecommendationActionable, fieldRecommendationLifecycleStatus } from "./fieldOnlyRecommendations";
+import { parseMarkerDate } from "./ui";
+import type { AgentEvidenceSystem, AgentIssueCase } from "./agentIssueCases";
+
+/**
+ * The one lifecycle union, imported rather than redeclared.
+ *
+ * `vocabulary.ts` calls it `WorkState` because the registry concept is
+ * `work_state`; the field on a case is `issue.state`, so this file uses the
+ * name the field has. It is an alias for the imported union, not a second
+ * declaration — if the registry gains or loses a state, this changes with it.
+ */
+export type IssueState = WorkState;
+
+export type { WorkState };
+
+/* ── The object ─────────────────────────────────────────────────────────── */
+
+/** One reading from one evidence system, in that system's own words. */
+export interface EvidenceEntry {
+  source:
+    | "lighthouse"
+    | "crux"
+    | "native-elements"
+    | "page-watch-checks"
+    | "ora"
+    | "is-agentic"
+    | "kitesurf";
+  /** human-readable, source's own words */
+  reading: string;
+  /** ISO — each source keeps its own */
+  observedAt: string;
+  /** does this reading support the diagnosis */
+  supports: boolean;
+}
+
+export type EvidenceSource = EvidenceEntry["source"];
+
+/** How much of a fix this is, as a band rather than an estimate. */
+export type Effort = "minutes" | "hours" | "days" | "unknown";
+
+/** Whether the person reading this can act on it, and who owns it if not. */
+export type Actionability = "direct" | "workaround" | "platform" | "none";
+
+export type CheckpointInterval = "2d" | "7d" | "30d";
+export type CheckpointResult = "passed" | "failed" | "pending";
+
+export interface Checkpoint {
+  interval: CheckpointInterval;
+  due?: string;
+  result?: CheckpointResult;
+}
+
+export interface HistoryEntry {
+  at: string;
+  from?: IssueState;
+  to: IssueState;
+  actor: string;
+  reason?: string;
+}
+
+export interface Remediation {
+  steps: string[];
+  actionability: Actionability;
+}
+
+export interface IssueCase {
+  id: string;                    // "PW-2291", stable and user-visible
+  cause: string;                 // grouping key: culprit + audit id
+  state: IssueState;             // the ONLY lifecycle field
+  // 1 diagnosis — one plain sentence, present tense, names the symptom
+  //   a person notices. Never an audit title.
+  title: string;
+  diagnosis: string;
+  // 2 why now — what changed and when it was corroborated
+  detectedAt: string;            // ISO
+  confirmedRuns: number;
+  trigger?: { kind: "publish" | "provider" | "threshold"; at: string };
+  // 3 scope
+  scope: "page" | "pages" | "origin";
+  pageIds: string[];
+  strategies: Strategy[];        // mobile and/or desktop
+  // 4 impact — ONE unit each. No display strings.
+  impactMs: number;
+  effort: Effort;
+  // 5 confidence — derived from source agreement, never a composite score
+  confidence: "confirmed" | "probable" | "unclear";
+  // 6 remediation — a case with no steps cannot be accepted
+  remediation: Remediation;
+  // 7 success criteria — what would prove this fixed
+  successCriteria: string;
+  checkpoints: Checkpoint[];
+  // 8 evidence ledger — one entry per source, NEVER averaged
+  evidence: EvidenceEntry[];
+  // 9 history — every transition, append-only
+  history: HistoryEntry[];
+  // work view (D4) — added in place, never a copy
+  owner?: string;
+  checklist?: { text: string; done: boolean }[];
+  notes?: string;
+}
+
+/** Thrown for an illegal transition, a missing reason, or a duplicated source. */
+export class IssueCaseError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "IssueCaseError";
+  }
+}
+
+/* ── Queue membership — derived, never stored ───────────────────────────── */
+
+/**
+ * The queue a state appears in.
+ *
+ * Derived from the registry's `queue.holds`, over the counted queues only:
+ * `show_all` holds `"*"` because it is the unfiltered view rather than a queue
+ * (registry rule 1), so including it would put every state in two queues. A
+ * state no counted queue claims is reachable only through Show all.
+ */
+export function queueOf(state: IssueState): Queue {
+  const holder = COUNTED_QUEUES.find((queue) => QUEUE_HOLDS[queue].includes(state));
+  return holder ?? "show_all";
+}
+
+/** The cases in one queue. Show all is unfiltered, exactly as the registry says. */
+export function casesInQueue(cases: readonly IssueCase[], queue: Queue): IssueCase[] {
+  if (queue === "show_all") return [...cases];
+  return cases.filter((item) => queueOf(item.state) === queue);
+}
+
+/* ── Impact and effort parsers — one place, both tested ─────────────────── */
+
+/**
+ * Milliseconds parsed from a stored `savings` label.
+ *
+ * The formats in the data are all produced by `formatDiagnosticImpact` or
+ * hand-written in fixtures: `"1.8 s"`, `"620 ms"`, `"Field p75 4.8 s"`, and
+ * non-measurements like `"Observed"`, `"Detected"`, `"Field signal"`,
+ * `"Essential"`, or a byte figure such as `"180 KB"`. Anything that is not a
+ * time returns 0 — a case with no measured time has no impact in milliseconds,
+ * which is different from having a small one.
+ */
+export function parseImpactMs(savings: string | null | undefined): number {
+  const match = /(\d+(?:\.\d+)?)\s*(ms|s)\b/i.exec(savings ?? "");
+  if (!match) return 0;
+  const value = Number.parseFloat(match[1]);
+  if (!Number.isFinite(value)) return 0;
+  return match[2].toLowerCase() === "ms" ? Math.round(value) : Math.round(value * 1000);
+}
+
+/**
+ * Effort band parsed from a stored `estTime` label.
+ *
+ * A band, not a duration: `"1 day"` and `"5 days"` are both `days`. The count
+ * is deliberately dropped, because the stored figure is a coarse guess
+ * (`costBand`) and rendering it as a number implies a precision it never had.
+ * `"Needs review"` and `"No direct action"` carry no band and return `unknown`.
+ */
+export function parseEffort(estTime: string | null | undefined): Effort {
+  const text = (estTime ?? "").toLowerCase();
+  if (/\bday(s)?\b/.test(text)) return "days";
+  if (/\bhour(s)?\b|\bhr(s)?\b/.test(text)) return "hours";
+  if (/\bminute(s)?\b|\bmin(s)?\b/.test(text)) return "minutes";
+  return "unknown";
+}
+
+const EFFORT_ORDER: readonly Effort[] = ["minutes", "hours", "days"];
+
+/** The larger of two bands. `unknown` loses to any known band. */
+function widerEffort(left: Effort, right: Effort): Effort {
+  const leftRank = EFFORT_ORDER.indexOf(left);
+  const rightRank = EFFORT_ORDER.indexOf(right);
+  if (leftRank < 0) return right;
+  if (rightRank < 0) return left;
+  return leftRank >= rightRank ? left : right;
+}
+
+/**
+ * The case's actionability from the stored Webflow classification.
+ *
+ * The two vocabularies do not line up one to one. `"none"` is written by
+ * `classificationForPage` only when an audit is platform-owned on a Webflow
+ * page, so it becomes `platform`; `"review"` means no documented customer
+ * remediation exists at all, so it becomes `none` — and a case with no steps
+ * cannot be accepted, which is the correct outcome for an audit nobody has
+ * written guidance for yet.
+ */
+export function actionabilityFrom(actionability: CustomerActionability | undefined): Actionability {
+  if (actionability === "direct") return "direct";
+  if (actionability === "workaround") return "workaround";
+  if (actionability === "none") return "platform";
+  return "none";
+}
+
+/* ── Confidence — counted from the ledger, never scored ─────────────────── */
+
+/**
+ * Confidence from source agreement.
+ *
+ * Two or more sources supporting the diagnosis is `confirmed`; exactly one is
+ * `probable`. Any disagreement between sources is `unclear`, and so is a ledger
+ * with nothing supporting it — which covers the case where the only reading is
+ * an unavailable one.
+ *
+ * Disagreement wins over volume on purpose. Letting a majority carry the
+ * conclusion would be a composite of readings from different sources, which is
+ * the thing this module exists to stop; when sources differ, the honest answer
+ * is that it is unclear, and the ledger below says who said what.
+ */
+export function confidenceFrom(evidence: readonly EvidenceEntry[]): IssueCase["confidence"] {
+  const supporting = evidence.filter((entry) => entry.supports).length;
+  const dissenting = evidence.length - supporting;
+  if (supporting === 0) return "unclear";
+  if (dissenting > 0) return "unclear";
+  return supporting >= 2 ? "confirmed" : "probable";
+}
+
+/**
+ * Add a reading to the ledger.
+ *
+ * Append-only: the returned case has a new array with the entry on the end and
+ * every existing entry untouched. One entry per source: a second reading from a
+ * source already in the ledger throws, because the two are not merged and the
+ * later one does not overwrite the earlier. A source that has re-read is
+ * handled by rebuilding the case from its adapter, the way the agent-access
+ * assembler already rebuilds from scratch each run.
+ *
+ * Confidence is recomputed from the whole ledger rather than adjusted, so it
+ * can never drift from what the entries actually say.
+ */
+export function appendEvidence(issue: IssueCase, entry: EvidenceEntry): IssueCase {
+  if (issue.evidence.some((existing) => existing.source === entry.source)) {
+    throw new IssueCaseError(
+      `appendEvidence: ${issue.id} already holds a ${entry.source} reading. The ledger keeps one entry per source; rebuild the case instead of merging readings.`,
+    );
+  }
+  const evidence = [...issue.evidence, entry];
+  return { ...issue, evidence, confidence: confidenceFrom(evidence) };
+}
+
+/* ── Transitions — the registry's table, enforced ───────────────────────── */
+
+export interface TransitionOptions {
+  /** Who moved it. Recorded in history verbatim. */
+  actor: string;
+  /** Required by `dismiss`; must be one of the registry's reasons. */
+  reason?: string;
+  /** ISO timestamp for the history entry. Defaults to now. */
+  at?: string;
+}
+
+/** The actions legal from a state, straight from the registry. */
+export function actionsFor(state: IssueState): IssueAction[] {
+  return (Object.keys(ISSUE_TRANSITIONS) as IssueAction[])
+    .filter((action) => ISSUE_TRANSITIONS[action].from.includes(state));
+}
+
+export function canApply(issue: IssueCase, action: IssueAction): boolean {
+  return ISSUE_TRANSITIONS[action].from.includes(issue.state);
+}
+
+function isDismissReason(value: string | undefined): value is DismissReason {
+  return typeof value === "string" && (DISMISS_REASONS as readonly string[]).includes(value);
+}
+
+/**
+ * Move a case through one registry transition.
+ *
+ * Everything the table forbids throws. Two extra guards sit on top of it,
+ * because they are conditions on the case rather than on the state:
+ *
+ *   - `accept` refuses a case with no remediation steps. Saying yes to work
+ *     nobody has written down is how the fix queue fills with items that
+ *     cannot be started. `todo` is only reachable through `accept`, so this
+ *     guard closes every path to it.
+ *   - `dismiss` refuses a reason that is not one the registry blesses.
+ */
+export function applyAction(issue: IssueCase, action: IssueAction, options: TransitionOptions): IssueCase {
+  const transition = ISSUE_TRANSITIONS[action];
+  if (!transition.from.includes(issue.state)) {
+    throw new IssueCaseError(
+      `applyAction: ${action} is not legal from ${issue.state} (legal from ${transition.from.join(", ")}).`,
+    );
+  }
+  if (action === "accept" && issue.remediation.steps.length === 0) {
+    throw new IssueCaseError(
+      `applyAction: ${issue.id} has no remediation steps, so it cannot be accepted. Give it steps first.`,
+    );
+  }
+  if (transition.requiresReason && !isDismissReason(options.reason)) {
+    throw new IssueCaseError(
+      `applyAction: ${action} requires one of these reasons — ${DISMISS_REASONS.join(", ")}.`,
+    );
+  }
+  const at = options.at ?? new Date().toISOString();
+  const entry: HistoryEntry = {
+    at,
+    from: issue.state,
+    to: transition.to,
+    actor: options.actor,
+    ...(options.reason ? { reason: options.reason } : {}),
+  };
+  const moved: IssueCase = {
+    ...issue,
+    state: transition.to,
+    history: [...issue.history, entry],
+  };
+  return action === "mark_fixed" ? { ...moved, checkpoints: scheduleCheckpoints(at) } : moved;
+}
+
+export function accept(issue: IssueCase, options: TransitionOptions): IssueCase {
+  return applyAction(issue, "accept", options);
+}
+
+export function dismiss(issue: IssueCase, options: TransitionOptions & { reason: string }): IssueCase {
+  return applyAction(issue, "dismiss", options);
+}
+
+export function start(issue: IssueCase, options: TransitionOptions): IssueCase {
+  return applyAction(issue, "start", options);
+}
+
+export function markFixed(issue: IssueCase, options: TransitionOptions): IssueCase {
+  return applyAction(issue, "mark_fixed", options);
+}
+
+export function reopen(issue: IssueCase, options: TransitionOptions): IssueCase {
+  return applyAction(issue, "reopen", options);
+}
+
+const CHECKPOINT_DAYS: Record<CheckpointInterval, number> = { "2d": 2, "7d": 7, "30d": 30 };
+const DAY_MS = 86_400_000;
+
+/**
+ * The checks that decide whether a fixed case becomes resolved.
+ *
+ * `fixed` means the change shipped and the evidence has not agreed yet, so
+ * marking a case fixed schedules the checks that will settle it rather than
+ * leaving it waiting on nothing.
+ */
+export function scheduleCheckpoints(from: string): Checkpoint[] {
+  const start = new Date(from).getTime();
+  return (Object.keys(CHECKPOINT_DAYS) as CheckpointInterval[]).map((interval) => ({
+    interval,
+    ...(Number.isFinite(start)
+      ? { due: new Date(start + CHECKPOINT_DAYS[interval] * DAY_MS).toISOString() }
+      : {}),
+    result: "pending" as CheckpointResult,
+  }));
+}
+
+/* ── Migration: derived views of the retired lifecycles ─────────────────── */
+
+/**
+ * `Rec.status` as a read-only view of the case state.
+ *
+ * Here so screens can be moved across one at a time. Nothing should write
+ * `Rec.status`; when the last reader is gone, this and `taskStatusOf` go with
+ * it.
+ */
+export function recStatusOf(state: IssueState): RecStatus {
+  if (state === "dismissed") return "ignored";
+  if (state === "new" || state === "reopened") return "inbox";
+  return "task";
+}
+
+/** `Rec.taskStatus` as a read-only view of the case state. See `recStatusOf`. */
+export function taskStatusOf(state: IssueState): TaskStatus {
+  if (state === "in_progress") return "in-progress";
+  if (state === "fixed" || state === "resolved") return "done";
+  return "todo";
+}
+
+/* ── Migration adapters ─────────────────────────────────────────────────── */
+
+/**
+ * How far along the lifecycle a state sits, for resolving contradictions.
+ *
+ * `dismissed` and `reopened` are off the progression — they are decisions
+ * rather than progress — so they are handled explicitly rather than ranked.
+ */
+const PROGRESS_RANK: Record<Exclude<IssueState, "dismissed" | "reopened">, number> = {
+  new: 0,
+  todo: 1,
+  in_progress: 2,
+  fixed: 3,
+  resolved: 4,
+};
+
+type ProgressState = keyof typeof PROGRESS_RANK;
+
+/** `Rec.status` on its own says how far triage got, and nothing about work. */
+function stateFromRecStatus(status: RecStatus): ProgressState {
+  return status === "task" ? "todo" : "new";
+}
+
+/**
+ * `Rec.taskStatus` on its own says how far work got, and nothing about triage.
+ *
+ * "done" lands on `resolved`, not `fixed`. `fixed` means "the change shipped,
+ * evidence has not agreed yet", which puts the case in Watch with a checkpoint
+ * due — and every one of these records is months old with no checkpoint behind
+ * it, so `fixed` would flood Watch with work nobody is going to re-verify. A
+ * person ticking a task off is the closest thing the legacy data has to an
+ * agreed outcome. `fromRec` writes the missing-evidence caveat into history so
+ * the gap is recorded rather than implied.
+ *
+ * The `done` arm must stay in step with `taskStatusWorkState` in
+ * `src/lib/workState.ts`, which is the same decision for display. The other two
+ * arms differ on purpose: there, `todo` means the work state `todo`; here it
+ * means `new`, because `taskStatus` alone carries no triage information.
+ */
+function stateFromTaskStatus(taskStatus: TaskStatus): ProgressState {
+  if (taskStatus === "in-progress") return "in_progress";
+  if (taskStatus === "done") return "resolved";
+  return "new";
+}
+
+const MIGRATION_ACTOR = "migration";
+
+export interface FromRecOptions {
+  /**
+   * Grouping key. Two findings that share it are one case. Defaults to the
+   * audit id, which groups the same audit across pages; pass
+   * `${culpritHost}:${auditId}` where the culprit is known.
+   */
+  cause?: string;
+  /** One plain sentence naming the symptom. Defaults to the record's summary. */
+  diagnosis?: string;
+  /** What would prove this fixed. Defaults to the agent issue's criteria. */
+  successCriteria?: string;
+  /** Ordered steps. Defaults to the agent issue's steps. */
+  remediationSteps?: string[];
+  /** ISO. Defaults to the best timestamp the record carries. */
+  detectedAt?: string;
+  /** Corroborating runs behind the finding. The record does not carry a count. */
+  confirmedRuns?: number;
+  trigger?: IssueCase["trigger"];
+  /** Reference year for records whose `added` is a display date such as "Jul 16". */
+  referenceYear?: number;
+  /** ISO stamp for any migration history entry. Defaults to now. */
+  at?: string;
+}
+
+function earliestSignalDate(signals: Partial<Record<Strategy, FieldOnlyRecommendationSignal>> | undefined): string | undefined {
+  const dates = Object.values(signals ?? {})
+    .flatMap((signal) => (signal?.detectedAt ? [signal.detectedAt] : []))
+    .sort();
+  return dates[0];
+}
+
+function detectedAtFor(rec: Rec, options: FromRecOptions): string {
+  if (options.detectedAt) return options.detectedAt;
+  if (rec.agentIssue?.capturedAt) return rec.agentIssue.capturedAt;
+  const signal = earliestSignalDate(rec.fieldSignals);
+  if (signal) return signal;
+  const parsed = parseMarkerDate(rec.added, options.referenceYear);
+  return parsed ? parsed.toISOString() : "";
+}
+
+const EVIDENCE_SOURCE: Record<NonNullable<Rec["source"]>, EvidenceSource> = {
+  lighthouse: "lighthouse",
+  "crux-field-only": "crux",
+  "native-elements": "native-elements",
+  // Page Watch's own HTTP checks are the thing that flagged this record.
+  "agent-readiness": "page-watch-checks",
+};
+
+/**
+ * The record's own source reading.
+ *
+ * A recommendation exists because a source flagged it, so the reading supports
+ * the diagnosis — except for a field-only record whose CrUX windows have since
+ * come good, where the source no longer says the problem is there. The wording
+ * is the source's, never Page Watch's.
+ */
+function evidenceFromRec(rec: Rec, observedAt: string): EvidenceEntry[] {
+  // Records written before `source` existed all came from Lighthouse.
+  const source = EVIDENCE_SOURCE[rec.source ?? "lighthouse"];
+  const signal = Object.values(rec.fieldSignals ?? {}).find(Boolean);
+  const reading = signal
+    ? `${signal.metricLabel} ${signal.fieldFormatted} (${signal.fieldRating})`
+    : rec.savings
+      ? `${rec.title} — ${rec.savings}`
+      : rec.title;
+  return [{
+    source,
+    reading,
+    observedAt: signal?.detectedAt ?? observedAt,
+    supports: rec.source === "crux-field-only" ? isFieldRecommendationActionable(rec) : true,
+  }];
+}
+
+/**
+ * One case from one legacy recommendation.
+ *
+ * The four old lifecycles are read here and nowhere else. `Rec.status` says how
+ * far triage got and `Rec.taskStatus` says how far work got, so the pair is
+ * resolved to whichever is further along; where they disagree — a record still
+ * untriaged but marked done — the later state wins and the disagreement is
+ * written into history under the actor `migration` rather than quietly
+ * discarded. A field lifecycle that has resolved or regressed, and an agent
+ * verification that came back, are newer information than either, so they
+ * override the pair and are recorded the same way.
+ */
+export function fromRec(rec: Rec, options: FromRecOptions = {}): IssueCase {
+  const at = options.at ?? new Date().toISOString();
+  const history: HistoryEntry[] = [];
+  const note = (to: IssueState, reason: string, from?: IssueState) => {
+    history.push({ at, ...(from ? { from } : {}), to, actor: MIGRATION_ACTOR, reason });
+  };
+
+  const fromStatus = stateFromRecStatus(rec.status);
+  const fromTask = stateFromTaskStatus(rec.taskStatus);
+  const merged: ProgressState = PROGRESS_RANK[fromTask] > PROGRESS_RANK[fromStatus] ? fromTask : fromStatus;
+
+  let state: IssueState = merged;
+  if (rec.status === "ignored") {
+    state = "dismissed";
+    if (rec.taskStatus !== "todo") {
+      note("dismissed", `Legacy pair "${rec.status}" + "${rec.taskStatus}" disagreed: the record was set aside while carrying work progress. Set aside wins, because it is a decision rather than progress.`);
+    }
+  } else if (rec.status === "inbox" && rec.taskStatus !== "todo") {
+    // Triage never happened, yet work did. The only genuinely contradictory
+    // pairing: every other combination is a coherent point on the old flow.
+    note(merged, `Legacy pair "${rec.status}" + "${rec.taskStatus}" disagreed: the record was never triaged yet carried work progress. Resolved to the later state.`);
+  }
+
+  if (state === "resolved") {
+    // Only reachable from a legacy "done". `resolved` normally means the
+    // evidence agreed and held; here nobody measured. Recording the gap is the
+    // condition on which mapping "done" to `resolved` was accepted — without
+    // it the case would claim a verification that never happened.
+    note("resolved", `Legacy "${rec.taskStatus}" migrated to Resolved. No checkpoint evidence was gathered: the old lifecycle recorded that someone marked the work complete, never that a check agreed. Treat the outcome as asserted, not verified.`);
+  }
+
+  const fieldLifecycle = fieldRecommendationLifecycleStatus(rec);
+  const verification = rec.agentIssue?.verification?.status;
+  if (verification === "returned" || fieldLifecycle === "regressed") {
+    note("reopened", verification === "returned"
+      ? "A verification run found the problem back, which is newer than the stored pair."
+      : "A field check found the problem back, which is newer than the stored pair.", state);
+    state = "reopened";
+  } else if (fieldLifecycle === "resolved") {
+    if (state !== "resolved") {
+      note("resolved", "The field lifecycle had already settled, which is newer than the stored pair.", state);
+      state = "resolved";
+    }
+  }
+
+  const detectedAt = detectedAtFor(rec, options);
+  const evidence = evidenceFromRec(rec, detectedAt);
+  const steps = options.remediationSteps ?? rec.agentIssue?.remediation ?? [];
+  const pageIds = [rec.pageId];
+
+  return {
+    id: rec.key,
+    cause: options.cause ?? rec.id,
+    state,
+    title: rec.title,
+    // Never the audit title. Absent when the record carries no plain sentence —
+    // authoring one here would put copy in a logic module.
+    diagnosis: options.diagnosis ?? rec.aiSummary ?? "",
+    detectedAt,
+    confirmedRuns: options.confirmedRuns ?? 0,
+    ...(options.trigger ? { trigger: options.trigger } : {}),
+    scope: rec.agentIssue?.scope === "origin" ? "origin" : "page",
+    pageIds,
+    strategies: rec.strategies ?? [],
+    impactMs: parseImpactMs(rec.savings),
+    effort: parseEffort(rec.estTime),
+    confidence: confidenceFrom(evidence),
+    remediation: { steps, actionability: actionabilityFrom(rec.webflow?.actionability) },
+    successCriteria: options.successCriteria ?? rec.agentIssue?.successCriteria ?? "",
+    checkpoints: [],
+    evidence,
+    history,
+  };
+}
+
+/**
+ * Which ledger slot each agent evidence system writes to.
+ *
+ * `is-agentic` is a slot in `EvidenceEntry["source"]` with no producer yet: it
+ * is the `include=essentials` interpretation of Ora's response, and nothing in
+ * the app requests it. When that integration lands it writes its own entry here
+ * rather than folding into Ora's — the two are different readings of the same
+ * response and can disagree.
+ */
+const EVIDENCE_SOURCE_FOR_AGENT_SYSTEM: Record<AgentEvidenceSystem, EvidenceSource> = {
+  "page-watch": "page-watch-checks",
+  ora: "ora",
+  kitesurf: "kitesurf",
+};
+
+/** Fixed ledger order, so two runs over the same data read identically. */
+const AGENT_SYSTEM_ORDER: readonly AgentEvidenceSystem[] = ["page-watch", "ora", "kitesurf"];
+
+export interface FromAgentIssueOptions {
+  /** Case id. Defaults to the issue's family key. */
+  id?: string;
+  cause?: string;
+  /** Pages the origin issue was observed on. */
+  pageIds?: string[];
+  diagnosis?: string;
+  detectedAt?: string;
+  effort?: Effort;
+  impactMs?: number;
+  trigger?: IssueCase["trigger"];
+  /** Agent verification carried over from the record this issue was promoted to. */
+  verification?: "not-started" | "verifying" | "resolved" | "returned" | "unavailable";
+  state?: IssueState;
+  at?: string;
+}
+
+/**
+ * One case from one assembled agent-access issue.
+ *
+ * Every evidence system writes its own entry, in its own words, with its own
+ * observedAt. Page Watch's HTTP checks, Ora, and Kitesurf are separate systems
+ * that read the same origin independently, so the ledger keeps them separate
+ * and this adapter neither picks a winner nor merges them.
+ *
+ * That separation is the point. Page Watch and Ora can disagree about the same
+ * origin, and when they do, `confidenceFrom` returns `unclear` rather than
+ * letting the more severe or more numerous reading carry the conclusion. A
+ * merged entry could not express that — it would have already resolved the
+ * disagreement before anyone saw it.
+ */
+export function fromAgentIssue(issue: AgentIssueCase, options: FromAgentIssueOptions = {}): IssueCase {
+  const at = options.at ?? new Date().toISOString();
+  const affirms = (result: string) => result === "failed" || result === "partial";
+
+  // `ignored` and `not-applicable` say whether a check counts on this site, or
+  // state a policy. Neither is a reading about whether the problem is there, so
+  // neither belongs in the ledger — and treating them as absence of the problem
+  // would fold a decision about scope into a decision about work.
+  const readable = issue.sources.filter((source) =>
+    source.result !== "ignored" && source.result !== "not-applicable");
+
+  const describe = (sources: typeof readable) =>
+    sources.map((source) => source.detail ? `${source.label}: ${source.detail}` : source.label).join(" · ");
+  const observed = (sources: typeof readable) =>
+    sources.flatMap((source) => source.observedAt ? [source.observedAt] : []).sort().at(-1)
+    ?? options.detectedAt ?? at;
+
+  // One entry per system that actually reported, in a fixed order so the ledger
+  // reads the same way on every run. A system with nothing readable to say adds
+  // no entry at all — silence is not a reading.
+  const evidence: EvidenceEntry[] = AGENT_SYSTEM_ORDER.flatMap((system) => {
+    const sources = readable.filter((source) => source.system === system);
+    if (!sources.length) return [];
+    return [{
+      source: EVIDENCE_SOURCE_FOR_AGENT_SYSTEM[system],
+      reading: describe(sources),
+      observedAt: observed(sources),
+      supports: sources.some((source) => affirms(source.result)),
+    }];
+  });
+
+  const history: HistoryEntry[] = [];
+  let state: IssueState = options.state ?? "new";
+  if (options.verification === "returned" && state !== "reopened") {
+    history.push({
+      at,
+      from: state,
+      to: "reopened",
+      actor: MIGRATION_ACTOR,
+      reason: "A verification run found the problem back.",
+    });
+    state = "reopened";
+  }
+
+  const pageIds = options.pageIds ?? [];
+  return {
+    id: options.id ?? issue.key,
+    cause: options.cause ?? issue.key,
+    state,
+    title: issue.title,
+    // The assembler's consequence line is the plain sentence for this family.
+    diagnosis: options.diagnosis ?? issue.consequence,
+    detectedAt: options.detectedAt ?? observed(readable),
+    // Independent systems that reported a determined result, not a run count.
+    confirmedRuns: new Set(readable.filter((source) => affirms(source.result)).map((source) => source.system)).size,
+    ...(options.trigger ? { trigger: options.trigger } : {}),
+    scope: issue.scope === "origin" ? "origin" : pageIds.length > 1 ? "pages" : "page",
+    pageIds,
+    strategies: [],
+    impactMs: options.impactMs ?? 0,
+    effort: options.effort ?? "unknown",
+    confidence: confidenceFrom(evidence),
+    remediation: { steps: issue.remediation, actionability: issue.remediation.length ? "direct" : "none" },
+    successCriteria: issue.successCriteria,
+    checkpoints: [],
+    evidence,
+    history,
+  };
+}
+
+/* ── Grouping by cause ──────────────────────────────────────────────────── */
+
+/**
+ * Which state survives when findings that share a cause become one case.
+ *
+ * Urgency order, not progress order: an active finding must never be hidden
+ * behind a sibling that somebody resolved or set aside, because that is how a
+ * live problem disappears from the Decide queue.
+ */
+const MERGE_PRECEDENCE: readonly IssueState[] =
+  ["reopened", "new", "in_progress", "todo", "fixed", "resolved", "dismissed"];
+
+function mostUrgent(left: IssueState, right: IssueState): IssueState {
+  return MERGE_PRECEDENCE.indexOf(left) <= MERGE_PRECEDENCE.indexOf(right) ? left : right;
+}
+
+function scopeFor(scope: IssueCase["scope"], pageIds: readonly string[]): IssueCase["scope"] {
+  if (scope === "origin") return "origin";
+  return pageIds.length > 1 ? "pages" : "page";
+}
+
+/**
+ * Merge two ledgers, keeping one entry per source.
+ *
+ * Where both sides hold a reading from the same source the later `observedAt`
+ * wins outright. The two are never combined — a merged reading would be a
+ * composite, and the older one was true when it was taken, not half-true now.
+ */
+function mergeEvidence(left: readonly EvidenceEntry[], right: readonly EvidenceEntry[]): EvidenceEntry[] {
+  const bySource = new Map<EvidenceSource, EvidenceEntry>();
+  for (const entry of [...left, ...right]) {
+    const existing = bySource.get(entry.source);
+    if (!existing || entry.observedAt > existing.observedAt) bySource.set(entry.source, entry);
+  }
+  return [...bySource.values()];
+}
+
+/**
+ * One case per cause.
+ *
+ * Two findings with the same cause are the same problem seen on two pages, so
+ * they become one case listing every affected page. The first finding in the
+ * input supplies the identity and the wording — same cause, same remediation —
+ * and the merge keeps the worst observed impact rather than a sum, because
+ * adding milliseconds across pages that share an asset would invent a number no
+ * run ever measured.
+ */
+export function groupByCause(cases: readonly IssueCase[], options: { at?: string } = {}): IssueCase[] {
+  const at = options.at ?? new Date().toISOString();
+  const byCause = new Map<string, IssueCase>();
+
+  for (const item of cases) {
+    const existing = byCause.get(item.cause);
+    if (!existing) {
+      byCause.set(item.cause, { ...item, pageIds: [...item.pageIds] });
+      continue;
+    }
+    const pageIds = [...new Set([...existing.pageIds, ...item.pageIds])];
+    const state = mostUrgent(existing.state, item.state);
+    const evidence = mergeEvidence(existing.evidence, item.evidence);
+    const history = [...existing.history, ...item.history].sort((a, b) => a.at.localeCompare(b.at));
+    if (state !== existing.state) {
+      history.push({
+        at,
+        from: existing.state,
+        to: state,
+        actor: "grouping",
+        reason: `Grouped with a finding on ${item.pageIds.join(", ") || "another page"} sharing this cause.`,
+      });
+    }
+    byCause.set(item.cause, {
+      ...existing,
+      state,
+      pageIds,
+      scope: scopeFor(existing.scope === "origin" || item.scope === "origin" ? "origin" : "page", pageIds),
+      strategies: [...new Set([...existing.strategies, ...item.strategies])],
+      detectedAt: [existing.detectedAt, item.detectedAt].filter(Boolean).sort()[0] ?? existing.detectedAt,
+      confirmedRuns: Math.max(existing.confirmedRuns, item.confirmedRuns),
+      impactMs: Math.max(existing.impactMs, item.impactMs),
+      effort: widerEffort(existing.effort, item.effort),
+      evidence,
+      confidence: confidenceFrom(evidence),
+      history,
+    });
+  }
+
+  return [...byCause.values()];
+}
+
+/**
+ * A check found the problem back on some of the pages this case covers.
+ *
+ * The case reopens scoped to those pages only — the ones that came back are the
+ * ones that need a new decision, and carrying the rest along would overstate
+ * the problem. The move itself goes through the registry's table, so a case the
+ * registry gives no reopen path from throws rather than being forced.
+ */
+export function reopenForPages(
+  issue: IssueCase,
+  pageIds: readonly string[],
+  options: TransitionOptions,
+): IssueCase {
+  if (pageIds.length === 0) {
+    throw new IssueCaseError(`reopenForPages: ${issue.id} needs at least one page that came back.`);
+  }
+  const returned = pageIds.filter((pageId) => issue.pageIds.includes(pageId));
+  if (returned.length === 0) {
+    throw new IssueCaseError(
+      `reopenForPages: ${issue.id} does not cover ${pageIds.join(", ")}.`,
+    );
+  }
+  const reopened = applyAction(issue, "reopen", options);
+  return { ...reopened, pageIds: returned, scope: scopeFor(issue.scope, returned) };
+}
+
+/** Every state, for exhaustiveness checks in callers and tests. */
+export const ISSUE_STATES: readonly IssueState[] = WORK_STATES;

@@ -155,10 +155,12 @@ describe("external agent audit isolation", () => {
     expect(dataPlane).not.toContain("agent-audits/ora/verify");
   });
 
-  it("shows the Page Watch verdict on the dashboard, never a provider score", () => {
-    const dashboard = source("src/app/(app)/dashboard/page.tsx");
+  it("shows the Page Watch verdict on the pages overview, never a provider score", () => {
+    // This body used to live in the retired route that is now a redirect; the
+    // component moved, the isolation rule did not.
+    const overview = source("src/app/(app)/pages/pages-content.tsx");
     // The verdict is a Page Watch conclusion and belongs here.
-    expect(dashboard).toContain("agentAccessSummary");
+    expect(overview).toContain("agentAccessSummary");
     // Provider numbers stay on the page's own evidence surface.
     for (const forbidden of [
       "essentialsScore",
@@ -168,7 +170,7 @@ describe("external agent audit isolation", () => {
       "ExternalAgentAuditPanel",
       "reportUrl",
     ]) {
-      expect(dashboard, `dashboard must not surface ${forbidden}`).not.toContain(forbidden);
+      expect(overview, `the pages overview must not surface ${forbidden}`).not.toContain(forbidden);
     }
   });
 

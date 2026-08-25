@@ -2,17 +2,32 @@
 
 import { useEffect, useState } from "react";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
-import { ArrowUpRightIcon, CircleIcon } from "@phosphor-icons/react";
+import { ArrowUpRightIcon } from "@phosphor-icons/react";
 import { useStore } from "@/components/store";
 import { CATEGORIES } from "@/lib/types";
 import type { AgentCheck, CategoryKey, CollectionJob, CustomerActionability, DevicePolicy, KitesurfEvidence, Night, PagePerformanceThresholdOverrides, PageStatus, RangeDays, Rec, WatchPage } from "@/lib/types";
 import { agentCheckKey, agentIgnoreOverrideMode, isAgentCheckIgnored, isAgentGroupIgnored, normalizeAgentIgnoreSettings, summarizeAgentChecks } from "@/lib/agentScoring";
 import { agentReadinessHistoryPoints } from "@/lib/agentHistory";
 import { effectivePerformanceThresholds } from "@/lib/performanceThresholds";
-import { historyForStrategy, nightHasStrategy, pageAgentHistoryForRange, pageAgentSnapshotForRange, pageHistoryForRange, pagePreviousPeriodMedian, pageRangeLatestNightForStrategy, pageRangeTrend, pageRecordedHistoryForRange, scoreMeta, statusMeta } from "@/lib/scoring";
+import { historyForStrategy, nightHasStrategy, pageAgentHistoryForRange, pageAgentSnapshotForRange, pageHistoryForRange, pagePreviousPeriodMedian, pageRangeLatestNightForStrategy, pageRangeTrend, pageRecordedHistoryForRange, scoreMetaVars, statusMeta } from "@/lib/scoring";
+import type { ScoreMetaVars } from "@/lib/scoring";
 import { scoreCardDataForCategory, scoreCardScaledDataForCategory } from "@/lib/scoreCardAdapter";
 import { auditsFor } from "@/lib/audits";
-import { C, taskLabel } from "@/lib/ui";
+import {
+  AGENT_RESULT_LABEL,
+  APPLICABILITY_ACTION_LABEL,
+  APPLICABILITY_LABEL,
+  applicabilityActionLabel,
+  DESTINATION_LABEL,
+  DESTINATION_PATH,
+  HEALTH_LABEL,
+  ISSUE_ACTION_LABEL,
+} from "@/lib/vocabulary";
+import type { Trend } from "@/lib/vocabulary";
+import { taskStatusWorkState } from "@/lib/workState";
+import { StatusChip } from "@/components/status-chip";
+import { TrendArrow } from "@/components/trend-arrow";
+import { Magnitude } from "@/components/magnitude";
 import { AgentReadinessChart, HistoryChart, Sparkline } from "@/components/charts";
 import { ScoreCard, scoreCardFlexItemStyle } from "@/components/ScoreCard";
 import type { ScoreCardDensity } from "@/components/ScoreCard";
@@ -41,7 +56,7 @@ import {
 import type { VisitorMetricKey } from "@/lib/visitorExperience";
 import { opportunitiesForNight } from "@/lib/diagnostics";
 import { formatLabMetric, LAB_METRICS, labMetricRating, labMetricSeries } from "@/lib/labMetrics";
-import { actionabilityTone, classificationForPage, customerActionabilityFor, recommendationIsCustomerActionable, triageActionLabel, webflowClassificationFor } from "@/lib/webflowPerformance";
+import { classificationForPage, customerActionabilityFor, recommendationIsCustomerActionable, triageActionLabel, webflowClassificationFor } from "@/lib/webflowPerformance";
 import { performanceIssueCounts, performanceIssuesForPage } from "@/lib/performanceIssues";
 import type { PerformanceIssueLifecycle, PerformanceIssueStatus } from "@/lib/performanceIssues";
 import { isWebflowGenerated, nativeElementDisposition, nativeElementIssuesForPage } from "@/lib/nativeElements";
@@ -66,6 +81,78 @@ const SCORE_CARD_DENSITY_KEY = "pageWatch.scoreCardDensity";
 
 function isScoreCardDensity(value: string | null): value is ScoreCardDensity {
   return value === "xsmall" || value === "small" || value === "medium" || value === "large";
+}
+
+/**
+ * R1 health bands as a chip. Hue answers "is this good right now?" and nothing
+ * else, so `none` is a real band here — "no verdict yet" is an answer, and it
+ * is not a warning.
+ */
+type HealthBand = "good" | "warn" | "poor" | "none";
+
+function healthChipStyle(band: HealthBand) {
+  return {
+    display: "inline-flex" as const,
+    alignItems: "center" as const,
+    padding: "3px 8px",
+    borderRadius: 6,
+    fontSize: 12,
+    fontWeight: 600,
+    whiteSpace: "nowrap" as const,
+    color: `var(--health-${band}-text)`,
+    background: `var(--health-${band}-bg)`,
+  };
+}
+
+/**
+ * The stored `savings` string arrives pre-formatted ("1.8 s", "240 KB",
+ * "Detected"). R3 puts the size in the numeral's weight and the unit in its
+ * own token, so the two halves are split here rather than painted amber as
+ * one blob.
+ */
+function splitMeasure(label: string): { value: string; unit?: string } {
+  const parts = label.trim().split(/\s+/);
+  return parts.length > 1
+    ? { value: parts[0], unit: parts.slice(1).join(" ") }
+    : { value: label };
+}
+
+/**
+ * Direction for a metric where lower is better (load time, transfer size, DOM
+ * weight). Every metric this page charts is of that kind, so a drop improves.
+ */
+function lowerIsBetterTrend(delta: number): Trend {
+  return delta < 0 ? "improving" : delta > 0 ? "regressing" : "no_change";
+}
+
+/**
+ * `formatVisitorMetricDelta` prefixes its own arrow. `<TrendArrow>` is the one
+ * trend renderer now, so the baked-in glyph is stripped rather than shown
+ * twice.
+ */
+function measureWithoutArrow(text: string): string {
+  return text.replace(/^[\u2191\u2193]\s*/u, "");
+}
+
+/**
+ * How well-evidenced a finding is. Confidence is not health: a well-corroborated
+ * problem is not "good", so this never reaches for a health hue.
+ */
+function confidenceVar(confidence: string): string {
+  return confidence === "high" || confidence === "medium"
+    ? "var(--confidence-strong)"
+    : "var(--confidence-weak)";
+}
+
+/**
+ * Chart series identity by device (R4) — never a health or trend hue. The
+ * return type is the closed pair rather than `string` so this keeps compiling
+ * when `charts.tsx` narrows `Sparkline.color` off `string`.
+ */
+type SeriesVar = "var(--series-mobile)" | "var(--series-desktop)";
+
+function seriesVar(strategy: "mobile" | "desktop"): SeriesVar {
+  return strategy === "desktop" ? "var(--series-desktop)" : "var(--series-mobile)";
 }
 
 export default function PageDetail() {
@@ -112,8 +199,8 @@ export default function PageDetail() {
   if (!page) {
     return (
       <div style={{ padding: 40 }}>
-        <button onClick={() => router.push(store.pathFor("/dashboard"))} style={{ border: "none", background: "none", color: C.muted, cursor: "pointer", fontSize: 13 }}>← Back to dashboard</button>
-        <p style={{ color: C.muted, marginTop: 16 }}>Page not found. It may have been removed from the watchlist.</p>
+        <button onClick={() => router.push(store.pathFor("/dashboard"))} style={{ border: "none", background: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 13 }}>← Back to dashboard</button>
+        <p style={{ color: "var(--text-muted)", marginTop: 16 }}>Page not found. It may have been removed from the watchlist.</p>
       </div>
     );
   }
@@ -124,7 +211,7 @@ export default function PageDetail() {
   const agentChecks = agentSnapshot?.checks ?? [];
   const agentSummary = summarizeAgentChecks(agentChecks, page.agentIgnores, store.agentIgnoreDefaults, page.agentIgnoreRestores);
   const { pass, fail, total, unavailable: unavailableCount, ignored, percent: apct } = agentSummary;
-  const apm = scoreMeta(apct);
+  const apm = scoreMetaVars(apct);
   const failList = agentChecks.filter((check) => !isAgentCheckIgnored(check, page.agentIgnores, store.agentIgnoreDefaults, page.agentIgnoreRestores) && !check.unavailable && !check.pass);
   const isPending = !page.baseline || !page.baselineCapturedAt;
   const collectionBlocked = page.flag === "paused" || (!!page.runState && page.runState !== "failed");
@@ -164,14 +251,14 @@ export default function PageDetail() {
     <div>
       <header className="page-header detail-page-header" style={{ padding: "22px 40px 0" }}>
         <nav className="detail-breadcrumb" aria-label="Breadcrumb">
-          <button type="button" onClick={() => router.push(store.pathFor("/dashboard"))}>Pages</button>
+          <button type="button" onClick={() => router.push(store.pathFor(DESTINATION_PATH.pages))}>{DESTINATION_LABEL.pages}</button>
           <span className="detail-breadcrumb__divider" aria-hidden="true">/</span>
           <span aria-current="page">{page.title}</span>
         </nav>
         <div className="detail-hero">
           <div className="detail-title-row">
             <h1 className="detail-page-title">{page.title}</h1>
-            {isStatusPreview && <span style={{ padding: "3px 7px", borderRadius: 5, color: C.violetSoft, background: "rgba(138,92,246,0.15)", fontSize: 10, fontWeight: 650, letterSpacing: "0.03em", textTransform: "uppercase" }}>Status preview</span>}
+            {isStatusPreview && <span style={{ padding: "3px 7px", borderRadius: 5, color: "var(--text-muted)", background: "var(--surface-raised)", fontSize: 12, fontWeight: 650, letterSpacing: "0.03em", textTransform: "uppercase" }}>Status preview</span>}
             <a className="detail-page-link" href={watchedPageHref} target="_blank" rel="noreferrer">
               <span>{page.url}</span>
               <ArrowUpRightIcon size={14} weight="regular" aria-hidden="true" />
@@ -197,12 +284,12 @@ export default function PageDetail() {
             triggerWidth={160}
             menuWidth={160}
           />
-          {store.canManageProject && <button disabled={collectionBlocked} title={page.flag === "paused" ? "Change this page to Watching or Priority before collecting" : undefined} onClick={() => store.runPage(page.id)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 15px", border: "none", borderRadius: 8, background: C.accent, color: "#fff", fontSize: 12.5, fontWeight: 550, cursor: collectionBlocked ? "not-allowed" : "pointer", opacity: collectionBlocked ? 0.65 : 1, whiteSpace: "nowrap" }}>
-            <RefreshIcon size={15} style={{ color: "#fff" }} />
+          {store.canManageProject && <button disabled={collectionBlocked} title={page.flag === "paused" ? "Change this page to Watching or Priority before collecting" : undefined} onClick={() => store.runPage(page.id)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 15px", border: "none", borderRadius: 8, background: "var(--action-primary-bg)", color: "var(--action-primary-text)", fontSize: 12.5, fontWeight: 550, cursor: collectionBlocked ? "not-allowed" : "pointer", opacity: collectionBlocked ? 0.65 : 1, whiteSpace: "nowrap" }}>
+            <RefreshIcon size={15} style={{ color: "var(--action-primary-text)" }} />
             {page.flag === "paused" ? "Paused" : page.runState === "queued" ? "Queued…" : page.runState === "dispatching" ? "Starting…" : page.runState === "waiting_for_evidence" ? "Waiting for evidence…" : page.runState === "running" ? "Running…" : "Run now"}
           </button>}
-          {store.canManageProject && <button onClick={() => store.openMarker(page.id)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 15px", border: "none", borderRadius: 8, background: C.green, color: C.bg, fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
-            <PlusIcon size={15} style={{ color: C.bg }} />
+          {store.canManageProject && <button onClick={() => store.openMarker(page.id)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 15px", border: "none", borderRadius: 8, background: "var(--action-primary-bg)", color: "var(--action-primary-text)", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
+            <PlusIcon size={15} style={{ color: "var(--action-primary-text)" }} />
             Marker
           </button>}
         </div>
@@ -225,7 +312,7 @@ export default function PageDetail() {
                 navigateToTab(next.key);
                 document.getElementById(`page-tab-${next.key}`)?.focus();
               }}
-              style={{ border: "none", background: "none", fontSize: 13.5, fontWeight: 500, padding: "11px 4px", marginRight: 24, cursor: "pointer", color: tab === t.key ? "#FFFFFF" : C.muted, borderBottom: `2px solid ${tab === t.key ? C.accentBright : "transparent"}` }}
+              style={{ border: "none", background: "none", fontSize: 13.5, fontWeight: 500, padding: "11px 4px", marginRight: 24, cursor: "pointer", color: tab === t.key ? "var(--text-body)" : "var(--text-muted)", borderBottom: `2px solid ${tab === t.key ? "var(--action-primary-bg)" : "transparent"}` }}
             >
               {t.label}
             </button>
@@ -235,23 +322,23 @@ export default function PageDetail() {
 
       <div className="detail-content" style={{ padding: "28px 40px 56px" }}>
         {experimentVariationDetected && (
-          <div style={{ marginBottom: 18, padding: "12px 15px", borderRadius: 9, border: "1px solid rgba(124,156,255,0.30)", background: "rgba(124,156,255,0.08)" }}>
-            <div style={{ fontSize: 12.5, fontWeight: 600, color: C.accentBright }}>Experiment variation detected</div>
-            <div style={{ fontSize: 11.5, color: C.muted, marginTop: 3 }}>
+          <div style={{ marginBottom: 18, padding: "12px 15px", borderRadius: 9, border: "1px solid var(--border-hairline)", background: "var(--surface-card)" }}>
+            <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text-body)" }}>Experiment variation detected</div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 3 }}>
               This page may serve different experiment variants across repeated measurements. Compare trends and retained evidence before treating a single-run change as a regression.
             </div>
           </div>
         )}
         {page.flag === "paused" && (
-          <div style={{ marginBottom: 18, padding: "12px 15px", borderRadius: 9, border: "1px solid rgba(255,154,61,0.30)", background: "rgba(255,154,61,0.08)", color: C.muted, fontSize: 12.5 }}>
+          <div style={{ marginBottom: 18, padding: "12px 15px", borderRadius: 9, border: "1px solid var(--border-hairline)", background: "var(--surface-card)", color: "var(--text-muted)", fontSize: 12.5 }}>
             This page is paused. Its history and baseline are retained, but it will not collect new data until it is changed to Watching or Priority.
           </div>
         )}
         {page.runState && <CollectionStatus page={page} job={activeJob} />}
         {!page.runState && page.lastCollectionStatus === "partial" && (
-          <div style={{ marginBottom: 18, padding: "12px 15px", borderRadius: 9, border: "1px solid rgba(255,154,61,0.30)", background: "rgba(255,154,61,0.08)" }}>
-            <div style={{ fontSize: 12.5, fontWeight: 600, color: C.amber }}>Partial collection retained</div>
-            <div style={{ fontSize: 11.5, color: C.muted, marginTop: 3 }}>
+          <div style={{ marginBottom: 18, padding: "12px 15px", borderRadius: 9, border: "1px solid var(--health-warn-border)", background: "var(--health-warn-bg)" }}>
+            <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--health-warn-text)" }}>Partial collection retained</div>
+            <div style={{ fontSize: 12, color: "var(--health-warn-text)", marginTop: 3 }}>
               Every successful device and agent scan remains in history; unavailable tests will be attempted by the next scheduled collection.
             </div>
           </div>
@@ -279,9 +366,19 @@ function DetailDeviceStatus({ name, status }: { name: "Desktop" | "Mobile"; stat
       aria-label={`${name} Performance change: ${meta.label}`}
       title={`${name} Performance change: ${meta.label}`}
     >
-      <CircleIcon className="detail-status-dot" size={7} weight="fill" style={{ color: status === "stable" ? C.accent : meta.fg }} aria-hidden="true" />
       <span className="detail-device-name">{name}</span>
-      <strong className="detail-device-value">{meta.label.toLowerCase()}</strong>
+      {meta.kind === "trend" ? (
+        // The arrow carries the direction; a green or red dot beside a health
+        // chip made one row argue with itself. "Stable" was also the old
+        // wording — the registry calls it "No change".
+        <TrendArrow trend={meta.trend} style={{ fontWeight: 600 }} />
+      ) : (
+        // Pending is not a fourth direction. No verdict has been reached yet,
+        // so it renders as a neutral chip rather than an arrow.
+        <span style={{ display: "inline-flex", alignItems: "center", padding: "1px 8px", borderRadius: 20, fontSize: 12, fontWeight: 600, color: "var(--status-neutral-text)", background: "var(--status-neutral-bg)" }}>
+          {meta.label}
+        </span>
+      )}
     </span>
   );
 }
@@ -300,20 +397,23 @@ function LabMetricsPanel({
   const context = latestNight?.measurementContext?.[strategy];
   const history = pageHistoryForRange(page, rangeDays);
   const hasMetrics = LAB_METRICS.some((metric) => typeof context?.[metric.key] === "number");
+  // R1: the rating is a health verdict, so it keeps the hue. The sparkline
+  // below does NOT — a line that changes colour with the data is identity
+  // doing judgment's job.
   const tone = (rating: ReturnType<typeof labMetricRating>) =>
-    rating === "Good" ? C.green : rating === "Needs improvement" ? C.amber : C.redSoft;
+    rating === "Good" ? "var(--health-good-text)" : rating === "Needs improvement" ? "var(--health-warn-text)" : "var(--health-poor-text)";
 
   return (
-    <section style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, padding: 22, marginBottom: 20 }} aria-labelledby="lab-metrics-heading">
+    <section style={{ background: "var(--surface-card)", border: "1px solid var(--border-hairline)", borderRadius: 13, padding: 22, marginBottom: 20 }} aria-labelledby="lab-metrics-heading">
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 20 }}>
         <div>
           <h3 id="lab-metrics-heading" style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>Performance sub-metrics</h3>
-          <div style={{ fontSize: 11.5, color: C.faint, marginTop: 4 }}>Lighthouse lab medians · <span style={{ textTransform: "capitalize" }}>{strategy}</span> · last {rangeDays} days</div>
+          <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>Lighthouse lab medians · <span style={{ textTransform: "capitalize" }}>{strategy}</span> · last {rangeDays} days</div>
         </div>
-        {context?.lighthouseVersion && <span style={{ fontSize: 10.5, color: C.faint }}>Lighthouse {context.lighthouseVersion}</span>}
+        {context?.lighthouseVersion && <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Lighthouse {context.lighthouseVersion}</span>}
       </div>
       {!hasMetrics ? (
-        <div style={{ padding: "28px 12px 10px", textAlign: "center", color: C.muted, fontSize: 12.5 }}>
+        <div style={{ padding: "28px 12px 10px", textAlign: "center", color: "var(--text-muted)", fontSize: 12.5 }}>
           Sub-metric history starts with the next successful collection.
         </div>
       ) : (
@@ -323,24 +423,24 @@ function LabMetricsPanel({
             const rating = typeof value === "number" ? labMetricRating(metric.key, value) : null;
             const series = labMetricSeries(history, strategy, metric.key);
             return (
-              <div key={metric.key} style={{ minWidth: 0, padding: "13px 14px", borderRadius: 10, border: `1px solid ${C.border2}`, background: C.panel2 }}>
+              <div key={metric.key} style={{ minWidth: 0, padding: "13px 14px", borderRadius: 10, border: "1px solid var(--border-strong)", background: "var(--surface-raised)" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                   <span style={{ fontSize: 12.5, fontWeight: 600 }}>{metric.label}</span>
-                  <span style={{ fontSize: 10, color: C.faint }}>{metric.short}</span>
+                  <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{metric.short}</span>
                 </div>
                 <div style={{ marginTop: 11 }}>
-                  <span style={{ display: "block", fontSize: 22, fontWeight: 600, color: rating ? tone(rating) : C.muted, whiteSpace: "nowrap" }}>{formatLabMetric(metric.key, value)}</span>
-                  <span style={{ display: "block", minHeight: 14, marginTop: 4, fontSize: 9.5, color: rating ? tone(rating) : C.faint }}>{rating ?? "No data"}</span>
+                  <span style={{ display: "block", fontSize: 22, fontWeight: 600, color: rating ? tone(rating) : "var(--health-none-text)", whiteSpace: "nowrap" }}>{formatLabMetric(metric.key, value)}</span>
+                  <span style={{ display: "block", minHeight: 16, marginTop: 4, fontSize: 12, color: rating ? tone(rating) : "var(--health-none-text)" }}>{rating ?? "No data"}</span>
                 </div>
                 <div style={{ height: 30, marginTop: 8 }}>
-                  {series.length > 0 && <Sparkline series={series} color={rating ? tone(rating) : C.muted} w={150} h={30} />}
+                  {series.length > 0 && <Sparkline series={series} device={strategy} w={150} h={30} />}
                 </div>
               </div>
             );
           })}
         </div>
       )}
-      <div style={{ marginTop: 12, color: C.faint, fontSize: 10.5 }}>Lower values are better. These controlled lab measurements are separate from Chrome visitor evidence.</div>
+      <div style={{ marginTop: 12, color: "var(--text-muted)", fontSize: 12 }}>Lower values are better. These controlled lab measurements are separate from Chrome visitor evidence.</div>
     </section>
   );
 }
@@ -383,9 +483,9 @@ function CollectionStatus({ page, job }: { page: WatchPage; job?: CollectionJob 
           ? "Collecting four independent tests"
           : "Last collection failed";
   return (
-    <div style={{ marginBottom: 18, padding: "12px 15px", borderRadius: 9, border: `1px solid ${failed ? "rgba(255,92,108,0.35)" : "rgba(59,137,255,0.35)"}`, background: failed ? "rgba(255,92,108,0.09)" : "rgba(59,137,255,0.09)" }}>
-      <div style={{ fontSize: 12.5, fontWeight: 600, color: failed ? C.redSoft : C.accentSoft }}>{title}</div>
-      <div style={{ fontSize: 11.5, color: C.muted, marginTop: 3 }}>
+    <div style={{ marginBottom: 18, padding: "12px 15px", borderRadius: 9, border: `1px solid ${failed ? "var(--status-danger-border)" : "var(--border-hairline)"}`, background: failed ? "var(--status-danger-bg)" : "var(--surface-card)" }}>
+      <div style={{ fontSize: 12.5, fontWeight: 600, color: failed ? "var(--status-danger-text)" : "var(--text-body)" }}>{title}</div>
+      <div style={{ fontSize: 12, color: failed ? "var(--status-danger-text)" : "var(--text-muted)", marginTop: 3 }}>
         {failed
           ? failedRunDetailMessage(page.lastError)
           : page.runState === "waiting_for_evidence"
@@ -393,7 +493,7 @@ function CollectionStatus({ page, job }: { page: WatchPage; job?: CollectionJob 
             : "This state is persisted, so it is safe to refresh or leave the app while the job runs."}
       </div>
       {!failed && latestDetail && (
-        <div style={{ fontSize: 11, color: C.faint, marginTop: 5 }}>Latest collection response · {latestDetail}</div>
+        <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 5 }}>Latest collection response · {latestDetail}</div>
       )}
     </div>
   );
@@ -422,7 +522,7 @@ function OverviewTab({
   strategy: "mobile" | "desktop";
   rangeDays: RangeDays;
   apct: number;
-  apm: { fg: string; ring: string };
+  apm: ScoreMetaVars;
   pass: number;
   total: number;
   ignored: number;
@@ -454,7 +554,7 @@ function OverviewTab({
           display: "flex",
           flexWrap: "wrap",
           gap: scoreCardDensity === "xsmall" ? 0 : 16,
-          border: scoreCardDensity === "xsmall" ? `1px solid ${C.border}` : undefined,
+          border: scoreCardDensity === "xsmall" ? "1px solid var(--border-hairline)" : undefined,
           borderRadius: scoreCardDensity === "xsmall" ? 8 : undefined,
           marginBottom: 20,
         }}
@@ -480,7 +580,7 @@ function OverviewTab({
       <PageCalibrationPanel key={`${page.id}:${JSON.stringify(page.performanceThresholdOverrides ?? {})}`} page={page} store={store} />
 
       {store.visitorExperienceVisible && (
-        <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, padding: 22, marginBottom: 20 }}>
+        <div style={{ background: "var(--surface-card)", border: "1px solid var(--border-hairline)", borderRadius: 13, padding: 22, marginBottom: 20 }}>
           <VisitorExperiencePanel
             evidence={evidenceForPage(store.visitorExperience, page.id, strategy)}
             labHistory={pageHistoryForRange(page, rangeDays)}
@@ -489,35 +589,35 @@ function OverviewTab({
         </div>
       )}
 
-      <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, padding: 22, marginBottom: 20, display: "flex", alignItems: "center", gap: 28 }}>
+      <div style={{ background: "var(--surface-card)", border: "1px solid var(--border-hairline)", borderRadius: 13, padding: 22, marginBottom: 20, display: "flex", alignItems: "center", gap: 28 }}>
         <div style={{ flex: "none", display: "flex", alignItems: "center", gap: 16 }}>
-          <div style={{ width: 64, height: 64, borderRadius: "50%", border: `4px solid ${total ? apm.ring : C.border2}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, fontWeight: 600, color: total ? apm.fg : C.muted }}>
+          <div style={{ width: 64, height: 64, borderRadius: "50%", border: `4px solid ${total ? apm.ring : "var(--health-none-border)"}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, fontWeight: 600, color: total ? apm.fg : "var(--health-none-text)" }}>
             {total ? `${apct}%` : "—"}
           </div>
           <div style={{ lineHeight: 1.45 }}>
             <div style={{ fontSize: 15, fontWeight: 600 }}>Agent-readiness</div>
-            <div style={{ fontSize: 12.5, color: C.muted }}>
+            <div style={{ fontSize: 12.5, color: "var(--text-muted)" }}>
               {total
                 ? `${pass} of ${total} applicable checks passing · ${ignored} ignored`
                 : agentChecks.length
                   ? `No applicable checks · ${ignored} ignored`
                   : "No scan in this range"}
             </div>
-            <div style={{ fontSize: 11.5, color: C.faint, marginTop: 2 }}>Pass rate, computed live from per-check results — not a composite score</div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>Pass rate, computed live from per-check results — not a composite score</div>
           </div>
         </div>
-        <div style={{ flex: 1, minWidth: 0, borderLeft: `1px solid ${C.border}`, paddingLeft: 26 }}>
+        <div style={{ flex: 1, minWidth: 0, borderLeft: "1px solid var(--border-hairline)", paddingLeft: 26 }}>
           {failList.length === 0 ? (
-            <div style={{ fontSize: 13, color: total ? C.green : C.muted, fontWeight: 500 }}>
+            <div style={{ fontSize: 13, color: total ? "var(--health-good-text)" : "var(--health-none-text)", fontWeight: 500 }}>
               {total ? "All applicable checks passing." : agentChecks.length ? "No applicable checks are currently scored." : "No agent-readiness scan was recorded in this range."}
             </div>
           ) : (
             <div>
-              <div style={{ fontSize: 11, fontWeight: 550, letterSpacing: "0.05em", textTransform: "uppercase", color: C.faint, marginBottom: 11 }}>Failing checks</div>
+              <div style={{ fontSize: 12, fontWeight: 550, letterSpacing: "0.05em", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: 11 }}>Failing checks</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                 {failList.map((f) => (
-                  <span key={f.name} style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12.5, color: C.redSoft, background: "rgba(255,92,108,0.13)", padding: "5px 11px", borderRadius: 7 }}>
-                    <span style={{ flex: "0 0 15px", width: 15, height: 15, aspectRatio: "1 / 1", borderRadius: 4, background: C.red, color: C.bg, fontSize: 9, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</span>
+                  <span key={f.name} style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12.5, color: "var(--health-poor-text)", background: "var(--health-poor-bg)", padding: "5px 11px", borderRadius: 7 }}>
+                    <span aria-hidden="true" style={{ flex: "0 0 18px", width: 18, height: 18, aspectRatio: "1 / 1", borderRadius: 4, border: "1px solid var(--health-poor-border)", color: "var(--health-poor-text)", fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</span>
                     {f.name}
                   </span>
                 ))}
@@ -527,21 +627,21 @@ function OverviewTab({
         </div>
       </div>
 
-      <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, overflow: "hidden" }}>
-        <div style={{ padding: "18px 22px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <div style={{ background: "var(--surface-card)", border: "1px solid var(--border-hairline)", borderRadius: 13, overflow: "hidden" }}>
+        <div style={{ padding: "18px 22px", borderBottom: "1px solid var(--border-hairline)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>Recommendations for this page</h3>
-          <span style={{ fontSize: 12, color: C.faint }}>Measured impact or signal</span>
+          <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Measured impact or signal</span>
         </div>
         {pageRecs.map((r) => {
           const fieldActionable = isFieldRecommendationActionable(r);
           return (
-          <div key={r.key} style={{ display: "flex", alignItems: "center", gap: 16, padding: "15px 22px", borderBottom: `1px solid ${C.rowBorder}` }}>
+          <div key={r.key} style={{ display: "flex", alignItems: "center", gap: 16, padding: "15px 22px", borderBottom: "1px solid var(--border-hairline)" }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13.5, fontWeight: 500 }}>{r.title}</div>
               <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 2 }}>
-                <span style={{ fontSize: 12, color: C.faint }}>{r.category}</span>
+                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{r.category}</span>
                 {r.strategies?.map((device) => (
-                  <span key={device} style={{ fontSize: 9.5, color: C.accentSoft, textTransform: "capitalize" }}>{device}</span>
+                  <span key={device} style={{ fontSize: 12, color: "var(--text-muted)", textTransform: "capitalize" }}>{device}</span>
                 ))}
               </div>
               <div style={{ marginTop: 7 }}>
@@ -551,28 +651,21 @@ function OverviewTab({
                 <FieldEvidenceChip signal={recommendationEvidenceSignal(r, page, store.visitorExperience)} />
                 <FieldRecommendationStatusBadge rec={r} />
               </div>
-              {r.aiSummary && <div style={{ fontSize: 12, color: C.muted, marginTop: 6, lineHeight: 1.45 }}>{r.aiSummary}</div>}
+              {r.aiSummary && <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6, lineHeight: 1.45 }}>{r.aiSummary}</div>}
             </div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: C.amber, whiteSpace: "nowrap" }}>{r.savings}</div>
+            <div style={{ whiteSpace: "nowrap" }}><Magnitude {...splitMeasure(r.savings)} fontSize={13} /></div>
             {r.status === "inbox" && fieldActionable ? (
               <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={() => store.triageRec(r.key)} style={{ border: "none", background: C.accent, color: "#fff", fontSize: 12, fontWeight: 550, padding: "7px 12px", borderRadius: 7, cursor: "pointer", whiteSpace: "nowrap" }}>{triageActionLabel(r)}</button>
-                <button onClick={() => store.ignoreRec(r.key)} style={{ border: `1px solid ${C.border2}`, background: "rgba(255,255,255,0.03)", color: C.dim, fontSize: 12, fontWeight: 500, padding: "7px 12px", borderRadius: 7, cursor: "pointer", whiteSpace: "nowrap" }}>Ignore</button>
+                <button onClick={() => store.triageRec(r.key)} style={{ border: "none", background: "var(--action-primary-bg)", color: "var(--action-primary-text)", fontSize: 12, fontWeight: 550, padding: "7px 12px", borderRadius: 7, cursor: "pointer", whiteSpace: "nowrap" }}>{triageActionLabel(r)}</button>
+                <button onClick={() => store.ignoreRec(r.key)} style={{ border: "1px solid var(--border-strong)", background: "var(--surface-raised)", color: "var(--text-body)", fontSize: 12, fontWeight: 500, padding: "7px 12px", borderRadius: 7, cursor: "pointer", whiteSpace: "nowrap" }}>{ISSUE_ACTION_LABEL.dismiss}</button>
               </div>
             ) : (
-              <span
-                style={{
-                  fontSize: 12,
-                  fontWeight: 550,
-                  padding: "6px 12px",
-                  borderRadius: 7,
-                  whiteSpace: "nowrap",
-                  color: r.status === "task" ? C.accentSoft : C.muted,
-                  background: r.status === "task" ? "rgba(59,137,255,0.14)" : "rgba(255,255,255,0.06)",
-                }}
-              >
-                {r.status === "task" ? `In tasks · ${taskLabel(r.taskStatus)}` : r.status === "ignored" ? "Ignored" : "Monitoring lifecycle"}
-              </span>
+              <StatusChip
+                state={r.status === "task"
+                  ? taskStatusWorkState(r.taskStatus)
+                  : r.status === "ignored" ? "dismissed" : "new"}
+                style={{ padding: "6px 12px", borderRadius: 7 }}
+              />
             )}
           </div>
           );
@@ -619,11 +712,11 @@ function PageCalibrationPanel({ page, store }: { page: WatchPage; store: ReturnT
   };
 
   return (
-    <section aria-labelledby="page-calibration-heading" style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, padding: 22, marginBottom: 20 }}>
+    <section aria-labelledby="page-calibration-heading" style={{ background: "var(--surface-card)", border: "1px solid var(--border-hairline)", borderRadius: 13, padding: 22, marginBottom: 20 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 20 }}>
         <div>
           <h3 id="page-calibration-heading" style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>Page alert calibration</h3>
-          <div style={{ marginTop: 4, color: C.faint, fontSize: 11.5, lineHeight: 1.5 }}>
+          <div style={{ marginTop: 4, color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>
             Tune noisy or business-critical pages without changing the team defaults. Evidence gates apply only to new Inbox findings.
           </div>
         </div>
@@ -635,14 +728,14 @@ function PageCalibrationPanel({ page, store }: { page: WatchPage; store: ReturnT
         />
       </div>
       {!custom ? (
-        <div style={{ marginTop: 16, padding: "12px 14px", borderRadius: 8, background: C.bgElev, color: C.muted, fontSize: 12 }}>
+        <div style={{ marginTop: 16, padding: "12px 14px", borderRadius: 8, background: "var(--surface-raised)", color: "var(--text-muted)", fontSize: 12 }}>
           Inheriting {team.regression}-point regression · {team.confirmationRuns} confirmation scan{team.confirmationRuns === 1 ? "" : "s"} · {team.devicePolicy} device policy · {team.minimumFindingRuns} finding run{team.minimumFindingRuns === 1 ? "" : "s"}.
         </div>
       ) : (
         <>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 10, marginTop: 16 }}>
             {PAGE_CALIBRATION_FIELDS.map(({ key, label, suffix, min, max }) => (
-              <label key={key} style={{ display: "grid", gap: 6, padding: 12, borderRadius: 8, background: C.bgElev, color: C.muted, fontSize: 11 }}>
+              <label key={key} style={{ display: "grid", gap: 6, padding: 12, borderRadius: 8, background: "var(--surface-raised)", color: "var(--text-muted)", fontSize: 12 }}>
                 {label}
                 <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
                   <input
@@ -652,20 +745,20 @@ function PageCalibrationPanel({ page, store }: { page: WatchPage; store: ReturnT
                     max={max}
                     value={draft[key]}
                     onChange={(event) => setDraft((current) => ({ ...current, [key]: event.target.value }))}
-                    style={{ width: 80, border: `1px solid ${C.border2}`, borderRadius: 6, background: C.panel, color: C.text, padding: "7px 8px", fontSize: 12 }}
+                    style={{ width: 80, border: "1px solid var(--border-strong)", borderRadius: 6, background: "var(--surface-input)", color: "var(--magnitude-value)", fontWeight: 650, padding: "7px 8px", fontSize: 12 }}
                   />
-                  <span style={{ color: C.faint }}>{suffix}</span>
+                  <span style={{ color: "var(--magnitude-unit)" }}>{suffix}</span>
                 </span>
               </label>
             ))}
-            <div style={{ padding: 12, borderRadius: 8, background: C.bgElev }}>
-              <div style={{ color: C.muted, fontSize: 11, marginBottom: 8 }}>Device policy</div>
+            <div style={{ padding: 12, borderRadius: 8, background: "var(--surface-raised)" }}>
+              <div style={{ color: "var(--text-muted)", fontSize: 12, marginBottom: 8 }}>Device policy</div>
               <SegToggle label="Page device policy" value={devicePolicy} onChange={setDevicePolicy} options={[{ value: "either", label: "Either" }, { value: "both", label: "Both" }, { value: "preferred", label: "Default" }]} />
             </div>
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginTop: 12 }}>
-            <span style={{ color: valid ? C.faint : C.redSoft, fontSize: 11.5 }}>{valid ? "Overrides affect this page's status, alerts, and future findings." : "One or more values are outside the supported range."}</span>
-            <button type="button" disabled={!valid} onClick={save} style={{ border: "none", borderRadius: 7, background: C.accent, color: "#fff", padding: "8px 12px", fontSize: 12, fontWeight: 600, cursor: valid ? "pointer" : "not-allowed", opacity: valid ? 1 : 0.55 }}>Save calibration</button>
+            <span style={{ color: valid ? "var(--text-muted)" : "var(--action-destructive-text)", fontSize: 12 }}>{valid ? "Overrides affect this page's status, alerts, and future findings." : "One or more values are outside the supported range."}</span>
+            <button type="button" disabled={!valid} onClick={save} style={{ border: "none", borderRadius: 7, background: "var(--action-primary-bg)", color: "var(--action-primary-text)", padding: "8px 12px", fontSize: 12, fontWeight: 600, cursor: valid ? "pointer" : "not-allowed", opacity: valid ? 1 : 0.55 }}>Save calibration</button>
           </div>
         </>
       )}
@@ -797,27 +890,27 @@ function HistoryTab({
 
   return (
     <div>
-      <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, padding: 22, marginBottom: 20 }}>
+      <div style={{ background: "var(--surface-card)", border: "1px solid var(--border-hairline)", borderRadius: 13, padding: 22, marginBottom: 20 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
           <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>Score over time · last {rangeDays} days</h3>
           <SegToggle label="History category" value={chartCat} onChange={setChartCat} options={CATEGORIES.map((c) => ({ value: c.key, label: c.short }))} />
         </div>
-        <div style={{ fontSize: 12, color: C.faint, marginBottom: 18 }}>
+        <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 18 }}>
           Desktop and Mobile are stacked for comparison. Each median line includes its run-to-run range; reference lines show that device&apos;s original benchmark and, when enough scans exist, the previous {rangeDays}-day period median.
-          {excludedHistory.length > 0 && " Orange anomaly bands mark measurements retained for diagnosis but excluded from scores, trends, and recommendations."}
+          {excludedHistory.length > 0 && " Shaded bands mark measurements retained for diagnosis but excluded from scores, trends, and recommendations."}
         </div>
         {historyForStrategy(rangeHistory, "desktop").length < 2 && historyForStrategy(rangeHistory, "mobile").length < 2 ? (
-          <div style={{ padding: "42px 16px", textAlign: "center", color: C.muted, fontSize: 13 }}>At least two collections inside this range are required to chart change.</div>
+          <div style={{ padding: "42px 16px", textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>At least two collections inside this range are required to chart change.</div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
             {(["desktop", "mobile"] as const).map((device) => (
               <div key={device}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 7 }}>
-                  <span style={{ fontSize: 12, fontWeight: 600, textTransform: "capitalize", color: device === "desktop" ? C.violetSoft : C.accentSoft }}>{device}</span>
-                  <span style={{ fontSize: 11, color: C.faint }}>Latest {page.current[device][chartCat]}</span>
+                  <span style={{ fontSize: 12, fontWeight: 600, textTransform: "capitalize", color: seriesVar(device) }}>{device}</span>
+                  <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Latest {page.current[device][chartCat]}</span>
                 </div>
                 {historyForStrategy(rangeHistory, device).length < 2 ? (
-                  <div style={{ padding: "34px 16px", textAlign: "center", color: C.muted, fontSize: 12.5 }}>
+                  <div style={{ padding: "34px 16px", textAlign: "center", color: "var(--text-muted)", fontSize: 12.5 }}>
                     At least two successful {device} collections are required to chart change.
                   </div>
                 ) : (
@@ -843,32 +936,32 @@ function HistoryTab({
             compact
           />
         )}
-        <div style={{ marginTop: 22, paddingTop: 20, borderTop: `1px solid ${C.border}` }}>
+        <div style={{ marginTop: 22, paddingTop: 20, borderTop: "1px solid var(--border-hairline)" }}>
           <div style={{ display: "flex", alignItems: "start", justifyContent: "space-between", gap: 20, marginBottom: 4 }}>
             <div>
-              <div style={{ fontSize: 12, fontWeight: 600, color: C.violetSoft }}>Agent readiness</div>
-              <div style={{ fontSize: 11.5, color: C.faint, marginTop: 4 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-body)" }}>Agent readiness</div>
+              <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>
                 Each point freezes the score and ignored checks that were effective when that agent scan completed.
               </div>
             </div>
             {latestReadiness && (
               <div style={{ flex: "0 0 auto", textAlign: "right" }}>
-                <div style={{ color: scoreMeta(latestReadiness.percent).fg, fontSize: 13, fontWeight: 650 }}>{latestReadiness.percent}%</div>
-                <div style={{ color: C.faint, fontSize: 10.5, marginTop: 2 }}>
+                <div style={{ color: scoreMetaVars(latestReadiness.percent).fg, fontSize: 13, fontWeight: 650 }}>{latestReadiness.percent}%</div>
+                <div style={{ color: "var(--text-muted)", fontSize: 12, marginTop: 2 }}>
                   {latestReadiness.pass}/{latestReadiness.total}{latestReadiness.ignored ? ` · ${latestReadiness.ignored} ignored` : ""}
                 </div>
               </div>
             )}
           </div>
           {readinessHistory.length === 0 ? (
-            <div style={{ padding: "34px 16px 18px", textAlign: "center", color: C.muted, fontSize: 13 }}>
+            <div style={{ padding: "34px 16px 18px", textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>
               Readiness history starts with the next successful agent scan in this range.
             </div>
           ) : (
             <>
-              <div style={{ display: "flex", gap: 16, alignItems: "center", marginTop: 12, color: C.faint, fontSize: 10.5 }}>
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: "50%", background: C.green }} />Fixed since prior run</span>
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: "50%", background: C.accentSoft }} />Newly ignored</span>
+              <div style={{ display: "flex", gap: 16, alignItems: "center", marginTop: 12, color: "var(--text-muted)", fontSize: 12 }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--series-marker)" }} />Fixed since prior run</span>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: "50%", border: "1.5px solid var(--series-marker)" }} />Newly ignored</span>
               </div>
               <AgentReadinessChart
                 history={agentRangeHistory}
@@ -878,7 +971,7 @@ function HistoryTab({
                 restores={page.agentIgnoreRestores}
               />
               {readinessHistory.length === 1 && (
-                <div style={{ color: C.faint, fontSize: 11, marginTop: -4 }}>
+                <div style={{ color: "var(--text-muted)", fontSize: 12, marginTop: -4 }}>
                   One retained snapshot is shown; direction appears after the next successful scan.
                 </div>
               )}
@@ -887,14 +980,14 @@ function HistoryTab({
         </div>
       </div>
 
-      <div id="nightly-detail" className="table-scroll" style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13 }}>
-        <div style={{ padding: "13px 22px", borderBottom: `1px solid ${C.border}`, fontSize: 12, color: C.muted }}>
-          Nightly detail · <span style={{ color: C.text, textTransform: "capitalize", fontWeight: 600 }}>{strategy}</span> primary · Lighthouse median with range below
+      <div id="nightly-detail" className="table-scroll" style={{ background: "var(--surface-card)", border: "1px solid var(--border-hairline)", borderRadius: 13 }}>
+        <div style={{ padding: "13px 22px", borderBottom: "1px solid var(--border-hairline)", fontSize: 12, color: "var(--text-muted)" }}>
+          Nightly detail · <span style={{ color: "var(--text-body)", textTransform: "capitalize", fontWeight: 600 }}>{strategy}</span> primary · Lighthouse median with range below
           {showVisitorColumns && " · CrUX p75 with weekly change below"}
           {excludedHistory.length > 0 && " · PSI anomaly rows are observed measurements excluded from scoring"}
           {` · Dates in ${collectionSchedule.timeZone}`}
         </div>
-        <div className="narrow-table" style={{ display: "grid", gridTemplateColumns: GRID, minWidth: showVisitorColumns ? 1120 : undefined, padding: "14px 22px", borderBottom: `1px solid ${C.border}`, fontSize: 11, fontWeight: 550, letterSpacing: "0.05em", textTransform: "uppercase", color: C.faint }}>
+        <div className="narrow-table" style={{ display: "grid", gridTemplateColumns: GRID, minWidth: showVisitorColumns ? 1120 : undefined, padding: "14px 22px", borderBottom: "1px solid var(--border-hairline)", fontSize: 12, fontWeight: 550, letterSpacing: "0.05em", textTransform: "uppercase", color: "var(--text-muted)" }}>
           <div>Night</div>
           <div>Marker</div>
           <div style={{ textAlign: "center" }}>Perf</div>
@@ -905,7 +998,7 @@ function HistoryTab({
             <div
               key={metric.key}
               title={`${metric.label} · ${metric.technicalName}`}
-              style={{ textAlign: "center", borderLeft: metric.key === "lcpP75Ms" ? `1px solid ${C.border}` : undefined }}
+              style={{ textAlign: "center", borderLeft: metric.key === "lcpP75Ms" ? "1px solid var(--border-hairline)" : undefined }}
             >
               {metric.key === "lcpP75Ms" ? "LCP" : metric.key === "inpP75Ms" ? "INP" : metric.key === "clsP75" ? "CLS" : "TTFB"}
             </div>
@@ -931,7 +1024,7 @@ function HistoryTab({
           ].filter((label): label is string => label !== null);
           const cell = (k: CategoryKey) => {
             if (!nightHasStrategy(d, strategy)) {
-              return <div aria-label={`No ${strategy} PSI measurement`} style={{ textAlign: "center", color: C.faint }}>—</div>;
+              return <div aria-label={`No ${strategy} PSI measurement`} style={{ textAlign: "center", color: "var(--health-none-text)" }}>—</div>;
             }
             const score = d.scores[strategy][k];
             const categoryLabel = CATEGORIES.find((category) => category.key === k)?.label ?? k;
@@ -940,8 +1033,8 @@ function HistoryTab({
                 aria-label={`${categoryLabel} ${excludedAnomaly ? "observed" : "median"} ${score.m}, range ${score.lo} to ${score.hi}${excludedAnomaly ? ", excluded PSI anomaly" : ""}`}
                 style={{ textAlign: "center" }}
               >
-                <div style={{ fontSize: 14, lineHeight: 1.1, fontWeight: 650, color: excludedAnomaly ? C.amber : scoreMeta(score.m).fg }}>{score.m}</div>
-                <div style={{ marginTop: 3, fontSize: 10, lineHeight: 1, color: C.faint }}>{score.lo}–{score.hi}</div>
+                <div style={{ fontSize: 14, lineHeight: 1.1, fontWeight: 650, color: scoreMetaVars(score.m).fg }}>{score.m}</div>
+                <div style={{ marginTop: 3, fontSize: 12, lineHeight: 1.2, color: "var(--magnitude-unit)" }}>{score.lo}–{score.hi}</div>
               </div>
             );
           };
@@ -951,17 +1044,28 @@ function HistoryTab({
             const rating = value === null ? null : metricRating(key, value);
             const movement = formatVisitorMetricDelta(key, previous, value);
             const delta = previous === null || value === null ? null : value - previous;
-            const valueColor = rating === "Good" ? C.green : rating === "Needs improvement" ? C.amber : rating === "Poor" ? C.redSoft : C.muted;
-            const movementColor = delta === null || delta === 0 ? C.faint : delta < 0 ? C.green : C.redSoft;
+            const valueColor = rating === "Good" ? "var(--health-good-text)" : rating === "Needs improvement" ? "var(--health-warn-text)" : rating === "Poor" ? "var(--health-poor-text)" : "var(--health-none-text)";
+            const movementTrend = delta === null ? null : lowerIsBetterTrend(delta);
             const label = VISITOR_METRICS.find((metric) => metric.key === key)?.label ?? key;
             return (
               <div
                 aria-label={`${label} ${formatVisitorMetric(key, value)}, ${movement === "—" ? "no prior CrUX snapshot" : movement}`}
                 title={visitorSnapshot ? `Rolling window ending ${visitorSnapshot.collectionEnd} · ${rating ?? "Unavailable"}` : "No CrUX window available for this night"}
-                style={{ textAlign: "center", borderLeft: key === "lcpP75Ms" ? `1px solid ${C.border}` : undefined }}
+                style={{ textAlign: "center", borderLeft: key === "lcpP75Ms" ? "1px solid var(--border-hairline)" : undefined }}
               >
                 <div style={{ fontSize: 13, lineHeight: 1.1, fontWeight: 650, color: valueColor }}>{formatVisitorMetric(key, value)}</div>
-                <div style={{ marginTop: 3, fontSize: 9.5, lineHeight: 1, color: movementColor }}>{movement}</div>
+                <div style={{ marginTop: 3, display: "flex", justifyContent: "center" }}>
+                  {movementTrend === null ? (
+                    <span style={{ fontSize: 12, lineHeight: 1.2, color: "var(--text-muted)" }}>{movement}</span>
+                  ) : movementTrend === "no_change" ? (
+                    <TrendArrow trend="no_change" fontSize={12} labelHidden />
+                  ) : (
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                      <TrendArrow trend={movementTrend} fontSize={12} labelHidden />
+                      <span style={{ fontSize: 12, lineHeight: 1.2, fontWeight: 650, color: "var(--magnitude-value)" }}>{measureWithoutArrow(movement)}</span>
+                    </span>
+                  )}
+                </div>
               </div>
             );
           };
@@ -976,33 +1080,33 @@ function HistoryTab({
                 minWidth: showVisitorColumns ? 1120 : undefined,
                 alignItems: "center",
                 padding: "12px 22px",
-                borderBottom: `1px solid ${C.rowBorder}`,
-                boxShadow: excludedAnomaly ? `inset 3px 0 ${C.amber}` : undefined,
-                background: excludedAnomaly ? "rgba(255,165,72,0.045)" : undefined,
+                borderBottom: "1px solid var(--border-hairline)",
+                boxShadow: excludedAnomaly ? "inset 3px 0 var(--series-anomaly-edge)" : undefined,
+                background: excludedAnomaly ? "var(--series-anomaly-fill)" : undefined,
                 fontSize: 13,
               }}
             >
               <div>
                 <div
                   aria-label={`${dateLabel}${timeLabel ? ` at ${timeLabel}` : ""}, ${runLabel}`}
-                  style={{ fontWeight: 500, color: excludedAnomaly ? C.amber : C.text }}
+                  style={{ fontWeight: 500, color: "var(--text-body)" }}
                 >
                   {startsDateGroup ? dateLabel : `↳ ${timeLabel ?? "Additional run"}`}
                 </div>
-                <div style={{ marginTop: 3, color: C.faint, fontSize: 9.5, lineHeight: 1.3 }}>
+                <div style={{ marginTop: 3, color: "var(--text-muted)", fontSize: 12, lineHeight: 1.3 }}>
                   {startsDateGroup && timeLabel ? `${timeLabel} · ${runLabel}` : runLabel}
                 </div>
-                <div title={`Completed independently: ${completedTests.join(", ") || "none"}`} style={{ marginTop: 4, color: C.faint, fontSize: 9.5, lineHeight: 1.3 }}>
+                <div title={`Completed independently: ${completedTests.join(", ") || "none"}`} style={{ marginTop: 4, color: "var(--text-muted)", fontSize: 12, lineHeight: 1.3 }}>
                   {completedTests.join(" · ") || "No completed test"}
                 </div>
               </div>
               <div style={{ fontSize: 12, display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 5 }}>
                 {excludedAnomaly && (
-                  <span title="Retained for diagnosis; not used in status, trend, or recommendations" style={{ color: C.amber, fontWeight: 600 }}>
+                  <span title="Retained for diagnosis; not used in status, trend, or recommendations" style={{ color: "var(--text-muted)", fontWeight: 600 }}>
                     ◆ PSI anomaly · excluded
                   </span>
                 )}
-                {!excludedAnomaly && markers.length === 0 ? <span style={{ color: "#4A4A50" }}>—</span> : markers.map((marker) => {
+                {!excludedAnomaly && markers.length === 0 ? <span style={{ color: "var(--text-muted)" }}>—</span> : markers.map((marker) => {
                   const legacyRecKey = isTaskMarker(marker)
                     ? store.recs.find((rec) =>
                       rec.pageId === page.id
@@ -1010,8 +1114,7 @@ function HistoryTab({
                     )?.key
                     : undefined;
                   const recKey = marker.recKey ?? legacyRecKey;
-                  const custom = !isTaskMarker(marker) && !recKey;
-                  const color = custom ? C.green : C.violetSoft;
+                  const color = "var(--series-marker)";
                   if (recKey) {
                     return (
                       <button
@@ -1045,7 +1148,7 @@ function HistoryTab({
                 <div key={metric.key}>{visitorCell(metric.key)}</div>
               ))}
               <div style={{ textAlign: "right" }}>
-                <button disabled={!nightHasStrategy(d, strategy)} onClick={() => openReport(d)} style={{ border: `1px solid ${C.border2}`, background: "rgba(255,255,255,0.03)", color: C.text, fontSize: 11.5, fontWeight: 500, padding: "5px 11px", borderRadius: 7, cursor: nightHasStrategy(d, strategy) ? "pointer" : "not-allowed", opacity: nightHasStrategy(d, strategy) ? 1 : 0.45 }}>Report</button>
+                <button disabled={!nightHasStrategy(d, strategy)} onClick={() => openReport(d)} style={{ border: "1px solid var(--border-strong)", background: "var(--surface-raised)", color: "var(--text-body)", fontSize: 12, fontWeight: 500, padding: "5px 11px", borderRadius: 7, cursor: nightHasStrategy(d, strategy) ? "pointer" : "not-allowed", opacity: nightHasStrategy(d, strategy) ? 1 : 0.45 }}>Report</button>
               </div>
             </div>
           );
@@ -1059,9 +1162,9 @@ function PendingPanel({ page, store }: { page: WatchPage; store: ReturnType<type
   const hasSnapshot = page.history.length > 0;
   const collectionBlocked = page.flag === "paused" || (!!page.runState && page.runState !== "failed");
   return (
-    <div style={{ padding: "56px 24px", textAlign: "center", background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13 }}>
+    <div style={{ padding: "56px 24px", textAlign: "center", background: "var(--surface-card)", border: "1px solid var(--border-hairline)", borderRadius: 13 }}>
       <div style={{ fontSize: 16, fontWeight: 600 }}>{hasSnapshot ? "Snapshot collected — baseline required" : "No collection yet"}</div>
-      <div style={{ fontSize: 13, color: C.muted, marginTop: 8, maxWidth: 460, marginInline: "auto", lineHeight: 1.55 }}>
+      <div style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 8, maxWidth: 460, marginInline: "auto", lineHeight: 1.55 }}>
         {page.flag === "paused"
           ? "This page is paused. Change it to Watching or Priority from the Watch List before collecting a first snapshot or baseline."
           : hasSnapshot
@@ -1069,8 +1172,8 @@ function PendingPanel({ page, store }: { page: WatchPage; store: ReturnType<type
           : "Run now to collect a first snapshot, or capture an explicit baseline to anchor future comparisons. This page also joins the next nightly run automatically."}
       </div>
       {store.canManageProject && <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 22 }}>
-        <button disabled={collectionBlocked} title={page.flag === "paused" ? "Activate this page from the Watch List first" : undefined} onClick={() => store.captureBaseline(page.id)} style={{ border: "none", background: C.accent, color: "#fff", fontSize: 12.5, fontWeight: 550, padding: "9px 16px", borderRadius: 8, cursor: collectionBlocked ? "not-allowed" : "pointer", opacity: collectionBlocked ? 0.65 : 1 }}>{page.flag === "paused" ? "Paused" : page.runState && page.runState !== "failed" ? "Collection in progress…" : "Capture baseline"}</button>
-        <button disabled={collectionBlocked} title={page.flag === "paused" ? "Activate this page from the Watch List first" : undefined} onClick={() => store.runPage(page.id)} style={{ border: `1px solid ${C.border2}`, background: "rgba(255,255,255,0.04)", color: C.text, fontSize: 12.5, fontWeight: 500, padding: "9px 16px", borderRadius: 8, cursor: collectionBlocked ? "not-allowed" : "pointer", opacity: collectionBlocked ? 0.65 : 1 }}>{page.flag === "paused" ? "Paused" : page.runState === "queued" ? "Queued…" : page.runState === "dispatching" ? "Starting…" : page.runState === "waiting_for_evidence" ? "Waiting…" : page.runState === "running" ? "Running…" : "Run now"}</button>
+        <button disabled={collectionBlocked} title={page.flag === "paused" ? "Activate this page from the Watch List first" : undefined} onClick={() => store.captureBaseline(page.id)} style={{ border: "none", background: "var(--action-primary-bg)", color: "var(--action-primary-text)", fontSize: 12.5, fontWeight: 550, padding: "9px 16px", borderRadius: 8, cursor: collectionBlocked ? "not-allowed" : "pointer", opacity: collectionBlocked ? 0.65 : 1 }}>{page.flag === "paused" ? "Paused" : page.runState && page.runState !== "failed" ? "Collection in progress…" : "Capture baseline"}</button>
+        <button disabled={collectionBlocked} title={page.flag === "paused" ? "Activate this page from the Watch List first" : undefined} onClick={() => store.runPage(page.id)} style={{ border: "1px solid var(--border-strong)", background: "var(--surface-raised)", color: "var(--text-body)", fontSize: 12.5, fontWeight: 500, padding: "9px 16px", borderRadius: 8, cursor: collectionBlocked ? "not-allowed" : "pointer", opacity: collectionBlocked ? 0.65 : 1 }}>{page.flag === "paused" ? "Paused" : page.runState === "queued" ? "Queued…" : page.runState === "dispatching" ? "Starting…" : page.runState === "waiting_for_evidence" ? "Waiting…" : page.runState === "running" ? "Running…" : "Run now"}</button>
       </div>}
     </div>
   );
@@ -1095,46 +1198,49 @@ function nativeLifecycleEvidence(issue: NativeElementLifecycle): string {
 function CulpritEvidencePanel({ history, strategy }: { history: Night[]; strategy: "mobile" | "desktop" }) {
   const trends = culpritEvidenceTrends(history, strategy);
   return (
-    <section aria-label="Culprit evidence" style={{ borderBottom: `1px solid ${C.border}` }}>
-      <div style={{ padding: "16px 22px", borderBottom: trends.length ? `1px solid ${C.border}` : undefined, background: "rgba(59,137,255,0.025)" }}>
+    <section aria-label="Culprit evidence" style={{ borderBottom: "1px solid var(--border-hairline)" }}>
+      <div style={{ padding: "16px 22px", borderBottom: trends.length ? "1px solid var(--border-hairline)" : undefined, background: "var(--surface-raised)" }}>
         <h4 style={{ margin: 0, fontSize: 13.5, fontWeight: 650 }}>Why the score moved</h4>
-        <div style={{ marginTop: 3, fontSize: 11.5, color: C.faint }}>Privacy-safe culprit measurements from warning-free Lighthouse reports. Trends compare retained collection snapshots.</div>
+        <div style={{ marginTop: 3, fontSize: 12, color: "var(--text-muted)" }}>Privacy-safe culprit measurements from warning-free Lighthouse reports. Trends compare retained collection snapshots.</div>
       </div>
       {trends.length === 0 ? (
-        <div style={{ padding: "18px 22px", fontSize: 12, color: C.muted }}>No culprit evidence has been retained for {strategy} yet. The next collection will capture DOM, CSS, script, resource, image, and LCP details.</div>
+        <div style={{ padding: "18px 22px", fontSize: 12, color: "var(--text-muted)" }}>No culprit evidence has been retained for {strategy} yet. The next collection will capture DOM, CSS, script, resource, image, and LCP details.</div>
       ) : (
-        <div className="culprit-evidence-grid" style={{ background: C.border }}>
+        <div className="culprit-evidence-grid" style={{ background: "var(--border-hairline)" }}>
           {trends.map(({ evidence, primary, series, delta }) => {
-            const changeColor = delta === undefined || delta === 0 ? C.faint2 : delta < 0 ? C.green : C.amber;
+            const changeTrend = delta === undefined || !primary ? null : lowerIsBetterTrend(delta);
             const change = delta === undefined || !primary
               ? "First retained snapshot"
               : delta === 0
                 ? "No change from previous snapshot"
                 : `${delta > 0 ? "+" : "−"}${formatEvidenceValue(Math.abs(delta), primary.unit)} since previous snapshot`;
             return (
-              <article key={evidence.auditId} style={{ minWidth: 0, padding: "15px 18px", background: C.panel }}>
+              <article key={evidence.auditId} style={{ minWidth: 0, padding: "15px 18px", background: "var(--surface-card)" }}>
                 <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ fontSize: 13, fontWeight: 650 }}>{evidence.title}</div>
-                    {primary && <div style={{ marginTop: 4, fontSize: 17, fontWeight: 650, color: C.accentSoft }}>{formatEvidenceValue(primary.value, primary.unit)} <span style={{ fontSize: 10.5, fontWeight: 500, color: C.faint }}>{primary.label.toLowerCase()}</span></div>}
+                    {primary && <div style={{ marginTop: 4 }}><Magnitude value={formatEvidenceValue(primary.value, primary.unit)} unit={primary.label.toLowerCase()} fontSize={17} /></div>}
                   </div>
-                  {series.length > 1 && <div style={{ width: 62, flex: "none" }}><Sparkline series={series} color={changeColor} w={62} h={27} /></div>}
+                  {series.length > 1 && <div style={{ width: 62, flex: "none" }}><Sparkline series={series} device={strategy} w={62} h={27} /></div>}
                 </div>
-                <div style={{ marginTop: 7, fontSize: 10.5, color: changeColor }}>{change}</div>
+                <div style={{ marginTop: 7, display: "flex", alignItems: "center", gap: 5 }}>
+                  {changeTrend && <TrendArrow trend={changeTrend} fontSize={12} labelHidden />}
+                  <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{change}</span>
+                </div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 9 }}>
                   {evidence.facts.filter((item) => item.key !== primary?.key).slice(0, 3).map((item) => (
-                    <span key={item.key} style={{ fontSize: 10.5, color: C.dim, background: "rgba(255,255,255,0.045)", padding: "2px 6px", borderRadius: 5 }}>{formatEvidenceValue(item.value, item.unit)} {item.label.toLowerCase()}</span>
+                    <span key={item.key} style={{ background: "var(--surface-raised)", padding: "2px 6px", borderRadius: 5 }}><Magnitude value={formatEvidenceValue(item.value, item.unit)} unit={item.label.toLowerCase()} fontSize={12} /></span>
                   ))}
                 </div>
                 {evidence.lcpElement && (
-                  <div style={{ marginTop: 9, fontSize: 10.5, color: C.muted }}>
+                  <div style={{ marginTop: 9, fontSize: 12, color: "var(--text-muted)" }}>
                     &lt;{evidence.lcpElement.elementType}&gt;
                     {evidence.lcpElement.assetHost ? ` · ${evidence.lcpElement.assetHost}` : ""}
                     {evidence.lcpElement.width && evidence.lcpElement.height ? ` · ${Math.round(evidence.lcpElement.width)}×${Math.round(evidence.lcpElement.height)} px` : ""}
                   </div>
                 )}
-                {!!evidence.sources?.length && <div style={{ marginTop: 9, fontSize: 10.5, color: C.faint }}>Top hosts · {evidence.sources.map((item) => item.host).join(" · ")}</div>}
-                <div style={{ marginTop: 7, fontSize: 10, color: C.faint }}>Median of {evidence.sampleRuns} warning-free {evidence.sampleRuns === 1 ? "run" : "runs"}</div>
+                {!!evidence.sources?.length && <div style={{ marginTop: 9, fontSize: 12, color: "var(--text-muted)" }}>Top hosts · {evidence.sources.map((item) => item.host).join(" · ")}</div>}
+                <div style={{ marginTop: 7, fontSize: 12, color: "var(--text-muted)" }}>Median of {evidence.sampleRuns} warning-free {evidence.sampleRuns === 1 ? "run" : "runs"}</div>
               </article>
             );
           })}
@@ -1155,82 +1261,96 @@ function NativeElementsPanel({ page }: { page: WatchPage }) {
   const retainedScans = history.filter((night) => night.nativeElements?.status === "available");
   const latestAttempt = [...history].reverse().find((night) => night.nativeElements);
   return (
-    <section aria-label="Native Webflow elements" style={{ borderBottom: `1px solid ${C.border}` }}>
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "16px 22px", background: "rgba(138,92,246,0.035)", borderBottom: current.length || cleared.length || retainedScans.length === 0 ? `1px solid ${C.border}` : undefined }}>
+    <section aria-label="Native Webflow elements" style={{ borderBottom: "1px solid var(--border-hairline)" }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "16px 22px", background: "var(--surface-raised)", borderBottom: current.length || cleared.length || retainedScans.length === 0 ? "1px solid var(--border-hairline)" : undefined }}>
         <div>
           <h4 style={{ margin: 0, fontSize: 13.5, fontWeight: 650 }}>Native Webflow elements</h4>
-          <div style={{ marginTop: 3, fontSize: 11.5, color: C.faint }}>Published-HTML checks for Background Video, YouTube/Vimeo, Lottie, Spline, and unresponsive raster images.</div>
+          <div style={{ marginTop: 3, fontSize: 12, color: "var(--text-muted)" }}>Published-HTML checks for Background Video, YouTube/Vimeo, Lottie, Spline, and unresponsive raster images.</div>
         </div>
-        <span style={{ marginLeft: "auto", flex: "none", fontSize: 11, fontWeight: 650, color: current.length ? C.violetSoft : C.green, background: current.length ? "rgba(138,92,246,0.12)" : "rgba(53,208,127,0.12)", padding: "3px 8px", borderRadius: 6 }}>
-          {current.length ? `${current.length} detected` : suppressed.length ? `${suppressed.length} suppressed` : retainedScans.length ? "No current findings" : "Awaiting scan"}
+        <span style={{ marginLeft: "auto", flex: "none", display: "inline-flex", alignItems: "center", gap: 7 }}>
+          {current.length ? (
+            <>
+              <Magnitude value={current.length} unit="detected" fontSize={12} />
+              <span style={healthChipStyle("warn")}>{HEALTH_LABEL.needs_work}</span>
+            </>
+          ) : suppressed.length ? (
+            <>
+              <Magnitude value={suppressed.length} fontSize={12} />
+              <StatusChip state="dismissed" />
+            </>
+          ) : retainedScans.length ? (
+            <span style={healthChipStyle("good")}>No current findings</span>
+          ) : (
+            <span style={healthChipStyle("none")}>Awaiting scan</span>
+          )}
         </span>
       </div>
       {latestAttempt?.nativeElements?.status === "unavailable" && (
-        <div style={{ padding: "10px 22px", borderBottom: `1px solid ${C.rowBorder}`, fontSize: 11.5, color: C.amber }}>
+        <div style={{ padding: "10px 22px", borderBottom: "1px solid var(--border-hairline)", fontSize: 12, color: "var(--health-none-text)" }}>
           Latest HTML scan unavailable: {latestAttempt.nativeElements.reason ?? "published page could not be inspected"}. Prior lifecycle state was preserved.
         </div>
       )}
       {retainedScans.length === 0 && (
-        <div style={{ padding: "22px", fontSize: 12, color: C.muted }}>No native-element scan has been retained yet. Run a new collection to inspect the published HTML.</div>
+        <div style={{ padding: "22px", fontSize: 12, color: "var(--text-muted)" }}>No native-element scan has been retained yet. Run a new collection to inspect the published HTML.</div>
       )}
       {retainedScans.length > 0 && current.length === 0 && suppressed.length === 0 && cleared.length === 0 && (
-        <div style={{ padding: "22px", fontSize: 12, color: C.green }}>No known problematic Webflow-native element footprints were detected.</div>
+        <div style={{ padding: "22px", fontSize: 12, color: "var(--health-good-text)" }}>No known problematic Webflow-native element footprints were detected.</div>
       )}
       {current.map((issue) => (
-        <div key={issue.key} style={{ padding: "15px 22px", borderBottom: `1px solid ${C.rowBorder}` }}>
+        <div key={issue.key} style={{ padding: "15px 22px", borderBottom: "1px solid var(--border-hairline)" }}>
           <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 7 }}>
                 <span style={{ fontSize: 13.5, fontWeight: 650 }}>{issue.title}</span>
                 <PerformanceIssueStatusBadge status={issue.status} />
                 <WebflowClassificationChips classification={issue.webflow} />
-                <span style={{ fontSize: 10.5, color: C.faint2, textTransform: "capitalize" }}>{issue.confidence} confidence</span>
-                {nativeElementDisposition(page.nativeElementControls, issue.id) === "acknowledged" && <span style={{ fontSize: 10.5, fontWeight: 650, color: C.green, background: "rgba(53,208,127,0.12)", padding: "2px 7px", borderRadius: 5 }}>Acknowledged</span>}
+                <span style={{ fontSize: 12, color: confidenceVar(issue.confidence), textTransform: "capitalize" }}>{issue.confidence} confidence</span>
+                {nativeElementDisposition(page.nativeElementControls, issue.id) === "acknowledged" && <StatusChip state="todo" />}
               </div>
-              <div style={{ marginTop: 5, fontSize: 12, color: C.faint2, lineHeight: 1.45 }}>{issue.detail}</div>
+              <div style={{ marginTop: 5, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.45 }}>{issue.detail}</div>
               {!!issue.evidence?.length && (
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 7 }} aria-label="Detection evidence">
-                  {issue.evidence.map((item) => <span key={item.label} style={{ fontSize: 10.5, color: C.dim, background: "rgba(255,255,255,0.045)", border: `1px solid ${C.border2}`, padding: "2px 7px", borderRadius: 5 }}><strong>{item.count}</strong> {item.label}</span>)}
+                  {issue.evidence.map((item) => <span key={item.label} style={{ background: "var(--surface-raised)", border: "1px solid var(--border-strong)", padding: "2px 7px", borderRadius: 5 }}><Magnitude value={item.count} unit={item.label} fontSize={12} /></span>)}
                 </div>
               )}
-              <div style={{ marginTop: 7, fontSize: 11.5, color: C.muted, lineHeight: 1.45 }}><span style={{ color: C.faint2, fontWeight: 600 }}>Recommended action:</span> {webflowClassificationFor(issue).guidance}</div>
-              <div style={{ marginTop: 5, fontSize: 11.5, color: C.faint }}>{nativeLifecycleEvidence(issue)}</div>
+              <div style={{ marginTop: 7, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.45 }}><span style={{ color: "var(--text-body)", fontWeight: 600 }}>Recommended action:</span> {webflowClassificationFor(issue).guidance}</div>
+              <div style={{ marginTop: 5, fontSize: 12, color: "var(--text-muted)" }}>{nativeLifecycleEvidence(issue)}</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginTop: 10 }}>
                 {nativeElementDisposition(page.nativeElementControls, issue.id) === "acknowledged" ? (
-                  <button type="button" onClick={() => store.setNativeElementDisposition(page.id, issue.id, null)} style={{ border: `1px solid ${C.border2}`, background: "transparent", color: C.dim, fontSize: 11, padding: "5px 9px", borderRadius: 6, cursor: "pointer" }}>Clear acknowledgement</button>
+                  <button type="button" onClick={() => store.setNativeElementDisposition(page.id, issue.id, null)} style={{ border: "1px solid var(--border-strong)", background: "transparent", color: "var(--text-body)", fontSize: 12, padding: "5px 9px", borderRadius: 6, cursor: "pointer" }}>Clear acceptance</button>
                 ) : (
-                  <button type="button" onClick={() => store.setNativeElementDisposition(page.id, issue.id, "acknowledged")} style={{ border: `1px solid ${C.border2}`, background: "rgba(53,208,127,0.08)", color: C.green, fontSize: 11, padding: "5px 9px", borderRadius: 6, cursor: "pointer" }}>Acknowledge</button>
+                  <button type="button" onClick={() => store.setNativeElementDisposition(page.id, issue.id, "acknowledged")} style={{ border: "1px solid var(--border-strong)", background: "transparent", color: "var(--text-body)", fontSize: 12, padding: "5px 9px", borderRadius: 6, cursor: "pointer" }}>{ISSUE_ACTION_LABEL.accept}</button>
                 )}
-                <button type="button" onClick={() => store.setNativeElementDisposition(page.id, issue.id, "suppressed")} style={{ border: `1px solid ${C.border2}`, background: "transparent", color: C.faint2, fontSize: 11, padding: "5px 9px", borderRadius: 6, cursor: "pointer" }}>Suppress</button>
+                <button type="button" onClick={() => store.setNativeElementDisposition(page.id, issue.id, "suppressed")} style={{ border: "1px solid var(--border-strong)", background: "transparent", color: "var(--text-muted)", fontSize: 12, padding: "5px 9px", borderRadius: 6, cursor: "pointer" }}>{APPLICABILITY_ACTION_LABEL.exclude}</button>
               </div>
             </div>
             <div style={{ flex: "none", textAlign: "right" }}>
-              <div style={{ fontSize: 11, color: C.faint }}>Instances</div>
-              <div style={{ fontSize: 17, fontWeight: 650, color: C.violetSoft }}>{issue.count}</div>
+              <div style={{ fontSize: 12, color: "var(--magnitude-unit)" }}>Instances</div>
+              <div style={{ fontSize: 17, fontWeight: 650, color: "var(--magnitude-value)", fontVariantNumeric: "tabular-nums" }}>{issue.count}</div>
             </div>
           </div>
         </div>
       ))}
       {suppressed.length > 0 && (
         <div>
-          <div style={{ padding: "11px 22px", borderBottom: `1px solid ${C.rowBorder}`, fontSize: 11.5, fontWeight: 600, color: C.faint2 }}>Suppressed findings · excluded from hotspots and future recommendations</div>
+          <div style={{ padding: "11px 22px", borderBottom: "1px solid var(--border-hairline)", fontSize: 12, fontWeight: 600, color: "var(--text-muted)" }}>{APPLICABILITY_LABEL.excluded} findings · not counted in hotspots or future recommendations</div>
           {suppressed.map((issue) => (
-            <div key={issue.key} style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 7, padding: "12px 22px", borderBottom: `1px solid ${C.rowBorder}`, opacity: 0.78 }}>
+            <div key={issue.key} style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 7, padding: "12px 22px", borderBottom: "1px solid var(--border-hairline)", opacity: 0.78 }}>
               <span style={{ fontSize: 12.5, fontWeight: 600 }}>{issue.title}</span>
-              <span style={{ fontSize: 10.5, color: C.faint }}>{issue.count} {issue.count === 1 ? "instance" : "instances"}</span>
-              <button type="button" onClick={() => store.setNativeElementDisposition(page.id, issue.id, null)} style={{ marginLeft: "auto", border: `1px solid ${C.border2}`, background: "transparent", color: C.dim, fontSize: 11, padding: "5px 9px", borderRadius: 6, cursor: "pointer" }}>Restore to review</button>
+              <Magnitude value={issue.count} unit={issue.count === 1 ? "instance" : "instances"} fontSize={12} />
+              <button type="button" onClick={() => store.setNativeElementDisposition(page.id, issue.id, null)} style={{ marginLeft: "auto", border: "1px solid var(--border-strong)", background: "transparent", color: "var(--text-body)", fontSize: 12, padding: "5px 9px", borderRadius: 6, cursor: "pointer" }}>{APPLICABILITY_ACTION_LABEL.include}</button>
             </div>
           ))}
         </div>
       )}
       {cleared.length > 0 && (
         <div>
-          <div style={{ padding: "11px 22px", borderBottom: `1px solid ${C.rowBorder}`, fontSize: 11.5, fontWeight: 600, color: C.faint2 }}>Cleared native-element findings</div>
+          <div style={{ padding: "11px 22px", borderBottom: "1px solid var(--border-hairline)", fontSize: 12, fontWeight: 600, color: "var(--text-muted)" }}>Cleared native-element findings</div>
           {cleared.map((issue) => (
-            <div key={issue.key} style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 7, padding: "12px 22px", borderBottom: `1px solid ${C.rowBorder}` }}>
+            <div key={issue.key} style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 7, padding: "12px 22px", borderBottom: "1px solid var(--border-hairline)" }}>
               <span style={{ fontSize: 12.5, fontWeight: 600 }}>{issue.title}</span>
               <PerformanceIssueStatusBadge status={issue.status} />
-              <span style={{ marginLeft: "auto", fontSize: 11, color: C.faint }}>{nativeLifecycleEvidence(issue)}</span>
+              <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--text-muted)" }}>{nativeLifecycleEvidence(issue)}</span>
             </div>
           ))}
         </div>
@@ -1267,86 +1387,79 @@ function OpportunitiesTab({ page, latest, strategy }: { page: WatchPage; latest:
     { key: "review", label: "need review" },
   ];
   return (
-    <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, overflow: "hidden" }}>
-      <div style={{ padding: "18px 22px", borderBottom: `1px solid ${C.border}` }}>
+    <div style={{ background: "var(--surface-card)", border: "1px solid var(--border-hairline)", borderRadius: 13, overflow: "hidden" }}>
+      <div style={{ padding: "18px 22px", borderBottom: "1px solid var(--border-hairline)" }}>
         <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>Failing audits &amp; opportunities</h3>
-        <div style={{ fontSize: 12, color: C.faint, marginTop: 3 }}>Repeatable <span style={{ textTransform: "capitalize" }}>{strategy}</span> findings with lifecycle derived from retained diagnostic captures.</div>
+        <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 3 }}>Repeatable <span style={{ textTransform: "capitalize" }}>{strategy}</span> findings with lifecycle derived from retained diagnostic captures.</div>
       </div>
       {issues.length > 0 && (
-        <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 12, padding: "12px 22px", borderBottom: `1px solid ${C.border}`, background: "rgba(255,255,255,0.018)" }}>
-          <span style={{ fontSize: 11, fontWeight: 650, color: C.faint2, textTransform: "uppercase", letterSpacing: "0.04em" }}>Lifecycle</span>
+        <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 12, padding: "12px 22px", borderBottom: "1px solid var(--border-hairline)", background: "var(--surface-raised)" }}>
+          <span style={{ fontSize: 12, fontWeight: 650, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.04em" }}>Lifecycle</span>
           {lifecycleSummary.filter(({ key }) => lifecycleCounts[key] > 0).map(({ key, label }) => (
-            <span key={key} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5, color: C.dim }}>
+            <span key={key} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
               <PerformanceIssueStatusBadge status={key} />
-              <strong>{lifecycleCounts[key]}</strong> {label}
+              <Magnitude value={lifecycleCounts[key]} unit={label} fontSize={12} />
             </span>
           ))}
-          <span style={{ marginLeft: "auto", fontSize: 11, color: C.faint }}>Resolved after 2 consecutive clean captures</span>
+          <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--text-muted)" }}>Resolved after 2 consecutive clean captures</span>
         </div>
       )}
       {audits.length > 0 && (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 14, padding: "12px 22px", borderBottom: `1px solid ${C.border}`, background: C.panel2 }}>
-          {remediationSummary.filter(({ key }) => remediationCounts[key] > 0).map(({ key, label }) => {
-            const tone = actionabilityTone(key);
-            return (
-              <span key={key} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11.5, color: tone.color }}>
-                <span style={{ width: 7, height: 7, borderRadius: "50%", background: tone.color }} />
-                <strong>{remediationCounts[key]}</strong> {label}
-              </span>
-            );
-          })}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 14, padding: "12px 22px", borderBottom: "1px solid var(--border-hairline)", background: "var(--surface-raised)" }}>
+          {remediationSummary.filter(({ key }) => remediationCounts[key] > 0).map(({ key, label }) => (
+            <Magnitude key={key} value={remediationCounts[key]} unit={label} fontSize={12} />
+          ))}
         </div>
       )}
       <CulpritEvidencePanel history={history} strategy={strategy} />
       <NativeElementsPanel page={page} />
       {audits.length === 0 && (
-        <div style={{ padding: "42px 22px", textAlign: "center", color: C.muted, fontSize: 13 }}>
+        <div style={{ padding: "42px 22px", textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>
           {latest ? `No repeatable ${strategy} diagnostics were promoted in this range.` : "No real Lighthouse diagnostic data has been collected yet."}
         </div>
       )}
       {audits.map((a) => (
-        <div key={a.id} style={{ display: "flex", alignItems: "flex-start", gap: 16, padding: "17px 22px", borderBottom: `1px solid ${C.rowBorder}` }}>
-          <div style={{ flex: "none", width: 8, height: 8, borderRadius: "50%", marginTop: 6, background: a.dot }} />
+        <div key={a.id} style={{ display: "flex", alignItems: "flex-start", gap: 16, padding: "17px 22px", borderBottom: "1px solid var(--border-hairline)" }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 14, fontWeight: 600 }}>{a.title}</div>
-            <div style={{ fontSize: 12.5, color: C.faint2, marginTop: 4, lineHeight: 1.5 }}>{a.desc}</div>
+            <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 4, lineHeight: 1.5 }}>{a.desc}</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginTop: 9 }}>
               {issueById.get(a.id) && <PerformanceIssueStatusBadge status={issueById.get(a.id)!.status} />}
               <WebflowClassificationChips classification={classificationForPage(a, webflowGenerated)} />
-              <span style={{ display: "inline-block", fontSize: 11, fontWeight: 500, color: C.dim, background: "rgba(255,255,255,0.06)", padding: "2px 9px", borderRadius: 5 }}>{a.category}</span>
-              {a.evidence && <span style={{ display: "inline-block", fontSize: 11, color: C.accentSoft, background: "rgba(59,137,255,0.12)", padding: "2px 9px", borderRadius: 5 }}>{a.evidence}</span>}
-              {a.confidence && <span style={{ display: "inline-block", fontSize: 11, color: C.faint2, padding: "2px 2px", textTransform: "capitalize" }}>{a.confidence} confidence</span>}
+              <span style={{ display: "inline-block", fontSize: 12, fontWeight: 500, color: "var(--text-body)", background: "var(--surface-raised)", padding: "2px 9px", borderRadius: 5 }}>{a.category}</span>
+              {a.evidence && <span style={{ display: "inline-block", fontSize: 12, color: "var(--confidence-strong)", background: "var(--surface-raised)", padding: "2px 9px", borderRadius: 5 }}>{a.evidence}</span>}
+              {a.confidence && <span style={{ display: "inline-block", fontSize: 12, color: confidenceVar(a.confidence), padding: "2px 2px", textTransform: "capitalize" }}>{a.confidence} confidence</span>}
             </div>
-            <div style={{ fontSize: 11.5, color: C.muted, marginTop: 9, lineHeight: 1.45 }}>
-              <span style={{ color: C.faint2, fontWeight: 600 }}>Recommended action:</span> {classificationForPage(a, webflowGenerated).guidance}
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 9, lineHeight: 1.45 }}>
+              <span style={{ color: "var(--text-body)", fontWeight: 600 }}>Recommended action:</span> {classificationForPage(a, webflowGenerated).guidance}
             </div>
             {issueById.get(a.id) && (
-              <div style={{ fontSize: 11.5, color: C.faint, marginTop: 5, lineHeight: 1.45 }}>
+              <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 5, lineHeight: 1.45 }}>
                 {lifecycleEvidence(issueById.get(a.id)!)}
               </div>
             )}
           </div>
           <div style={{ flex: "none", textAlign: "right" }}>
-            <div style={{ fontSize: 11, color: C.faint }}>Measured impact</div>
-            <div style={{ fontSize: 17, fontWeight: 600, color: C.amber }}>{a.savings}</div>
+            <div style={{ fontSize: 12, color: "var(--magnitude-unit)" }}>Measured impact</div>
+            <Magnitude {...splitMeasure(a.savings)} fontSize={17} />
           </div>
         </div>
       ))}
       {clearedIssues.length > 0 && (
         <div>
-          <div style={{ padding: "14px 22px", borderBottom: `1px solid ${C.border}`, background: C.panel2 }}>
+          <div style={{ padding: "14px 22px", borderBottom: "1px solid var(--border-hairline)", background: "var(--surface-raised)" }}>
             <div style={{ fontSize: 12.5, fontWeight: 600 }}>Cleared findings</div>
-            <div style={{ fontSize: 11, color: C.faint, marginTop: 2 }}>Absent from the latest diagnostic capture; verification state remains evidence-based.</div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>Absent from the latest diagnostic capture; verification state remains evidence-based.</div>
           </div>
           {clearedIssues.map((issue) => (
-            <div key={issue.key} style={{ display: "flex", alignItems: "flex-start", gap: 14, padding: "14px 22px", borderBottom: `1px solid ${C.rowBorder}` }}>
+            <div key={issue.key} style={{ display: "flex", alignItems: "flex-start", gap: 14, padding: "14px 22px", borderBottom: "1px solid var(--border-hairline)" }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 7 }}>
                   <span style={{ fontSize: 13.5, fontWeight: 600 }}>{issue.title}</span>
                   <PerformanceIssueStatusBadge status={issue.status} />
                   <WebflowClassificationChips classification={issue.webflow} />
                 </div>
-                <div style={{ fontSize: 11.5, color: C.faint, marginTop: 6 }}>{lifecycleEvidence(issue)}</div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>{lifecycleEvidence(issue)}</div>
               </div>
             </div>
           ))}
@@ -1373,31 +1486,31 @@ function KitesurfProbeCard({ evidence }: { evidence: KitesurfEvidence | null }) 
     { label: "Reported transfer", value: evidence.network ? formatProbeBytes(evidence.network.transferBytes) : "—" },
     { label: "Kitesurf DCL", value: evidence.diagnosticTimings?.domContentLoadedMs === undefined ? "—" : `${Math.round(evidence.diagnosticTimings.domContentLoadedMs)} ms` },
   ] : [];
-  const tone = evidence?.status === "available" ? C.green : evidence ? C.amber : C.muted;
+  const rendered = evidence?.status === "available";
   return (
-    <section aria-label="Kitesurf rendered-page probe" style={{ marginBottom: 20, background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, overflow: "hidden" }}>
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 14, padding: "16px 18px", borderBottom: evidence?.status === "available" ? `1px solid ${C.border}` : undefined }}>
+    <section aria-label="Kitesurf rendered-page probe" style={{ marginBottom: 20, background: "var(--surface-card)", border: "1px solid var(--border-hairline)", borderRadius: 13, overflow: "hidden" }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 14, padding: "16px 18px", borderBottom: rendered ? "1px solid var(--border-hairline)" : undefined }}>
         <div>
           <div style={{ fontSize: 13.5, fontWeight: 650 }}>Kitesurf rendered-page probe</div>
-          <div style={{ marginTop: 3, fontSize: 11.5, lineHeight: 1.45, color: C.faint }}>
+          <div style={{ marginTop: 3, fontSize: 12, lineHeight: 1.45, color: "var(--text-muted)" }}>
             Stateless agent-browser evidence. Kitesurf timing is diagnostic only and is excluded from Lighthouse, CrUX, baselines, and status.
           </div>
         </div>
-        <span style={{ marginLeft: "auto", flex: "none", fontSize: 10.5, fontWeight: 650, color: tone, background: evidence?.status === "available" ? "rgba(53,208,127,0.12)" : evidence ? "rgba(255,184,77,0.12)" : "rgba(255,255,255,0.06)", padding: "3px 8px", borderRadius: 6 }}>
-          {evidence?.status === "available" ? "Rendered" : evidence ? "Unavailable" : "Awaiting probe"}
+        <span style={{ marginLeft: "auto", flex: "none", fontSize: 12, fontWeight: 650, padding: "3px 8px", borderRadius: 6, color: rendered ? "var(--text-muted)" : "var(--health-none-text)", background: rendered ? "var(--surface-raised)" : "var(--health-none-bg)" }}>
+          {rendered ? "Rendered" : evidence ? AGENT_RESULT_LABEL.unavailable : "Awaiting probe"}
         </span>
       </div>
       {evidence?.status === "available" ? (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(112px, 1fr))", gap: 1, background: C.border }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(112px, 1fr))", gap: 1, background: "var(--border-hairline)" }}>
           {metrics.map((metric) => (
-            <div key={metric.label} style={{ minWidth: 0, padding: "13px 15px", background: C.panel }}>
-              <div style={{ fontSize: 10.5, color: C.faint }}>{metric.label}</div>
-              <div style={{ marginTop: 4, fontSize: 14, fontWeight: 650, color: C.dim }}>{metric.value}</div>
+            <div key={metric.label} style={{ minWidth: 0, padding: "13px 15px", background: "var(--surface-card)" }}>
+              <div style={{ fontSize: 12, color: "var(--magnitude-unit)" }}>{metric.label}</div>
+              <div style={{ marginTop: 4, fontSize: 14, fontWeight: 650, color: "var(--magnitude-value)", fontVariantNumeric: "tabular-nums" }}>{metric.value}</div>
             </div>
           ))}
         </div>
       ) : (
-        <div style={{ padding: "14px 18px", fontSize: 12, color: evidence ? C.amber : C.muted }}>
+        <div style={{ padding: "14px 18px", fontSize: 12, color: "var(--health-none-text)" }}>
           {evidence ? `Probe unavailable: ${evidence.reason ?? "Kitesurf could not render this page"}. The HTTP agent-readiness scan remained active as fallback.` : "Run a new production collection to capture the first Kitesurf-rendered snapshot."}
         </div>
       )}
@@ -1464,26 +1577,26 @@ function AgentTab({
         onAddToTasks={(issue) => store.addAgentIssueTask(page.id, issue.key)}
       />
       <KitesurfProbeCard evidence={latestKitesurf} />
-      <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20, padding: "15px 18px", background: C.panel, border: `1px solid ${C.border}`, borderRadius: 11 }}>
-        <div style={{ fontSize: 13, color: C.faint2 }}>
-          <span style={{ fontWeight: 600, color: C.dim }}>Page Watch checks · </span>
+      <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20, padding: "15px 18px", background: "var(--surface-card)", border: "1px solid var(--border-hairline)", borderRadius: 11 }}>
+        <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
+          <span style={{ fontWeight: 600, color: "var(--text-body)" }}>Page Watch checks · </span>
           {date ? `Recorded per check on ${date}.` : `No scan recorded in the selected ${rangeDays}-day range.`} One of the sources behind the verdict above. Watch List defaults apply unless overridden here.
         </div>
-        <div style={{ marginLeft: "auto", display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 16, fontSize: 12.5, fontWeight: 500 }}>
-          <span style={{ color: C.green }}>{pass} passing</span>
-          <span style={{ color: C.red }}>{fail} failing</span>
-          <span style={{ color: C.violetSoft }}>{ignored} ignored</span>
-          {unavailable > 0 && <span style={{ color: C.muted }}>{unavailable} unavailable</span>}
+        <div style={{ marginLeft: "auto", display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 16 }}>
+          <Magnitude value={pass} unit="passing" fontSize={12.5} />
+          <Magnitude value={fail} unit="failing" fontSize={12.5} />
+          <Magnitude value={ignored} unit="ignored" fontSize={12.5} />
+          {unavailable > 0 && <Magnitude value={unavailable} unit={AGENT_RESULT_LABEL.unavailable.toLowerCase()} fontSize={12.5} />}
         </div>
       </div>
       {checks.length === 0 ? (
-        <div style={{ padding: "40px 22px", textAlign: "center", background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, color: C.muted, fontSize: 13 }}>
+        <div style={{ padding: "40px 22px", textAlign: "center", background: "var(--surface-card)", border: "1px solid var(--border-hairline)", borderRadius: 13, color: "var(--text-muted)", fontSize: 13 }}>
           No agent-readiness scan in this range. Choose a longer range or run a new scan.
         </div>
       ) : (
         <div>
           {allApplicableUnavailable && (
-            <div style={{ marginBottom: 16, padding: "13px 16px", background: "rgba(255,255,255,0.035)", border: `1px solid ${C.border}`, borderRadius: 10, color: C.muted, fontSize: 12.5 }}>
+            <div style={{ marginBottom: 16, padding: "13px 16px", background: "var(--surface-raised)", border: "1px solid var(--border-hairline)", borderRadius: 10, color: "var(--text-muted)", fontSize: 12.5 }}>
               The last scan couldn&apos;t reach this page, so every applicable check is unavailable — not failing. Try running again once the page is reachable.
             </div>
           )}
@@ -1495,32 +1608,33 @@ function AgentTab({
                 <div
                   key={name}
                   style={{
-                    background: groupIgnored ? `linear-gradient(rgba(138,92,246,0.07), rgba(138,92,246,0.07)), ${C.panel}` : C.panel,
-                    border: `1px solid ${groupIgnored ? "rgba(138,92,246,0.28)" : C.border}`,
+                    background: "var(--surface-card)",
+                    border: "1px solid var(--border-hairline)",
                     borderRadius: 13,
                     padding: "18px 20px",
                   }}
                 >
                   <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 15 }}>
-                    <div style={{ minWidth: 0, fontSize: 11, fontWeight: 550, letterSpacing: "0.05em", textTransform: "uppercase", color: groupIgnored ? C.violetSoft : C.faint }}>{name}</div>
+                    <div style={{ minWidth: 0, fontSize: 12, fontWeight: 550, letterSpacing: "0.05em", textTransform: "uppercase", color: "var(--text-muted)" }}>{name}</div>
+                    {groupIgnored && <span style={{ flex: "none", fontSize: 12, fontWeight: 600, color: "var(--text-muted)" }}>{APPLICABILITY_LABEL.excluded}</span>}
                     <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
                       {groupMode !== "inherit" && (
                         <button
                           type="button"
                           aria-label={`Use Watch List default for ${name} category`}
                           onClick={() => store.setAgentIgnore(page.id, "group", name, "inherit")}
-                          style={{ flex: "none", border: "none", background: "transparent", color: C.faint, fontSize: 10.5, fontWeight: 550, padding: "4px 0", cursor: "pointer" }}
+                          style={{ flex: "none", border: "none", background: "transparent", color: "var(--text-muted)", fontSize: 12, fontWeight: 550, padding: "4px 0", cursor: "pointer" }}
                         >
                           Use default
                         </button>
                       )}
                       <button
                         type="button"
-                        aria-label={`${groupIgnored ? "Restore" : "Ignore"} ${name} category for this page`}
+                        aria-label={`${applicabilityActionLabel(groupIgnored ? "excluded" : "included")} ${name} category for this page`}
                         onClick={() => store.setAgentIgnore(page.id, "group", name, groupIgnored ? "restore" : "ignore")}
-                        style={{ flex: "none", border: `1px solid ${groupIgnored ? "rgba(183,156,255,0.30)" : C.border2}`, background: groupIgnored ? "rgba(138,92,246,0.14)" : "rgba(255,255,255,0.03)", color: groupIgnored ? C.violetSoft : C.faint2, fontSize: 10.5, fontWeight: 550, padding: "4px 8px", borderRadius: 6, cursor: "pointer" }}
+                        style={{ flex: "none", border: "1px solid var(--border-strong)", background: "var(--surface-raised)", color: "var(--text-body)", fontSize: 12, fontWeight: 550, padding: "4px 8px", borderRadius: 6, cursor: "pointer" }}
                       >
-                        {groupIgnored ? "Restore for page" : "Ignore category"}
+                        {groupIgnored ? "Include for page" : "Exclude category"}
                       </button>
                     </div>
                   </div>
@@ -1531,18 +1645,27 @@ function AgentTab({
                       const checkIgnored = isAgentCheckIgnored(chk, ignores, defaults, restores);
                       // Four states: pass, fail, unavailable, and ignored.
                       const mark = checkIgnored || chk.unavailable ? "–" : chk.pass ? "✓" : "✕";
-                      const markBg = checkIgnored ? "rgba(138,92,246,0.18)" : chk.unavailable ? C.border2 : chk.pass ? C.green : C.red;
-                      const markColor = checkIgnored ? C.violetSoft : chk.unavailable ? C.muted : C.bg;
-                      const textColor = checkIgnored ? C.faint : chk.unavailable ? C.faint : chk.pass ? C.dim : C.redSoft;
+                      // The glyph is decorative; the result reaches assistive
+                      // tech as a registry word so the mark's colour is never
+                      // the only channel carrying it.
+                      const markLabel = checkIgnored
+                        ? APPLICABILITY_LABEL.excluded
+                        : chk.unavailable ? AGENT_RESULT_LABEL.unavailable
+                          : chk.pass ? AGENT_RESULT_LABEL.passed : AGENT_RESULT_LABEL.failed;
+                      const markBand = checkIgnored || chk.unavailable ? "none" : chk.pass ? "good" : "poor";
+                      const markBg = `var(--health-${markBand}-bg)`;
+                      const markColor = `var(--health-${markBand}-text)`;
+                      const textColor = markBand === "none" ? "var(--health-none-text)" : markBand === "good" ? "var(--text-body)" : "var(--health-poor-text)";
                       return (
                         <div key={chk.name} style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}>
-                          <span style={{ flex: "none", width: 18, height: 18, borderRadius: 5, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: markColor, background: markBg }}>{mark}</span>
+                          <span aria-hidden="true" style={{ flex: "none", width: 18, height: 18, borderRadius: 5, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: markColor, background: markBg }}>{mark}</span>
+                          <span className="sr-only">{markLabel}</span>
                           <span style={{ minWidth: 0, flex: 1, fontSize: 13, color: textColor }}>{chk.name}</span>
                           {!checkIgnored && chk.unavailable && (
-                            <span style={{ flex: "none", fontSize: 10, fontWeight: 600, color: C.muted, background: "rgba(255,255,255,0.06)", padding: "1px 7px", borderRadius: 4 }}>unavailable</span>
+                            <span style={{ flex: "none", fontSize: 12, fontWeight: 600, color: "var(--health-none-text)", background: "var(--health-none-bg)", padding: "1px 7px", borderRadius: 4 }}>{AGENT_RESULT_LABEL.unavailable}</span>
                           )}
                           {!checkIgnored && !chk.unavailable && chk.regressed && (
-                            <span style={{ flex: "none", fontSize: 10, fontWeight: 600, color: C.redSoft, background: "rgba(255,92,108,0.14)", padding: "1px 7px", borderRadius: 4 }}>regressed</span>
+                            <StatusChip state="reopened" style={{ flex: "none", padding: "1px 7px", borderRadius: 4 }} />
                           )}
                           <div style={{ flex: "none", display: "flex", alignItems: "center", gap: 8 }}>
                             {checkMode !== "inherit" && (
@@ -1550,18 +1673,18 @@ function AgentTab({
                                 type="button"
                                 aria-label={`Use Watch List default for ${chk.name} check`}
                                 onClick={() => store.setAgentIgnore(page.id, "check", checkKey, "inherit")}
-                                style={{ border: "none", background: "transparent", color: C.faint, fontSize: 10.5, fontWeight: 550, padding: "2px 0", cursor: "pointer" }}
+                                style={{ border: "none", background: "transparent", color: "var(--text-muted)", fontSize: 12, fontWeight: 550, padding: "2px 0", cursor: "pointer" }}
                               >
                                 Use default
                               </button>
                             )}
                             <button
                               type="button"
-                              aria-label={`${checkIgnored ? "Restore" : "Ignore"} ${chk.name} check for this page`}
+                              aria-label={`${applicabilityActionLabel(checkIgnored ? "excluded" : "included")} ${chk.name} check for this page`}
                               onClick={() => store.setAgentIgnore(page.id, "check", checkKey, checkIgnored ? "restore" : "ignore")}
-                              style={{ border: "none", background: "transparent", color: checkIgnored ? C.violetSoft : C.faint, fontSize: 10.5, fontWeight: 550, padding: "2px 0", cursor: "pointer" }}
+                              style={{ border: "none", background: "transparent", color: "var(--text-muted)", fontSize: 12, fontWeight: 550, padding: "2px 0", cursor: "pointer" }}
                             >
-                              {checkIgnored ? "Restore" : "Ignore"}
+                              {applicabilityActionLabel(checkIgnored ? "excluded" : "included")}
                             </button>
                           </div>
                         </div>

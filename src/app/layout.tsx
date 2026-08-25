@@ -46,7 +46,17 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    // `data-surface` selects the theme block in globals.css. `:root` carries
+    // light and `[data-surface="dark"]` overrides it.
+    //
+    // Deliberately unset here: the server cannot know the reader's preference,
+    // so the pre-paint script in (app)/layout.tsx sets it during parse, before
+    // first paint. Hard-coding a value here would make that script a *change*
+    // rather than an initialisation, which is what causes a visible flash.
+    // suppressHydrationWarning covers exactly one attribute: the pre-paint
+    // script sets `data-surface` before React hydrates, so the server HTML and
+    // the client tree differ here by design.
+    <html lang="en" suppressHydrationWarning>
       <body>{children}</body>
     </html>
   );

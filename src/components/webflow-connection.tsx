@@ -1,8 +1,32 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { C } from "@/lib/ui";
-import type { WebflowConnectionStatus } from "@/lib/webflowTypes";
+import type { WebflowConnectionStatus, WebflowConnectionSyncStatus } from "@/lib/webflowTypes";
+
+/**
+ * Sync status is a collector-run outcome, not an F1 WorkState, so it is deliberately
+ * NOT rendered through <StatusChip>. Each of the four values resolves to its own token:
+ * "pending" and "running" are "no verdict yet" (health-none), never a warning.
+ */
+type SyncToneToken = "--health-none-text" | "--health-good-text" | "--health-poor-text";
+
+const SYNC_STATUS_META: Record<
+  WebflowConnectionSyncStatus,
+  { label: string; tone: SyncToneToken }
+> = {
+  pending: { label: "Not yet run", tone: "--health-none-text" },
+  running: { label: "Running", tone: "--health-none-text" },
+  succeeded: { label: "Succeeded", tone: "--health-good-text" },
+  failed: { label: "Failed", tone: "--health-poor-text" },
+};
+
+const eyebrowStyle = {
+  color: "var(--text-muted)",
+  fontSize: 12,
+  fontWeight: 600,
+  textTransform: "uppercase",
+  letterSpacing: "0.045em",
+} as const;
 
 function timestamp(value: string | null): string {
   if (!value) return "Not yet";
@@ -101,16 +125,14 @@ export function WebflowConnection({ connectionUrl, syncUrl }: { connectionUrl: s
   };
 
   const connected = status?.connected ? status : null;
-  const syncTone = connected?.syncStatus === "failed"
-    ? C.redSoft
-    : connected?.syncStatus === "succeeded" ? C.green : C.amber;
+  const syncMeta = connected ? SYNC_STATUS_META[connected.syncStatus] : null;
 
   return (
     <section
       aria-labelledby="webflow-connection-heading"
       style={{
-        background: C.panel,
-        border: `1px solid ${C.border}`,
+        background: "var(--surface-card)",
+        border: "1px solid var(--border-hairline)",
         borderRadius: 14,
         padding: 20,
         marginBottom: 16,
@@ -121,7 +143,7 @@ export function WebflowConnection({ connectionUrl, syncUrl }: { connectionUrl: s
           <div id="webflow-connection-heading" style={{ fontSize: 13.5, fontWeight: 600 }}>
             Webflow activity
           </div>
-          <div style={{ maxWidth: 720, marginTop: 4, color: C.muted, fontSize: 12, lineHeight: 1.5 }}>
+          <div style={{ maxWidth: 720, marginTop: 4, color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>
             Connect one Enterprise site to retain named activity evidence and prepare automatic post-publish verification.
             The site token is encrypted by the collector and is never returned to this app.
           </div>
@@ -132,10 +154,10 @@ export function WebflowConnection({ connectionUrl, syncUrl }: { connectionUrl: s
               flex: "none",
               padding: "5px 9px",
               borderRadius: 6,
-              background: "rgba(65,190,122,0.12)",
-              color: C.green,
-              fontSize: 11.5,
-              fontWeight: 650,
+              background: "var(--health-good-bg)",
+              color: "var(--health-good-text)",
+              fontSize: 12,
+              fontWeight: 600,
             }}
           >
             Connected
@@ -144,7 +166,7 @@ export function WebflowConnection({ connectionUrl, syncUrl }: { connectionUrl: s
       </div>
 
       {status === null ? (
-        <div style={{ padding: "24px 0 4px", color: C.muted, fontSize: 12 }}>Checking connection…</div>
+        <div style={{ padding: "24px 0 4px", color: "var(--text-muted)", fontSize: 12 }}>Connecting…</div>
       ) : connected ? (
         <div style={{ marginTop: 18 }}>
           <div
@@ -154,9 +176,10 @@ export function WebflowConnection({ connectionUrl, syncUrl }: { connectionUrl: s
               gridTemplateColumns: "minmax(220px,1.4fr) repeat(3,minmax(135px,1fr))",
               gap: 1,
               overflow: "hidden",
-              border: `1px solid ${C.border}`,
+              border: "1px solid var(--border-hairline)",
               borderRadius: 10,
-              background: C.border,
+              // Hairline duty: the 1px grid gutter shows through as the cell divider.
+              background: "var(--border-hairline)",
             }}
           >
             {[
@@ -165,69 +188,71 @@ export function WebflowConnection({ connectionUrl, syncUrl }: { connectionUrl: s
               ["Last publish", timestamp(connected.lastPublished)],
               ["Last sync", timestamp(connected.lastSyncedAt)],
             ].map(([label, value]) => (
-              <div key={label} style={{ minWidth: 0, padding: "13px 14px", background: C.bgElev }}>
-                <div style={{ color: C.faint, fontSize: 10.5, textTransform: "uppercase", letterSpacing: "0.045em" }}>{label}</div>
-                <div style={{ marginTop: 5, overflow: "hidden", color: C.text, fontSize: 12.5, fontWeight: 600, textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value}</div>
+              <div key={label} style={{ minWidth: 0, padding: "13px 14px", background: "var(--surface-card)" }}>
+                <div style={eyebrowStyle}>{label}</div>
+                <div style={{ marginTop: 5, overflow: "hidden", color: "var(--text-body)", fontSize: 12.5, fontWeight: 600, textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value}</div>
               </div>
             ))}
           </div>
 
           <div className="webflow-connection-detail-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 12, marginTop: 12 }}>
-            <div style={{ padding: "13px 14px", border: `1px solid ${C.border}`, borderRadius: 10, background: "rgba(255,255,255,0.018)" }}>
-              <div style={{ color: C.faint, fontSize: 10.5, textTransform: "uppercase", letterSpacing: "0.045em" }}>Latest publish evidence</div>
+            <div style={{ padding: "13px 14px", border: "1px solid var(--border-hairline)", borderRadius: 10, background: "var(--surface-card)" }}>
+              <div style={eyebrowStyle}>Latest publish evidence</div>
               {connected.latestPublish ? (
                 <>
-                  <div style={{ marginTop: 6, color: C.text, fontSize: 12.5, fontWeight: 600 }}>
+                  <div style={{ marginTop: 6, color: "var(--text-body)", fontSize: 12.5, fontWeight: 600 }}>
                     {connected.latestPublish.changeDensity.replace("-", " ")} · {connected.latestPublish.changeCount} changes
                   </div>
-                  <div style={{ marginTop: 4, color: C.muted, fontSize: 11.5, lineHeight: 1.5 }}>
+                  <div style={{ marginTop: 4, color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>
                     {connected.latestPublish.publisherName ?? "Publisher not available"}
                     {` · ${connected.latestPublish.pageCount} affected pages`}
                     {` · ${timestamp(connected.latestPublish.publishedAt)}`}
                   </div>
                 </>
               ) : (
-                <div style={{ marginTop: 6, color: C.muted, fontSize: 12, lineHeight: 1.5 }}>
+                <div style={{ marginTop: 6, color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>
                   A change set will appear after the next detected publish.
                 </div>
               )}
             </div>
-            <div style={{ padding: "13px 14px", border: `1px solid ${C.border}`, borderRadius: 10, background: "rgba(255,255,255,0.018)" }}>
-              <div style={{ color: C.faint, fontSize: 10.5, textTransform: "uppercase", letterSpacing: "0.045em" }}>Latest activity</div>
+            <div style={{ padding: "13px 14px", border: "1px solid var(--border-hairline)", borderRadius: 10, background: "var(--surface-card)" }}>
+              <div style={eyebrowStyle}>Latest activity</div>
               {connected.latestActivity ? (
                 <>
-                  <div style={{ marginTop: 6, color: C.text, fontSize: 12.5, fontWeight: 600 }}>
+                  <div style={{ marginTop: 6, color: "var(--text-body)", fontSize: 12.5, fontWeight: 600 }}>
                     {connected.latestActivity.event.replaceAll("_", " ")}
                     {connected.latestActivity.operation ? ` · ${connected.latestActivity.operation.toLowerCase()}` : ""}
                   </div>
-                  <div style={{ marginTop: 4, color: C.muted, fontSize: 11.5 }}>
+                  <div style={{ marginTop: 4, color: "var(--text-muted)", fontSize: 12 }}>
                     {connected.latestActivity.actorName ?? "Unknown actor"}
                     {connected.latestActivity.resourceName ? ` · ${connected.latestActivity.resourceName}` : ""}
                     {` · ${timestamp(connected.latestActivity.createdOn)}`}
                   </div>
                 </>
               ) : (
-                <div style={{ marginTop: 6, color: C.muted, fontSize: 12 }}>No activity has been imported yet.</div>
+                <div style={{ marginTop: 6, color: "var(--text-muted)", fontSize: 12 }}>No activity has been imported yet.</div>
               )}
             </div>
-            <div style={{ padding: "13px 14px", border: `1px solid ${C.border}`, borderRadius: 10, background: "rgba(255,255,255,0.018)" }}>
-              <div style={{ color: C.faint, fontSize: 10.5, textTransform: "uppercase", letterSpacing: "0.045em" }}>Connection details</div>
-              <div style={{ marginTop: 6, color: C.muted, fontSize: 11.5, lineHeight: 1.55 }}>
-                <div>Site ID · <span style={{ color: C.dim }}>{connected.siteId}</span></div>
-                <div>Timezone · <span style={{ color: C.dim }}>{connected.timeZone}</span></div>
-                <div>Sync · <span style={{ color: syncTone, fontWeight: 600 }}>{connected.syncStatus}</span></div>
+            <div style={{ padding: "13px 14px", border: "1px solid var(--border-hairline)", borderRadius: 10, background: "var(--surface-card)" }}>
+              <div style={eyebrowStyle}>Connection details</div>
+              <div style={{ marginTop: 6, color: "var(--text-muted)", fontSize: 12, lineHeight: 1.55 }}>
+                <div>Site ID · <span style={{ color: "var(--text-body)" }}>{connected.siteId}</span></div>
+                <div>Timezone · <span style={{ color: "var(--text-body)" }}>{connected.timeZone}</span></div>
+                {syncMeta && (
+                  <div>Sync · <span style={{ color: `var(${syncMeta.tone})`, fontWeight: 600 }}>{syncMeta.label}</span></div>
+                )}
               </div>
             </div>
           </div>
 
           {connected.syncError && (
-            <div style={{ marginTop: 10, color: C.redSoft, fontSize: 11.5 }}>
+            <div style={{ marginTop: 10, color: "var(--health-poor-text)", fontSize: 12 }}>
               Last sync failed: {connected.syncError}
             </div>
           )}
 
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginTop: 14 }}>
-            <div style={{ color: C.faint, fontSize: 11.5 }}>
+            <div style={{ color: "var(--text-muted)", fontSize: 12 }}>
               Activity sync also runs automatically with the collector&apos;s 15-minute schedule.
             </div>
             <div style={{ display: "flex", gap: 8 }}>
@@ -235,7 +260,7 @@ export function WebflowConnection({ connectionUrl, syncUrl }: { connectionUrl: s
                 type="button"
                 disabled={busy !== null}
                 onClick={disconnect}
-                style={{ border: `1px solid ${C.border2}`, background: "transparent", color: C.redSoft, fontSize: 12, fontWeight: 550, padding: "8px 11px", borderRadius: 7, cursor: "pointer" }}
+                style={{ border: "1px solid var(--action-destructive-border)", background: "transparent", color: "var(--action-destructive-text)", fontSize: 12, fontWeight: 550, padding: "8px 11px", borderRadius: 7, cursor: "pointer" }}
               >
                 {busy === "disconnect" ? "Disconnecting…" : "Disconnect"}
               </button>
@@ -243,7 +268,7 @@ export function WebflowConnection({ connectionUrl, syncUrl }: { connectionUrl: s
                 type="button"
                 disabled={busy !== null}
                 onClick={sync}
-                style={{ border: "none", background: C.accent, color: "#fff", fontSize: 12, fontWeight: 600, padding: "8px 12px", borderRadius: 7, cursor: "pointer" }}
+                style={{ border: "none", background: "var(--action-primary-bg)", color: "var(--action-primary-text)", fontSize: 12, fontWeight: 600, padding: "8px 12px", borderRadius: 7, cursor: "pointer" }}
               >
                 {busy === "sync" ? "Syncing…" : "Sync now"}
               </button>
@@ -252,7 +277,7 @@ export function WebflowConnection({ connectionUrl, syncUrl }: { connectionUrl: s
         </div>
       ) : (
         <form className="webflow-connection-form" onSubmit={connect} style={{ display: "grid", gridTemplateColumns: "minmax(220px,0.65fr) minmax(300px,1fr) auto", alignItems: "end", gap: 12, marginTop: 18 }}>
-          <label style={{ display: "grid", gap: 7, color: C.muted, fontSize: 11.5 }}>
+          <label style={{ display: "grid", gap: 7, color: "var(--text-muted)", fontSize: 12 }}>
             Webflow Site ID
             <input
               value={siteId}
@@ -262,10 +287,10 @@ export function WebflowConnection({ connectionUrl, syncUrl }: { connectionUrl: s
               pattern="[A-Fa-f0-9]{24}"
               placeholder="24-character site ID"
               onChange={(event) => setSiteId(event.target.value)}
-              style={{ background: C.bgElev, color: C.text, border: `1px solid ${C.border2}`, borderRadius: 7, padding: "9px 10px", fontSize: 13 }}
+              style={{ background: "var(--surface-input)", color: "var(--text-body)", border: "1px solid var(--border-strong)", borderRadius: 7, padding: "9px 10px", fontSize: 13 }}
             />
           </label>
-          <label style={{ display: "grid", gap: 7, color: C.muted, fontSize: 11.5 }}>
+          <label style={{ display: "grid", gap: 7, color: "var(--text-muted)", fontSize: 12 }}>
             Site token
             <input
               type="password"
@@ -276,13 +301,13 @@ export function WebflowConnection({ connectionUrl, syncUrl }: { connectionUrl: s
               autoComplete="off"
               placeholder="Token with site activity, sites, pages, assets, and CMS read access"
               onChange={(event) => setToken(event.target.value)}
-              style={{ background: C.bgElev, color: C.text, border: `1px solid ${C.border2}`, borderRadius: 7, padding: "9px 10px", fontSize: 13 }}
+              style={{ background: "var(--surface-input)", color: "var(--text-body)", border: "1px solid var(--border-strong)", borderRadius: 7, padding: "9px 10px", fontSize: 13 }}
             />
           </label>
           <button
             type="submit"
             disabled={busy !== null}
-            style={{ border: "none", background: C.accent, color: "#fff", fontSize: 12, fontWeight: 600, padding: "10px 13px", borderRadius: 7, cursor: "pointer" }}
+            style={{ border: "none", background: "var(--action-primary-bg)", color: "var(--action-primary-text)", fontSize: 12, fontWeight: 600, padding: "10px 13px", borderRadius: 7, cursor: "pointer" }}
           >
             {busy === "connect" ? "Connecting…" : "Connect Webflow"}
           </button>
@@ -290,7 +315,7 @@ export function WebflowConnection({ connectionUrl, syncUrl }: { connectionUrl: s
       )}
 
       {error && (
-        <div role="alert" style={{ marginTop: 11, color: C.redSoft, fontSize: 11.5 }}>
+        <div role="alert" style={{ marginTop: 11, color: "var(--health-poor-text)", fontSize: 12 }}>
           {error}
         </div>
       )}

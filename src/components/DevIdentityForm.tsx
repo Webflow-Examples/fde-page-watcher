@@ -20,12 +20,14 @@ export function DevIdentityForm({ email, endpoint = "/api/dev/session" }: { emai
       }}
       style={{ display: "grid", gap: 8, marginTop: 18 }}
     >
-      <label htmlFor="empty-dev-user" style={{ color: "#a1a1aa", fontSize: 12 }}>Development user</label>
+      <label htmlFor="empty-dev-user" style={{ color: "var(--text-muted)", fontSize: 12 }}>Development user</label>
       <div style={{ display: "flex", gap: 8 }}>
-        <input id="empty-dev-user" type="email" required value={value} onChange={(event) => setValue(event.target.value)} style={{ minWidth: 0, flex: 1, border: "1px solid #303036", borderRadius: 7, background: "#0f0f11", color: "#f4f4f5", padding: "9px 10px" }} />
-        <button type="submit" style={{ border: 0, borderRadius: 7, background: "#2356a8", color: "#fff", padding: "9px 13px", fontWeight: 600, cursor: "pointer" }}>Switch</button>
+        <input id="empty-dev-user" type="email" required value={value} onChange={(event) => setValue(event.target.value)} style={{ minWidth: 0, flex: 1, border: "1px solid var(--border-strong)", borderRadius: 7, background: "var(--surface-input)", color: "var(--text-body)", padding: "9px 10px" }} />
+        {/* A legitimate filled primary — the one action on this form. */}
+        <button type="submit" style={{ border: 0, borderRadius: 7, background: "var(--action-primary-bg)", color: "var(--action-primary-text)", padding: "9px 13px", fontWeight: 600, cursor: "pointer" }}>Switch</button>
       </div>
-      {error && <span role="alert" style={{ color: "#ff8b8b", fontSize: 11.5 }}>{error}</span>}
+      {/* A form error is a system state, not a page-health verdict (F3 §4.F). */}
+      {error && <span role="alert" style={{ color: "var(--status-danger-text)", fontSize: 12 }}>{error}</span>}
     </form>
   );
 }

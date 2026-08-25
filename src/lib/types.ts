@@ -567,6 +567,14 @@ export interface CollectionResult {
   measurementContext?: Partial<Record<Strategy, PsiMeasurementContext>>;
 }
 
+/**
+ * Retired lifecycle. The canonical one is `IssueState` in `lib/issue-case.ts`;
+ * this pair survives only as the shape the store still writes, read by the
+ * migration adapters there and reproduced for existing screens by `recStatusOf`
+ * and `taskStatusOf`. Nothing new should branch on either — a record could hold
+ * `"inbox"` and `"done"` at once, which is why the four lifecycles were
+ * collapsed into one. Delete both when the last reader is gone.
+ */
 export type RecStatus = "inbox" | "task" | "ignored";
 export type TaskStatus = "todo" | "in-progress" | "done";
 export type RecommendationSource = "lighthouse" | "native-elements" | "crux-field-only" | "agent-readiness";
@@ -583,6 +591,10 @@ export type AgentIssueCheckResult =
   | "not-applicable"
   | "unavailable";
 
+/**
+ * Retired lifecycle; see `RecStatus`. `"returned"` is the F1 state `reopened`,
+ * and the migration adapter in `lib/issue-case.ts` reads it as such.
+ */
 export type AgentIssueVerificationStatus =
   | "not-started"
   | "verifying"
@@ -647,6 +659,11 @@ export interface FieldOnlyRecommendationSignal {
   detectedAt: string;
 }
 
+/**
+ * Retired lifecycle; see `RecStatus`. `"resolved"` and `"regressed"` are the F1
+ * states `resolved` and `reopened`, read by the migration adapter in
+ * `lib/issue-case.ts`.
+ */
 export type FieldOnlyLifecycleStatus = "active" | "verifying" | "resolved" | "corroborated" | "regressed";
 
 export interface FieldOnlyStrategyLifecycle {
@@ -696,7 +713,6 @@ export interface Audit {
   desc: string;
   category: string;
   savings: string;
-  dot: string;
   evidence?: string;
   confidence?: LighthouseFindingConfidence;
   webflow: WebflowPerformanceClassification;

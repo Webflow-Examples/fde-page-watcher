@@ -1,0 +1,469 @@
+{
+  "$comment": "Page Watch vocabulary registry. Source of truth for user-facing status words. Decided in Chunk F1, revised when C1a implementation surfaced three gaps: applicability had no vocabulary, banned lists were being read as global prose bans, and rule 4 forbade legitimate reuse.",
+  "version": 4,
+  "decided": "2026-08-24",
+  "concepts": {
+    "work_state": {
+      "field": "issue.state",
+      "description": "Where one issue case is in its lifecycle. Exactly one at a time.",
+      "values": [
+        {
+          "key": "new",
+          "label": "New",
+          "queue": "decide",
+          "tone": "information",
+          "means": "Detected and corroborated. Nobody has looked yet."
+        },
+        {
+          "key": "todo",
+          "label": "To do",
+          "queue": "fix",
+          "tone": "neutral",
+          "means": "Somebody said yes. Nobody has started."
+        },
+        {
+          "key": "in_progress",
+          "label": "In progress",
+          "queue": "fix",
+          "tone": "neutral",
+          "means": "Someone is mid-task."
+        },
+        {
+          "key": "fixed",
+          "label": "Fixed",
+          "queue": "watch",
+          "tone": "warning",
+          "means": "The change shipped. Evidence has not agreed yet.",
+          "subline": "Fixed {date} · {next} check due {due}"
+        },
+        {
+          "key": "resolved",
+          "label": "Resolved",
+          "queue": "show_all",
+          "tone": "success",
+          "means": "The evidence agreed and held."
+        },
+        {
+          "key": "reopened",
+          "label": "Reopened",
+          "queue": "decide",
+          "tone": "danger",
+          "means": "A check found the problem back. Needs a new decision."
+        },
+        {
+          "key": "dismissed",
+          "label": "Dismissed",
+          "queue": "show_all",
+          "tone": "neutral",
+          "means": "Deliberately excluded. Off-ramp from Decide only, and it requires a reason.",
+          "requires": "reason",
+          "reasons": [
+            "Not applicable",
+            "Intentional",
+            "Accepted risk",
+            "Not now"
+          ],
+          "absorbs": "Native-element 'acknowledged' (nativeElements.ts) — a real finding that still counts, which the user has seen and chosen not to act on. That is dismissed + reason 'Intentional'. Folded in S3 when native-element findings become issue cases."
+        }
+      ],
+      "banned_as_label": [
+        "Accepted",
+        "Implemented",
+        "Verifying",
+        "Checking",
+        "Returned",
+        "Came back",
+        "Closed",
+        "Done",
+        "WIP",
+        "Untriaged",
+        "Active",
+        "Open",
+        "Ignored",
+        "Suppressed",
+        "Acknowledged"
+      ]
+    },
+    "queue": {
+      "field": "issuesView.filter",
+      "description": "A filter over work_state. Named with a verb, because a queue is a job.",
+      "values": [
+        {
+          "key": "decide",
+          "label": "Decide",
+          "holds": [
+            "new",
+            "reopened"
+          ]
+        },
+        {
+          "key": "fix",
+          "label": "Fix",
+          "holds": [
+            "todo",
+            "in_progress"
+          ]
+        },
+        {
+          "key": "watch",
+          "label": "Watch",
+          "holds": [
+            "fixed"
+          ]
+        },
+        {
+          "key": "show_all",
+          "label": "Show all",
+          "holds": "*",
+          "counted": false
+        }
+      ],
+      "banned_as_label": [
+        "Needs a decision",
+        "Watching outcomes",
+        "In progress (as a tab)",
+        "Inbox",
+        "Triage",
+        "Action Center",
+        "All",
+        "Tasks"
+      ]
+    },
+    "action": {
+      "field": "issue.transition",
+      "description": "The verbs that move an issue between states. One lifecycle, no synonyms.",
+      "values": [
+        {
+          "key": "accept",
+          "label": "Accept",
+          "from": [
+            "new",
+            "reopened"
+          ],
+          "to": "todo"
+        },
+        {
+          "key": "dismiss",
+          "label": "Dismiss",
+          "from": [
+            "new",
+            "reopened"
+          ],
+          "to": "dismissed",
+          "requires": "reason"
+        },
+        {
+          "key": "start",
+          "label": "Start",
+          "from": [
+            "todo"
+          ],
+          "to": "in_progress"
+        },
+        {
+          "key": "mark_fixed",
+          "label": "Mark fixed",
+          "from": [
+            "in_progress"
+          ],
+          "to": "fixed"
+        },
+        {
+          "key": "reopen",
+          "label": "Reopen",
+          "from": [
+            "fixed",
+            "resolved",
+            "dismissed"
+          ],
+          "to": "reopened",
+          "note": "From fixed: a 2, 7, or 30-day checkpoint failed, so the change did not hold. From resolved: it came back later. From dismissed: someone changed their mind. All three land in Decide."
+        }
+      ],
+      "banned_as_label": [
+        "Ignore",
+        "Suppress",
+        "Acknowledge",
+        "Clear acknowledgement",
+        "Add to tasks",
+        "Add workaround to tasks"
+      ]
+    },
+    "trend": {
+      "field": "page.trend",
+      "description": "Direction of the score line. Never a statement about health.",
+      "values": [
+        {
+          "key": "improving",
+          "label": "Improving"
+        },
+        {
+          "key": "no_change",
+          "label": "No change"
+        },
+        {
+          "key": "regressing",
+          "label": "Regressing"
+        }
+      ],
+      "banned_as_label": [
+        "Stable",
+        "Flat",
+        "Declining",
+        "Healthy",
+        "Worsening"
+      ]
+    },
+    "health": {
+      "field": "page.health",
+      "description": "How the page is doing right now, independent of direction.",
+      "values": [
+        {
+          "key": "good",
+          "label": "Good"
+        },
+        {
+          "key": "needs_work",
+          "label": "Needs work"
+        },
+        {
+          "key": "poor",
+          "label": "Poor"
+        }
+      ],
+      "banned_as_label": [
+        "Needs attention",
+        "OK",
+        "Fine",
+        "Bad",
+        "Stable"
+      ]
+    },
+    "confidence": {
+      "field": "issue.confidence",
+      "description": "How much the evidence supports the diagnosis.",
+      "values": [
+        {
+          "key": "confirmed",
+          "label": "Confirmed"
+        },
+        {
+          "key": "probable",
+          "label": "Probable"
+        },
+        {
+          "key": "unclear",
+          "label": "Unclear"
+        }
+      ],
+      "banned_as_label": [
+        "Investigate",
+        "Likely",
+        "Possible",
+        "Suspected",
+        "Verified"
+      ]
+    },
+    "agent_result": {
+      "field": "agentCheck.result",
+      "description": "Outcome of one agent-readiness check. Unchanged from the audit.",
+      "values": [
+        {
+          "key": "passed",
+          "label": "Passed"
+        },
+        {
+          "key": "partial",
+          "label": "Partial"
+        },
+        {
+          "key": "failed",
+          "label": "Failed"
+        },
+        {
+          "key": "not_applicable",
+          "label": "Not applicable"
+        },
+        {
+          "key": "unavailable",
+          "label": "Unavailable"
+        },
+        {
+          "key": "ignored",
+          "label": "Ignored"
+        }
+      ],
+      "banned_as_label": [
+        "Pass",
+        "Fail",
+        "N/A",
+        "Skipped",
+        "Suppressed",
+        "Error"
+      ]
+    },
+    "agent_verdict": {
+      "field": "agentAccess.verdict",
+      "description": "One product conclusion for agent access on an origin. Never a provider score stack.",
+      "values": [
+        {
+          "key": "ready",
+          "label": "Ready"
+        },
+        {
+          "key": "needs_work",
+          "label": "Needs work"
+        },
+        {
+          "key": "blocked",
+          "label": "Blocked"
+        },
+        {
+          "key": "unknown",
+          "label": "Unknown"
+        }
+      ],
+      "banned_as_label": [
+        "Needs attention",
+        "Partial readiness",
+        "Score",
+        "Grade"
+      ]
+    },
+    "destination": {
+      "field": "route",
+      "description": "Primary navigation. Four destinations.",
+      "values": [
+        {
+          "key": "issues",
+          "label": "Issues",
+          "path": "/issues"
+        },
+        {
+          "key": "pages",
+          "label": "Pages",
+          "path": "/pages"
+        },
+        {
+          "key": "watchlist",
+          "label": "Watchlist",
+          "path": "/watchlist"
+        },
+        {
+          "key": "settings",
+          "label": "Settings",
+          "path": "/settings"
+        }
+      ],
+      "banned_as_label": [
+        "Action Center",
+        "Dashboard",
+        "Inbox",
+        "Tasks",
+        "Guide",
+        "Opportunities",
+        "Agent-readiness"
+      ]
+    },
+    "applicability": {
+      "field": "check.applicability | nativeElement.applicability",
+      "description": "Whether a check or a detected element footprint counts toward this site's results. Not a lifecycle: it says whether something applies, not how far along it is. Applies to agent checks, check groups, and native-element findings alike.",
+      "values": [
+        {
+          "key": "included",
+          "label": "Included",
+          "means": "Counts toward results. The default."
+        },
+        {
+          "key": "excluded",
+          "label": "Excluded",
+          "means": "Deliberately not counted, because it does not apply to this site.",
+          "requires": "reason"
+        }
+      ],
+      "actions": [
+        {
+          "key": "exclude",
+          "label": "Exclude",
+          "from": [
+            "included"
+          ],
+          "to": "excluded",
+          "requires": "reason"
+        },
+        {
+          "key": "include",
+          "label": "Include",
+          "from": [
+            "excluded"
+          ],
+          "to": "included"
+        }
+      ],
+      "reasons": [
+        "Not applicable to this site",
+        "Intentional",
+        "Accepted risk"
+      ],
+      "banned_as_label": [
+        "Ignore",
+        "Ignored",
+        "Suppress",
+        "Suppressed",
+        "Acknowledge",
+        "Acknowledged",
+        "Clear acknowledgement",
+        "Restore",
+        "Inherit",
+        "Disabled",
+        "Off"
+      ],
+      "note": "An excluded check still shows its last reading, greyed, with the reason. Excluding is not deleting — the audit is explicit that hiding evidence without saying why is how the agent tab lost trust. NOTE: the two native-element dispositions belong to DIFFERENT concepts, which is why no single word covered both. suppressed (skips hotspots, stops counting) is applicability → excluded. acknowledged (still counts, tallied separately, you have seen it) is lifecycle → dismissed with reason \"Intentional\". Do not invent a third concept for it."
+    }
+  },
+  "rules": [
+    "Filters and queues are verbs. Statuses are conditions. Show all is the unfiltered view, not a queue.",
+    "A state names the issue's situation now, in the plainest word that is true.",
+    "Progress inside a state is shown as detail, never as another state.",
+    "No word carries two different meanings. The same word MAY label the same condition on different objects — health.needs_work and agent_verdict.needs_work are both 'this is not good enough yet', on a page and on an origin, and should stay identical.",
+    "Where two words could read as synonyms, say the difference in the copy: Fixed means waiting on evidence, Resolved means evidence agreed.",
+    "Prefer the word a non-technical reader would use: fixed over implemented, no change over stable, reopened over returned.",
+    "Reuse a colour before inventing one. Seven states, five tones.",
+    "A status chip is 12px, weight 600, and never smaller than 12px. Nothing carrying meaning renders below 12px — the earlier 11px floor contradicted F3 and is withdrawn.",
+    "A banned_as_label term is only banned in that concept's label position. Only banned_global is enforced as prose.",
+    "Applicability is not lifecycle. If a control decides whether something counts, it is Exclude/Include — never a state.",
+    "Before adding a concept, check whether an existing one already means it. Two words for one idea is the failure this registry exists to prevent; a new concept for a state an existing one covers is the same failure wearing different clothes.",
+    "A state with no legal exit is a bug in this file, not a case for inventing a transition. If an implementer finds one, the registry is wrong.",
+    "A token is named for its role. A fill value used as ink, or a hairline value used as type, is a bug even though the token resolves — check contrast at the size and surface it is actually used at, not the one it was designed for."
+  ],
+  "banned_global": {
+    "$comment": "Hard-gated: these must not appear in user-facing copy anywhere in src/. This is the list the eslint rule enforces. A concept's banned_as_label list is narrower — it means 'not a valid label for THIS concept', not 'never write this word'.",
+    "terms": [
+      "Action Center",
+      "Dashboard",
+      "Inbox",
+      "Tasks",
+      "Guide",
+      "Accepted",
+      "Implemented",
+      "Verifying",
+      "Checking",
+      "Returned",
+      "Ignore",
+      "Suppress",
+      "Acknowledge",
+      "Needs a decision",
+      "Watching outcomes"
+    ],
+    "allowlist": {
+      "$comment": "Pre-existing violations in files C1a does not own. Each entry names the chunk that clears it. The list may only shrink.",
+      "src/lib/guide.ts": "S9 — the glossary retires; its entries define the retired terms on purpose",
+      "src/app/(app)/watchlist/page.tsx": "C2 — Ignore/Suppress become the applicability concept below",
+      "src/app/(app)/pages/[id]/page.tsx": "S3 — same, plus native-element dispositions",
+      "src/components/bits.tsx": "F2 — Verifying/Returned belong to the lifecycles F2 deletes",
+      "src/components/store.tsx": "S2 — route references to the retired destinations",
+      "src/components/agent-access.tsx": "S4 — route references"
+    }
+  },
+  "revised": "2026-08-25"
+}

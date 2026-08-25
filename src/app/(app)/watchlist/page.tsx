@@ -9,18 +9,19 @@ import { agentCheckKey, isAgentCheckIgnored, isAgentGroupIgnored, normalizeAgent
 import { DEFAULT_PERFORMANCE_THRESHOLDS, normalizePerformanceThresholds, PERFORMANCE_THRESHOLD_LIMITS } from "@/lib/performanceThresholds";
 import type { DevicePolicy, PerformanceThresholds } from "@/lib/types";
 import { normalizeCollectionSchedule } from "@/lib/collectionSchedule";
-import { C, flagChip, naturalDate } from "@/lib/ui";
+import { naturalDate } from "@/lib/ui";
+import { applicabilityActionLabel, DESTINATION_LABEL } from "@/lib/vocabulary";
 import { SegToggle } from "@/components/bits";
+import { Magnitude, MAGNITUDE_WEIGHT } from "@/components/magnitude";
 import { ChevronDownIcon, PlusIcon, TrashIcon } from "@/components/icons";
 import { flagCapacityError, MAX_ACTIVE_PAGES, MAX_PRIORITY_PAGES, watchCapacity } from "@/lib/watchCapacity";
 import { movePageWithinFlag, reorderPageWithinFlag, sortWatchlistPages } from "@/lib/watchlistOrder";
 import { failedRunLabel } from "@/lib/collectionStatus";
 import { WebflowConnection } from "@/components/webflow-connection";
 import { alertWebhookUrlIsValid } from "@/lib/webhook";
+import { PageHeader } from "@/components/page-header";
 
 const GRID = "32px minmax(228px,2.4fr) 230px 1fr 120px";
-const PRIORITY_CHIP = flagChip("priority");
-const PAUSED_CHIP = flagChip("paused");
 type NumericToleranceKey = keyof typeof PERFORMANCE_THRESHOLD_LIMITS;
 type WatchlistDropTarget = { pageId: string; position: "before" | "after" };
 const NUMERIC_TOLERANCE_KEYS = Object.keys(PERFORMANCE_THRESHOLD_LIMITS) as NumericToleranceKey[];
@@ -82,12 +83,12 @@ function EditablePageTitle({
           width: "100%",
           margin: "-5px -8px",
           padding: "4px 7px",
-          border: `1px solid ${C.accent}`,
+          border: "1px solid var(--focus-ring)",
           borderRadius: 5,
           outline: "none",
-          background: C.bgElev,
-          boxShadow: "0 0 0 2px rgba(20,110,245,0.18)",
-          color: C.text,
+          background: "var(--surface-input)",
+          boxShadow: "0 0 0 3px color-mix(in srgb, var(--focus-ring) 25%, transparent)",
+          color: "var(--text-body)",
           font: "inherit",
           fontSize: 14,
           fontWeight: 600,
@@ -110,7 +111,7 @@ function EditablePageTitle({
         padding: 0,
         border: "none",
         background: "transparent",
-        color: C.text,
+        color: "var(--text-body)",
         fontSize: 14,
         fontWeight: 600,
         lineHeight: "normal",
@@ -158,7 +159,7 @@ function SettingHeader({
 }) {
   return (
     <div style={{ display: "flex", alignItems: "center", minWidth: 0, gap: 6 }}>
-      <span id={`${id}-label`} style={{ minWidth: 0, color: C.text, fontSize: 13, fontWeight: 600 }}>
+      <span id={`${id}-label`} style={{ minWidth: 0, color: "var(--text-body)", fontSize: 13, fontWeight: 600 }}>
         {label}
       </span>
       <SettingTooltip id={`${id}-help`} label={label} help={help} />
@@ -216,13 +217,13 @@ function NumberStepper({
             width: "100%",
             height: "100%",
             padding: "0 38px 0 10px",
-            border: `1px solid ${C.border2}`,
+            border: "1px solid var(--border-strong)",
             borderRadius: 7,
-            background: C.bgElev,
-            color: C.text,
+            background: "var(--surface-input)",
+            color: "var(--magnitude-value)",
             font: "inherit",
             fontSize: 14,
-            fontWeight: 600,
+            fontWeight: MAGNITUDE_WEIGHT,
             textAlign: "right",
           }}
         />
@@ -235,7 +236,7 @@ function NumberStepper({
             display: "grid",
             width: 28,
             gridTemplateRows: "1fr 1fr",
-            borderLeft: `1px solid ${C.border2}`,
+            borderLeft: "1px solid var(--border-strong)",
             borderRadius: "0 6px 6px 0",
             overflow: "hidden",
           }}
@@ -262,7 +263,7 @@ function NumberStepper({
           </button>
         </span>
       </span>
-      <span style={{ minWidth: 40, color: C.faint2, fontSize: 11.5 }}>{suffix}</span>
+      <span style={{ minWidth: 40, color: "var(--magnitude-unit)", fontSize: 12 }}>{suffix}</span>
     </span>
   );
 }
@@ -478,36 +479,32 @@ function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
 
   return (
     <div>
-      <header style={{ padding: "30px 40px 24px", display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 24 }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: 27, fontWeight: 600, letterSpacing: "-0.01em" }}>{mode === "watchlist" ? "Watchlist" : "Settings"}</h1>
-          <p style={{ margin: "8px 0 0", fontSize: 13.5, color: C.muted }}>
-            {mode === "watchlist"
-              ? "Priority and Watching pages are monitored nightly. Paused pages keep their history without collecting new data."
-              : "Configure how Page Watch displays performance, evaluates changes, schedules collections, and calculates agent-readiness."}
-          </p>
-        </div>
-        {mode === "watchlist" && canManageProject && (
+      <PageHeader
+        title={mode === "watchlist" ? DESTINATION_LABEL.watchlist : DESTINATION_LABEL.settings}
+        purpose={mode === "watchlist"
+          ? "Priority and Watching pages are monitored nightly. Paused pages keep their history without collecting new data."
+          : "Configure how Page Watch displays performance, evaluates changes, schedules collections, and calculates agent-readiness."}
+        action={mode === "watchlist" && canManageProject ? (
           <button
             onClick={openAdd}
-            style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", border: "none", borderRadius: 8, background: C.accent, color: "#fff", fontSize: 13, fontWeight: 550, cursor: "pointer" }}
+            style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", border: "none", borderRadius: 8, background: "var(--action-primary-bg)", color: "var(--action-primary-text)", fontSize: 13, fontWeight: 550, cursor: "pointer" }}
           >
-            <PlusIcon size={15} style={{ color: "#fff" }} />
+            <PlusIcon size={15} style={{ color: "var(--action-primary-text)" }} />
             Add page
           </button>
-        )}
-      </header>
+        ) : undefined}
+      />
 
       <div style={{ padding: "0 40px 48px" }}>
         {mode === "watchlist" ? (
           <>
-        <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 18, padding: "12px 24px", borderBottom: `1px solid ${C.border}`, fontSize: 11.5, color: C.muted }}>
-            <span><strong style={{ color: C.text, fontWeight: 600 }}>{capacity.active}/{MAX_ACTIVE_PAGES}</strong> active</span>
-            <span><strong style={{ color: C.accentSoft, fontWeight: 600 }}>{capacity.priority}/{MAX_PRIORITY_PAGES}</strong> Priority</span>
-            <span><strong style={{ color: C.faint2, fontWeight: 600 }}>{capacity.paused}</strong> Paused</span>
+        <div style={{ background: "var(--surface-card)", border: "1px solid var(--border-hairline)", borderRadius: 14, overflow: "hidden" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 18, padding: "12px 24px", borderBottom: "1px solid var(--border-hairline)", fontSize: 12, color: "var(--text-muted)" }}>
+            <Magnitude value={`${capacity.active}/${MAX_ACTIVE_PAGES}`} unit="active" fontSize={12} />
+            <Magnitude value={`${capacity.priority}/${MAX_PRIORITY_PAGES}`} unit="Priority" fontSize={12} />
+            <Magnitude value={capacity.paused} unit="Paused" fontSize={12} />
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: GRID, alignItems: "center", padding: "14px 24px", borderBottom: `1px solid ${C.border}`, fontSize: 11, fontWeight: 550, letterSpacing: "0.05em", textTransform: "uppercase", color: C.faint }}>
+          <div style={{ display: "grid", gridTemplateColumns: GRID, alignItems: "center", padding: "14px 24px", borderBottom: "1px solid var(--border-hairline)", fontSize: 12, fontWeight: 550, letterSpacing: "0.05em", textTransform: "uppercase", color: "var(--text-muted)" }}>
             <div aria-hidden="true" />
             <div>Page</div>
             <div>Flag</div>
@@ -531,7 +528,7 @@ function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
               key={p.id}
               data-watchlist-page={p.id}
               className={`watchlist-page-row${draggedPageId === p.id ? " is-dragging" : ""}${keyboardDragging ? " is-keyboard-dragging" : ""}${isDropTarget ? ` is-drop-${dropTarget.position}` : ""}`}
-              style={{ display: "grid", gridTemplateColumns: GRID, alignItems: "center", padding: "15px 24px", borderBottom: `1px solid ${C.rowBorder}` }}
+              style={{ display: "grid", gridTemplateColumns: GRID, alignItems: "center", padding: "15px 24px", borderBottom: "1px solid var(--border-hairline)" }}
             >
               <button
                 type="button"
@@ -598,7 +595,7 @@ function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
                 <div
                   aria-label={`Locked URL for ${p.title}: ${p.url}`}
                   title="The watched URL is locked"
-                  style={{ fontSize: 12, color: C.faint, marginTop: 3, userSelect: "text" }}
+                  style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 3, userSelect: "text" }}
                 >
                   {p.url}
                 </div>
@@ -609,13 +606,13 @@ function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
                   value={p.flag}
                   onChange={(f) => setFlag(p.id, f)}
                   options={[
-                    { value: "priority", label: "Priority", tone: PRIORITY_CHIP.fg, selectedBackground: PRIORITY_CHIP.bg, disabled: !canManageProject || (p.flag !== "priority" && !!priorityError), title: p.flag !== "priority" ? priorityError ?? undefined : undefined },
+                    { value: "priority", label: "Priority", disabled: !canManageProject || (p.flag !== "priority" && !!priorityError), title: p.flag !== "priority" ? priorityError ?? undefined : undefined },
                     { value: "watching", label: "Watching", disabled: !canManageProject || (p.flag !== "watching" && !!watchingError), title: p.flag !== "watching" ? watchingError ?? undefined : undefined },
-                    { value: "paused", label: "Paused", tone: PAUSED_CHIP.fg, selectedBackground: PAUSED_CHIP.bg, disabled: !canManageProject || (p.flag !== "paused" && pauseBlocked), title: pauseBlocked ? "Wait for the current collection to finish before pausing" : undefined },
+                    { value: "paused", label: "Paused", disabled: !canManageProject || (p.flag !== "paused" && pauseBlocked), title: pauseBlocked ? "Wait for the current collection to finish before pausing" : undefined },
                   ]}
                 />
               </div>
-              <div style={{ fontSize: 12.5, color: p.runState === "failed" ? C.redSoft : C.muted }}>
+              <div style={{ fontSize: 12.5, color: p.runState === "failed" ? "var(--status-danger-text)" : "var(--status-neutral-text)" }}>
                 {p.flag === "paused"
                   ? "History retained"
                   : p.runState === "queued"
@@ -639,16 +636,17 @@ function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
                 <button
                   onClick={() => router.push(pathFor(`/pages/${p.id}`))}
-                  style={{ border: `1px solid ${C.border2}`, background: "rgba(255,255,255,0.03)", color: C.text, fontSize: 12, fontWeight: 500, padding: "6px 12px", borderRadius: 7, cursor: "pointer" }}
+                  style={{ border: "1px solid var(--border-strong)", background: "var(--surface-input)", color: "var(--text-body)", fontSize: 12, fontWeight: 500, padding: "6px 12px", borderRadius: 7, cursor: "pointer" }}
                 >
                   View
                 </button>
                 {canManageProject && <button
                   onClick={() => removePage(p.id)}
+                  aria-label={`Remove ${p.title} from the watchlist`}
                   title="Remove from watchlist"
-                  style={{ border: `1px solid ${C.border2}`, background: "rgba(255,255,255,0.03)", padding: "6px 9px", borderRadius: 7, cursor: "pointer", display: "flex", alignItems: "center" }}
+                  style={{ border: "1px solid var(--action-destructive-border)", background: "transparent", padding: "6px 9px", borderRadius: 7, cursor: "pointer", display: "flex", alignItems: "center" }}
                 >
-                  <TrashIcon size={15} style={{ color: C.red }} />
+                  <TrashIcon size={15} style={{ color: "var(--action-destructive-text)" }} />
                 </button>}
               </div>
             </div>
@@ -663,11 +661,11 @@ function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
           syncUrl={pathFor("/api/settings/webflow/sync")}
         />
 
-        <section aria-labelledby="alert-webhook-heading" style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 14, padding: "20px", marginBottom: 16 }}>
+        <section aria-labelledby="alert-webhook-heading" style={{ background: "var(--surface-card)", border: "1px solid var(--border-hairline)", borderRadius: 14, padding: "20px", marginBottom: 16 }}>
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 24 }}>
             <div>
               <div id="alert-webhook-heading" style={{ fontSize: 13.5, fontWeight: 600 }}>Alert webhook</div>
-              <div style={{ maxWidth: 720, marginTop: 4, color: C.muted, fontSize: 12, lineHeight: 1.5 }}>
+              <div style={{ maxWidth: 720, marginTop: 4, color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>
                 Send one JSON digest after each day&apos;s scheduled collection cohort settles. It includes a stable digest ID, date, title, summary, text, and a machine-readable list of every page that needs attention.
               </div>
             </div>
@@ -675,12 +673,12 @@ function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
               type="button"
               disabled={!alertWebhookDirty || !alertWebhookValid}
               onClick={saveAlertWebhook}
-              style={{ border: "none", background: C.accent, color: "#fff", fontSize: 12, fontWeight: 600, padding: "9px 13px", borderRadius: 7, cursor: "pointer", flex: "none" }}
+              style={{ border: "none", background: "var(--action-primary-bg)", color: "var(--action-primary-text)", fontSize: 12, fontWeight: 600, padding: "9px 13px", borderRadius: 7, cursor: "pointer", flex: "none" }}
             >
               Save webhook
             </button>
           </div>
-          <label htmlFor="alert-webhook-url" style={{ display: "grid", gap: 7, marginTop: 16, color: C.muted, fontSize: 11.5 }}>
+          <label htmlFor="alert-webhook-url" style={{ display: "grid", gap: 7, marginTop: 16, color: "var(--text-muted)", fontSize: 12 }}>
             Webhook URL
             <input
               id="alert-webhook-url"
@@ -693,20 +691,20 @@ function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
               placeholder="https://hooks.example.com/page-watch"
               aria-invalid={!alertWebhookValid}
               aria-describedby="alert-webhook-help"
-              style={{ width: "100%", background: C.bgElev, color: C.text, border: `1px solid ${alertWebhookValid ? C.border2 : C.redSoft}`, borderRadius: 7, padding: "9px 10px", fontSize: 13 }}
+              style={{ width: "100%", background: "var(--surface-input)", color: "var(--text-body)", border: `1px solid ${alertWebhookValid ? "var(--border-strong)" : "var(--status-danger-border)"}`, borderRadius: 7, padding: "9px 10px", fontSize: 13 }}
             />
           </label>
-          <div id="alert-webhook-help" aria-live="polite" style={{ marginTop: 7, color: alertWebhookValid ? C.faint : C.redSoft, fontSize: 11.5, lineHeight: 1.5 }}>
+          <div id="alert-webhook-help" aria-live="polite" style={{ marginTop: 7, color: alertWebhookValid ? "var(--text-muted)" : "var(--status-danger-text)", fontSize: 12, lineHeight: 1.5 }}>
             {alertWebhookValid
               ? normalizedAlertWebhookDraft ? "HTTPS only. Treat this URL as a secret; it is used only for outbound alert delivery." : "Leave blank to disable webhook alerts."
               : "Enter a valid HTTPS URL without embedded username or password credentials."}
           </div>
         </section>
 
-        <section aria-labelledby="default-chart-device-heading" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 24, background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, padding: "17px 20px", marginBottom: 16 }}>
+        <section aria-labelledby="default-chart-device-heading" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 24, background: "var(--surface-card)", border: "1px solid var(--border-hairline)", borderRadius: 13, padding: "17px 20px", marginBottom: 16 }}>
           <div>
             <div id="default-chart-device-heading" style={{ fontSize: 13.5, fontWeight: 600 }}>Default chart device</div>
-            <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Choose which device is primary when the app opens. Both device Change labels remain visible.</div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>Choose which device is primary when the app opens. Both device Change labels remain visible.</div>
           </div>
           <div style={{ flex: "none" }}>
             <SegToggle
@@ -721,10 +719,10 @@ function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
           </div>
         </section>
 
-        <section aria-labelledby="visitor-experience-heading" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 24, background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, padding: "17px 20px", marginBottom: 16 }}>
+        <section aria-labelledby="visitor-experience-heading" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 24, background: "var(--surface-card)", border: "1px solid var(--border-hairline)", borderRadius: 13, padding: "17px 20px", marginBottom: 16 }}>
           <div>
             <div id="visitor-experience-heading" style={{ fontSize: 13.5, fontWeight: 600 }}>Visitor experience data</div>
-            <div style={{ maxWidth: 720, fontSize: 12, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>
+            <div style={{ maxWidth: 720, fontSize: 12, color: "var(--text-muted)", marginTop: 4, lineHeight: 1.5 }}>
               Show or hide Chrome visitor measurements throughout the app. Collection continues weekly while this is hidden.
             </div>
           </div>
@@ -741,16 +739,16 @@ function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
           </div>
         </section>
 
-        <section aria-labelledby="external-agent-audit-heading" style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, padding: "17px 20px", marginBottom: 16 }}>
+        <section aria-labelledby="external-agent-audit-heading" style={{ background: "var(--surface-card)", border: "1px solid var(--border-hairline)", borderRadius: 13, padding: "17px 20px", marginBottom: 16 }}>
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 24 }}>
             <div>
               <div id="external-agent-audit-heading" style={{ fontSize: 13.5, fontWeight: 600 }}>External agent audit</div>
-              <div style={{ maxWidth: 720, fontSize: 12, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>
+              <div style={{ maxWidth: 720, fontSize: 12, color: "var(--text-muted)", marginTop: 4, lineHeight: 1.5 }}>
                 Adds an independent, origin-level agent-readiness audit from Ora, the scanner behind Is Agentic. It runs
                 only when you ask for it, and it never changes your Page Watch checks, performance scores, or page status.
               </div>
-              <div style={{ maxWidth: 720, fontSize: 11.5, color: C.faint, marginTop: 7, lineHeight: 1.5 }}>
-                Enabling this sends the production origin of each watched page to Ora. <strong style={{ color: C.muted, fontWeight: 600 }}>Ora scans
+              <div style={{ maxWidth: 720, fontSize: 12, color: "var(--text-muted)", marginTop: 7, lineHeight: 1.5 }}>
+                Enabling this sends the production origin of each watched page to Ora. <strong style={{ color: "var(--text-muted)", fontWeight: 600 }}>Ora scans
                 are public:</strong>{" "}
                 the result is stored in Ora&apos;s directory, can appear in its leaderboard and research
                 statistics, and is readable by anyone. Webflow staging domains are never sent.
@@ -770,14 +768,14 @@ function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
           </div>
         </section>
 
-        <section aria-labelledby="collection-schedule-heading" style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 14, padding: "20px", marginBottom: 16 }}>
+        <section aria-labelledby="collection-schedule-heading" style={{ background: "var(--surface-card)", border: "1px solid var(--border-hairline)", borderRadius: 14, padding: "20px", marginBottom: 16 }}>
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 24 }}>
             <div>
               <div id="collection-schedule-heading" style={{ fontSize: 13.5, fontWeight: 600 }}>Default collection time</div>
-              <div style={{ maxWidth: 720, marginTop: 4, color: C.muted, fontSize: 12, lineHeight: 1.5 }}>
+              <div style={{ maxWidth: 720, marginTop: 4, color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>
                 This starts the workspace&apos;s daily collection window. Active pages are spread out after this time, and each page&apos;s PSI samples are staggered.
               </div>
-              <div style={{ marginTop: 7, color: C.faint, fontSize: 11.5 }}>
+              <div style={{ marginTop: 7, color: "var(--text-muted)", fontSize: 12 }}>
                 {normalizedSchedule.overridden
                   ? "Using your saved override."
                   : "Defaults to midnight in the timezone captured when the first page is added."}
@@ -787,29 +785,29 @@ function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
               type="button"
               disabled={!collectionScheduleDirty}
               onClick={saveCollectionSchedule}
-              style={{ border: "none", background: C.accent, color: "#fff", fontSize: 12, fontWeight: 600, padding: "9px 13px", borderRadius: 7, cursor: "pointer" }}
+              style={{ border: "none", background: "var(--action-primary-bg)", color: "var(--action-primary-text)", fontSize: 12, fontWeight: 600, padding: "9px 13px", borderRadius: 7, cursor: "pointer" }}
             >
               Save schedule
             </button>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "minmax(150px,220px) minmax(260px,1fr)", gap: 12, marginTop: 16 }}>
-            <label style={{ display: "grid", gap: 7, color: C.muted, fontSize: 11.5 }}>
+            <label style={{ display: "grid", gap: 7, color: "var(--text-muted)", fontSize: 12 }}>
               Local time
               <input
                 type="time"
                 value={collectionTimeDraft}
                 onChange={(event) => setCollectionTimeDraft(event.target.value)}
-                style={{ background: C.bgElev, color: C.text, border: `1px solid ${C.border2}`, borderRadius: 7, padding: "9px 10px", fontSize: 13 }}
+                style={{ background: "var(--surface-input)", color: "var(--text-body)", border: "1px solid var(--border-strong)", borderRadius: 7, padding: "9px 10px", fontSize: 13 }}
               />
             </label>
-            <label style={{ display: "grid", gap: 7, color: C.muted, fontSize: 11.5 }}>
+            <label style={{ display: "grid", gap: 7, color: "var(--text-muted)", fontSize: 12 }}>
               Timezone
               <input
                 list="collection-timezones"
                 value={collectionTimeZoneDraft}
                 onChange={(event) => setCollectionTimeZoneDraft(event.target.value)}
                 placeholder="America/Chicago"
-                style={{ background: C.bgElev, color: C.text, border: `1px solid ${C.border2}`, borderRadius: 7, padding: "9px 10px", fontSize: 13 }}
+                style={{ background: "var(--surface-input)", color: "var(--text-body)", border: "1px solid var(--border-strong)", borderRadius: 7, padding: "9px 10px", fontSize: 13 }}
               />
               <datalist id="collection-timezones">
                 {timeZones.map((timeZone) => <option key={timeZone} value={timeZone} />)}
@@ -818,11 +816,11 @@ function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
           </div>
         </section>
 
-        <section aria-labelledby="performance-tolerances-heading" style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 14, padding: "20px", marginBottom: 16 }}>
+        <section aria-labelledby="performance-tolerances-heading" style={{ background: "var(--surface-card)", border: "1px solid var(--border-hairline)", borderRadius: 14, padding: "20px", marginBottom: 16 }}>
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 24, marginBottom: 16 }}>
             <div>
               <div id="performance-tolerances-heading" style={{ fontSize: 13.5, fontWeight: 600 }}>Monitoring tolerances</div>
-              <div style={{ maxWidth: 720, marginTop: 4, color: C.muted, fontSize: 12, lineHeight: 1.5 }}>
+              <div style={{ maxWidth: 720, marginTop: 4, color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>
                 Team defaults for when pages enter dashboard cards, Watcher summaries, page statuses, and alerts. Hover or focus an info icon for details.
               </div>
             </div>
@@ -1005,7 +1003,7 @@ function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
           </div>
 
           <div className="watchlist-tolerance-actions" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginTop: 16 }}>
-            <div aria-live="polite" style={{ color: thresholdsValid ? C.faint : C.redSoft, fontSize: 11.5 }}>
+            <div aria-live="polite" style={{ color: thresholdsValid ? "var(--text-muted)" : "var(--status-danger-text)", fontSize: 12 }}>
               {thresholdsValid
                 ? thresholdsDirty ? "Unsaved tolerance changes." : "All monitoring tolerances are saved."
                 : "One or more values are outside the supported range."}
@@ -1015,7 +1013,7 @@ function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
                 type="button"
                 onClick={saveThresholds}
                 disabled={!thresholdsDirty}
-                style={{ border: "none", background: C.accent, color: "#fff", fontSize: 12, fontWeight: 600, padding: "9px 13px", borderRadius: 7, cursor: "pointer" }}
+                style={{ border: "none", background: "var(--action-primary-bg)", color: "var(--action-primary-text)", fontSize: 12, fontWeight: 600, padding: "9px 13px", borderRadius: 7, cursor: "pointer" }}
               >
                 Save changes
               </button>
@@ -1023,16 +1021,16 @@ function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
           </div>
         </section>
 
-        <section aria-labelledby="default-agent-checks-heading" style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 14, padding: "20px" }}>
+        <section aria-labelledby="default-agent-checks-heading" style={{ background: "var(--surface-card)", border: "1px solid var(--border-hairline)", borderRadius: 14, padding: "20px" }}>
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 24, marginBottom: 18 }}>
             <div>
-              <div id="default-agent-checks-heading" style={{ fontSize: 13.5, fontWeight: 600 }}>Default agent checks to ignore</div>
-              <div style={{ fontSize: 12, color: C.muted, marginTop: 4, maxWidth: 680, lineHeight: 1.5 }}>
-                Ignored checks are excluded from agent-readiness scores on every page. Individual pages can override these defaults.
+              <div id="default-agent-checks-heading" style={{ fontSize: 13.5, fontWeight: 600 }}>Default agent checks to exclude</div>
+              <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4, maxWidth: 680, lineHeight: 1.5 }}>
+                Excluded checks are left out of agent-readiness scores on every page. Individual pages can override these defaults.
               </div>
             </div>
-            <div style={{ flex: "none", padding: "5px 9px", borderRadius: 6, background: ignoredByDefault ? "rgba(138,92,246,0.14)" : "rgba(255,255,255,0.05)", color: ignoredByDefault ? C.violetSoft : C.muted, fontSize: 11.5, fontWeight: 600 }}>
-              {ignoredByDefault} of {ALL_AGENT_CHECKS.length} ignored
+            <div style={{ flex: "none", padding: "5px 9px", borderRadius: 6, background: "var(--surface-raised)" }}>
+              <Magnitude value={`${ignoredByDefault} of ${ALL_AGENT_CHECKS.length}`} unit="excluded" fontSize={12} />
             </div>
           </div>
 
@@ -1043,23 +1041,23 @@ function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
                 <div
                   key={group.name}
                   style={{
-                    background: groupIgnored ? "rgba(138,92,246,0.07)" : "rgba(255,255,255,0.018)",
-                    border: `1px solid ${groupIgnored ? "rgba(138,92,246,0.28)" : C.border}`,
+                    background: groupIgnored ? "var(--surface-raised)" : "var(--surface-card)",
+                    border: `1px solid ${groupIgnored ? "var(--border-strong)" : "var(--border-hairline)"}`,
                     borderRadius: 12,
                     padding: "16px 18px",
                   }}
                 >
                   <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-                    <div style={{ minWidth: 0, fontSize: 11, fontWeight: 550, letterSpacing: "0.05em", textTransform: "uppercase", color: groupIgnored ? C.violetSoft : C.faint }}>
+                    <div style={{ minWidth: 0, fontSize: 12, fontWeight: 550, letterSpacing: "0.05em", textTransform: "uppercase", color: "var(--text-muted)" }}>
                       {group.name}
                     </div>
                     <button
                       type="button"
-                      aria-label={`${groupIgnored ? "Restore" : "Ignore"} ${group.name} category by default`}
+                      aria-label={`${applicabilityActionLabel(groupIgnored ? "excluded" : "included")} ${group.name} category by default`}
                       onClick={() => setDefaultAgentIgnore("group", group.name, !groupIgnored)}
-                      style={{ marginLeft: "auto", flex: "none", border: `1px solid ${groupIgnored ? "rgba(183,156,255,0.30)" : C.border2}`, background: groupIgnored ? "rgba(138,92,246,0.14)" : "rgba(255,255,255,0.03)", color: groupIgnored ? C.violetSoft : C.faint2, fontSize: 10.5, fontWeight: 550, padding: "4px 8px", borderRadius: 6, cursor: "pointer" }}
+                      style={{ marginLeft: "auto", flex: "none", border: "1px solid var(--border-strong)", background: "var(--surface-input)", color: "var(--text-muted)", fontSize: 12, fontWeight: 550, padding: "4px 8px", borderRadius: 6, cursor: "pointer" }}
                     >
-                      {groupIgnored ? "Restore category" : "Ignore category"}
+                      {`${applicabilityActionLabel(groupIgnored ? "excluded" : "included")} category`}
                     </button>
                   </div>
 
@@ -1071,20 +1069,20 @@ function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
                       const checkIgnored = groupIgnored || individuallyIgnored;
                       return (
                         <div key={name} style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}>
-                          <span style={{ flex: "none", width: 18, height: 18, borderRadius: 5, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: checkIgnored ? C.violetSoft : C.muted, background: checkIgnored ? "rgba(138,92,246,0.18)" : C.border2 }}>
+                          <span style={{ flex: "none", width: 18, height: 18, borderRadius: 5, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: "var(--text-muted)", background: "var(--surface-raised)" }}>
                             {checkIgnored ? "–" : "✓"}
                           </span>
-                          <span style={{ minWidth: 0, flex: 1, fontSize: 13, color: checkIgnored ? C.faint : C.dim }}>{name}</span>
+                          <span style={{ minWidth: 0, flex: 1, fontSize: 13, color: "var(--text-body)" }}>{name}</span>
                           {groupIgnored ? (
-                            <span style={{ flex: "none", fontSize: 10, fontWeight: 600, color: C.violetSoft }}>ignored by category</span>
+                            <span style={{ flex: "none", fontSize: 12, fontWeight: 600, color: "var(--text-muted)" }}>excluded by category</span>
                           ) : (
                             <button
                               type="button"
-                              aria-label={`${individuallyIgnored ? "Restore" : "Ignore"} ${name} check by default`}
+                              aria-label={`${applicabilityActionLabel(individuallyIgnored ? "excluded" : "included")} ${name} check by default`}
                               onClick={() => setDefaultAgentIgnore("check", checkKey, !individuallyIgnored)}
-                              style={{ flex: "none", border: "none", background: "transparent", color: individuallyIgnored ? C.violetSoft : C.faint, fontSize: 10.5, fontWeight: 550, padding: "2px 0", cursor: "pointer" }}
+                              style={{ flex: "none", border: "none", background: "transparent", color: "var(--text-muted)", fontSize: 12, fontWeight: 550, padding: "2px 0", cursor: "pointer" }}
                             >
-                              {individuallyIgnored ? "Restore" : "Ignore"}
+                              {applicabilityActionLabel(individuallyIgnored ? "excluded" : "included")}
                             </button>
                           )}
                         </div>

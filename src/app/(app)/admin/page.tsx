@@ -325,7 +325,7 @@ export default function AdminPage() {
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
               <thead>
-                <tr style={{ color: "#8f8f98", textAlign: "left" }}>
+                <tr style={{ color: "var(--text-muted)", textAlign: "left" }}>
                   <th style={{ padding: "9px 10px" }}>Issue</th>
                   <th style={{ padding: "9px 10px", textAlign: "right" }}>Customers</th>
                   <th style={{ padding: "9px 10px", textAlign: "right" }}>Pages</th>
@@ -335,8 +335,8 @@ export default function AdminPage() {
               </thead>
               <tbody>
                 {knownIssues.map((issue) => (
-                  <tr key={issue.key} style={{ borderTop: "1px solid rgba(255,255,255,0.07)" }}>
-                    <td style={{ padding: "11px 10px" }}><strong>{issue.title}</strong><div style={{ color: "#777780", marginTop: 2 }}>{issue.key}</div></td>
+                  <tr key={issue.key} style={{ borderTop: "1px solid var(--border-hairline)" }}>
+                    <td style={{ padding: "11px 10px" }}><strong>{issue.title}</strong><div style={{ color: "var(--text-muted)", marginTop: 2 }}>{issue.key}</div></td>
                     <td style={{ padding: "11px 10px", textAlign: "right" }}>{issue.customerCount}</td>
                     <td style={{ padding: "11px 10px", textAlign: "right" }}>{issue.pageCount}</td>
                     <td style={{ padding: "11px 10px", textAlign: "right" }}>{issue.detections}</td>
@@ -368,7 +368,7 @@ export default function AdminPage() {
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
               <thead>
-                <tr style={{ color: "#8f8f98", textAlign: "left" }}>
+                <tr style={{ color: "var(--text-muted)", textAlign: "left" }}>
                   <th style={{ padding: "9px 10px" }}>Audit ID</th>
                   <th style={{ padding: "9px 10px" }}>Category</th>
                   <th style={{ padding: "9px 10px", textAlign: "right" }}>Customers</th>
@@ -379,8 +379,8 @@ export default function AdminPage() {
               </thead>
               <tbody>
                 {unmappedFindings.map((finding) => (
-                  <tr key={finding.key} style={{ borderTop: "1px solid rgba(255,255,255,0.07)" }}>
-                    <td style={{ padding: "11px 10px" }}><strong>{finding.key}</strong><div style={{ color: "#777780", marginTop: 2 }}>{finding.title}</div></td>
+                  <tr key={finding.key} style={{ borderTop: "1px solid var(--border-hairline)" }}>
+                    <td style={{ padding: "11px 10px" }}><strong>{finding.key}</strong><div style={{ color: "var(--text-muted)", marginTop: 2 }}>{finding.title}</div></td>
                     <td style={{ padding: "11px 10px" }}>{finding.category}</td>
                     <td style={{ padding: "11px 10px", textAlign: "right" }}>{finding.customerCount}</td>
                     <td style={{ padding: "11px 10px", textAlign: "right" }}>{finding.pageCount}</td>

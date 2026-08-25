@@ -1,13 +1,22 @@
+import type { Trend } from "./vocabulary";
+
 // Pure geometry/color math for the ScoreCard chart. Ported exactly from the
 // design reference (ScoreCard.reference.html) — see that file's comments for
 // the reasoning behind each non-obvious step. Kept framework-free and testable
 // in isolation from the React component.
 
-/** Lighthouse score bands: drive the series color, fills, hatch, and numeral outline. */
-export const SCORE_GOOD = "#35D07F";
-export const SCORE_WARN = "#FF9A3D";
-export const SCORE_BAD = "#FF5C6C";
-export const SCORE_NEUTRAL = "#8A8A90";
+/**
+ * Lighthouse score bands, as app token NAMES rather than colour values. The
+ * only place a colour value is named is the token block in `globals.css`, so
+ * this returns the custom property and callers wrap it in `var(...)`.
+ *
+ * These are the R1 health tokens: hue answers "is this good right now?" and
+ * nothing else.
+ */
+export const SCORE_GOOD = "--health-good-text";
+export const SCORE_WARN = "--health-warn-text";
+export const SCORE_BAD = "--health-poor-text";
+export const SCORE_NEUTRAL = "--health-none-text";
 
 /** score >= 90 -> good, 50-89 -> warn, < 50 -> bad. */
 export function bandColor(value: number): string {
@@ -16,12 +25,26 @@ export function bandColor(value: number): string {
   return SCORE_BAD;
 }
 
-/** delta > 0 -> good, delta <= -8 -> bad, -8 < delta < 0 -> warn, 0 -> neutral. */
-export function deltaColor(delta: number): string {
-  if (delta > 0) return SCORE_GOOD;
-  if (delta <= -8) return SCORE_BAD;
-  if (delta < 0) return SCORE_WARN;
-  return SCORE_NEUTRAL;
+/** `bandColor` as a ready-to-use CSS value. */
+export function bandVar(value: number): string {
+  return `var(${bandColor(value)})`;
+}
+
+/**
+ * Direction of a score delta, as an F1 trend rather than a colour.
+ *
+ * This replaced `deltaColor`. R2 says direction is shape, not hue, so the
+ * delta renders as an arrow glyph plus its label; R3 says the size of the
+ * delta is carried by weight, not hue. The old function additionally folded a
+ * -8 "this drop is bad" severity judgment into the colour — that is a health
+ * verdict, and R1 puts health on the health chip (`bandColor` of the current
+ * value), never on the delta. A row can now show a poor health chip and an
+ * improving arrow at once, which is the point.
+ */
+export function deltaTrend(delta: number): Trend {
+  if (delta > 0) return "improving";
+  if (delta < 0) return "regressing";
+  return "no_change";
 }
 
 export const DOMAIN_HEADROOM = 0.14;
@@ -203,21 +226,26 @@ export function hatchLineWidth(spread: number): number {
  * Two hatch directions (desktop 45deg, mobile -45deg) are a redundant channel
  * with color; this is deliberately a DOM `repeating-linear-gradient`, not an
  * SVG <pattern>, because a pattern shears under `preserveAspectRatio="none"`.
+ *
+ * `color` is any CSS colour value the caller has already resolved — today a
+ * `color-mix(in srgb, var(--series-desktop) 25%, transparent)`. It was named
+ * `colorRgba` while the deleted hex-to-alpha helper below was its only source.
  */
-export function hatchBackgroundImage(degrees: number, colorRgba: string, spread = 4): string {
+export function hatchBackgroundImage(degrees: number, color: string, spread = 4): string {
   const width = hatchLineWidth(spread);
-  return `repeating-linear-gradient(${degrees}deg, ${colorRgba} 0, ${colorRgba} ${width}px, transparent ${width}px, transparent ${spread}px)`;
+  return `repeating-linear-gradient(${degrees}deg, ${color} 0, ${color} ${width}px, transparent ${width}px, transparent ${spread}px)`;
 }
 
-/** Hex (#rgb / #rrggbb, optionally with an existing alpha nibble stripped) to rgba(...). */
-export function rgba(hex: string, alpha: number): string {
-  let h = hex.replace("#", "");
-  if (h.length === 3) h = h.split("").map((c) => c + c).join("");
-  const r = parseInt(h.slice(0, 2), 16);
-  const g = parseInt(h.slice(2, 4), 16);
-  const b = parseInt(h.slice(4, 6), 16);
-  return `rgba(${r},${g},${b},${alpha})`;
-}
+// A hex-to-rgba helper used to live here: it stripped a leading hash and ran
+// a pair of two-char parseInts over what was left. Once bandColor started
+// returning a token NAME instead of a colour value, every one of its callers
+// would have produced three NaN channels — a value the browser drops
+// silently, so the hatch pattern, both line glows, the numeral gradient and
+// the range-band fill would all have rendered as nothing, with no console
+// error and no failing test.
+// Alpha now comes from `color-mix(in srgb, var(--token) N%, transparent)` at
+// the call site, which fails loudly instead of invisibly. Do not reintroduce
+// a colour parser here.
 
 /** Resolve the shown index for hover-scrub, deriving it from `hoverIndex ?? lastIndex`. */
 export function shownIndex(hoverIndex: number | null, lastIndex: number): number {

@@ -22,8 +22,66 @@ export interface SegmentedControlOption<T extends SegmentedControlValue> {
   icon?: ReactNode;
   disabled?: boolean;
   title?: string;
-  tone?: string;
-  selectedBackground?: string;
+}
+
+/**
+ * The closed set of treatments a segment may take.
+ *
+ * This replaces `tone?: string` and `selectedBackground?: string`, which were
+ * the single channel through which a health hue, a trend hue, and the desktop
+ * chart series purple all reached an otherwise-neutral control. A role names
+ * what a segment *is*; the control alone decides what that looks like. A
+ * caller can no longer hand this component a colour, so a future regression is
+ * a compile error rather than a repaint.
+ *
+ * `neutral` is the selected-state treatment every control shares — a raised
+ * surface with body ink, the same reading as a tab underline or an active nav
+ * item. The two health roles exist because a page filter genuinely answers
+ * "is this good right now?" (R1). Nothing else may borrow them, and there is
+ * deliberately no work-state, trend, or series role: a work state belongs in
+ * a `<StatusChip>`, a direction in a `<TrendArrow>`, and a chart identity in
+ * a chart.
+ */
+export type SegmentRole = "neutral" | "health-warn" | "health-poor";
+
+interface SegmentTreatment {
+  /** Paints the option dot, and the label of the selected option. */
+  tone: string;
+  /** Paints the raised pill behind the selected option. */
+  selectedBackground: string;
+}
+
+const SEGMENT_ROLE_TREATMENT: Record<SegmentRole, SegmentTreatment> = {
+  neutral: {
+    tone: "var(--text-body)",
+    selectedBackground: "var(--surface-raised)",
+  },
+  "health-warn": {
+    tone: "var(--health-warn-text)",
+    selectedBackground: "var(--health-warn-bg)",
+  },
+  "health-poor": {
+    tone: "var(--health-poor-text)",
+    selectedBackground: "var(--health-poor-bg)",
+  },
+};
+
+/**
+ * Resolves a role to the two custom properties `globals.css` reads.
+ *
+ * The record is total over `SegmentRole`, so there is no unresolved case and
+ * nothing to fall back to — which is why the four hex literals that used to
+ * sit here (two selected-pill grounds and two label inks) are gone rather than
+ * re-tokenised. They were the quiet failure mode: a caller that passed no tone
+ * got a hand-picked dark-theme grey that ignored the theme entirely, so a
+ * missing treatment painted something plausible instead of failing.
+ */
+function segmentRoleStyle(role: SegmentRole = "neutral"): CSSProperties {
+  const treatment = SEGMENT_ROLE_TREATMENT[role];
+  return {
+    "--segment-tone": treatment.tone,
+    "--segment-selected-bg": treatment.selectedBackground,
+  } as CSSProperties;
 }
 
 export interface StatusSegmentedControlOption<T extends SegmentedControlValue>
@@ -31,6 +89,8 @@ export interface StatusSegmentedControlOption<T extends SegmentedControlValue>
   count: number;
   showDot?: boolean;
   shape?: "circle" | "triangle" | "square";
+  /** Defaults to `neutral`. A role, never a colour. */
+  role?: SegmentRole;
 }
 
 interface SharedProps<T extends SegmentedControlValue> {
@@ -126,7 +186,13 @@ function useRovingSelection<T extends SegmentedControlValue>({
   };
 }
 
-/** Neutral two-or-more-option control used for device and view choices. */
+/**
+ * Two-or-more-option control used for device and view choices.
+ *
+ * Neutral by construction: it takes no role, because a device choice is an
+ * identity, not a verdict. Selection is carried by the moving pill and the
+ * label weight, never by a hue.
+ */
 export function SegmentedControl<T extends SegmentedControlValue>({
   value,
   options,
@@ -140,7 +206,6 @@ export function SegmentedControl<T extends SegmentedControlValue>({
   const [indicator, setIndicator] = useState({ left: 3, width: 0, ready: false });
   const roving = useRovingSelection({ value, options, onChange });
   const keyboardModality = useKeyboardModality();
-  const selectedOption = options[roving.selectedIndex];
   const optionKey = options
     .map((option) => `${option.value}:${option.disabled ? "disabled" : "enabled"}`)
     .join("|");
@@ -179,10 +244,8 @@ export function SegmentedControl<T extends SegmentedControlValue>({
       role="group"
       aria-label={ariaLabel}
       className={`segmented-control segmented-control--device${keyboardModality ? " is-keyboard-modality" : ""}${className ? ` ${className}` : ""}`}
-      style={{
-        "--segment-tone": selectedOption?.tone ?? "#ffffff",
-        "--segment-selected-bg": selectedOption?.selectedBackground ?? "#22222b",
-      } as CSSProperties}
+      data-segment-role="neutral"
+      style={segmentRoleStyle()}
     >
       <span
         aria-hidden="true"
@@ -221,7 +284,13 @@ export function SegmentedControl<T extends SegmentedControlValue>({
 
 export const DeviceSegmentedControl = SegmentedControl;
 
-/** Counted status filter with hue reserved exclusively for selected state. */
+/**
+ * Counted status filter.
+ *
+ * Hue here is a health verdict and nothing else — it reaches the dot and the
+ * selected pill through `option.role`, a closed enum. A filter that carries no
+ * verdict (`All`) leaves the role unset and renders neutral.
+ */
 export function StatusSegmentedControl<T extends SegmentedControlValue>({
   value,
   options,
@@ -266,10 +335,10 @@ export function StatusSegmentedControl<T extends SegmentedControlValue>({
         const showDot = option.showDot !== false && !empty;
         const shape = option.shape ?? "circle";
         const showCount = !empty;
+        const role = option.role ?? "neutral";
         const style = {
           width: widths[index] || undefined,
-          "--segment-tone": option.tone ?? "#e9e9ee",
-          "--segment-selected-bg": option.selectedBackground ?? "#22222b",
+          ...segmentRoleStyle(role),
         } as CSSProperties;
         const label = empty
           ? `${option.label}, no results`
@@ -283,6 +352,7 @@ export function StatusSegmentedControl<T extends SegmentedControlValue>({
             }}
             type="button"
             className={`segmented-control__option${selected ? " is-selected" : ""}${empty ? " is-empty" : ""}`}
+            data-segment-role={role}
             style={style}
             aria-label={label}
             aria-pressed={selected}

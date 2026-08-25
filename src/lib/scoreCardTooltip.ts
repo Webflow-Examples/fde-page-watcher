@@ -2,15 +2,26 @@
 // handoff §5). Identical at every density, including the XSmall row-cell
 // label. Copy is verbatim from the handoff — do not paraphrase it.
 
+import { SCORE_BAD, SCORE_GOOD, SCORE_WARN } from "./scoreCard";
+
 export interface MetricTooltipCopy {
   unit: string;
   body: string;
 }
 
+/**
+ * The score-band key rendered under the tooltip body.
+ *
+ * `token` is the band's app token NAME — the exact value `bandColor()` returns
+ * for a score in that band — not a colour. Previously this table restated
+ * SCORE_GOOD/WARN/BAD as three hex literals, so the legend and the chart could
+ * drift apart silently; sharing the constants makes them resolve through one
+ * token by construction. Callers wrap it: `var(${band.token})`.
+ */
 export const SCORE_BANDS_LABEL = [
-  { color: "#35D07F", text: "90–100 good" },
-  { color: "#FF9A3D", text: "50–89 needs work" },
-  { color: "#FF5C6C", text: "0–49 poor" },
+  { token: SCORE_GOOD, text: "90–100 good" },
+  { token: SCORE_WARN, text: "50–89 needs work" },
+  { token: SCORE_BAD, text: "0–49 poor" },
 ] as const;
 
 const UNIT_LINE = "Lighthouse score · 0–100";

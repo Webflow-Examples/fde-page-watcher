@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from "react";
 import { PlusIcon, TrashIcon } from "@phosphor-icons/react";
 import { useStore } from "./store";
 import type { ProjectMembership, ProjectRole } from "@/lib/types";
-import { C } from "@/lib/ui";
 
 export function ProjectMembers() {
   const { project, pathFor, user, flash } = useStore();
@@ -74,30 +73,36 @@ export function ProjectMembers() {
   };
 
   return (
-    <section aria-labelledby="project-access-heading" style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 14, padding: 20, marginBottom: 16 }}>
+    <section aria-labelledby="project-access-heading" style={{ background: "var(--surface-card)", border: "1px solid var(--border-hairline)", borderRadius: 14, padding: 20, marginBottom: 16 }}>
       <div id="project-access-heading" style={{ fontSize: 13.5, fontWeight: 600 }}>Project access</div>
-      <div style={{ maxWidth: 720, marginTop: 4, color: C.muted, fontSize: 12, lineHeight: 1.5 }}>
+      <div style={{ maxWidth: 720, marginTop: 4, color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>
         Invite project admins and viewers by email. Share the app link with them; Cloudflare Access sends their sign-in code.
       </div>
       <form
         onSubmit={(event) => { event.preventDefault(); if (email.trim()) void save(email.trim(), role); }}
         style={{ display: "grid", gridTemplateColumns: "minmax(220px, 1fr) 180px auto", gap: 10, marginTop: 16 }}
       >
-        <input type="email" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="customer@example.com" aria-label="Member email" style={{ background: C.bgElev, color: C.text, border: `1px solid ${C.border2}`, borderRadius: 7, padding: "9px 10px", fontSize: 13 }} />
-        <select value={role} onChange={(event) => setRole(event.target.value as ProjectRole)} aria-label="Project role" style={{ background: C.bgElev, color: C.text, border: `1px solid ${C.border2}`, borderRadius: 7, padding: "9px 10px", fontSize: 12 }}>
+        <input type="email" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="customer@example.com" aria-label="Member email" style={{ background: "var(--surface-input)", color: "var(--text-body)", border: "1px solid var(--border-strong)", borderRadius: 7, padding: "9px 10px", fontSize: 13 }} />
+        <select value={role} onChange={(event) => setRole(event.target.value as ProjectRole)} aria-label="Project role" style={{ background: "var(--surface-input)", color: "var(--text-body)", border: "1px solid var(--border-strong)", borderRadius: 7, padding: "9px 10px", fontSize: 12 }}>
           <option value="project_viewer">Project viewer</option>
           <option value="project_admin">Project admin</option>
         </select>
-        <button type="submit" disabled={busy || !email.trim()} style={{ display: "flex", alignItems: "center", gap: 7, border: 0, borderRadius: 7, background: C.accent, color: "#fff", padding: "9px 13px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}><PlusIcon size={14} /> Invite</button>
+        <button type="submit" disabled={busy || !email.trim()} style={{ display: "flex", alignItems: "center", gap: 7, border: 0, borderRadius: 7, background: "var(--action-primary-bg)", color: "var(--action-primary-text)", padding: "9px 13px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}><PlusIcon size={14} /> Invite</button>
       </form>
-      <div style={{ marginTop: 16, borderTop: `1px solid ${C.border}` }}>
-        {loading ? <div style={{ padding: "14px 0", color: C.muted, fontSize: 12 }}>Loading access…</div> : members.length === 0 ? (
-          <div style={{ padding: "14px 0", color: C.muted, fontSize: 12 }}>No explicit members yet. App admins still have full access.</div>
+      <div style={{ marginTop: 16, borderTop: "1px solid var(--border-hairline)" }}>
+        {loading ? <div style={{ padding: "14px 0", color: "var(--text-muted)", fontSize: 12 }}>Loading access…</div> : members.length === 0 ? (
+          <div style={{ padding: "14px 0", color: "var(--text-muted)", fontSize: 12 }}>No explicit members yet. App admins still have full access.</div>
         ) : members.map((member) => (
-          <div key={member.email} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 180px 34px", alignItems: "center", gap: 10, padding: "11px 0", borderBottom: `1px solid ${C.rowBorder}` }}>
-            <div style={{ minWidth: 0 }}><div style={{ fontSize: 12.5, color: C.text, overflow: "hidden", textOverflow: "ellipsis" }}>{member.email}</div><div style={{ fontSize: 10.5, color: C.faint, marginTop: 3 }}>Invited by {member.invitedBy}</div></div>
-            <select value={member.role} disabled={busy} onChange={(event) => void save(member.email, event.target.value as ProjectRole)} aria-label={`Role for ${member.email}`} style={{ background: C.bgElev, color: C.text, border: `1px solid ${C.border}`, borderRadius: 7, padding: "7px 9px", fontSize: 11.5 }}><option value="project_viewer">Project viewer</option><option value="project_admin">Project admin</option></select>
-            <button type="button" aria-label={`Remove ${member.email}`} disabled={busy || member.email === user.email} onClick={() => void remove(member)} style={{ display: "grid", placeItems: "center", height: 30, border: `1px solid ${C.border}`, borderRadius: 7, background: "transparent", cursor: "pointer" }}><TrashIcon size={14} color={C.red} /></button>
+          <div key={member.email} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 180px 34px", alignItems: "center", gap: 10, padding: "11px 0", borderBottom: "1px solid var(--border-hairline)" }}>
+            <div style={{ minWidth: 0 }}><div style={{ fontSize: 12.5, color: "var(--text-body)", overflow: "hidden", textOverflow: "ellipsis" }}>{member.email}</div><div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 3 }}>Invited by {member.invitedBy}</div></div>
+            <select value={member.role} disabled={busy} onChange={(event) => void save(member.email, event.target.value as ProjectRole)} aria-label={`Role for ${member.email}`} style={{ background: "var(--surface-input)", color: "var(--text-body)", border: "1px solid var(--border-hairline)", borderRadius: 7, padding: "7px 9px", fontSize: 12 }}><option value="project_viewer">Project viewer</option><option value="project_admin">Project admin</option></select>
+            {/*
+              Destructive controls are bordered, never filled. The Phosphor icon
+              takes its colour from the button through `currentColor`: Phosphor's
+              `color` prop lands on the svg `fill` presentation attribute, where
+              a var() would not resolve.
+            */}
+            <button type="button" aria-label={`Remove ${member.email}`} disabled={busy || member.email === user.email} onClick={() => void remove(member)} style={{ display: "grid", placeItems: "center", height: 30, border: "1px solid var(--action-destructive-border)", borderRadius: 7, background: "transparent", color: "var(--action-destructive-text)", cursor: "pointer" }}><TrashIcon size={14} /></button>
           </div>
         ))}
       </div>
