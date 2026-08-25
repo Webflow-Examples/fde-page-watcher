@@ -269,6 +269,33 @@ describe("device identity is named in one place", () => {
   });
 });
 
+describe("the issues list does not double-encode confidence", () => {
+  /**
+   * The row already writes the word — Confirmed, Probable, Unclear. Painting it
+   * with `--confidence-weak` as well said "weak" underneath the word
+   * "Confirmed", which is a token painting the opposite of its role (registry
+   * rule 13), and encoded in hue a value the reader can already read.
+   *
+   * The strength tokens stay: `bits.tsx` uses them where there is no word.
+   */
+  const LIST = ["src/components/issue-row.tsx", "src/components/issue-group.tsx"];
+
+  it("keeps the strength tokens off the list rows", () => {
+    for (const file of LIST) {
+      const src = readFileSync(join(process.cwd(), file), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+      expect(src, `${file} paints confidence with a strength token`)
+        .not.toMatch(/var\(--confidence-(strong|weak)\)/);
+      expect(src, `${file} should still render the registry's word`).toContain("CONFIDENCE_LABEL");
+    }
+  });
+
+  it("leaves the strength axis available where there is no word", () => {
+    const bits = readFileSync(join(process.cwd(), "src/components/bits.tsx"), "utf8");
+    expect(bits).toContain("var(--confidence-strong)");
+    expect(bits).toContain("var(--confidence-weak)");
+  });
+});
+
 describe("contrast coverage", () => {
   // The coverage list must stay DERIVED. A hand-maintained list is what let both
   // rule-13 bugs ship: the tokens were simply not on it, so 841 green tests said

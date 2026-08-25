@@ -171,7 +171,12 @@ export function IssueRow({ issue, basePath, pageTitles, nested = false }: IssueR
         {scopeLineOf(issue.pageIds, issue.strategies, pageTitles)}
       </span>
 
-      <span style={{ ...TRUNCATE_CELL, fontSize: 12.5, color: "var(--confidence-weak)" }}>
+      {/* The word, in the row's secondary text token — never a strength hue.
+          `--confidence-weak` under the word "Confirmed" is a token painting
+          the opposite of what it says (registry rule 13), and hue here would
+          double-encode a value the word already carries. Strength as colour
+          belongs where there is no word to read it from. */}
+      <span style={{ ...TRUNCATE_CELL, fontSize: 12.5, color: "var(--text-muted)" }}>
         {CONFIDENCE_LABEL[issue.confidence]}
       </span>
 

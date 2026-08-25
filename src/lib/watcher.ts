@@ -259,14 +259,36 @@ export function buildWatcher(
 
   // Evaluate Accessibility and SEO over the same selected range instead of
   // asserting they are stable — the Watcher must not make unchecked claims.
+  //
+  // A page has no comparison for this device when the selected device never
+  // measured it: `availableStrategies` lets a night report desktop and not
+  // mobile, and under `devicePolicy: "both"` such a page is still ranked. This
+  // used to read `?? 0` for the movement and `?? 100` for the score, which
+  // fabricated a flat, perfect reading and counted the page as one that held.
+  // One page nobody measured was enough to print "stable across the board" over
+  // data that did not exist — registry rule 18, in its worst form, in copy.
+  //
+  // An absent measurement is neither a hold nor a drop. It cannot support the
+  // claim, so it withholds it.
   const stableCategories: string[] = [];
   if (ranked.length) {
     for (const [key, label] of [["a11y", "Accessibility"], ["seo", "SEO"]] as const) {
-      const dropped = ranked.filter((p) =>
-        (pageRangeComparison(p, strategy, key, rangeDays)?.delta ?? 0) <= -effectivePerformanceThresholds(teamThresholds, p).regression
-        && (pageRangeComparison(p, strategy, key, rangeDays)?.to ?? 100) < effectivePerformanceThresholds(teamThresholds, p).regressionFloor);
-      if (dropped.length === 0) stableCategories.push(label);
-      else changed.push({ lead: listJoin(dropped.map((p) => p.title)), text: `dropped on ${label} over the last ${rangeDays} days.` });
+      const readings = ranked.map((page) => ({
+        page,
+        comparison: pageRangeComparison(page, strategy, key, rangeDays),
+        thresholds: effectivePerformanceThresholds(teamThresholds, page),
+      }));
+      const dropped = readings.filter(({ comparison, thresholds }) =>
+        comparison !== null
+        && comparison.delta <= -thresholds.regression
+        && comparison.to < thresholds.regressionFloor);
+      const unmeasured = readings.filter(({ comparison }) => comparison === null);
+      if (dropped.length) {
+        changed.push({ lead: listJoin(dropped.map(({ page }) => page.title)), text: `dropped on ${label} over the last ${rangeDays} days.` });
+      } else if (unmeasured.length === 0) {
+        // "Across the board" means every page on the board.
+        stableCategories.push(label);
+      }
     }
   }
   const winning = stableCategories.length

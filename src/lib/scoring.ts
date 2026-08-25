@@ -267,13 +267,33 @@ export interface RangeComparison {
   windowSize: number;
 }
 
+/**
+ * One category's median from one night.
+ *
+ * A `Night` carries all four categories for every strategy it says it reports.
+ * A night that does not is malformed rather than empty, and the two failures
+ * look identical from here: reading the gap as 0 invents a catastrophic score,
+ * and letting the `TypeError` surface from inside `median` names a property
+ * rather than the invariant. Registry rule 18 — an absent measurement is never
+ * treated as a value — so this says which night broke and how.
+ */
+function nightScore(night: Night, strategy: Strategy, key: CategoryKey): number {
+  const score = night.scores[strategy]?.[key];
+  if (!score) {
+    throw new Error(
+      `rangeComparison: night ${night.i} reports ${strategy} but carries no ${key} score. A Night carries all four categories for every strategy it reports; a partial one cannot be compared.`,
+    );
+  }
+  return score.m;
+}
+
 /** Compare the oldest and newest non-overlapping three-night medians in a range. */
 export function rangeComparison(history: Night[], strategy: Strategy, key: CategoryKey): RangeComparison | null {
   history = historyForStrategy(history, strategy);
   if (history.length < 2) return null;
   const windowSize = Math.min(3, Math.floor(history.length / 2));
-  const from = median(history.slice(0, windowSize).map((night) => night.scores[strategy][key].m));
-  const to = median(history.slice(-windowSize).map((night) => night.scores[strategy][key].m));
+  const from = median(history.slice(0, windowSize).map((night) => nightScore(night, strategy, key)));
+  const to = median(history.slice(-windowSize).map((night) => nightScore(night, strategy, key)));
   return { from, to, delta: to - from, windowSize };
 }
 

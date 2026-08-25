@@ -241,8 +241,8 @@ export function parseEffort(estTime: string | null | undefined): Effort {
 }
 
 /**
- * How wide a band is, for merging. `unknown` ranks below every known band, so
- * it loses to any of them — a band nobody estimated must not stand in for one
+ * How a band ranks when two are merged into one. `unknown` ranks below every
+ * known band, so it loses to any of them — a band nobody estimated must not stand in for one
  * somebody did.
  *
  * Not to be unified with the `EFFORT_ORDER` in `components/store.tsx`, which
@@ -250,11 +250,11 @@ export function parseEffort(estTime: string | null | undefined): Effort {
  * first and puts `unknown` last, where this one makes `unknown` lose. Same
  * values, two orders, because the two questions are not the same question.
  */
-const EFFORT_WIDTH: Record<Effort, number> = { unknown: -1, minutes: 0, hours: 1, days: 2 };
+const EFFORT_MERGE_RANK: Record<Effort, number> = { unknown: -1, minutes: 0, hours: 1, days: 2 };
 
 /** The larger of two bands. `unknown` loses to any known band. */
 function widerEffort(left: Effort, right: Effort): Effort {
-  return EFFORT_WIDTH[left] >= EFFORT_WIDTH[right] ? left : right;
+  return EFFORT_MERGE_RANK[left] >= EFFORT_MERGE_RANK[right] ? left : right;
 }
 
 /**
