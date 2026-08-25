@@ -309,6 +309,18 @@ export async function enrichRecommendations(dataStore: DataStore, pageId: string
   });
 }
 
+/**
+ * Where the app answers, for the links a digest sends out.
+ *
+ * Empty is a legal answer and produces root-relative links, which do not resolve
+ * from a mail client. That is deliberate: a deployment that has not been told
+ * its own address should send a link that visibly fails rather than one that
+ * quietly resolves against whatever opened it.
+ */
+function publicAppUrl(): string {
+  return getEnv("PUBLIC_APP_URL") ?? "";
+}
+
 /** Mark post-commit notification work complete and try any now-ready daily digest. */
 export async function notifyCollectionJob(dataStore: DataStore, jobId: string): Promise<void> {
   const snapshot = await dataStore.getState();
@@ -321,7 +333,7 @@ export async function notifyCollectionJob(dataStore: DataStore, jobId: string): 
       delete current.notificationError;
     }
   });
-  await processDailyDigests(dataStore);
+  await processDailyDigests(dataStore, undefined, undefined, { appUrl: publicAppUrl() });
 }
 
 /** Capture a real baseline, then atomically apply it to the current page. */
@@ -401,7 +413,7 @@ export async function runNightly(options: CollectorDependencies = {}): Promise<{
   await d.dataStore.updateState((state) => {
     ensureDailyDigest(state, dailyDigestCohortId(state, digestAt), [], digestAt);
   });
-  await processDailyDigests(d.dataStore, digestAt, d.alertFn);
+  await processDailyDigests(d.dataStore, digestAt, d.alertFn, { appUrl: publicAppUrl() });
   return { ran, failed, coalesced };
 }
 

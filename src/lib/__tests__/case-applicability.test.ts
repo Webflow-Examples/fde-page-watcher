@@ -14,6 +14,7 @@ import {
 } from "../issue-case";
 import { recordCheckpointReading } from "../checkpoint-evaluation";
 import { acceptLabel, excludedNote, historyExcluded, historyIncluded, pagesCount } from "../case-copy";
+
 import { formatImpact } from "../impact-format";
 import { EXCLUSION_REASONS } from "../vocabulary";
 
@@ -216,6 +217,8 @@ describe("the case's impact figure", () => {
 /* ── The control is gated until it can keep what it is told (F5) ──────── */
 
 describe("the exclude control", () => {
+  // A case is addressed by its id and nothing else. `digest-arrival` is where
+  // that route's shape is asserted; this only needs to read the file.
   const route = readFileSync(
     path.resolve(moduleDir, "../../app/(app)/issues/[id]/page.tsx"),
     "utf8",

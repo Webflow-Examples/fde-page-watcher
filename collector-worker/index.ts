@@ -964,7 +964,12 @@ async function runNightlyAcrossProjects(
       ...(options.scheduled ? { dueOnly: true } : {}),
     });
     if (options.scheduled) await ensureScheduledDailyDigest(store, options.scheduledAt);
-    const digests = await processDailyDigests(store, options.scheduledAt);
+    // The digest links out of the app, so it needs the app's own address. Read
+    // off a var rather than guessed from the request: the collector runs on a
+    // cron with no request to guess from.
+    const digests = await processDailyDigests(store, options.scheduledAt, undefined, {
+      appUrl: (env as { PUBLIC_APP_URL?: string }).PUBLIC_APP_URL ?? "",
+    });
     return { webflow, confirmation, nightly, digests };
   });
   return schedulerBatch(projects);

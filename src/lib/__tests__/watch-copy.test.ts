@@ -6,9 +6,6 @@ import {
   WATCH_NO_READING,
   ariaCheckpoint,
   daysUntil,
-  digestCameBack,
-  digestHeld,
-  digestNoReading,
   formatDate,
   historyReopened,
   historyUnavailable,
@@ -170,16 +167,9 @@ describe("the locked strings", () => {
     }
   });
 
-  it("says the digest lines exactly", () => {
-    expect(digestHeld(3)).toBe("3 fixes held.");
-    expect(digestHeld(1)).toBe("1 fix held.");
-    expect(digestCameBack("Unused JavaScript", "7d", "Home")).toBe(
-      "Unused JavaScript came back. The 7-day check still found the problem on Home.",
-    );
-    expect(digestNoReading("Unused JavaScript")).toBe(
-      "Unused JavaScript could not be checked in 30 days.",
-    );
-  });
+  // The three digest lines moved to `digest-copy.ts` in S7, which locked their
+  // wording as digest copy — two of them now carry readings and limits this
+  // module knows nothing about. `digest.test.ts` asserts them verbatim.
 
   it("names the check, the outcome and the date for a screen reader", () => {
     const date = localNoon(2026, 8, 3).toISOString();

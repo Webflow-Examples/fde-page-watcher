@@ -2,9 +2,9 @@ import Link from "next/link";
 import type { CSSProperties } from "react";
 import type { Effort, IssueCase } from "@/lib/issue-case";
 import { formatGroupImpact, formatImpact } from "@/lib/impact-format";
-import type { Strategy } from "@/lib/types";
-import { CONFIDENCE_LABEL, DESTINATION_PATH } from "@/lib/vocabulary";
-import { withBasePath } from "@/lib/paths";
+import { scopeLineOf } from "@/lib/scope-line";
+import { CONFIDENCE_LABEL } from "@/lib/vocabulary";
+import { caseHref } from "@/lib/paths";
 import { StatusChip } from "@/components/status-chip";
 
 /**
@@ -47,17 +47,13 @@ export const ISSUE_ROW_GAP = 14;
 export const ISSUE_ROW_NEST_INDENT = 18;
 
 /**
- * Devices are not a registry concept — `Strategy` is a measurement axis, not a
- * status — so the display names live with the one component that renders them.
- */
-const STRATEGY_LABEL: Record<Strategy, string> = { mobile: "Mobile", desktop: "Desktop" };
-
-/**
  * Impact formatting moved to `lib/impact-format.ts` when the case detail became
- * a second renderer of the same figure. Re-exported here so the list's existing
- * importers keep one name for it.
+ * a second renderer of the same figure, and the scope phrase moved to
+ * `lib/scope-line.ts` when the digest became a second writer of that. Both are
+ * re-exported here so the list's existing importers keep one name for each.
  */
 export { formatGroupImpact, formatImpact };
+export { scopeLineOf };
 
 /**
  * Effort is a band on the case, not a registry concept, so its words live here
@@ -71,22 +67,6 @@ export const EFFORT_LABEL: Record<Effort, string> = {
   // a band, and rule 18's reasoning applies to any missing reading: say so.
   unknown: "No estimate",
 };
-
-/** "Pricing" · "Pricing, Home" · "4 pages", then the devices it was seen on. */
-export function scopeLineOf(
-  pageIds: readonly string[],
-  strategies: readonly Strategy[],
-  pageTitles: Record<string, string>,
-): string {
-  const titles = pageIds.map((pageId) => pageTitles[pageId] ?? pageId);
-  const where = titles.length === 0
-    ? ""
-    : titles.length <= 2
-      ? titles.join(", ")
-      : `${titles.length} pages`;
-  const devices = strategies.map((strategy) => STRATEGY_LABEL[strategy]).join(", ");
-  return [where, devices].filter(Boolean).join(" · ");
-}
 
 /** One line, ellipsed. Applied to every free-text cell in the list. */
 export const TRUNCATE_CELL: CSSProperties = {
@@ -104,10 +84,11 @@ export const NUMERIC_CELL: CSSProperties = {
   fontVariantNumeric: "tabular-nums",
 };
 
-/** Where a case lives. The case view itself is a later chunk. */
-export function caseHref(basePath: string, caseId: string): string {
-  return withBasePath(basePath, `${DESTINATION_PATH.issues}/${encodeURIComponent(caseId)}`);
-}
+/**
+ * Where a case lives. Moved to `lib/paths.ts` in S7, because the digest links to
+ * the same address from outside the app and the two spellings must be one.
+ */
+export { caseHref };
 
 export interface IssueRowProps {
   issue: IssueCase;

@@ -1,4 +1,5 @@
-import type { Strategy } from "./types";
+import type { Digest } from "./digest";
+import { renderDigestMessage } from "./digest-email";
 
 export interface WebhookDelivery {
   sent: boolean;
@@ -7,36 +8,50 @@ export interface WebhookDelivery {
   retryAfterSeconds?: number;
 }
 
-export interface DigestWebhookPage {
-  title: string;
-  url: string;
-  status: "regressing";
-  categories: string[];
-  devices: Strategy[];
+/**
+ * The digest, as a machine reads it.
+ *
+ * A transport for the one digest rather than a second digest. Before S7 this
+ * built its own summary from a list of regressing pages, which meant the product
+ * had two descriptions of the same night that nothing kept in step — and the
+ * webhook's was written in the page-status vocabulary F2 retired. Now the
+ * sections, the sentences and the links are the ones in the message, so a
+ * reworded line cannot reach one reader and not the other.
+ *
+ * Version 2 because the shape changed. A consumer parsing version 1 is parsing a
+ * summary that no longer exists, and silently reshaping a payload under the same
+ * version number is the drift the registry's own version rule exists to stop.
+ */
+export interface DigestWebhookLine {
+  text: string;
+  href: string;
+  /** Absent when the line is not about one case — the Held count, an unread page. */
+  caseId?: string;
+}
+
+export interface DigestWebhookSection {
+  kind: string;
+  heading: string;
+  lines: DigestWebhookLine[];
 }
 
 export interface DailyDigestWebhookPayload {
   event: "page_watch.daily_digest";
-  version: 1;
+  version: 2;
   id: string;
   date: string;
-  title: string;
-  summary: string;
+  site: string;
+  /** The verdict. The same string the message's subject carries. */
+  subject: string;
+  /** The whole message, as text. */
   text: string;
-  pages: DigestWebhookPage[];
+  /** Non-empty sections only, in the digest's fixed order. */
+  sections: DigestWebhookSection[];
 }
 
 const MAX_WEBHOOK_URL_LENGTH = 2_048;
 const MAX_DIAGNOSTIC_LENGTH = 500;
 const WEBHOOK_TIMEOUT_MS = 10_000;
-
-function singleLine(value: string): string {
-  return value.replace(/\s+/g, " ").trim();
-}
-
-function plural(count: number, singular: string, pluralValue = `${singular}s`): string {
-  return count === 1 ? singular : pluralValue;
-}
 
 export function alertWebhookUrlIsValid(value: string): boolean {
   const trimmed = value.trim();
@@ -59,27 +74,26 @@ export function normalizeAlertWebhookUrl(value: string | null | undefined): stri
 }
 
 export function buildDailyDigestWebhookPayload(
-  pages: DigestWebhookPage[],
+  digest: Digest,
   cohortId: string,
 ): DailyDigestWebhookPayload {
-  const count = pages.length;
-  const date = cohortId.startsWith("nightly:") ? cohortId.slice("nightly:".length) : cohortId;
-  const title = `Page Watch daily digest: ${count} ${plural(count, "page")} need${count === 1 ? "s" : ""} attention`;
-  const summary = `${count} monitored ${plural(count, "page")} ${count === 1 ? "has" : "have"} confirmed regressions.`;
-  const pageList = pages.map((page) => {
-    const categories = page.categories.map(singleLine).join(", ");
-    const devices = page.devices.join(", ");
-    return `- ${singleLine(page.title)} — Regressing — ${categories} — ${devices}`;
-  }).join("\n");
   return {
     event: "page_watch.daily_digest",
-    version: 1,
+    version: 2,
     id: cohortId,
-    date,
-    title,
-    summary,
-    text: pageList || "No monitored pages need attention.",
-    pages,
+    date: digest.date,
+    site: digest.site,
+    subject: digest.subject,
+    text: renderDigestMessage(digest).text,
+    sections: digest.sections.map((section) => ({
+      kind: section.kind,
+      heading: section.heading,
+      lines: section.lines.map((line) => ({
+        text: line.text,
+        href: line.href,
+        ...(line.caseId ? { caseId: line.caseId } : {}),
+      })),
+    })),
   };
 }
 

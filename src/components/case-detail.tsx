@@ -5,6 +5,8 @@ import {
   RESOLVING_INTERVAL,
   includedPages,
   isTransition,
+  personActionsFor,
+  primaryActionFor,
   type IssueCase,
 } from "@/lib/issue-case";
 import { runOf } from "@/lib/checkpoint-evaluation";
@@ -14,12 +16,15 @@ import {
   DESTINATION_LABEL,
   DESTINATION_PATH,
   EVIDENCE_SOURCE_LABEL,
+  ISSUE_ACTION_LABEL,
   WORK_STATE_LABEL,
   type ExclusionReason,
+  type IssueAction,
 } from "@/lib/vocabulary";
 import {
   EFFORT_LABEL as IMPACT_EFFORT_WORDS,
   ObjectDetailHeaderActions,
+  type CaseAction,
 } from "@/components/case-detail-parts";
 import {
   EFFORT_LABEL_TEXT,
@@ -60,8 +65,15 @@ export interface CaseDetailProps {
   pagePaths?: Record<string, string>;
   impactByPage?: Record<string, number>;
   basePath?: string;
-  onAccept?: (issue: IssueCase) => void;
-  onDismiss?: (issue: IssueCase) => void;
+  /**
+   * Fire one registry transition on this case.
+   *
+   * One handler rather than one per verb. The set of legal moves is the
+   * registry's, and a prop per verb would mean a caller could wire four of the
+   * five and leave the fifth as a button that does nothing — which is exactly
+   * the state the per-page exclude control was withheld to avoid.
+   */
+  onAction?: (action: IssueAction, issue: IssueCase) => void;
   onExclude?: (pageId: string, reason: ExclusionReason) => void;
   onInclude?: (pageId: string) => void;
   now?: Date;
@@ -104,8 +116,7 @@ export function CaseDetail({
   pageTitles,
   pagePaths,
   impactByPage,
-  onAccept,
-  onDismiss,
+  onAction,
   onExclude,
   onInclude,
   now,
@@ -127,11 +138,43 @@ export function CaseDetail({
   }, [included, impactByPage, issue.impactMs]);
   const impact = formatImpact(worst || issue.impactMs);
 
-  const noAction = issue.remediation.actionability === "none"
-    ? NO_ACTION_REASON.none
-    : issue.remediation.actionability === "platform"
-      ? NO_ACTION_REASON.platform
-      : null;
+  /**
+   * The state's own legal moves, in the order the header offers them.
+   *
+   * Derived rather than fixed at Accept and Dismiss, which was true only of the
+   * two states Decide holds. A Fixed case was previously offered Accept — a
+   * transition the registry does not have from that state — so the header was
+   * showing a button that could not have worked. `primaryActionFor` reads the
+   * table, and everything else the state allows follows it.
+   */
+  const actions = useMemo<CaseAction[]>(() => {
+    const primary = primaryActionFor(issue.state);
+    if (!primary) return [];
+    const ordered = [primary, ...personActionsFor(issue.state).filter((action) => action !== primary)];
+    return ordered.map((action) => ({
+      action,
+      label: action === "accept"
+        ? acceptLabel(included.length, issue.pageIds.length)
+        : ISSUE_ACTION_LABEL[action],
+      onClick: onAction ? () => onAction(action, issue) : undefined,
+    }));
+  }, [included.length, issue, onAction]);
+
+  /**
+   * Rule 17's sentence, and only where it is true.
+   *
+   * It says there is nothing to accept, so it stands in for Accept and for
+   * nothing else. On a state whose move is Start or Reopen the sentence would be
+   * describing a button that was never going to be there, which is a different
+   * and untrue explanation.
+   */
+  const noAction = actions[0]?.action !== "accept"
+    ? null
+    : issue.remediation.actionability === "none"
+      ? NO_ACTION_REASON.none
+      : issue.remediation.actionability === "platform"
+        ? NO_ACTION_REASON.platform
+        : null;
 
   const sources = issue.evidence.length;
   const conflicting = issue.confidence === "unclear" && sources >= 2;
@@ -162,11 +205,7 @@ export function CaseDetail({
               {noAction}
             </p>
           ) : (
-            <ObjectDetailHeaderActions
-              acceptLabel={acceptLabel(included.length, issue.pageIds.length)}
-              onAccept={onAccept ? () => onAccept(issue) : undefined}
-              onDismiss={onDismiss ? () => onDismiss(issue) : undefined}
-            />
+            <ObjectDetailHeaderActions actions={actions} />
           )
         }
         metadata={

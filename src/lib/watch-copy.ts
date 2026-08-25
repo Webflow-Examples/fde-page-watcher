@@ -137,19 +137,21 @@ export function historyUnavailable(interval: CheckpointInterval): string {
   return `${daysOf(interval)}-day check unavailable — the page did not answer.`;
 }
 
-/* ── Digest ─────────────────────────────────────────────────────────────── */
+/* ── Digest ──────────────────────────────────────────────────── */
 
-export function digestHeld(count: number): string {
-  return `${count} ${count === 1 ? "fix" : "fixes"} held.`;
-}
-
-export function digestCameBack(title: string, interval: CheckpointInterval, page: string): string {
-  return `${title} came back. The ${daysOf(interval)}-day check still found the problem on ${page}.`;
-}
-
-export function digestNoReading(title: string): string {
-  return `${title} could not be checked in 30 days.`;
-}
+/**
+ * The three digest lines moved to `digest-copy.ts` in S7.
+ *
+ * W1 wrote them here so the row, the drawer, the case and the digest could not
+ * describe one checkpoint reading in four voices, and that reasoning still
+ * holds — but S7 locked their wording as digest copy, and one statement of a
+ * string beats a tidy home for it (rule 20). Two of the three now take readings
+ * and limits this module knows nothing about.
+ *
+ * What Watch renders stays here, and the shared parts are shared from here:
+ * `formatDate` and `CHECKPOINT_LABEL` are imported by the digest rather than
+ * reimplemented, which is the coupling that actually mattered.
+ */
 
 /* ── Accessible names ───────────────────────────────────────────────────── */
 

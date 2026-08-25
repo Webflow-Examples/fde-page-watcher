@@ -418,12 +418,19 @@ describe("atomic tenant updates", () => {
     });
 
     expect(alertFn).toHaveBeenCalledTimes(1);
-    expect(alertFn.mock.calls[0][1]).toMatchObject({
+    const payload = alertFn.mock.calls[0][1];
+    expect(payload).toMatchObject({
       event: "page_watch.daily_digest",
+      version: 2,
       id: "nightly:2026-08-02",
       date: "2026-08-02",
-      pages: [{ title: "Page", status: "regressing", categories: ["Performance"] }],
+      site: "example.com",
     });
+    // S7: the payload is the digest rather than a second summary of the same
+    // night, so what is asserted here is the delivery — one per nightly cohort,
+    // none for a manual run — and that its subject answers the day on its own.
+    // What the digest says about the run is `digest.test.ts`'s business.
+    expect(payload.subject.startsWith("example.com · ")).toBe(true);
     expect((await dataStore.getState()).alertDigests).toEqual([
       expect.objectContaining({ cohortId: "nightly:2026-08-02", attempts: 1, sentAt: "2026-08-02T12:00:00.000Z" }),
     ]);
