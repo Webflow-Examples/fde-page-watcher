@@ -8,13 +8,19 @@
  * Its `view` prop still carries the retired variant. Reworking this component
  * is not part of the app-chrome work; leaving the branch in place keeps this a
  * pure move with no behaviour change.
+ *
+ * The destination now has two views, switched in the header. `DashboardContent`
+ * is the All pages one, and it is deliberately untouched below the header it no
+ * longer draws: every filter, the device and range selectors, and the sortable
+ * matrix are the same table they were. The Changes view lives in
+ * `pages-changes.tsx`.
  */
 
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Circle, Desktop, DeviceMobile, Eye, X } from "@phosphor-icons/react";
-import { useStore } from "@/components/store";
+import { lastRunAtOf, useStore } from "@/components/store";
 import { SelectMenu } from "@/components/select-menu";
 import type { SelectMenuOption } from "@/components/select-menu";
 import { DeviceSegmentedControl, StatusSegmentedControl } from "@/components/segmented-control";
@@ -49,6 +55,11 @@ import { compareLabAndField } from "@/lib/labFieldComparison";
 import { fieldPriorityRankForRec, recommendationEvidenceSignal } from "@/lib/fieldPrioritization";
 import { isFieldRecommendationActionable } from "@/lib/fieldOnlyRecommendations";
 import { PageHeader } from "@/components/page-header";
+import { TabStrip } from "@/components/tab-strip";
+import { PAGES_VIEWS, pagesViewPath, parsePagesView } from "@/lib/pagesView";
+import { PAGES_ALL_PURPOSE, PAGES_VIEW_LABEL, pagesSubtitle } from "@/lib/pages-copy";
+import { naturalDate } from "@/lib/ui";
+import { PagesChanges, usePageChanges } from "./pages-changes";
 
 // The 4 category columns each now hold an XSmall ScoreCard row cell (desktop
 // + mobile hairlines with start/end numerals) rather than a single sparkline,
@@ -227,9 +238,12 @@ function isDashboardFilter(value: string | undefined): value is DashboardFilter 
 function DashboardContent({
   view,
   initialFilter,
+  headerless = false,
 }: {
   view: "dashboard" | "pages";
   initialFilter?: string;
+  /** Set when the route header and its view switch are drawn above this. */
+  headerless?: boolean;
 }) {
   const router = useRouter();
   const {
@@ -840,10 +854,12 @@ function DashboardContent({
         </>
       ) : (
         <>
-          <PageHeader
-            title={DESTINATION_LABEL.pages}
-            purpose="Review current scores, trends, and agent readiness for every watched page."
-          />
+          {headerless ? null : (
+            <PageHeader
+              title={DESTINATION_LABEL.pages}
+              purpose={PAGES_ALL_PURPOSE}
+            />
+          )}
           <div className="dashboard-content">
         <div ref={tableRef} className="dashboard-table-card">
           <div className="dashboard-table-toolbar">
@@ -990,6 +1006,60 @@ function DashboardContent({
   );
 }
 
-export function PagesPageContent({ initialFilter }: { initialFilter?: string }) {
-  return <DashboardContent view="pages" initialFilter={initialFilter} />;
+/* ── The two views ──────────────────────────────────────────────────────── */
+
+/**
+ * The destination shell: one header, one view switch, one of two bodies.
+ *
+ * Which views exist, which is the default, and how one is addressed all live in
+ * `lib/pagesView.ts` — the URL is the contract between this shell and anyone
+ * who has ever pasted a link to it, so it is decided in one place and tested
+ * there rather than assembled here.
+ */
+export function PagesPageContent({
+  initialFilter,
+  initialView,
+}: {
+  initialFilter?: string;
+  initialView?: string;
+}) {
+  const { pages, pathFor } = useStore();
+  const view = parsePagesView(initialView);
+  // One derivation, read by the header line and handed to the body, so the
+  // sentence and the groups under it cannot disagree.
+  const changes = usePageChanges();
+  const lastRunAt = lastRunAtOf(pages);
+
+  return (
+    <div style={{ minWidth: 0 }}>
+      <PageHeader
+        title={DESTINATION_LABEL.pages}
+        purpose={view === "changes"
+          ? pagesSubtitle(
+            changes.measuredCount,
+            // The last run, in the words a person uses for a date: "today",
+            // "yesterday", "4 days ago". A project that has never finished a
+            // run says so rather than borrowing a date from somewhere else.
+            lastRunAt ? naturalDate(lastRunAt) : "never",
+            changes.movedCount,
+          )
+          : PAGES_ALL_PURPOSE}
+        flush
+      />
+
+      <TabStrip
+        ariaLabel="Pages views"
+        tabs={PAGES_VIEWS.map((candidate) => ({
+          key: candidate,
+          label: PAGES_VIEW_LABEL[candidate],
+          href: pathFor(pagesViewPath(candidate, initialFilter)),
+          current: candidate === view,
+        }))}
+      />
+
+      {view === "changes"
+        ? <PagesChanges view={changes} />
+        : <DashboardContent view="pages" initialFilter={initialFilter} headerless />}
+    </div>
+  );
 }

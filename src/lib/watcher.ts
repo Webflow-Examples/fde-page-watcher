@@ -57,24 +57,60 @@ export interface WatcherCards {
 
 export const LOW_PERFORMANCE_THRESHOLD = DEFAULT_PERFORMANCE_THRESHOLDS.lowPerformance;
 
-function latestScore(page: WatchPage, strategy: Strategy, key: "perf" | "a11y" | "bp" | "seo", rangeDays: RangeDays): number | null {
-  return pageRangeLatestScore(page, strategy, key, rangeDays);
+function latestScore(
+  page: WatchPage,
+  strategy: Strategy,
+  key: "perf" | "a11y" | "bp" | "seo",
+  rangeDays: RangeDays,
+  now?: number,
+): number | null {
+  return pageRangeLatestScore(page, strategy, key, rangeDays, now);
 }
 
 function orderedDevices(preferredStrategy: Strategy): Strategy[] {
   return preferredStrategy === "mobile" ? ["mobile", "desktop"] : ["desktop", "mobile"];
 }
 
-function deviceChangeMeta(
+/**
+ * The per-device change label on a card, and the magnitude it sorts by.
+ *
+ * P35. This read `pageRangeComparison(...)?.delta ?? 0`, which rendered a device
+ * the trend had just flagged as "M +0" — a measured change of nothing, which is
+ * the one thing it certainly was not. The window is narrow but real: both
+ * functions default `now` to `Date.now()` and are called on consecutive lines,
+ * so a day boundary crossing between them leaves the trend answering from one
+ * range and the comparison from another, and the comparison comes back null.
+ *
+ * Two changes, and they are different fixes to the same bug:
+ *
+ *   - One `now`, taken once and passed to both, so the two readings are of the
+ *     same window by construction rather than by being fast enough. This is the
+ *     part that stops the divergence happening.
+ *   - No fallback. Where there is still no comparison, the device contributes no
+ *     label instead of a zero — rule 18's withhold half. The page keeps its
+ *     place on the card, because the trend did measure something; what is
+ *     withheld is only the claim about how much. Withholding the good news must
+ *     not swallow the bad, and here it does not: the regression is still listed.
+ *
+ * Exported for the test, which is the only way left to assert the second half.
+ * Sharing `now` makes the divergence unreachable through `buildWatcherCards`, so
+ * a test driven from there would pass whether or not the fallback was still
+ * present and would prove nothing (rule 21). The guard has to be asserted where
+ * it lives, because its job is to survive someone reintroducing a second clock.
+ */
+export function deviceChangeMeta(
   page: WatchPage,
   rangeDays: RangeDays,
   trend: "improving" | "regressing",
   devices: Strategy[],
   thresholds: PerformanceThresholds,
+  now: number,
 ): { meta: string; sortValue: number } {
   const changes = devices.flatMap((device) => {
-    if (pageRangeTrend(page, device, rangeDays, thresholds) !== trend) return [];
-    const delta = pageRangeComparison(page, device, "perf", rangeDays)?.delta ?? 0;
+    if (pageRangeTrend(page, device, rangeDays, thresholds, now) !== trend) return [];
+    const comparison = pageRangeComparison(page, device, "perf", rangeDays, now);
+    if (!comparison) return [];
+    const { delta } = comparison;
     return [{ label: `${device === "mobile" ? "M" : "D"} ${delta > 0 ? "+" : "−"}${Math.abs(delta)}`, magnitude: Math.abs(delta) }];
   });
   return {
@@ -109,12 +145,17 @@ export function buildWatcherCards(
   const lowPerformance: WatcherCardItem[] = [];
   const agentGaps: WatcherCardItem[] = [];
   const devices = orderedDevices(preferredStrategy);
+  // One instant for the whole build. Every range reading below is a question
+  // about the same window, and taking `Date.now()` separately inside each call
+  // meant a card could be assembled across a day boundary — the trend from one
+  // range, the change from the next (P35).
+  const now = Date.now();
 
   for (const page of activePages) {
     const thresholds = effectivePerformanceThresholds(teamThresholds, page);
     const trends = {
-      mobile: pageRangeTrend(page, "mobile", rangeDays, thresholds),
-      desktop: pageRangeTrend(page, "desktop", rangeDays, thresholds),
+      mobile: pageRangeTrend(page, "mobile", rangeDays, thresholds, now),
+      desktop: pageRangeTrend(page, "desktop", rangeDays, thresholds, now),
     };
     const improvingDevices = devicesForPolicy(
       devices.filter((device) => trends[device] === "improving"),
@@ -128,20 +169,20 @@ export function buildWatcherCards(
     );
 
     if (improvingDevices.length) {
-      const change = deviceChangeMeta(page, rangeDays, "improving", improvingDevices, thresholds);
+      const change = deviceChangeMeta(page, rangeDays, "improving", improvingDevices, thresholds, now);
       improvements.push({ pageId: page.id, pageTitle: page.title, ...change });
     }
     if (regressingDevices.length) {
-      const change = deviceChangeMeta(page, rangeDays, "regressing", regressingDevices, thresholds);
+      const change = deviceChangeMeta(page, rangeDays, "regressing", regressingDevices, thresholds, now);
       regressions.push({ pageId: page.id, pageTitle: page.title, ...change });
     }
 
     const matchingLowDevices = devices.filter((device) => {
-      const score = latestScore(page, device, "perf", rangeDays);
+      const score = latestScore(page, device, "perf", rangeDays, now);
       return score !== null && score < thresholds.lowPerformance;
     });
     const lowScores = devicesForPolicy(matchingLowDevices, preferredStrategy, thresholds.devicePolicy).flatMap((device) => {
-      const score = latestScore(page, device, "perf", rangeDays);
+      const score = latestScore(page, device, "perf", rangeDays, now);
       return score === null ? [] : [{ label: `${device === "mobile" ? "M" : "D"} ${score}`, score }];
     });
     if (lowScores.length) {
@@ -295,9 +336,30 @@ export function buildWatcher(
     ? `${listJoin(stableCategories)} ${stableCategories.length > 1 ? "are" : "is"} stable across the board.`
     : null;
 
-  const focus = corroboratedPages[0] ?? fieldOnlyPages[0] ?? regressionPages[0] ?? [...ranked].sort(
-    (a, b) => (latestScore(a, strategy, "perf", rangeDays) ?? 100) - (latestScore(b, strategy, "perf", rangeDays) ?? 100),
-  )[0];
+  /**
+   * The last-resort focus: the worst page anyone actually measured.
+   *
+   * P36. This sorted with `latestScore(...) ?? 100`, which is not the harmless
+   * tiebreak it looks like. 100 is a real, attainable Performance score, so an
+   * unmeasured page was not merely sorted last — it was sorted as though it were
+   * the best page on the board, and it tied with any page that genuinely scored
+   * 100. Rule 18: an absent measurement is not a value, and substituting a
+   * perfect one is the most flattering value available.
+   *
+   * Unmeasured pages are dropped from the ranking rather than pushed to the end
+   * of it, and the two are the same thing here because the only consumer takes
+   * the head. Dropping says the stronger thing: with nothing measured there is
+   * no focus, so no recommendation is made about a page no run has read. That is
+   * a withheld claim, not a failure — the summary still reports every page that
+   * did produce a reading, and the three earlier candidates are unaffected.
+   */
+  const worstMeasured = ranked
+    .flatMap((page) => {
+      const score = latestScore(page, strategy, "perf", rangeDays);
+      return score === null ? [] : [{ page, score }];
+    })
+    .sort((a, b) => a.score - b.score)[0]?.page;
+  const focus = corroboratedPages[0] ?? fieldOnlyPages[0] ?? regressionPages[0] ?? worstMeasured;
   let topRec: WatcherSummary["topRec"] = null;
   if (focus) {
     // Only recommend something still actionable — not an ignored or completed rec.

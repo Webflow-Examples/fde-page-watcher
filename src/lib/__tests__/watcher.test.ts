@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { buildWatcher, buildWatcherCards } from "../watcher";
-import { rangeComparison } from "../scoring";
+import { buildWatcher, buildWatcherCards, deviceChangeMeta } from "../watcher";
+import { pageRangeComparison, pageRangeTrend, rangeComparison } from "../scoring";
+import { normalizePerformanceThresholds } from "../performanceThresholds";
 import { agentCheckKey } from "../agentScoring";
 import type { CruxPageEvidence } from "../crux";
 import type { CategoryScore, Night, NightScores, Rec, ScoreByCategory, Strategy, StrategyScores, WatchPage } from "../types";
@@ -104,6 +105,169 @@ describe("buildWatcher — a category nobody measured", () => {
     const dropped = { ...page("pricing", good, { ...good, a11y: 40 }), performanceThresholdOverrides: { devicePolicy: "both" as const } };
     const w = buildWatcher([dropped, desktopOnly("home")], [], "mobile");
     expect(w.changed.some((bullet) => bullet.text.includes("Accessibility"))).toBe(true);
+  });
+});
+
+/* ── P35 — a change nobody measured is not a change of zero ──────────── */
+
+describe("buildWatcherCards — a device the trend flagged but nothing could compare", () => {
+  /**
+   * `deviceChangeMeta` read `pageRangeComparison(...)?.delta ?? 0` and rendered
+   * "M +0" — a measured change of nothing, which is the one thing it certainly
+   * was not. The window was narrow: both readings defaulted `now` to
+   * `Date.now()` on consecutive lines, so a day boundary crossing between them
+   * left the trend answering from one range and the comparison from another.
+   *
+   * Two things are asserted, because there were two bugs. The label is never a
+   * zero — rule 18, an absent reading withholds the claim it would have
+   * supported. And the page it belongs to is still on the card, because
+   * withholding the size of a regression must not withhold the regression.
+   */
+  const NOW = Date.parse("2026-07-21T12:00:00.000Z");
+  const thresholds = normalizePerformanceThresholds({});
+
+  /** A page whose nights only ever reported desktop. Its mobile readings are absent. */
+  const desktopOnly = (id: string): WatchPage => ({
+    ...page(id, good, { ...good, perf: 60 }),
+    history: [0, 1, 2].map((i) => ({
+      i,
+      date: `Jul 2${i}`,
+      scores: strat({ ...good, perf: 80 - i * 10 }),
+      availableStrategies: ["desktop"] as Strategy[],
+    })),
+  });
+
+  it("is asked for a size only when there is a reading to give one", () => {
+    /**
+     * The invariant that made the old `?? 0` dead code everywhere except the
+     * race, and the reason one shared instant is a complete fix rather than a
+     * mitigation: a device with no comparison is always `pending`, and a pending
+     * device is never a trend the card asks about. Read at one instant, the two
+     * functions cannot disagree.
+     *
+     * If this ever stops holding, the fallback below becomes reachable again and
+     * the withhold is doing real work — which is exactly when someone needs to
+     * know, so it is asserted rather than assumed.
+     */
+    for (const subject of [desktopOnly("quiet"), page("customers", good, { ...good, perf: 60 })]) {
+      for (const device of ["mobile", "desktop"] as Strategy[]) {
+        const comparison = pageRangeComparison(subject, device, "perf", 3, NOW);
+        if (comparison !== null) continue;
+        expect(
+          pageRangeTrend(subject, device, 3, thresholds, NOW),
+          `${subject.id}/${device} has no comparison but is not pending`,
+        ).toBe("pending");
+      }
+    }
+  });
+
+  it("contributes no label rather than a change of zero", () => {
+    // The withhold itself, asserted where it lives. `deviceChangeMeta` is
+    // exported for this: driven from `buildWatcherCards` the branch is
+    // unreachable, so a test from there would pass with or without the fallback
+    // and prove nothing (rule 21).
+    const quiet = desktopOnly("quiet");
+    const change = deviceChangeMeta(quiet, 3, "regressing", ["mobile"], thresholds, NOW);
+    // Not "M +0", and not "M −0". Nothing was measured, so nothing is claimed.
+    expect(change.meta).toBe("");
+    expect(change.sortValue).toBe(0);
+  });
+
+  it("still reports the size for the device that did report", () => {
+    // The withholding must be about the missing reading, not about the page.
+    const change = deviceChangeMeta(desktopOnly("quiet"), 3, "regressing", ["desktop"], thresholds, NOW);
+    expect(change.meta).toBe("D −20");
+    expect(change.sortValue).toBe(20);
+  });
+
+  it("never claims a change of zero anywhere on a card", () => {
+    const cards = buildWatcherCards(
+      [page("customers", good, { ...good, perf: 60 }), page("homepage", good, { ...good, perf: 92 }), desktopOnly("quiet")],
+      3,
+    );
+    for (const card of [...cards.regressions, ...cards.improvements]) {
+      expect(card.meta, `${card.pageId} claims a measured change of nothing`).not.toMatch(/[+−-]0\b/);
+    }
+  });
+});
+
+/* ── P36 — an unmeasured page is not a perfect page ─────────────────── */
+
+describe("buildWatcher — the page it falls back to", () => {
+  /**
+   * The focus fallback sorted on `latestScore(...) ?? 100`, which is not the
+   * harmless tiebreak it looks like: 100 is a real, attainable Performance
+   * score, so a page nobody had measured was ranked as though it were the best
+   * page on the board and tied with any page that genuinely scored 100.
+   *
+   * Rule 18 says an absent measurement is not a value. Substituting a perfect
+   * one is the most flattering value available, which is the opposite of
+   * withholding.
+   */
+  const rec = (pageId: string): Rec => ({
+    key: `${pageId}:unused-js`,
+    id: "unused-javascript",
+    pageId,
+    title: "Remove unused JavaScript",
+    category: "Performance",
+    savings: "1.8 s",
+    status: "inbox",
+    taskStatus: "todo",
+  } as Rec);
+
+  /**
+   * A page that IS ranked and yet has no reading on the strategy being asked
+   * about.
+   *
+   * This is the only shape that reaches the fallback's comparator with a null
+   * score, and finding it is most of the test. `ranked` already drops a page
+   * with no baseline, so a page with no history at all never gets that far —
+   * which is why an obvious "unmeasured page" fixture passes against the old
+   * code and proves nothing. Under `devicePolicy: "both"` a page whose nights
+   * only ever reported desktop is still ranked, and its mobile score is null.
+   */
+  const desktopOnly = (id: string, perf: number): WatchPage => ({
+    ...page(id, { ...good, perf }, { ...good, perf }),
+    history: [0, 1, 2].map((i) => ({
+      i,
+      date: `Jul 2${i}`,
+      scores: strat({ ...good, perf }),
+      availableStrategies: ["desktop"] as Strategy[],
+    })),
+    performanceThresholdOverrides: { devicePolicy: "both" as const },
+  });
+
+  it("recommends nothing when no page produced a reading on this device", () => {
+    // Withholding, not failing: the summary is still built, it simply does not
+    // name a page no run has read. The old comparator scored this page 100 and
+    // recommended something about it.
+    const w = buildWatcher([desktopOnly("home", 40)], [rec("home")], "mobile", 3);
+    expect(w.topRec).toBeNull();
+  });
+
+  it("prefers a page that genuinely scored 100 over one nobody measured", () => {
+    /**
+     * The exact tie the old comparator produced: an unmeasured page and a
+     * perfect one both read as 100, so the winner was whichever came first in
+     * the array. The measured page must win outright — it is the only one with a
+     * reading, and 100 is a score rather than a stand-in for the absence of one.
+     */
+    const perfect = page("perfect", { ...good, perf: 100 }, { ...good, perf: 100 });
+    const w = buildWatcher(
+      [desktopOnly("unknown", 40), perfect],
+      [rec("perfect"), rec("unknown")],
+      "mobile",
+      3,
+    );
+    expect(w.topRec?.pageId).toBe("perfect");
+  });
+
+  it("still falls back to the worst page anyone did measure", () => {
+    // The withholding is about the unmeasured page, not about the fallback.
+    const worst = page("worst", good, good);
+    const better = page("better", { ...good, perf: 95 }, { ...good, perf: 95 });
+    const w = buildWatcher([better, worst], [rec("worst"), rec("better")], "mobile", 3);
+    expect(w.topRec?.pageId).toBe("worst");
   });
 });
 

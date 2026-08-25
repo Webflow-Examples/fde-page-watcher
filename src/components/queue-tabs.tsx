@@ -1,5 +1,5 @@
-import Link from "next/link";
 import { COUNTED_QUEUES, QUEUES, QUEUE_LABEL, type Queue } from "@/lib/vocabulary";
+import { TabStrip } from "@/components/tab-strip";
 
 /**
  * The four queue tabs on the issues list.
@@ -13,6 +13,9 @@ import { COUNTED_QUEUES, QUEUES, QUEUE_LABEL, type Queue } from "@/lib/vocabular
  * Show all carries no badge, and cannot: it is the unfiltered view rather than
  * a queue (registry rule 1), so the selector that produces these counts never
  * produces one for it. There is no branch here to get wrong.
+ *
+ * The strip itself is `<TabStrip>`, shared with the pages destination's view
+ * switch. What stays here is what is actually about queues.
  */
 
 export interface QueueTabsProps {
@@ -44,45 +47,19 @@ function Badge({ count, active }: { count: number; active: boolean }) {
 
 export function QueueTabs({ activeQueue, counts, hrefFor }: QueueTabsProps) {
   return (
-    <nav
-      aria-label="Queues"
-      style={{
-        display: "flex",
-        gap: 2,
-        alignItems: "center",
-        padding: "18px 40px 0",
-        borderBottom: "1px solid var(--border-hairline)",
-        margin: "0 0 20px",
-        overflowX: "auto",
-      }}
-    >
-      {QUEUES.map((queue) => {
+    <TabStrip
+      ariaLabel="Queues"
+      tabs={QUEUES.map((queue) => {
         const active = queue === activeQueue;
         const count = COUNTED_QUEUES.includes(queue) ? counts[queue] : undefined;
-        return (
-          <Link
-            key={queue}
-            href={hrefFor(queue)}
-            aria-current={active ? "page" : undefined}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 7,
-              padding: "8px 12px 11px",
-              fontSize: 13,
-              fontWeight: 500,
-              whiteSpace: "nowrap",
-              textDecoration: "none",
-              color: active ? "var(--text-body)" : "var(--text-muted)",
-              borderBottom: `2px solid ${active ? "var(--action-primary-bg)" : "transparent"}`,
-              marginBottom: -1,
-            }}
-          >
-            {QUEUE_LABEL[queue]}
-            {count === undefined ? null : <Badge count={count} active={active} />}
-          </Link>
-        );
+        return {
+          key: queue,
+          label: QUEUE_LABEL[queue],
+          href: hrefFor(queue),
+          current: active,
+          badge: count === undefined ? undefined : <Badge count={count} active={active} />,
+        };
       })}
-    </nav>
+    />
   );
 }
