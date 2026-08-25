@@ -52,6 +52,7 @@ import {
 import { metricTooltipFor, SCORE_BANDS_LABEL } from "@/lib/scoreCardTooltip";
 import { Magnitude } from "@/components/magnitude";
 import { TrendArrow } from "@/components/trend-arrow";
+import { seriesToken } from "@/components/charts";
 
 /** Run-to-run low/high spread behind one plotted median point (see CategoryScore in lib/types.ts). */
 export type ScoreCardRange = { lo: number; hi: number };
@@ -199,10 +200,14 @@ const INK_MUTED = "var(--text-muted)";
  * identity. That is safe because mobile never appears in the same card to
  * contrast against; the caption/hatch angle carry the device where there is
  * one to carry.
+ *
+ * The token names come from `seriesToken` in `charts.tsx` — this card, the
+ * charts and the device labels beside them are one identity, and three literal
+ * copies of it could disagree about which hue a device is.
  */
 const SERIES_VAR: Record<"d" | "m", string> = {
-  d: "var(--series-desktop)",
-  m: "var(--series-mobile)",
+  d: `var(${seriesToken("desktop")})`,
+  m: `var(${seriesToken("mobile")})`,
 };
 
 /**

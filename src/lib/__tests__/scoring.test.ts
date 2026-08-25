@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { median, range, noiseBand, classifyStatus, categoryTrendSeries, deltaMeta, hasPersistentRegression, historyForPreviousRange, historyForRange, historyForStrategy, pageAgentHistoryForRange, pageAgentSnapshotForRange, pageHistoryForRange, pagePreviousPeriodMedian, pageRangeLatestNightForStrategy, pageRangeSeries, pageRangeTrend, pageRecordedHistoryForRange, previousPeriodMedian, rangeComparison, DROP_THRESHOLD } from "../scoring";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { median, range, noiseBand, classifyStatus, categoryTrendSeries, deltaMeta, hasPersistentRegression, historyForPreviousRange, historyForRange, historyForStrategy, pageAgentHistoryForRange, pageAgentSnapshotForRange, pageHistoryForRange, pagePreviousPeriodMedian, pageRangeLatestNightForStrategy, pageRangeSeries, pageRangeTrend, pageRecordedHistoryForRange, previousPeriodMedian, rangeComparison, DROP_THRESHOLD, TREND_ARROW, scoreMeta, scoreMetaVars, scoreBand } from "../scoring";
 import type { CategoryScore, Night, NightScores, ScoreByCategory, StrategyScores, WatchPage } from "../types";
+import { TRENDS } from "../vocabulary";
 
 const cat = (m: number): CategoryScore => ({ m, lo: m - 2, hi: m + 2 });
 const nightScores = (perf: number): NightScores => ({ perf: cat(perf), a11y: cat(95), bp: cat(95), seo: cat(95) });
@@ -48,6 +52,46 @@ describe("deltaMeta", () => {
     expect(meta).not.toHaveProperty("fg");
     expect(meta).not.toHaveProperty("chip");
     expect(JSON.stringify(meta)).not.toMatch(/#[0-9a-fA-F]{3,8}/);
+  });
+});
+
+/* ── R1 — pairs that used to be kept in step by hand ────────────────────── */
+
+describe("the trend glyphs are one map", () => {
+  const componentPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../components/trend-arrow.tsx");
+  const trendArrow = readFileSync(componentPath, "utf8");
+
+  it("covers every trend the registry names", () => {
+    expect(Object.keys(TREND_ARROW).sort()).toEqual([...TRENDS].sort());
+  });
+
+  it("is read by the renderer rather than copied into it", () => {
+    // `<TrendArrow>` and `deltaMeta().text` render the same arrow. They used to
+    // hold a glyph map each, kept in step by a comment; a comment is not a
+    // mechanism, and the arrows a user compares are in two different files.
+    expect(trendArrow).toContain('import { TREND_ARROW } from "@/lib/scoring"');
+    expect(trendArrow).toContain("TREND_ARROW[trend]");
+    // A second literal map is the drift this is here to stop.
+    for (const glyph of Object.values(TREND_ARROW)) {
+      expect(trendArrow, `${glyph} is written into the component again`).not.toContain(glyph);
+    }
+  });
+});
+
+describe("the two score-band maps are one map", () => {
+  it("wraps the same token names, never a second set", () => {
+    // SCORE_META names tokens and SCORE_META_VARS wraps them in var(...). Both
+    // were written out by hand, so a token renamed in one could resolve to
+    // nothing in the other while every test stayed green.
+    for (const score of [95, 70, 20]) {
+      const names = scoreMeta(score);
+      const vars = scoreMetaVars(score);
+      expect(vars.band).toBe(names.band);
+      expect(vars.band).toBe(scoreBand(score));
+      for (const role of ["fg", "line", "bg", "ring"] as const) {
+        expect(vars[role]).toBe(`var(${names[role]})`);
+      }
+    }
   });
 });
 

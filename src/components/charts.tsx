@@ -22,11 +22,11 @@ const HISTORY_CATEGORY_LABELS: Record<CategoryKey, string> = {
  * colours are deliberately absent, so a caller that reaches for one is a
  * compile error rather than a silent rule break.
  */
-type SeriesToken = "--series-mobile" | "--series-desktop";
+export type SeriesToken = "--series-mobile" | "--series-desktop";
 type ChartMarkToken = SeriesToken | "--series-marker";
 
-/** Device identity for a plotted series. */
-function seriesToken(device: Strategy): SeriesToken {
+/** Device identity for a plotted series. The one device-to-hue map. */
+export function seriesToken(device: Strategy): SeriesToken {
   return device === "desktop" ? "--series-desktop" : "--series-mobile";
 }
 

@@ -62,11 +62,22 @@ const SCORE_META: Record<ScoreBand, ScoreMeta> = {
   poor: { band: "poor", fg: "--health-poor-text", line: "--health-poor-text", bg: "--health-poor-bg", ring: "--health-poor-border" },
 };
 
-const SCORE_META_VARS: Record<ScoreBand, ScoreMetaVars> = {
-  good: { band: "good", fg: "var(--health-good-text)", line: "var(--health-good-text)", bg: "var(--health-good-bg)", ring: "var(--health-good-border)" },
-  warn: { band: "warn", fg: "var(--health-warn-text)", line: "var(--health-warn-text)", bg: "var(--health-warn-bg)", ring: "var(--health-warn-border)" },
-  poor: { band: "poor", fg: "var(--health-poor-text)", line: "var(--health-poor-text)", bg: "var(--health-poor-bg)", ring: "var(--health-poor-border)" },
-};
+/**
+ * The same three bands, wrapped. Derived from `SCORE_META` rather than written
+ * out again: the two used to be parallel literals, so a token renamed in one
+ * resolved to nothing in the other with every test still green.
+ */
+const asVar = <Token extends string>(token: Token): CssVar<Token> => `var(${token})`;
+
+const SCORE_META_VARS: Record<ScoreBand, ScoreMetaVars> = Object.fromEntries(
+  (Object.keys(SCORE_META) as ScoreBand[]).map((band) => [band, {
+    band,
+    fg: asVar(SCORE_META[band].fg),
+    line: asVar(SCORE_META[band].line),
+    bg: asVar(SCORE_META[band].bg),
+    ring: asVar(SCORE_META[band].ring),
+  }]),
+) as Record<ScoreBand, ScoreMetaVars>;
 
 /** Lighthouse score bands: >=90 good, >=50 needs work, else poor. */
 export function scoreBand(v: number): ScoreBand {
@@ -122,11 +133,14 @@ const TREND_SHAPE: Record<Trend, StatusShapeName> = {
 };
 
 /**
- * Arrow glyphs for a direction. Kept in step with the `TREND_GLYPH` map in
- * `src/components/trend-arrow.tsx`, which is the one renderer — this copy
- * exists only so `deltaMeta().text` can stay a plain string. If the two ever
- * need to change, the honest fix is to hoist one map into `vocabulary.ts`
- * (chunk F1 owns that file).
+ * Arrow glyphs for a direction. The one map: `<TrendArrow>` renders from this,
+ * and `deltaMeta().text` composes with it, so the glyph a person sees in a
+ * chart and the glyph in a delta string cannot differ.
+ *
+ * It lives here rather than in `vocabulary.ts` because a glyph is not decided
+ * vocabulary — `vocabulary.json` says nothing about arrows, and a constant in
+ * that file with no registry entry behind it is the drift its parity test
+ * exists to prevent.
  */
 export const TREND_ARROW: Record<Trend, string> = {
   improving: "↑",
