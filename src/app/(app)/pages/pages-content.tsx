@@ -789,7 +789,7 @@ function DashboardContent({
                     </div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 12 }}>
                       {rollup.pages.slice(0, 3).map((page) => (
-                        <button key={page.id} type="button" onClick={() => router.push(pathFor(`/pages/${page.id}?tab=opportunities`))} style={{ border: "1px solid var(--border-strong)", background: "var(--surface-input)", color: "var(--text-body)", fontSize: 12, padding: "3px 7px", borderRadius: 5, cursor: "pointer" }}>
+                        <button key={page.id} type="button" onClick={() => router.push(pathFor(`/pages/${page.id}`))} style={{ border: "1px solid var(--border-strong)", background: "var(--surface-input)", color: "var(--text-body)", fontSize: 12, padding: "3px 7px", borderRadius: 5, cursor: "pointer" }}>
                           {page.title} ↗
                         </button>
                       ))}
@@ -815,18 +815,19 @@ function DashboardContent({
                   <div style={{ fontSize: 13.5, fontWeight: 650 }}>{rollup.title}</div>
                   <div style={{ marginTop: 4, fontSize: 12, color: "var(--text-muted)" }}>{rollup.instanceCount} {rollup.instanceCount === 1 ? "instance" : "instances"} · {rollup.pageCount} {rollup.pageCount === 1 ? "page" : "pages"}</div>
                   <div style={{ marginTop: 9 }}><WebflowClassificationChips classification={rollup.webflow} /></div>
-                  {/* An acknowledgement count is a quantity, not a verdict —
-                      it was green, which said "good" about a finding that is
-                      still open. */}
-                  {rollup.acknowledgedCount > 0 && (
+                  {/* A count of set-aside findings is a quantity, not a verdict
+                      — it was green, which said "good" about a finding that is
+                      still open. The word is the registry's: these pages
+                      dismissed the finding, they did not resolve it. */}
+                  {rollup.dismissedCount > 0 && (
                     <div style={{ display: "flex", alignItems: "baseline", gap: 5, marginTop: 8, fontSize: 12, color: "var(--text-muted)" }}>
-                      <Magnitude value={rollup.acknowledgedCount} fontSize={12} />
-                      <span>{rollup.acknowledgedCount === 1 ? "page has" : "pages have"} acknowledged this finding</span>
+                      <Magnitude value={rollup.dismissedCount} fontSize={12} />
+                      <span>{rollup.dismissedCount === 1 ? "page has" : "pages have"} dismissed this finding</span>
                     </div>
                   )}
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 11 }}>
                     {rollup.pages.slice(0, 3).map((page) => (
-                      <button key={page.id} type="button" onClick={() => router.push(pathFor(`/pages/${page.id}?tab=opportunities`))} style={{ border: "1px solid var(--border-strong)", background: "var(--surface-input)", color: "var(--text-body)", fontSize: 12, padding: "3px 7px", borderRadius: 5, cursor: "pointer" }}>{page.title} ↗</button>
+                      <button key={page.id} type="button" onClick={() => router.push(pathFor(`/pages/${page.id}`))} style={{ border: "1px solid var(--border-strong)", background: "var(--surface-input)", color: "var(--text-body)", fontSize: 12, padding: "3px 7px", borderRadius: 5, cursor: "pointer" }}>{page.title} ↗</button>
                     ))}
                     {rollup.pages.length > 3 && <span style={{ alignSelf: "center", fontSize: 12, color: "var(--text-muted)" }}>+{rollup.pages.length - 3} more</span>}
                   </div>

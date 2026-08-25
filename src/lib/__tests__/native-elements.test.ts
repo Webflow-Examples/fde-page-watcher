@@ -3,13 +3,17 @@ import { scanPageContent } from "../agentReadiness";
 import {
   detectNativeWebflowElements,
   mergeNativeElementScans,
+  nativeElementApplicability,
+  nativeElementExclusionReason,
+  nativeElementIsDismissed,
   nativeElementIssuesForPage,
   nativeElementScan,
   nativeRecommendationOpportunities,
+  normalizeNativeElementControls,
   siteNativeElementRollups,
   unavailableNativeElementScan,
 } from "../nativeElements";
-import type { NativeElementFinding, Night, WatchPage } from "../types";
+import type { NativeElementControl, NativeElementFinding, Night, WatchPage } from "../types";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -156,11 +160,18 @@ describe("native Webflow element detection", () => {
     ]));
   });
 
-  it("keeps acknowledged findings visible while suppressing noise and future recommendations", () => {
+  it("keeps dismissed findings counted, and stops excluded ones counting", () => {
+    // The two concepts on one scan. An excluded footprint does not apply to this
+    // site, so it leaves the rollup entirely; a dismissed one is real and still
+    // counts, so it stays and is tallied separately. Neither returns as a fresh
+    // recommendation.
     const scan = nativeElementScan(html);
     const controls = {
-      "webflow-background-video": { disposition: "suppressed" as const, updatedAt: "2026-08-03T12:00:00.000Z" },
-      "webflow-image-unresponsive": { disposition: "acknowledged" as const, updatedAt: "2026-08-03T12:00:00.000Z" },
+      "webflow-background-video": {
+        excluded: { reason: "Not applicable to this site" as const },
+        updatedAt: "2026-08-03T12:00:00.000Z",
+      },
+      "webflow-image-unresponsive": { dismissed: true, updatedAt: "2026-08-03T12:00:00.000Z" },
     };
     expect(nativeRecommendationOpportunities(scan, controls).map((item) => item.id)).not.toEqual(expect.arrayContaining([
       "webflow-background-video",
@@ -176,6 +187,34 @@ describe("native Webflow element detection", () => {
     } as unknown as WatchPage;
     const rollups = siteNativeElementRollups([page]);
     expect(rollups.some((item) => item.id === "webflow-background-video")).toBe(false);
-    expect(rollups.find((item) => item.id === "webflow-image-unresponsive")).toMatchObject({ acknowledgedCount: 1 });
+    expect(rollups.find((item) => item.id === "webflow-image-unresponsive")).toMatchObject({ dismissedCount: 1 });
+  });
+
+  it("migrates the retired dispositions into the two concepts that replaced them", () => {
+    // The retired shape, exactly as it sits in persisted state. `suppressed`
+    // stopped a finding counting, which is applicability; `acknowledged` left it
+    // counting, which is lifecycle. Asserting the two halves rather than a
+    // renamed copy of one word.
+    const retired = {
+      "webflow-background-video": { disposition: "suppressed", updatedAt: "2026-08-03T12:00:00.000Z" },
+      "webflow-image-unresponsive": { disposition: "acknowledged", updatedAt: "2026-08-03T12:00:00.000Z" },
+    } as unknown as Record<string, NativeElementControl>;
+
+    expect(nativeElementApplicability(retired, "webflow-background-video")).toBe("excluded");
+    expect(nativeElementExclusionReason(retired, "webflow-background-video")).toBe("Not applicable to this site");
+    expect(nativeElementIsDismissed(retired, "webflow-background-video")).toBe(false);
+
+    expect(nativeElementApplicability(retired, "webflow-image-unresponsive")).toBe("included");
+    expect(nativeElementIsDismissed(retired, "webflow-image-unresponsive")).toBe(true);
+  });
+
+  it("refuses an exclusion whose reason the registry does not name", () => {
+    // Applicability requires a reason. A reason nobody decided is the absence of
+    // one, so the record is not an exclusion and the finding keeps counting.
+    const invented = {
+      "webflow-background-video": { excluded: { reason: "Because I said so" }, updatedAt: "2026-08-03T12:00:00.000Z" },
+    } as unknown as Record<string, NativeElementControl>;
+    expect(normalizeNativeElementControls(invented)).toEqual({});
+    expect(nativeElementApplicability(invented, "webflow-background-video")).toBe("included");
   });
 });

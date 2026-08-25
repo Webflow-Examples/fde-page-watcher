@@ -1,5 +1,5 @@
 import type { AgentCheck, CategoryKey, Night, PageStatus, PerformanceThresholds, RangeDays, ScoreByCategory, Strategy, WatchPage } from "./types";
-import type { Tone, Trend } from "./vocabulary";
+import type { Health, Tone, Trend } from "./vocabulary";
 import { TREND_LABEL } from "./vocabulary";
 import { deltaTrend } from "./scoreCard";
 
@@ -93,6 +93,20 @@ export function scoreMeta(v: number): ScoreMeta {
 export function scoreMetaVars(v: number): ScoreMetaVars {
   return SCORE_META_VARS[scoreBand(v)];
 }
+
+/**
+ * The word a band is read out as.
+ *
+ * A band is the hue; `health` is the vocabulary term for the same verdict, and
+ * the two are one decision — `warn` IS the registry's `needs_work`. Anything
+ * that paints a band and also labels it reads the word from here rather than
+ * choosing one, so a chip cannot say "Poor" in the warn hue.
+ */
+export const BAND_HEALTH: Record<ScoreBand, Health> = {
+  good: "good",
+  warn: "needs_work",
+  poor: "poor",
+};
 
 /**
  * The accessibility shape that rides along with a direction (REQ-009).

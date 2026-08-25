@@ -1,7 +1,6 @@
 import type {
   NativeElementFinding,
   NativeElementControl,
-  NativeElementDisposition,
   NativeElementScan,
   NativeWebflowElementType,
   Night,
@@ -11,6 +10,7 @@ import type {
   WebflowRemediationLevel,
 } from "./types";
 import type { PerformanceIssueCapture, PerformanceIssueStatus } from "./performanceIssues";
+import { EXCLUSION_REASONS, type Applicability, type ExclusionReason } from "./vocabulary";
 import { classifyWebflowPerformance, culpritGroupLabel } from "./webflowPerformance";
 
 interface DetectionDefinition {
@@ -121,20 +121,101 @@ export function isKnownNativeElementId(id: string): boolean {
   return NATIVE_ELEMENT_IDS.has(id);
 }
 
+/**
+ * The retired shape, read only so it can be migrated out of.
+ *
+ * One field held two concepts. `suppressed` skipped hotspots and stopped the
+ * finding counting; `acknowledged` left it counting and recorded that a person
+ * had seen it. Those are applicability and lifecycle, which is why no single
+ * word ever covered both.
+ */
+interface RetiredNativeElementControl {
+  disposition?: "acknowledged" | "suppressed";
+  updatedAt?: string;
+}
+
+/**
+ * The reason a retired `suppressed` record carries forward.
+ *
+ * Not a reason invented on the reader's behalf: it is the definition of the
+ * state the old button put the finding into. `APPLICABILITY_MEANS.excluded` is
+ * "Deliberately not counted, because it does not apply to this site", and the
+ * retired control offered exactly that one meaning, unlabelled, with nowhere to
+ * record anything narrower. Migrating it to the reason that restates the state
+ * keeps the exclusion the reader asked for; dropping the record instead would
+ * quietly put the finding back in the count.
+ */
+const RETIRED_SUPPRESSED_REASON: ExclusionReason = "Not applicable to this site";
+
+/**
+ * The gate between a stored string and the registry's reason list.
+ *
+ * `types.ts` cannot import the registry, so the stored field is a string and
+ * this is where it becomes one of the three decided reasons or nothing at all.
+ */
+function isExclusionReason(value: string | undefined): value is ExclusionReason {
+  return value !== undefined && (EXCLUSION_REASONS as readonly string[]).includes(value);
+}
+
+function controlFrom(raw: NativeElementControl | undefined): NativeElementControl | null {
+  if (!raw || typeof raw !== "object") return null;
+  const retired = raw as RetiredNativeElementControl;
+  const updatedAt = typeof raw.updatedAt === "string" ? raw.updatedAt : undefined;
+  if (!updatedAt) return null;
+
+  if (retired.disposition === "suppressed") {
+    return { excluded: { reason: RETIRED_SUPPRESSED_REASON }, updatedAt };
+  }
+  if (retired.disposition === "acknowledged") return { dismissed: true, updatedAt };
+
+  // An exclusion whose reason is not one the registry blesses is not an
+  // exclusion — applicability requires a reason, and a reason nobody decided is
+  // the absence of one.
+  const reason = raw.excluded?.reason;
+  const excluded = isExclusionReason(reason) ? { excluded: { reason } } : null;
+  const dismissed = raw.dismissed === true ? { dismissed: true } : null;
+  if (!excluded && !dismissed) return null;
+  return { ...excluded, ...dismissed, updatedAt };
+}
+
 export function normalizeNativeElementControls(
   controls: Record<string, NativeElementControl> | undefined,
 ): Record<string, NativeElementControl> {
-  return Object.fromEntries(Object.entries(controls ?? {}).filter(([id, control]) =>
-    isKnownNativeElementId(id)
-    && (control?.disposition === "acknowledged" || control?.disposition === "suppressed")
-    && typeof control.updatedAt === "string"));
+  return Object.fromEntries(Object.entries(controls ?? {}).flatMap(([id, control]) => {
+    if (!isKnownNativeElementId(id)) return [];
+    const normalized = controlFrom(control);
+    return normalized ? [[id, normalized] as const] : [];
+  }));
 }
 
-export function nativeElementDisposition(
+/**
+ * Whether this finding counts toward the site's results.
+ *
+ * Included is the default and it is not stored: absence of a record is the
+ * default, exactly as an issue case with no `excludedPages` counts all of them.
+ */
+export function nativeElementApplicability(
   controls: Record<string, NativeElementControl> | undefined,
   id: string,
-): NativeElementDisposition | undefined {
-  return normalizeNativeElementControls(controls)[id]?.disposition;
+): Applicability {
+  return normalizeNativeElementControls(controls)[id]?.excluded ? "excluded" : "included";
+}
+
+/** The reason it is not counted. Present whenever it is excluded. */
+export function nativeElementExclusionReason(
+  controls: Record<string, NativeElementControl> | undefined,
+  id: string,
+): ExclusionReason | undefined {
+  const reason = normalizeNativeElementControls(controls)[id]?.excluded?.reason;
+  return isExclusionReason(reason) ? reason : undefined;
+}
+
+/** Whether the reader has seen this finding and chosen not to act on it. */
+export function nativeElementIsDismissed(
+  controls: Record<string, NativeElementControl> | undefined,
+  id: string,
+): boolean {
+  return normalizeNativeElementControls(controls)[id]?.dismissed === true;
 }
 
 /** Inspect published HTML without retaining customer URLs, text, or attributes. */
@@ -379,7 +460,8 @@ export interface SiteNativeElementRollup {
   pageCount: number;
   instanceCount: number;
   regressedCount: number;
-  acknowledgedCount: number;
+  /** Findings a reader has seen and chosen not to act on. Still counted. */
+  dismissedCount: number;
   pages: { id: string; title: string; url: string }[];
 }
 
@@ -388,7 +470,9 @@ export function siteNativeElementRollups(pages: WatchPage[]): SiteNativeElementR
   for (const page of pages) {
     for (const issue of nativeElementIssuesForPage(page.history)) {
       if (issue.status !== "active" && issue.status !== "regressed") continue;
-      if (nativeElementDisposition(page.nativeElementControls, issue.id) === "suppressed") continue;
+      // Excluded, not dismissed: applicability decides whether a finding counts
+      // toward the site's results, and a dismissed one still does.
+      if (nativeElementApplicability(page.nativeElementControls, issue.id) === "excluded") continue;
       grouped.set(issue.id, [...(grouped.get(issue.id) ?? []), { ...issue, page }]);
     }
   }
@@ -399,7 +483,7 @@ export function siteNativeElementRollups(pages: WatchPage[]): SiteNativeElementR
     pageCount: new Set(issues.map((issue) => issue.page.id)).size,
     instanceCount: issues.reduce((sum, issue) => sum + issue.count, 0),
     regressedCount: issues.filter((issue) => issue.status === "regressed").length,
-    acknowledgedCount: issues.filter((issue) => nativeElementDisposition(issue.page.nativeElementControls, issue.id) === "acknowledged").length,
+    dismissedCount: issues.filter((issue) => nativeElementIsDismissed(issue.page.nativeElementControls, issue.id)).length,
     pages: issues.map((issue) => ({ id: issue.page.id, title: issue.page.title, url: issue.page.url }))
       .sort((left, right) => left.title.localeCompare(right.title)),
   })).sort((left, right) => right.regressedCount - left.regressedCount || right.pageCount - left.pageCount || right.instanceCount - left.instanceCount);
@@ -410,7 +494,14 @@ export function nativeRecommendationOpportunities(
   controls?: Record<string, NativeElementControl>,
 ) {
   if (scan?.status !== "available") return [];
-  return scan.findings.filter((item) => !nativeElementDisposition(controls, item.id)).map((item) => ({
+  // Set aside either way, and for different reasons: an excluded footprint does
+  // not count for this site, and a dismissed one already has a case the reader
+  // decided on. Neither should arrive again as a fresh recommendation. The two
+  // conditions are written out because there is no one word for both, and
+  // inventing one is what the registry forbids.
+  return scan.findings.filter((item) =>
+    nativeElementApplicability(controls, item.id) === "included"
+    && !nativeElementIsDismissed(controls, item.id)).map((item) => ({
     id: item.id,
     title: item.title,
     category: "Native elements",

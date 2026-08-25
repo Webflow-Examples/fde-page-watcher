@@ -2,7 +2,8 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_RANGE_DAYS } from "@/lib/types";
-import type { AgentIgnoreOverrideMode, AgentIgnoreScope, AppState, CategoryKey, CollectionSchedule, Flag, NativeElementDisposition, PagePerformanceThresholdOverrides, PerformanceThresholds, RangeDays, ScoreByCategory, Strategy, WatchPage } from "@/lib/types";
+import type { AgentIgnoreOverrideMode, AgentIgnoreScope, AppState, CategoryKey, CollectionSchedule, Flag, PagePerformanceThresholdOverrides, PerformanceThresholds, RangeDays, ScoreByCategory, Strategy, WatchPage } from "@/lib/types";
+
 import type { CruxPageEvidence } from "@/lib/crux";
 import type { ExternalAgentOriginAudit } from "@/lib/agentAudit";
 import { updateAgentIgnoreOverride, updateAgentIgnoreSettings } from "@/lib/agentScoring";
@@ -19,7 +20,8 @@ import {
   type IssueCase,
   type RemediationGroup,
 } from "@/lib/issue-case";
-import { COUNTED_QUEUES, type Queue } from "@/lib/vocabulary";
+import { APPLICABILITY_LABEL, COUNTED_QUEUES, type ExclusionReason, type Queue } from "@/lib/vocabulary";
+import { normalizeNativeElementControls } from "@/lib/nativeElements";
 import { localISODate } from "@/lib/ui";
 import { withBasePath } from "@/lib/paths";
 import { defaultNewPageFlag, flagCapacityError } from "@/lib/watchCapacity";
@@ -97,9 +99,9 @@ interface StoreValue extends AppState {
   setTaskView: (v: "list" | "kanban") => void;
   taskSort: SortState;
   sortTask: (col: string) => void;
-  // page detail
-  tab: "overview" | "history" | "audits" | "agent";
-  setTab: (t: "overview" | "history" | "audits" | "agent") => void;
+  // page detail. The four tabs' state used to live here; the page is one
+  // scroll now, so the only view preference it still has is the chart's
+  // category.
   chartCat: CategoryKey;
   setChartCat: (c: CategoryKey) => void;
   // modals / toast / report
@@ -128,7 +130,8 @@ interface StoreValue extends AppState {
   renamePage: (id: string, title: string) => void;
   setAgentIgnore: (id: string, scope: AgentIgnoreScope, value: string, mode: AgentIgnoreOverrideMode) => void;
   setDefaultAgentIgnore: (scope: AgentIgnoreScope, value: string, ignored: boolean) => void;
-  setNativeElementDisposition: (id: string, findingId: string, disposition: NativeElementDisposition | null) => void;
+  /** Applicability on one native-element finding. `null` includes it again. */
+  setNativeElementApplicability: (id: string, findingId: string, reason: ExclusionReason | null) => void;
   updatePerformanceThresholds: (thresholds: PerformanceThresholds) => void;
   updatePagePerformanceThresholds: (id: string, overrides: PagePerformanceThresholdOverrides) => void;
   updateCollectionSchedule: (schedule: CollectionSchedule) => void;
@@ -238,7 +241,6 @@ export function StoreProvider({
   const [taskDescriptions, setTaskDescriptionsState] = useState<"show" | "hide">("show");
   const [taskView, setTaskView] = useState<"list" | "kanban">("list");
   const [taskSort, setTaskSort] = useState<SortState>({ col: null, dir: "desc" });
-  const [tab, setTab] = useState<"overview" | "history" | "audits" | "agent">("overview");
   const [chartCat, setChartCat] = useState<CategoryKey>("perf");
   const [modal, setModal] = useState<"add" | "marker" | "report" | null>(null);
   const [markerPageId, setMarkerPageId] = useState<string | null>(null);
@@ -650,8 +652,8 @@ export function StoreProvider({
     [mutate],
   );
 
-  const setNativeElementDisposition = useCallback(
-    (id: string, findingId: string, disposition: NativeElementDisposition | null) => {
+  const setNativeElementApplicability = useCallback(
+    (id: string, findingId: string, reason: ExclusionReason | null) => {
       const cur = dataRef.current;
       const updatedAt = new Date().toISOString();
       mutate(
@@ -660,18 +662,24 @@ export function StoreProvider({
           watcherNote: undefined,
           pages: cur.pages.map((page) => {
             if (page.id !== id) return page;
-            const controls = { ...(page.nativeElementControls ?? {}) };
-            if (disposition === null) delete controls[findingId];
-            else controls[findingId] = { disposition, updatedAt };
+            // Same rule as the server mutation: applicability only. The
+            // record's status is the lifecycle's business, and this is not it.
+            const controls = normalizeNativeElementControls(page.nativeElementControls);
+            const dismissed = controls[findingId]?.dismissed ? { dismissed: true } : {};
+            if (reason === null) {
+              if (controls[findingId]?.dismissed) controls[findingId] = { dismissed: true, updatedAt };
+              else delete controls[findingId];
+            } else {
+              controls[findingId] = { ...dismissed, excluded: { reason }, updatedAt };
+            }
             return { ...page, nativeElementControls: controls };
           }),
-          recs: disposition
-            ? cur.recs.map((rec) => rec.key === `${id}:${findingId}` && rec.status === "inbox" ? { ...rec, status: "ignored" } : rec)
-            : cur.recs,
         },
-        { url: `/api/pages/${id}/native-elements`, body: { findingId, disposition } },
+        { url: `/api/pages/${id}/native-elements`, body: { findingId, reason } },
         {
-          success: disposition === "acknowledged" ? "Finding acknowledged" : disposition === "suppressed" ? "Finding suppressed from active rollups" : "Finding returned to active review",
+          success: reason
+            ? `${APPLICABILITY_LABEL.excluded} — ${reason}`
+            : `${APPLICABILITY_LABEL.included} again`,
           failure: "Couldn't update the native-element finding — try again",
         },
       );
@@ -1229,8 +1237,6 @@ export function StoreProvider({
     setTaskView,
     taskSort,
     sortTask,
-    tab,
-    setTab,
     chartCat,
     setChartCat,
     modal,
@@ -1255,7 +1261,7 @@ export function StoreProvider({
     renamePage,
     setAgentIgnore,
     setDefaultAgentIgnore,
-    setNativeElementDisposition,
+    setNativeElementApplicability,
     updatePerformanceThresholds,
     updatePagePerformanceThresholds,
     updateCollectionSchedule,

@@ -1,7 +1,7 @@
 import { hasMeasuredImpact } from "./issue-case";
 
 /**
- * How an impact reading is written, for every surface that writes one.
+ * What an impact reading means, for every surface that writes or reads one.
  *
  * This used to live in `issue-row.tsx`, which was fine while the list was the
  * only thing that rendered a saving. The case detail renders the same figure,
@@ -12,6 +12,17 @@ import { hasMeasuredImpact } from "./issue-case";
  */
 
 /**
+ * The one way the app says a reading is absent.
+ *
+ * Rule 18 applies to every reading, not only to a saving in milliseconds, so
+ * the string is exported rather than inlined: the pages inventory says it about
+ * a score delta, and health has the same gap — a page with no baseline has no
+ * health verdict, and the chip that would carry one says this instead. Same
+ * sentence, one statement of it (rule 20).
+ */
+export const NOT_MEASURED = "Not measured";
+
+/**
  * A measured saving, in the unit it was measured in.
  *
  * An unmeasured case says so in words. Registry rule 18: a finding with no
@@ -19,8 +30,9 @@ import { hasMeasuredImpact } from "./issue-case";
  * read as a very small saving, and an empty cell would let it outrank a
  * 1,900 ms finding on nothing at all. "Not measured" is the reading.
  */
+
 export function formatImpact(impactMs: number): { text: string; measured: boolean } {
-  if (!hasMeasuredImpact(impactMs)) return { text: "Not measured", measured: false };
+  if (!hasMeasuredImpact(impactMs)) return { text: NOT_MEASURED, measured: false };
   if (impactMs < 1000) return { text: `${impactMs} ms`, measured: true };
   const seconds = impactMs / 1000;
   const rounded = seconds >= 10 ? Math.round(seconds).toString() : seconds.toFixed(1).replace(/\.0$/, "");

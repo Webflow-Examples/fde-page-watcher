@@ -31,7 +31,7 @@ import { isPageActivelyMonitored } from "./watchCapacity";
 import { mergeStrategyOpportunities, promotedDiagnostics } from "./diagnostics";
 import { summarizePsiMeasurements } from "./psiCore";
 import { classificationForPage, customerActionabilityFor, formatDiagnosticImpact, recommendationIsCustomerActionable } from "./webflowPerformance";
-import { isWebflowGenerated, nativeElementDisposition, nativeRecommendationOpportunities, unavailableNativeElementScan } from "./nativeElements";
+import { isWebflowGenerated, nativeElementApplicability, nativeElementIsDismissed, nativeRecommendationOpportunities, unavailableNativeElementScan } from "./nativeElements";
 import { summarizeCulpritEvidence } from "./culpritEvidence";
 import { reconcileFieldOnlyRecommendations } from "./fieldOnlyRecommendations";
 
@@ -188,7 +188,8 @@ export async function insertRecommendations(
   const actionable = opportunities.filter((opportunity) =>
     recommendationMeetsEvidenceThresholds(opportunity, thresholds)
     && (opportunity.category !== "Native elements"
-      || !nativeElementDisposition(page.nativeElementControls, opportunity.id)));
+      || (nativeElementApplicability(page.nativeElementControls, opportunity.id) === "included"
+        && !nativeElementIsDismissed(page.nativeElementControls, opportunity.id))));
   const taskCandidates = actionable.map((opportunity) => ({
     opportunity,
     classification: classificationForPage(opportunity, options.webflowGenerated === true),
