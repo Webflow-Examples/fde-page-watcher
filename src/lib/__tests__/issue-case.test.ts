@@ -317,7 +317,7 @@ describe("transitions", () => {
   it("schedules the checks that settle a fixed case", () => {
     const fixed = markFixed(makeCase({ state: "in_progress" }), { actor: "matthew", at: AT });
     expect(fixed.checkpoints.map((item) => item.interval)).toEqual(["2d", "7d", "30d"]);
-    expect(fixed.checkpoints.every((item) => item.result === "pending")).toBe(true);
+    expect(fixed.checkpoints.every((item) => item.result === "scheduled")).toBe(true);
     expect(fixed.checkpoints[0].due).toBe("2026-08-26T12:00:00.000Z");
   });
 });
@@ -527,7 +527,7 @@ describe("migrating an assembled agent-access issue", () => {
 
   it("keeps independent systems as separate ledger entries", () => {
     const migrated = fromAgentIssue(issue, { pageIds: ["p1"], at: AT });
-    expect(migrated.evidence.map((item) => item.source)).toEqual(["page-watch-checks", "kitesurf"]);
+    expect(migrated.evidence.map((item) => item.source)).toEqual(["agent-readiness", "kitesurf"]);
     expect(migrated.confidence).toBe("confirmed");
     expect(migrated.state).toBe("new");
     expect(migrated.scope).toBe("origin");
@@ -542,7 +542,7 @@ describe("migrating an assembled agent-access issue", () => {
       ],
     }, { pageIds: ["p1"], at: AT });
     // Three systems read the same origin, so the ledger holds three readings.
-    expect(migrated.evidence.map((item) => item.source)).toEqual(["page-watch-checks", "ora", "kitesurf"]);
+    expect(migrated.evidence.map((item) => item.source)).toEqual(["agent-readiness", "ora", "kitesurf"]);
     // Each keeps the time IT observed — nothing is collapsed onto one stamp.
     expect(migrated.evidence.map((item) => item.observedAt)).toEqual([
       "2026-08-20T00:00:00.000Z",
@@ -562,7 +562,7 @@ describe("migrating an assembled agent-access issue", () => {
         { system: "ora", label: "AI policy", result: "pass", scope: "page", observedAt: "2026-08-22T00:00:00.000Z" },
       ],
     }, { pageIds: ["p1"], at: AT });
-    expect(migrated.evidence.map((item) => item.source)).toEqual(["page-watch-checks", "ora"]);
+    expect(migrated.evidence.map((item) => item.source)).toEqual(["agent-readiness", "ora"]);
     expect(migrated.evidence.map((item) => item.supports)).toEqual([true, false]);
     expect(migrated.confidence).toBe("unclear");
   });

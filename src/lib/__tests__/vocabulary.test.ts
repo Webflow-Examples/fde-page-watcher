@@ -3,8 +3,19 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
+  ACTIONABILITIES,
+  ACTIONABILITY_LABEL,
+  ACTIONABILITY_MEANS,
+  ACTIONABILITY_REQUIRES_REASON,
+  acceptIsOffered,
   AGENT_RESULTS,
   AGENT_RESULT_LABEL,
+  CHECKPOINT_EVALUATION,
+  CHECKPOINT_RESULTS,
+  CHECKPOINT_RESULT_LABEL,
+  CHECKPOINT_RESULT_MEANS,
+  EVIDENCE_SOURCES,
+  EVIDENCE_SOURCE_LABEL,
   APPLICABILITIES,
   APPLICABILITY_ACTIONS,
   APPLICABILITY_ACTION_LABEL,
@@ -62,12 +73,15 @@ interface RegistryValue {
   requires?: string;
   reasons?: string[];
   path?: string;
+  actor?: string | string[];
+  entered_by?: string;
 }
 
 interface RegistryConcept {
   values: RegistryValue[];
   actions?: RegistryValue[];
   reasons?: string[];
+  evaluation?: string[];
   banned_as_label: string[];
 }
 
@@ -196,6 +210,150 @@ describe("vocabulary registry parity", () => {
   it("keeps Needs work on both the page and the origin", () => {
     expect(HEALTH_LABEL.needs_work).toBe("Needs work");
     expect(AGENT_VERDICT_LABEL.needs_work).toBe("Needs work");
+  });
+});
+
+/* ── The invariant that would have caught Resolved ───────────────────────── */
+
+describe("lifecycle reachability", () => {
+  /**
+   * Rules 12 and 14: every state needs a way in and a way out, and both live in
+   * the registry rather than in an implementer's local patch.
+   *
+   * Before v5, `resolved` had no inbound transition at all — nothing could
+   * produce it, so the passing-checkpoint path had nowhere to land. The exit
+   * half of this was already a rule; the entry half was not, and that asymmetry
+   * is exactly what let it through. Both directions are asserted here.
+   */
+  const transitions = () => registry.concepts.action.values;
+  const states = () => registry.concepts.work_state.values.map((value) => value.key);
+
+  /** `new` is where a case is born, so it needs no inbound transition. */
+  const INITIAL_STATE = "new";
+
+  it("gives every state a legal entry", () => {
+    const entered = new Set(transitions().map((action) => action.to));
+    const unreachable = states().filter((state) => state !== INITIAL_STATE && !entered.has(state));
+    expect(unreachable, `no transition produces: ${unreachable.join(", ")}`).toEqual([]);
+  });
+
+  it("gives every state a legal exit", () => {
+    const exited = new Set(transitions().flatMap((action) => action.from ?? []));
+    const deadEnds = states().filter((state) => !exited.has(state));
+    expect(deadEnds, `no transition leaves: ${deadEnds.join(", ")}`).toEqual([]);
+  });
+
+  it("matches the module to the registry on both counts", () => {
+    for (const state of WORK_STATES) {
+      const exits = ISSUE_ACTIONS.filter((action) => ISSUE_TRANSITIONS[action].from.includes(state));
+      expect(exits.length, `${state} has no exit in the module`).toBeGreaterThan(0);
+      if (state === INITIAL_STATE) continue;
+      const entries = ISSUE_ACTIONS.filter((action) => ISSUE_TRANSITIONS[action].to === state);
+      expect(entries.length, `${state} has no entry in the module`).toBeGreaterThan(0);
+    }
+  });
+
+  it("reaches every state from new", () => {
+    // A state with an inbound edge that is itself unreachable is still a dead
+    // state, so walk the graph rather than trusting the edge lists.
+    const seen = new Set([INITIAL_STATE]);
+    for (let pass = 0; pass < states().length; pass += 1) {
+      for (const action of transitions()) {
+        if ((action.from ?? []).some((from) => seen.has(from))) seen.add(action.to as string);
+      }
+    }
+    expect([...states()].filter((state) => !seen.has(state))).toEqual([]);
+  });
+
+  it("says who fires each transition, and keeps Resolve off the buttons", () => {
+    for (const action of transitions()) {
+      expect(action.actor, `${action.key} does not say who fires it`).toBeDefined();
+    }
+    const resolve = transitions().find((action) => action.key === "resolve");
+    expect(resolve?.actor).toBe("system");
+    expect(ISSUE_TRANSITIONS.resolve.actor).toEqual(["system"]);
+    expect(ISSUE_TRANSITIONS.resolve.requires).toBe("checkpoint_agreement");
+    // It has a label for history copy, but nothing offers it as an action.
+    expect(actionsFromState("fixed")).toContain("resolve");
+  });
+});
+
+describe("checkpoint", () => {
+  const checkpoint = () => registry.concepts.checkpoint;
+
+  it("exports the four results, labels, and meanings", () => {
+    expect([...CHECKPOINT_RESULTS]).toEqual(checkpoint().values.map((value) => value.key));
+    expect(CHECKPOINT_RESULT_LABEL).toEqual(
+      Object.fromEntries(checkpoint().values.map((value) => [value.key, value.label])),
+    );
+    expect(CHECKPOINT_RESULT_MEANS).toEqual(
+      Object.fromEntries(checkpoint().values.map((value) => [value.key, value.means])),
+    );
+  });
+
+  it("carries the evaluation rules verbatim", () => {
+    expect([...CHECKPOINT_EVALUATION]).toEqual(checkpoint().evaluation);
+  });
+
+  it("is not a check: it agrees or disagrees, never passes or fails", () => {
+    // Rule 4 — passed/failed name a check's outcome, on a different object.
+    for (const banned of ["passed", "failed", "pending"]) {
+      expect([...CHECKPOINT_RESULTS]).not.toContain(banned);
+    }
+    // And it is not a work state either.
+    for (const result of CHECKPOINT_RESULTS) {
+      expect([...WORK_STATES]).not.toContain(result as never);
+    }
+  });
+});
+
+describe("evidence source", () => {
+  const sources = () => registry.concepts.evidence_source.values;
+
+  it("exports every slot and its label", () => {
+    expect([...EVIDENCE_SOURCES]).toEqual(sources().map((value) => value.key));
+    expect(EVIDENCE_SOURCE_LABEL).toEqual(
+      Object.fromEntries(sources().map((value) => [value.key, value.label])),
+    );
+  });
+
+  it("gives Page Watch and Ora separate slots, so they can disagree", () => {
+    // One slot for two systems made confidenceFrom count them as one voice.
+    expect([...EVIDENCE_SOURCES]).toContain("agent-readiness");
+    expect([...EVIDENCE_SOURCES]).toContain("ora");
+  });
+
+  it("has no slot without a producer", () => {
+    // Rule 15. is-agentic was defined ahead of its integration and removed.
+    expect([...EVIDENCE_SOURCES]).not.toContain("is-agentic" as never);
+  });
+});
+
+describe("actionability", () => {
+  const values = () => registry.concepts.actionability.values;
+
+  it("exports the four values, labels, and meanings", () => {
+    expect([...ACTIONABILITIES]).toEqual(values().map((value) => value.key));
+    expect(ACTIONABILITY_LABEL).toEqual(
+      Object.fromEntries(values().map((value) => [value.key, value.label])),
+    );
+    expect(ACTIONABILITY_MEANS).toEqual(
+      Object.fromEntries(values().map((value) => [value.key, value.means])),
+    );
+  });
+
+  it("requires a reason only where the registry does — rule 17", () => {
+    expect(ACTIONABILITY_REQUIRES_REASON).toEqual(
+      Object.fromEntries(values().map((value) => [value.key, value.requires === "reason"])),
+    );
+    expect(ACTIONABILITY_REQUIRES_REASON.none).toBe(true);
+  });
+
+  it("blocks Accept only when there is no documented remediation", () => {
+    expect(acceptIsOffered("none")).toBe(false);
+    for (const value of ["direct", "workaround", "platform"] as const) {
+      expect(acceptIsOffered(value)).toBe(true);
+    }
   });
 });
 

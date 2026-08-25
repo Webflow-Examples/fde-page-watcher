@@ -37,7 +37,13 @@ export interface PageHeaderProps {
 export function PageHeader({ title, purpose, action, flush = false, className }: PageHeaderProps) {
   return (
     <header
-      className={className}
+      // Always carries `page-header`: the narrow-viewport treatment for route
+      // headers lives on that class in globals.css (it reduces the padding and
+      // stacks the action under the title below 760px). The inline padding below
+      // is the desktop case; the class overrides it with `!important` at narrow
+      // widths. Opting out would silently drop that responsive behaviour, which
+      // is what happened when this component first replaced `.pages-header`.
+      className={["page-header", className].filter(Boolean).join(" ")}
       style={{
         display: "flex",
         alignItems: "flex-start",
