@@ -1,6 +1,6 @@
 {
   "$comment": "Page Watch vocabulary registry. Source of truth for user-facing status words. Decided in Chunk F1. v4 closed three gaps C1a surfaced. v5 closes the gaps the F1/F2/F3/C1 build report surfaced: Resolved had no legal entry, checkpoints had no vocabulary and no evaluation rule, and two measuring systems shared one evidence slot.",
-  "version": 5,
+  "version": 6,
   "decided": "2026-08-24",
   "concepts": {
     "work_state": {
@@ -582,7 +582,9 @@
     "A state with no legal entry is the same bug as a state with no legal exit. Every state needs a way in and a way out, and the transition that provides it lives here, not in an implementer's local patch.",
     "An evidence slot with no producer is not a slot. Define it when something writes to it: an empty slot reads to the user as a reading that found nothing.",
     "A transition the system fires still writes history in the words the user reads. 'Resolved — the 30-day check agreed', never 'auto_resolved'.",
-    "When a case offers no action, it says why in one sentence. An action-less card with no explanation reads as a broken product, not as an honest one."
+    "When a case offers no action, it says why in one sentence. An action-less card with no explanation reads as a broken product, not as an honest one.",
+    "An absent measurement is not a small measurement. A finding with no reading is never folded, filtered or ranked as though its value were zero — it sorts last within its group and its row says 'not measured', never 0. Same principle as checkpoint.unavailable: no reading is neither good news nor bad.",
+    "A number shown for a group is the same statistic as the number shown for one member: the worst observed reading, never a sum. Adding measurements across findings invents a figure no run produced, and a group total that cannot be reconciled with the rows beneath it is worse than no total."
   ],
   "banned_global": {
     "$comment": "Hard-gated: these must not appear in user-facing copy anywhere in src/. This is the list the eslint rule enforces. A concept's banned_as_label list is narrower — it means 'not a valid label for THIS concept', not 'never write this word'.",
@@ -613,5 +615,5 @@
       "src/components/agent-access.tsx": "S4 — route references"
     }
   },
-  "revised": "2026-08-25"
+  "revised": "2026-08-26"
 }

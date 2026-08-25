@@ -193,6 +193,35 @@ export function parseImpactMs(savings: string | null | undefined): number {
 }
 
 /**
+ * Whether a case carries a time measurement at all.
+ *
+ * Registry rule 18: an absent measurement is not a small measurement. The 0 the
+ * parser above returns means *no reading*, not *a tiny one*, and a case holding
+ * it must never be folded, filtered or ranked as though its value were zero.
+ * Every caller that would otherwise compare `impactMs` to a number asks this
+ * first, so the distinction lives in one place rather than in each screen's
+ * idea of what 0 meant.
+ */
+export function hasMeasuredImpact(impactMs: number): boolean {
+  return impactMs > 0;
+}
+
+/**
+ * Worst measured first, unmeasured last — rule 18's ordering, for any list of
+ * things carrying an `impactMs`.
+ *
+ * The unmeasured ones are moved as a block rather than sorted by their zero,
+ * which is what stops a finding with no reading outranking a 1,900 ms one on an
+ * empty cell.
+ */
+export function byWorstMeasured<T extends { impactMs: number }>(left: T, right: T): number {
+  const leftMeasured = hasMeasuredImpact(left.impactMs);
+  const rightMeasured = hasMeasuredImpact(right.impactMs);
+  if (leftMeasured !== rightMeasured) return leftMeasured ? -1 : 1;
+  return right.impactMs - left.impactMs;
+}
+
+/**
  * Effort band parsed from a stored `estTime` label.
  *
  * A band, not a duration: `"1 day"` and `"5 days"` are both `days`. The count
@@ -829,6 +858,134 @@ export function groupByCause(cases: readonly IssueCase[], options: { at?: string
   }
 
   return [...byCause.values()];
+}
+
+/* ── Grouping by remediation ────────────────────────────────────────────── */
+
+/**
+ * The remediation a set of cases shares, as a comparable key.
+ *
+ * The steps *are* the remediation, so identical ordered steps under the same
+ * actionability are the same piece of work — done once, it covers every case
+ * keyed to it. Actionability is part of the key because a platform-owned case
+ * and a customer-fixable one are not the same job even when the words match.
+ *
+ * A case with no documented steps shares its remediation with nothing and keys
+ * on its own id. Collapsing every step-less case into one bucket would put
+ * unrelated problems behind a single row and claim one fix covered them all,
+ * which is the failure grouping exists to prevent rather than to cause.
+ */
+function remediationKey(issue: IssueCase): string {
+  const steps = issue.remediation.steps.map((step) => step.trim()).filter(Boolean);
+  if (steps.length === 0) return `case:${issue.id}`;
+  // JSON-encoded rather than joined on a separator: a step is free text, so any
+  // separator a step could itself contain would let two different remediations
+  // produce one key.
+  return `steps:${issue.remediation.actionability}:${JSON.stringify(steps)}`;
+}
+
+/** Weakest wins: a group is no more certain than its least certain member. */
+const CONFIDENCE_PRECEDENCE: readonly IssueCase["confidence"][] = ["unclear", "probable", "confirmed"];
+
+function weakerConfidence(left: IssueCase["confidence"], right: IssueCase["confidence"]): IssueCase["confidence"] {
+  return CONFIDENCE_PRECEDENCE.indexOf(left) <= CONFIDENCE_PRECEDENCE.indexOf(right) ? left : right;
+}
+
+/**
+ * One remediation and every case it fixes.
+ *
+ * Deliberately not an `IssueCase`: a merged case would need one diagnosis, one
+ * cause and one lifecycle for what may be several distinct problems that happen
+ * to share a fix, and inventing those is how a row starts describing something
+ * no run ever found. Members keep their own identity and stay individually
+ * addressable; the group carries only what is genuinely shared.
+ */
+export interface RemediationGroup {
+  /** Stable across renders for the same input. Not user-visible. */
+  key: string;
+  /** The remediation every member shares. */
+  remediation: Remediation;
+  /** Cause-grouped members, largest impact first. Never empty. */
+  cases: IssueCase[];
+  /** The member whose wording the group shows — the largest impact of them. */
+  primary: IssueCase;
+  /** Every page any member covers, first seen first. */
+  pageIds: string[];
+  /** The most urgent member state: a live problem never hides behind a settled one. */
+  state: IssueState;
+  /**
+   * The worst reading any member produced — the same statistic as the number on
+   * the row beneath it, never a sum (registry rule 19).
+   *
+   * A total would be a figure no run ever produced, and one the reader cannot
+   * reconcile against the rows it sits above: three members reading 600, 500 and
+   * 400 ms under a header reading 1,500 ms leaves them looking for a fourth. The
+   * group renders it as "up to", because that is what a worst-of is.
+   *
+   * 0 when no member was measured at all, which the row renders as words rather
+   * than as a number (rule 18).
+   */
+  impactMs: number;
+  /**
+   * The one shared effort, never a sum — the remediation is carried out once.
+   * Where members disagree on the band, the wider one stands.
+   */
+  effort: Effort;
+  /** The weakest member confidence. */
+  confidence: IssueCase["confidence"];
+  /** The earliest detection among the members. */
+  detectedAt: string;
+}
+
+/**
+ * One group per remediation.
+ *
+ * Cause grouping already collapses the same problem seen on several pages. This
+ * goes one step further, to the unit a person actually decides on: two cases
+ * with different causes that the same steps fix are one piece of work, and a
+ * list that shows them apart asks for the same decision twice.
+ *
+ * `groupByCause` runs first rather than being reimplemented — a second merge
+ * rule for pages, evidence and state is exactly the drift this module exists to
+ * prevent. Everything below only buckets what that returns.
+ *
+ * Nothing is added up on the way. `groupByCause` refuses to sum across pages
+ * sharing an asset because it would invent a number no run measured, and a
+ * group total that cannot be reconciled against its own member rows is the same
+ * defect one level up (rule 19).
+ */
+export function groupByRemediation(
+  cases: readonly IssueCase[],
+  options: { at?: string } = {},
+): RemediationGroup[] {
+  const byRemediation = new Map<string, IssueCase[]>();
+  for (const item of groupByCause(cases, options)) {
+    const key = remediationKey(item);
+    const members = byRemediation.get(key);
+    if (members) members.push(item);
+    else byRemediation.set(key, [item]);
+  }
+
+  return [...byRemediation].map(([key, members]) => {
+    // Worst measured first, so the wording comes from the largest member and an
+    // unmeasured one sorts last within the group rather than ranking as a zero
+    // (rule 18). The id breaks the tie, so two runs over the same data read
+    // identically.
+    const ordered = [...members].sort((a, b) => byWorstMeasured(a, b) || a.id.localeCompare(b.id));
+    const primary = ordered[0];
+    return {
+      key,
+      remediation: primary.remediation,
+      cases: ordered,
+      primary,
+      pageIds: [...new Set(ordered.flatMap((item) => item.pageIds))],
+      state: ordered.map((item) => item.state).reduce(mostUrgent),
+      impactMs: Math.max(...ordered.map((item) => item.impactMs)),
+      effort: ordered.map((item) => item.effort).reduce(widerEffort),
+      confidence: ordered.map((item) => item.confidence).reduce(weakerConfidence),
+      detectedAt: ordered.map((item) => item.detectedAt).filter(Boolean).sort()[0] ?? primary.detectedAt,
+    };
+  });
 }
 
 /**

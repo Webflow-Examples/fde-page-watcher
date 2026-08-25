@@ -1,13 +1,25 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_RANGE_DAYS } from "@/lib/types";
-import type { AgentIgnoreOverrideMode, AgentIgnoreScope, AppState, CategoryKey, CollectionSchedule, Flag, NativeElementDisposition, PagePerformanceThresholdOverrides, PerformanceThresholds, RangeDays, ScoreByCategory, Strategy } from "@/lib/types";
+import type { AgentIgnoreOverrideMode, AgentIgnoreScope, AppState, CategoryKey, CollectionSchedule, Flag, NativeElementDisposition, PagePerformanceThresholdOverrides, PerformanceThresholds, RangeDays, ScoreByCategory, Strategy, WatchPage } from "@/lib/types";
 import type { CruxPageEvidence } from "@/lib/crux";
 import type { ExternalAgentOriginAudit } from "@/lib/agentAudit";
 import { updateAgentIgnoreOverride, updateAgentIgnoreSettings } from "@/lib/agentScoring";
 import { collectionRequestMessage, collectionSettlementMessage, hasActiveCollections, startCollectionPolling, type CollectionRequestResult } from "@/lib/collectionPolling";
 import { effectivePerformanceThresholds, normalizePerformanceThresholdOverrides, normalizePerformanceThresholds } from "@/lib/performanceThresholds";
+import {
+  byWorstMeasured,
+  casesInQueue,
+  fromRec,
+  groupByCause,
+  groupByRemediation,
+  hasMeasuredImpact,
+  type Effort,
+  type IssueCase,
+  type RemediationGroup,
+} from "@/lib/issue-case";
+import { COUNTED_QUEUES, type Queue } from "@/lib/vocabulary";
 import { localISODate } from "@/lib/ui";
 import { withBasePath } from "@/lib/paths";
 import { defaultNewPageFlag, flagCapacityError } from "@/lib/watchCapacity";
@@ -1270,3 +1282,209 @@ export function StoreProvider({
 }
 
 export { CAT_KEYS };
+
+/* ── Issue-list selectors ───────────────────────────────────────────────── */
+
+/**
+ * Everything the issues list reads, derived in one place.
+ *
+ * The rule these exist to keep is that queue membership is never stored and
+ * never worked out locally. `queueOf` in `issue-case.ts` owns it, so the header
+ * sentence, the tab badges and the rows below them are three readings of one
+ * number rather than three numbers that happen to agree today.
+ *
+ * They are exported as plain functions and consumed by the one hook at the
+ * bottom. Nothing here touches React, so the list's behaviour is unit-testable
+ * without rendering it.
+ */
+
+/**
+ * The newest completed run across the watchlist.
+ *
+ * Used as the reference "now" for the case adapters, so a render is a pure
+ * function of stored state: `fromRec` and `groupByCause` otherwise stamp
+ * history with `new Date()`, which differs between the server render and the
+ * client one. It also dates the "what changed" sort, which is a question about
+ * the last run rather than about the wall clock.
+ */
+export function lastRunAtOf(pages: readonly WatchPage[]): string | undefined {
+  return pages
+    .map((page) => page.lastRunAt)
+    .filter((value): value is string => !!value)
+    .sort()
+    .at(-1);
+}
+
+/**
+ * The canonical case list: one case per problem.
+ *
+ * Recommendations are the stored shape; `fromRec` reads their four legacy
+ * lifecycles and `groupByCause` collapses the same problem seen on several
+ * pages. Both come from `issue-case.ts` — this only feeds them.
+ */
+export function issueCasesFrom(state: Pick<AppState, "recs" | "pages">): IssueCase[] {
+  const at = lastRunAtOf(state.pages);
+  const options = at ? { at, referenceYear: Number(at.slice(0, 4)) } : {};
+  return groupByCause(state.recs.map((rec) => fromRec(rec, options)), options);
+}
+
+/**
+ * How many cases each counted queue holds.
+ *
+ * Deliberately partial. `show_all` is the unfiltered view rather than a queue,
+ * so the registry marks it uncounted and this never produces a number for it —
+ * a badge cannot appear on it by accident, because there is nothing to read.
+ */
+export type QueueCounts = Partial<Record<Queue, number>>;
+
+export function queueCountsOf(cases: readonly IssueCase[]): QueueCounts {
+  const counts: QueueCounts = {};
+  for (const queue of COUNTED_QUEUES) counts[queue] = casesInQueue(cases, queue).length;
+  return counts;
+}
+
+/* ── The low-impact tail ────────────────────────────────────────────────── */
+
+/**
+ * Cases split into what the list shows inline and what folds into one row.
+ *
+ * A case is in the tail when it has a measured saving smaller than the
+ * project's `minimumSavingsMs`. Two cases are deliberately not in it:
+ *
+ *   - A case with no measured time at all. Registry rule 18: an absent
+ *     measurement is not a small measurement, so a finding with no reading is
+ *     never folded as though its value were zero. It is the same call
+ *     `recommendationMeetsEvidenceThresholds` already makes when it lets an
+ *     unmeasured finding past the savings gate.
+ *   - Anything, when the threshold is 0. At 0 the gate is off, so the fold is
+ *     empty and the list is flat.
+ *
+ * Every case lands in exactly one side. The tail is folded, never filtered:
+ * the row that holds it says how many and expands in place.
+ */
+export function partitionByImpact(
+  cases: readonly IssueCase[],
+  minimumSavingsMs: number,
+): { inline: IssueCase[]; tail: IssueCase[] } {
+  const inline: IssueCase[] = [];
+  const tail: IssueCase[] = [];
+  for (const item of cases) {
+    const folds = minimumSavingsMs > 0 && hasMeasuredImpact(item.impactMs) && item.impactMs < minimumSavingsMs;
+    (folds ? tail : inline).push(item);
+  }
+  return { inline, tail };
+}
+
+/* ── Sorting ────────────────────────────────────────────────────────────── */
+
+export const ISSUE_SORTS = ["impact", "newest", "changed", "effort"] as const;
+export type IssueSort = (typeof ISSUE_SORTS)[number];
+
+/** Impact is the default, because it is the only one that ranks by consequence. */
+export const DEFAULT_ISSUE_SORT: IssueSort = "impact";
+
+export const ISSUE_SORT_LABEL: Record<IssueSort, string> = {
+  impact: "Impact",
+  newest: "Newest",
+  changed: "What changed",
+  effort: "Effort",
+};
+
+export function parseIssueSort(value: string | null | undefined): IssueSort {
+  return (ISSUE_SORTS as readonly string[]).includes(value ?? "") ? (value as IssueSort) : DEFAULT_ISSUE_SORT;
+}
+
+/** Least work first, so a sort by effort surfaces what can be cleared today. */
+const EFFORT_ORDER: Record<Effort, number> = { minutes: 0, hours: 1, days: 2, unknown: 3 };
+
+/** The calendar day of an ISO stamp, for comparing a detection to a run. */
+const dayOf = (iso: string): string => iso.slice(0, 10);
+
+/**
+ * Order the groups, without changing which of them there are.
+ *
+ * Every comparator is a total order over the same array — sorting is never a
+ * filter here, so switching one cannot make a case disappear. "What changed"
+ * is the one worth spelling out: it puts the cases the last run detected first
+ * and everything else after, still in date order. That is a sort, so the older
+ * cases are further down rather than gone.
+ */
+export function sortRemediationGroups(
+  groups: readonly RemediationGroup[],
+  sort: IssueSort,
+  lastRunAt?: string,
+): RemediationGroup[] {
+  const lastRunDay = lastRunAt ? dayOf(lastRunAt) : undefined;
+  const inLastRun = (group: RemediationGroup): number =>
+    lastRunDay && group.detectedAt && dayOf(group.detectedAt) >= lastRunDay ? 0 : 1;
+
+  const byNewest = (a: RemediationGroup, b: RemediationGroup) => b.detectedAt.localeCompare(a.detectedAt);
+  // The id tie-break keeps the order stable when the sort key matches, so a
+  // re-render never reshuffles equal rows.
+  const byId = (a: RemediationGroup, b: RemediationGroup) => a.primary.id.localeCompare(b.primary.id);
+
+  // Wherever impact is the ranking key, `byWorstMeasured` applies rule 18: the
+  // unmeasured groups move to the end of the band as a block instead of being
+  // ordered by a zero they never measured. Newest and What changed rank on a
+  // date every case carries, so no measurement stands in for a missing one.
+  const compare: Record<IssueSort, (a: RemediationGroup, b: RemediationGroup) => number> = {
+    impact: (a, b) => byWorstMeasured(a, b) || byNewest(a, b) || byId(a, b),
+    newest: (a, b) => byNewest(a, b) || byId(a, b),
+    changed: (a, b) => inLastRun(a) - inLastRun(b) || byNewest(a, b) || byId(a, b),
+    effort: (a, b) => EFFORT_ORDER[a.effort] - EFFORT_ORDER[b.effort] || byWorstMeasured(a, b) || byId(a, b),
+  };
+
+  return [...groups].sort(compare[sort]);
+}
+
+/* ── The hook the list uses ─────────────────────────────────────────────── */
+
+export interface IssuesView {
+  /** Every case in the project, one per problem. */
+  cases: IssueCase[];
+  /** Counted queues only. `show_all` is absent by design. */
+  counts: QueueCounts;
+  /** The cases in the requested queue. */
+  inQueue: IssueCase[];
+  /** Those of them the list shows as rows, grouped by remediation and sorted. */
+  groups: RemediationGroup[];
+  /** Those of them the fold holds, grouped the same way and sorted the same way. */
+  tail: RemediationGroup[];
+  /** The cases behind the fold, for the count it states. */
+  tailCases: IssueCase[];
+  /** The project's threshold, so the fold can name it. */
+  minimumSavingsMs: number;
+  /** Page titles by id, for the scope line on a row. */
+  pageTitles: Record<string, string>;
+  lastRunAt?: string;
+}
+
+/**
+ * One derivation of the issues list, memoised on the store's state.
+ *
+ * The queue and the sort come from the URL rather than from here: both are
+ * things a person should be able to link someone to, and neither is a
+ * preference worth persisting.
+ */
+export function useIssuesView(queue: Queue, sort: IssueSort): IssuesView {
+  const { recs, pages, performanceThresholds } = useStore();
+  return useMemo(() => {
+    const cases = issueCasesFrom({ recs, pages });
+    const lastRunAt = lastRunAtOf(pages);
+    const at = lastRunAt ? { at: lastRunAt } : {};
+    const { minimumSavingsMs } = normalizePerformanceThresholds(performanceThresholds);
+    const inQueue = casesInQueue(cases, queue);
+    const { inline, tail } = partitionByImpact(inQueue, minimumSavingsMs);
+    return {
+      cases,
+      counts: queueCountsOf(cases),
+      inQueue,
+      groups: sortRemediationGroups(groupByRemediation(inline, at), sort, lastRunAt),
+      tail: sortRemediationGroups(groupByRemediation(tail, at), sort, lastRunAt),
+      tailCases: tail,
+      minimumSavingsMs,
+      pageTitles: Object.fromEntries(pages.map((page) => [page.id, page.title])),
+      lastRunAt,
+    };
+  }, [recs, pages, performanceThresholds, queue, sort]);
+}
