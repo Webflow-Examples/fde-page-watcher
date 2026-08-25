@@ -111,6 +111,17 @@
   --confidence-strong:     #090a0b;  /* neutral-1200 */
   --confidence-weak:       #5e6673;  /* neutral-700 */
 
+  /* Checkpoint marks (W1). The mark carries its meaning in its silhouette, so
+     these three values are one neutral family in both themes rather than a
+     good/bad pair: agreed and disagreed are a check and a cross, and removing
+     the colour must cost the reader nothing. The border step is neutral-600,
+     which the countdown pill reuses so a stretched mark still reads as a mark
+     — the pill's TEXT is an ink token, because neutral-600 at 12px does not
+     clear AA. */
+  --checkpoint-mark-border: #788291;  /* neutral-600 — ring and pill outline */
+  --checkpoint-mark-fill:   #5e6673;  /* neutral-700 — the disc, once read */
+  --checkpoint-mark-glyph:  #ffffff;  /* the check or cross on that disc */
+
   /* Chrome — the surfaces, text, and borders the C object used to paint */
   --surface-page:          #f7f7f8;  /* neutral-50 */
   --surface-card:          #ffffff;
@@ -178,6 +189,11 @@
   --action-destructive-text:   #fbc6cc;  /* red-300 */
   --action-destructive-border: #cc0f25;  /* red-800 */
   --action-primary-ink:        #7badf9;  /* blue-400     6.06:1 on raised */
+
+  /* The disc inverts so the glyph on it stays legible; the outline does not
+     need to — neutral-600 reads as a line on both grounds. */
+  --checkpoint-mark-fill:   #cdd0d6;  /* neutral-300 */
+  --checkpoint-mark-glyph:  #090a0b;  /* neutral-1200 */
 
   --surface-page:          #090a0b;  /* neutral-1200 */
   --surface-card:          #151619;  /* neutral-1100 */
@@ -1317,6 +1333,22 @@ button:disabled {
   animation: watcher-running-pulse 1.5s ease-in-out infinite;
 }
 
+/* The Watch drawer's crossfade (14c). Short, and never load-bearing: the track
+   is readable the moment it arrives, so switching this off costs nothing. */
+.watch-drawer {
+  animation: watch-drawer-in 140ms ease-out;
+}
+
+@keyframes watch-drawer-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
 @keyframes watcher-running-pulse {
   0%,
   100% {
@@ -1943,6 +1975,7 @@ button:disabled {
   .status-tile-indicator--fast,
   .watcher-ribbon__running,
   .select-menu__spinner,
+  .watch-drawer,
   .segmented-control__count-skeleton {
     animation: none;
   }

@@ -24,7 +24,11 @@ import { COUNTED_QUEUES, DESTINATION_LABEL, QUEUE_LABEL, WORK_STATE_LABEL, type 
 
 interface EmptyStateProps {
   heading: string;
-  children: ReactNode;
+  /**
+   * Optional, for the one state whose sentence is the whole message. Watch's
+   * empty state is a single line by decision — see `WatchEmpty`.
+   */
+  children?: ReactNode;
   /** At most one, by design. */
   action?: ReactNode;
 }
@@ -43,9 +47,11 @@ function EmptyState({ heading, children, action }: EmptyStateProps) {
       <h2 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: "var(--text-body)", letterSpacing: "-0.01em" }}>
         {heading}
       </h2>
-      <p style={{ margin: "8px 0 0", maxWidth: 560, fontSize: 13, lineHeight: 1.6, color: "var(--text-muted)" }}>
-        {children}
-      </p>
+      {children ? (
+        <p style={{ margin: "8px 0 0", maxWidth: 560, fontSize: 13, lineHeight: 1.6, color: "var(--text-muted)" }}>
+          {children}
+        </p>
+      ) : null}
       {action ? <div style={{ marginTop: 16 }}>{action}</div> : null}
     </section>
   );
@@ -143,7 +149,28 @@ export function QueueEmptyOthersBusy({
   );
 }
 
-/* ── 4. Nothing anywhere is in flight ───────────────────────────────────── */
+/* ── 3b. Watch, specifically ───────────────────────────────────────── */
+
+/**
+ * Watch with nothing in it.
+ *
+ * One sentence, no illustration, and — unlike its three siblings — no way out.
+ * The others offer a link because their emptiness is a detour: work is moving
+ * somewhere else and the reader probably wants to be there. An empty Watch is
+ * not a detour. Nothing is waiting on evidence, which is the finished state of
+ * this queue rather than a gap in it, and a "Go to Decide" button under it
+ * would invent an errand.
+ *
+ * It replaces states 3 and 4 for this queue only. States 1, 2 and 5 still win,
+ * because "nothing is waiting on evidence" is a comfortable thing to read and a
+ * false one when no page is monitored, the first run has not landed, or the
+ * last run failed.
+ */
+export function WatchEmpty({ heading }: { heading: string }) {
+  return <EmptyState heading={heading} />;
+}
+
+/* ── 4. Nothing anywhere is in flight ────────────────────────────────── */
 
 export function EverythingResolved({ caseCount, showAllHref }: { caseCount: number; showAllHref: string }) {
   const settled = caseCount === 0

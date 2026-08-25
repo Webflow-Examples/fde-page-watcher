@@ -27,8 +27,11 @@ import {
   LastRunFailed,
   NoPagesWatched,
   QueueEmptyOthersBusy,
+  WatchEmpty,
 } from "@/components/issue-empty";
 import { SelectMenu } from "@/components/select-menu";
+import { WatchQueue } from "@/components/watch-queue";
+import { WATCH_EMPTY } from "@/lib/watch-copy";
 
 /**
  * The issues list — the app's primary destination.
@@ -138,6 +141,12 @@ export default function IssuesPage() {
         />
       );
     }
+    // Watch says its own sentence, and offers nothing. The three states above
+    // still win: each of them describes a project that cannot have produced
+    // evidence yet, which is not the same as having none outstanding.
+    if (queue === "watch") {
+      return <WatchEmpty heading={WATCH_EMPTY} />;
+    }
     if (elsewhere) {
       return <QueueEmptyOthersBusy queue={queue} counts={view.counts} hrefFor={(next) => linkTo({ queue: next })} />;
     }
@@ -146,7 +155,11 @@ export default function IssuesPage() {
     return <EverythingResolved caseCount={view.cases.length} showAllHref={linkTo({ queue: "show_all" })} />;
   }
 
-  const hasRows = view.groups.length > 0 || view.tail.length > 0;
+  // Watch is not grouped by remediation and not sorted by impact: it is a run
+  // of fixes waiting on evidence, ordered by what is heard from next. It reads
+  // the queue's cases directly rather than the folded groups.
+  const isWatch = queue === "watch";
+  const hasRows = isWatch ? view.inQueue.length > 0 : view.groups.length > 0 || view.tail.length > 0;
 
   return (
     <div style={{ minWidth: 0 }}>
@@ -154,7 +167,9 @@ export default function IssuesPage() {
 
       <QueueTabs activeQueue={queue} counts={view.counts} hrefFor={(next) => linkTo({ queue: next })} />
 
-      {hasRows ? (
+      {hasRows && isWatch ? <WatchQueue cases={view.inQueue} /> : null}
+
+      {hasRows && !isWatch ? (
         <>
           <div
             style={{
@@ -209,9 +224,9 @@ export default function IssuesPage() {
             ) : null}
           </div>
         </>
-      ) : (
-        nonListState()
-      )}
+      ) : null}
+
+      {hasRows ? null : nonListState()}
     </div>
   );
 }
