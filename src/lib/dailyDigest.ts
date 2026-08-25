@@ -1,11 +1,12 @@
 import { collectionInstant, collectionLocalDateTime, collectionOffsets, normalizeCollectionSchedule } from "./collectionSchedule";
-import { effectivePerformanceThresholds } from "./performanceThresholds";
-import { mediansOf, pageHasPersistentRegression } from "./scoring";
-import { CATEGORIES } from "./types";
-import type { AppState, DailyAlertDigest, PerformanceThresholds, Strategy, WatchPage } from "./types";
+import { buildDigest, digestSiteOf, type Digest } from "./digest";
+import { DEFAULT_DIGEST_CADENCE } from "./digestCadence";
+import { issueCasesFrom } from "./issue-cases";
+import { normalizePerformanceThresholds } from "./performanceThresholds";
+import type { AppState, DailyAlertDigest } from "./types";
 import { isPageActivelyMonitored } from "./watchCapacity";
 import { buildDailyDigestWebhookPayload, postWebhook } from "./webhook";
-import type { DigestWebhookPage, WebhookDelivery } from "./webhook";
+import type { WebhookDelivery } from "./webhook";
 
 const ACTIVE_JOB_STATES = new Set(["queued", "dispatching", "running", "waiting_for_evidence"]);
 const CLAIM_WINDOW_MS = 5 * 60 * 1000;
@@ -16,47 +17,29 @@ interface DigestDataStore {
   updateState(mutate: (state: AppState) => void | Promise<void>): Promise<AppState>;
 }
 
-function alertStrategies(page: WatchPage, thresholds: PerformanceThresholds): Strategy[] {
-  const candidates: Strategy[] = thresholds.devicePolicy === "preferred"
-    ? ["mobile"]
-    : ["mobile", "desktop"];
-  const regressing = candidates.filter((strategy) => pageHasPersistentRegression(page, strategy, thresholds));
-  if (thresholds.devicePolicy === "both") return regressing.length === candidates.length ? candidates : [];
-  return regressing;
-}
-
-function affectedCategories(
-  page: WatchPage,
-  strategies: Strategy[],
-  thresholds: PerformanceThresholds,
-): string[] {
-  if (!page.baseline) return [];
-  return CATEGORIES.flatMap((category) => {
-    const affected = strategies.some((strategy) => {
-      const baseline = mediansOf(page.baseline![strategy]);
-      const current = page.current[strategy][category.key];
-      return baseline[category.key] - current >= thresholds.regression
-        && current < thresholds.regressionFloor;
-    });
-    return affected ? [category.label] : [];
+/**
+ * The digest for one settled cohort.
+ *
+ * Composed from the state the run left behind rather than accumulated as the run
+ * goes, so a digest built twice for the same cohort says the same thing, and a
+ * retry after a failed send does not report a different night. It is built
+ * whether or not there is anything in it: a quiet run has a digest that says so,
+ * which is the only reason an absent message can mean an absent run.
+ */
+export function digestFor(state: AppState, date: string, appUrl: string): Digest {
+  return buildDigest({
+    site: digestSiteOf(state),
+    date,
+    // The cadence the digest is actually sent on. S8 makes it a setting and
+    // passes the stored value here; until it does, a persisted field would be a
+    // slot with nothing writing to it, which rule 15 says is not a slot.
+    cadence: DEFAULT_DIGEST_CADENCE,
+    cases: issueCasesFrom(state),
+    pages: state.pages,
+    thresholds: normalizePerformanceThresholds(state.performanceThresholds),
+    ...(state.collectionSchedule ? { schedule: state.collectionSchedule } : {}),
+    appUrl,
   });
-}
-
-export function digestAttentionPages(state: AppState): DigestWebhookPage[] {
-  return state.pages.flatMap((page) => {
-    if (!isPageActivelyMonitored(page) || !page.baseline) return [];
-    const thresholds = effectivePerformanceThresholds(state.performanceThresholds, page);
-    const devices = alertStrategies(page, thresholds);
-    const categories = affectedCategories(page, devices, thresholds);
-    if (!categories.length) return [];
-    return [{
-      title: page.title,
-      url: page.url,
-      status: "regressing" as const,
-      categories,
-      devices,
-    }];
-  }).sort((left, right) => left.title.localeCompare(right.title));
 }
 
 export function dailyDigestCohortId(state: AppState, now: Date): string {
@@ -170,11 +153,34 @@ async function finishDailyDigest(
   });
 }
 
-/** Claim and deliver every ready scheduled digest; failed sends remain retryable. */
+export interface ProcessDigestOptions {
+  /**
+   * The app's public URL, so the links in the message work from a mail client.
+   *
+   * Absent produces root-relative links, which is visibly broken rather than
+   * quietly wrong. See `DigestInput.appUrl`.
+   */
+  appUrl?: string;
+}
+
+/**
+ * Claim and deliver every ready cohort digest; failed sends remain retryable.
+ *
+ * One message per settled cohort, whatever it found. There is no branch here on
+ * whether the digest has anything in it, and that absence is the feature: a run
+ * that found nothing sends a message saying so, which is what makes a missing
+ * message mean a missing run rather than a quiet night.
+ *
+ * The single reason a claimed digest completes without a send is that no
+ * delivery endpoint is configured — nothing to send it to. It is still built and
+ * still marked covered, so the record of what the run found does not depend on
+ * whether anyone was told.
+ */
 export async function processDailyDigests(
   dataStore: DigestDataStore,
   now = new Date(),
   alertFn: typeof postWebhook = postWebhook,
+  options: ProcessDigestOptions = {},
 ): Promise<number> {
   let processed = 0;
   while (true) {
@@ -189,7 +195,10 @@ export async function processDailyDigests(
     }
     const delivery = await alertFn(
       webhookUrl,
-      buildDailyDigestWebhookPayload(digestAttentionPages(snapshot), claimed.cohortId),
+      buildDailyDigestWebhookPayload(
+        digestFor(snapshot, claimed.date, options.appUrl ?? ""),
+        claimed.cohortId,
+      ),
     );
     await finishDailyDigest(dataStore, claimed, delivery, now);
     processed += 1;

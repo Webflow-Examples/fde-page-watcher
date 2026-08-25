@@ -192,10 +192,41 @@ export interface NativeElementEvidence {
   count: number;
 }
 
-export type NativeElementDisposition = "acknowledged" | "suppressed";
-
+/**
+ * How a native-element finding has been set aside, in the two registry concepts
+ * that already covered it.
+ *
+ * There used to be one word for both — `disposition`, with the values
+ * `suppressed` and `acknowledged` — and that word was the bug. The two mean
+ * different things about different questions, which is why no single word ever
+ * fitted them:
+ *
+ *   excluded   applicability. The footprint does not apply to this site, so it
+ *              stops counting. Applicability requires a reason, and the reason
+ *              comes from `applicability.reasons` — there is no fourth.
+ *   dismissed  work_state. The footprint is real and still counts; the reader
+ *              has seen it and chosen not to act. `work_state.dismissed.absorbs`
+ *              fixes that reason at "Intentional", so it is the registry's
+ *              statement and not stored here.
+ *
+ * Both may be set. They answer different questions, so they cannot contradict
+ * each other — exactly as a case's page can be excluded while the case itself
+ * is `todo`. Neither set is not a record: `normalizeNativeElementControls`
+ * drops it.
+ *
+ * `reason` is a plain string HERE and only here. This module imports nothing
+ * (`agent-audit-isolation` enforces that, so a provider module can never reach
+ * it through the state's types), and the registry's reason list lives in
+ * `vocabulary.ts`. `normalizeNativeElementControls` is the one gate: it rejects
+ * a reason the registry does not name, on read and on write, and hands callers
+ * the narrow `ExclusionReason` back.
+ *
+ * Registry: `concepts.applicability.note` and `concepts.work_state.dismissed`.
+ * Do NOT reintroduce a third word that spans the two.
+ */
 export interface NativeElementControl {
-  disposition: NativeElementDisposition;
+  excluded?: { reason: string };
+  dismissed?: boolean;
   updatedAt: string;
 }
 

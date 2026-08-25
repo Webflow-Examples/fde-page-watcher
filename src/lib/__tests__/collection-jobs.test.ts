@@ -189,17 +189,22 @@ describe("durable collection jobs", () => {
     expect(repeated.pages[0].history).toHaveLength(1);
   });
 
-  it("retains suppressed native evidence without creating future Inbox noise", async () => {
+  it("retains an excluded finding's evidence without promoting it again", async () => {
     const dataStore = await store();
     await dataStore.updateState((state) => {
       state.pages[0].nativeElementControls = {
-        "webflow-background-video": { disposition: "suppressed", updatedAt: "2026-08-03T12:00:00.000Z" },
+        "webflow-background-video": {
+          excluded: { reason: "Not applicable to this site" },
+          updatedAt: "2026-08-03T12:00:00.000Z",
+        },
       };
     });
-    await enqueueCollectionJob("page", "run", { dataStore, id: "suppressed-job" });
-    await markCollectionJob("suppressed-job", "running", { dataStore });
+    await enqueueCollectionJob("page", "run", { dataStore, id: "excluded-job" });
+    await markCollectionJob("excluded-job", "running", { dataStore });
 
-    const committed = await commitCollectionResult(collectionResult("suppressed-job"), {}, dataStore);
+    // Excluding is not deleting: the scan still records the footprint, so the
+    // reading a reader comes back to is still there.
+    const committed = await commitCollectionResult(collectionResult("excluded-job"), {}, dataStore);
     expect(committed.pages[0].history[0].nativeElements?.findings).toEqual([
       expect.objectContaining({ id: "webflow-background-video" }),
     ]);

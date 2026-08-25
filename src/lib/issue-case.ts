@@ -385,6 +385,47 @@ export function actionsFor(state: IssueState): IssueAction[] {
     .filter((action) => ISSUE_TRANSITIONS[action].from.includes(state));
 }
 
+/**
+ * The actions a person may fire from a state — the ones that can be a button.
+ *
+ * Filtered on the actor list rather than on a hand-kept exclusion, so `resolve`
+ * never grows a button by accident: the registry says it is system-only, and
+ * this is what makes that true of the UI rather than merely written down. A
+ * transition added with `person` in its actor list appears here without anyone
+ * remembering to add it.
+ */
+export function personActionsFor(state: IssueState): IssueAction[] {
+  return actionsFor(state).filter((action) => ISSUE_TRANSITIONS[action].actor.includes("person"));
+}
+
+/**
+ * The one action a case leads with, and null when a person may not move it.
+ *
+ * Derived, not tabulated. Where a state offers a person two moves, the one that
+ * advances the work leads: from New that is Accept rather than Dismiss, because
+ * Accept is the commitment and Dismiss is the other real answer beside it rather
+ * than a lesser version of it. Where a state offers one, that is the one — which
+ * is how a Fixed case whose checks never read arrives at Reopen without this
+ * function knowing anything about checkpoints.
+ *
+ * `PROGRESS_RANK` is the test for "advances the work": it holds the five states
+ * that are progress and deliberately omits `dismissed` and `reopened`, which are
+ * decisions. So a transition landing in a ranked state advances, and one landing
+ * off the ranking does not. That is why the rule reads correctly in both
+ * directions without a second list to keep in step.
+ *
+ * Null is a real answer and not a gap. No state currently returns it — every one
+ * of the seven has at least one person transition out — but rule 12 says a state
+ * with no legal exit is a bug in the registry rather than something a caller
+ * should paper over, so the type says what would be true if one appeared.
+ */
+export function primaryActionFor(state: IssueState): IssueAction | null {
+  const actions = personActionsFor(state);
+  if (actions.length === 0) return null;
+  const advancing = actions.filter((action) => ISSUE_TRANSITIONS[action].to in PROGRESS_RANK);
+  return (advancing[0] ?? actions[0]) as IssueAction;
+}
+
 export function canApply(issue: IssueCase, action: IssueAction): boolean {
   return ISSUE_TRANSITIONS[action].from.includes(issue.state);
 }
@@ -552,13 +593,15 @@ export function taskStatusOf(state: IssueState): TaskStatus {
   return "todo";
 }
 
-/* ── Migration adapters ─────────────────────────────────────────────────── */
+/* ── Migration adapters ─────────────────────────────────────────── */
 
 /**
  * How far along the lifecycle a state sits, for resolving contradictions.
  *
  * `dismissed` and `reopened` are off the progression — they are decisions
  * rather than progress — so they are handled explicitly rather than ranked.
+ * `primaryActionFor` reads the same distinction to decide which of two legal
+ * moves leads, which is why the omission is load-bearing rather than incidental.
  */
 const PROGRESS_RANK: Record<Exclude<IssueState, "dismissed" | "reopened">, number> = {
   new: 0,

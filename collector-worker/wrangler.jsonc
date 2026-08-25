@@ -14,6 +14,12 @@
   },
   "vars": {
     "NIGHTLY_TENANT": "brand-studio:live",
+    // Where the app answers, so the links in a digest work from a mail client.
+    // Left empty the digest still sends, with root-relative links that visibly
+    // do not resolve — deliberately, so a deployment that has not been told its
+    // own address fails where someone can see it rather than sending links that
+    // quietly resolve against whatever opened them.
+    "PUBLIC_APP_URL": "",
     // Deployment gate for outbound external agent-readiness scans. Scans are
     // public, so this stays "false" until a deployment deliberately enables the
     // user-triggered refresh. A project's own consent record is checked too.

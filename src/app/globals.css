@@ -1049,133 +1049,10 @@ button:disabled {
   text-decoration: underline;
 }
 
-.detail-breadcrumb {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--text-muted);
-  font-size: 12.5px;
-  font-weight: 450;
-  line-height: 15px;
-}
-
-.detail-breadcrumb button {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  font: inherit;
-}
-
-.detail-breadcrumb button:hover {
-  color: var(--text-body);
-}
-
-.detail-breadcrumb__divider {
-  color: var(--text-muted);
-}
-
-.detail-hero {
-  padding-block: 14px 16px;
-}
-
-.detail-title-row {
-  display: flex;
-  align-items: baseline;
-  gap: 9px;
-  min-width: 0;
-}
-
-.detail-page-title {
-  flex: none;
-  margin: 0;
-  color: var(--text-body);
-  font-size: 25px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  line-height: 1.1;
-}
-
-.detail-page-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-  color: var(--text-muted);
-  font-size: 13px;
-  font-weight: 450;
-  line-height: 1;
-  text-decoration: none;
-  transition: color 120ms ease;
-}
-
-.detail-page-link > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.detail-page-link svg {
-  flex: none;
-}
-
-.detail-page-link:hover {
-  color: var(--text-body);
-}
-
-.detail-status-line {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  margin-top: 12px;
-  color: var(--text-body);
-  font-size: 12px;
-  line-height: 16px;
-}
-
-.detail-device-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  white-space: nowrap;
-}
-
-.detail-status-dot {
-  flex: none;
-}
-
-.detail-device-name {
-  color: var(--text-muted);
-  font-weight: 500;
-}
-
-.detail-device-value {
-  color: var(--text-body);
-  font-weight: 600;
-}
-
-.detail-status-divider {
-  width: 1px;
-  height: 14px;
-  margin-inline: 14px;
-  background: var(--border-hairline);
-}
-
-.detail-run-copy {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 450;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.detail-page-header .page-controls {
-  padding-top: 18px;
-  border-top: 1px solid var(--border-hairline);
-}
+/* The page-detail header's own layout rules lived here. `<ObjectDetailHeader>`
+   draws that header now — the same component the case uses — so every rule
+   in this block, and its two narrow-viewport blocks below, addressed classes
+   nothing rendered. They were the third header pattern, kept alive by CSS. */
 
 .watcher-card-link {
   display: flex;
@@ -2398,11 +2275,6 @@ textarea:focus-visible,
     flex-basis: calc(50% - 1px);
   }
 
-  .page-controls {
-    width: 100%;
-    flex-wrap: wrap;
-  }
-
   .dashboard-filter-bar {
     gap: 10px;
   }
@@ -2570,11 +2442,6 @@ textarea:focus-visible,
     flex-wrap: wrap !important;
   }
 
-  .page-controls {
-    width: 100%;
-    flex-wrap: wrap;
-  }
-
   .page-content {
     padding: 0 18px 36px !important;
   }
@@ -2609,59 +2476,6 @@ textarea:focus-visible,
     grid-column: auto;
   }
 
-  .detail-content {
-    padding: 22px 18px 40px !important;
-  }
-
-  .detail-breadcrumb {
-    gap: 8px;
-    font-size: 12.5px;
-    line-height: 15px;
-  }
-
-  .detail-hero {
-    padding-block: 14px 16px;
-  }
-
-  .detail-title-row {
-    flex-wrap: wrap;
-    gap: 8px 16px;
-  }
-
-  .detail-page-title {
-    font-size: 25px;
-  }
-
-  .detail-page-link {
-    max-width: 100%;
-    font-size: 13px;
-  }
-
-  .detail-status-line {
-    flex-wrap: wrap;
-    row-gap: 8px;
-    margin-top: 12px;
-    font-size: 12px;
-    line-height: 16px;
-  }
-
-  .detail-status-divider {
-    height: 14px;
-    margin-inline: 14px;
-  }
-
-  .detail-status-divider--run {
-    display: none;
-  }
-
-  .detail-run-copy {
-    flex-basis: 100%;
-  }
-
-  .detail-tabs {
-    overflow-x: auto;
-  }
-
   .narrow-table {
     min-width: 760px;
   }
@@ -2687,32 +2501,6 @@ textarea:focus-visible,
 
   .watcher-ribbon__primary {
     padding-inline: 11px;
-  }
-
-  .detail-heading {
-    grid-template-columns: minmax(0, 1fr) !important;
-  }
-
-  .detail-page-title {
-    width: 100%;
-    font-size: 25px;
-  }
-
-  .detail-page-link {
-    font-size: 13px;
-  }
-
-  .detail-status-line {
-    align-items: flex-start;
-    gap: 10px 18px;
-  }
-
-  .detail-status-divider {
-    display: none;
-  }
-
-  .detail-run-copy {
-    width: 100%;
   }
 
   .page-status-cards {
