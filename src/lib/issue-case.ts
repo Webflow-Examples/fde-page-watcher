@@ -40,7 +40,10 @@ import {
   ISSUE_TRANSITIONS,
   QUEUE_HOLDS,
   WORK_STATES,
+  type Actionability,
+  type CheckpointResult,
   type DismissReason,
+  type EvidenceSource,
   type IssueAction,
   type Queue,
   type WorkState,
@@ -65,14 +68,7 @@ export type { WorkState };
 
 /** One reading from one evidence system, in that system's own words. */
 export interface EvidenceEntry {
-  source:
-    | "lighthouse"
-    | "crux"
-    | "native-elements"
-    | "page-watch-checks"
-    | "ora"
-    | "is-agentic"
-    | "kitesurf";
+  source: EvidenceSource;
   /** human-readable, source's own words */
   reading: string;
   /** ISO — each source keeps its own */
@@ -81,16 +77,16 @@ export interface EvidenceEntry {
   supports: boolean;
 }
 
-export type EvidenceSource = EvidenceEntry["source"];
+export type { EvidenceSource };
 
 /** How much of a fix this is, as a band rather than an estimate. */
 export type Effort = "minutes" | "hours" | "days" | "unknown";
 
 /** Whether the person reading this can act on it, and who owns it if not. */
-export type Actionability = "direct" | "workaround" | "platform" | "none";
+export type { Actionability };
 
 export type CheckpointInterval = "2d" | "7d" | "30d";
-export type CheckpointResult = "passed" | "failed" | "pending";
+export type { CheckpointResult };
 
 export interface Checkpoint {
   interval: CheckpointInterval;
@@ -393,7 +389,7 @@ export function scheduleCheckpoints(from: string): Checkpoint[] {
     ...(Number.isFinite(start)
       ? { due: new Date(start + CHECKPOINT_DAYS[interval] * DAY_MS).toISOString() }
       : {}),
-    result: "pending" as CheckpointResult,
+    result: "scheduled" as CheckpointResult,
   }));
 }
 
@@ -510,8 +506,9 @@ const EVIDENCE_SOURCE: Record<NonNullable<Rec["source"]>, EvidenceSource> = {
   lighthouse: "lighthouse",
   "crux-field-only": "crux",
   "native-elements": "native-elements",
-  // Page Watch's own HTTP checks are the thing that flagged this record.
-  "agent-readiness": "page-watch-checks",
+  // Page Watch's own HTTP checks are the thing that flagged this record, and
+  // from v5 the agent-readiness slot carries only that reading.
+  "agent-readiness": "agent-readiness",
 };
 
 /**
@@ -629,14 +626,14 @@ export function fromRec(rec: Rec, options: FromRecOptions = {}): IssueCase {
 /**
  * Which ledger slot each agent evidence system writes to.
  *
- * `is-agentic` is a slot in `EvidenceEntry["source"]` with no producer yet: it
- * is the `include=essentials` interpretation of Ora's response, and nothing in
- * the app requests it. When that integration lands it writes its own entry here
- * rather than folding into Ora's — the two are different readings of the same
- * response and can disagree.
+ * Ora has its own slot from v5. Sharing one with Page Watch's checks meant
+ * `confidenceFrom` counted the two as a single voice, so a disagreement between
+ * them could never reach `unclear` — the exact failure the ledger exists to
+ * catch. There is deliberately no `is-agentic` slot: rule 15 says a slot with no
+ * producer is not a slot, and it returns with its producer in the same change.
  */
 const EVIDENCE_SOURCE_FOR_AGENT_SYSTEM: Record<AgentEvidenceSystem, EvidenceSource> = {
-  "page-watch": "page-watch-checks",
+  "page-watch": "agent-readiness",
   ora: "ora",
   kitesurf: "kitesurf",
 };

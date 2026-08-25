@@ -1,6 +1,6 @@
 {
-  "$comment": "Page Watch vocabulary registry. Source of truth for user-facing status words. Decided in Chunk F1, revised when C1a implementation surfaced three gaps: applicability had no vocabulary, banned lists were being read as global prose bans, and rule 4 forbade legitimate reuse.",
-  "version": 4,
+  "$comment": "Page Watch vocabulary registry. Source of truth for user-facing status words. Decided in Chunk F1. v4 closed three gaps C1a surfaced. v5 closes the gaps the F1/F2/F3/C1 build report surfaced: Resolved had no legal entry, checkpoints had no vocabulary and no evaluation rule, and two measuring systems shared one evidence slot.",
+  "version": 5,
   "decided": "2026-08-24",
   "concepts": {
     "work_state": {
@@ -41,7 +41,8 @@
           "label": "Resolved",
           "queue": "show_all",
           "tone": "success",
-          "means": "The evidence agreed and held."
+          "means": "The evidence agreed and held.",
+          "entered_by": "resolve"
         },
         {
           "key": "reopened",
@@ -63,7 +64,7 @@
             "Accepted risk",
             "Not now"
           ],
-          "absorbs": "Native-element 'acknowledged' (nativeElements.ts) — a real finding that still counts, which the user has seen and chosen not to act on. That is dismissed + reason 'Intentional'. Folded in S3 when native-element findings become issue cases."
+          "absorbs": "Native-element 'acknowledged' (nativeElements.ts) — a real finding that still counts, which the user has seen and chosen not to act on. That is dismissed + reason 'Intentional', which is in this value's reasons list above. Folded in S3 when native-element findings become issue cases."
         }
       ],
       "banned_as_label": [
@@ -131,11 +132,12 @@
     },
     "action": {
       "field": "issue.transition",
-      "description": "The verbs that move an issue between states. One lifecycle, no synonyms.",
+      "description": "The verbs that move an issue between states. One lifecycle, no synonyms. Every legal move is here, whether a person or the system fires it — actor says which.",
       "values": [
         {
           "key": "accept",
           "label": "Accept",
+          "actor": "person",
           "from": [
             "new",
             "reopened"
@@ -145,6 +147,7 @@
         {
           "key": "dismiss",
           "label": "Dismiss",
+          "actor": "person",
           "from": [
             "new",
             "reopened"
@@ -155,6 +158,7 @@
         {
           "key": "start",
           "label": "Start",
+          "actor": "person",
           "from": [
             "todo"
           ],
@@ -163,21 +167,38 @@
         {
           "key": "mark_fixed",
           "label": "Mark fixed",
+          "actor": "person",
           "from": [
             "in_progress"
           ],
-          "to": "fixed"
+          "to": "fixed",
+          "note": "Schedules the three checkpoints. See the checkpoint concept for what reads them."
+        },
+        {
+          "key": "resolve",
+          "label": "Resolve",
+          "actor": "system",
+          "from": [
+            "fixed"
+          ],
+          "to": "resolved",
+          "requires": "checkpoint_agreement",
+          "note": "Added in v5. Nobody presses this — no button carries the label. The 30-day checkpoint fires it when every checkpoint that produced a reading agreed. Before v5 Resolved had no legal entry, which rule 14 now names as the same bug as a state with no legal exit. History reads 'Resolved — the 30-day check agreed', never 'auto-resolved'."
         },
         {
           "key": "reopen",
           "label": "Reopen",
+          "actor": [
+            "person",
+            "system"
+          ],
           "from": [
             "fixed",
             "resolved",
             "dismissed"
           ],
           "to": "reopened",
-          "note": "From fixed: a 2, 7, or 30-day checkpoint failed, so the change did not hold. From resolved: it came back later. From dismissed: someone changed their mind. All three land in Decide."
+          "note": "From fixed the system fires it: a 2, 7, or 30-day checkpoint disagreed, so the change did not hold. From resolved it came back later. From dismissed a person changed their mind. All three land in Decide. Legal since v4 — an implementer working from v2 or v3 will find this transition missing and should not add it locally."
         }
       ],
       "banned_as_label": [
@@ -186,8 +207,96 @@
         "Acknowledge",
         "Clear acknowledgement",
         "Add to tasks",
-        "Add workaround to tasks"
+        "Add workaround to tasks",
+        "Auto-resolve",
+        "Verify"
       ]
+    },
+    "checkpoint": {
+      "field": "issue.checkpoints[]",
+      "description": "One scheduled re-measurement of a fixed issue: 2, 7 and 30 days after Mark fixed. Three per issue, drawn as the three dots on the case. Not a lifecycle state — the issue stays Fixed while they run. Added in v5, because mark_fixed scheduled these and nothing named or read them.",
+      "values": [
+        {
+          "key": "scheduled",
+          "label": "Scheduled",
+          "means": "Due in the future. Nothing has been measured yet."
+        },
+        {
+          "key": "agreed",
+          "label": "Agreed",
+          "means": "The re-measurement no longer finds the problem."
+        },
+        {
+          "key": "disagreed",
+          "label": "Disagreed",
+          "means": "The re-measurement still finds the problem."
+        },
+        {
+          "key": "unavailable",
+          "label": "Unavailable",
+          "means": "No reading could be taken — the page did not answer, or the collector had no data for the window. Neither agreement nor disagreement. Same condition as agent_result.unavailable on a different object, which rule 4 allows."
+        }
+      ],
+      "evaluation": [
+        "A checkpoint that disagrees fires reopen at once. Remaining checkpoints are cancelled: the case is back in Decide, and the next mark_fixed schedules a fresh set of three.",
+        "Unavailable neither advances nor reopens. Retry once at +24h, then record Unavailable and carry on to the next checkpoint.",
+        "The 30-day checkpoint fires resolve when every checkpoint that produced a reading agreed. Unavailable readings are skipped, not counted against.",
+        "Three unavailable readings do not resolve. The case stays Fixed and says no check could be taken; the user may Reopen it or leave it in Watch.",
+        "The 2 and 7-day checkpoints never resolve on their own. Rule 5 says Resolved means the evidence agreed and held, and holding takes the full 30 days."
+      ],
+      "banned_as_label": [
+        "Passed",
+        "Failed",
+        "Pass",
+        "Fail",
+        "Verified",
+        "Confirmed",
+        "Pending",
+        "Waiting",
+        "Check 1",
+        "Retest"
+      ],
+      "note": "Passed and Failed belong to agent_result, on a check. A checkpoint is not a check: it asks whether an earlier conclusion still holds, so it agrees or disagrees with that conclusion. Confirmed belongs to confidence."
+    },
+    "evidence_source": {
+      "field": "evidenceEntry.source",
+      "description": "Who took a reading in the evidence ledger. One entry per system, never a blend — the ledger exists so that two systems disagreeing is visible rather than averaged away.",
+      "values": [
+        {
+          "key": "lighthouse",
+          "label": "Lighthouse"
+        },
+        {
+          "key": "crux",
+          "label": "Chrome UX Report"
+        },
+        {
+          "key": "native-elements",
+          "label": "Native elements"
+        },
+        {
+          "key": "agent-readiness",
+          "label": "Agent readiness checks",
+          "means": "Page Watch's own HTTP and markup checks. From v5 this slot carries only Page Watch's reading."
+        },
+        {
+          "key": "ora",
+          "label": "Ora"
+        },
+        {
+          "key": "kitesurf",
+          "label": "Kitesurf"
+        }
+      ],
+      "banned_as_label": [
+        "Combined",
+        "Aggregate",
+        "Blended",
+        "Consensus",
+        "Overall"
+      ]
+      ,
+      "note": "v5 gives Ora its own slot. One slot for two systems meant confidenceFrom counted them as a single voice, so a disagreement between Page Watch and Ora could never surface — the exact failure the ledger was built to catch. is-agentic is removed: it had no producer, and an empty slot reads to the user as a reading that found nothing (rule 15)."
     },
     "trend": {
       "field": "page.trend",
@@ -241,7 +350,7 @@
     },
     "confidence": {
       "field": "issue.confidence",
-      "description": "How much the evidence supports the diagnosis.",
+      "description": "How much the evidence supports the diagnosis. Any disagreement between sources lands on unclear — a majority does not carry the conclusion.",
       "values": [
         {
           "key": "confirmed",
@@ -263,6 +372,41 @@
         "Suspected",
         "Verified"
       ]
+    },
+    "actionability": {
+      "field": "issue.actionability",
+      "description": "What the customer can do about this case. Decides whether Accept is offered at all.",
+      "values": [
+        {
+          "key": "direct",
+          "label": "Direct fix",
+          "means": "There is a documented change the customer can make."
+        },
+        {
+          "key": "workaround",
+          "label": "Workaround",
+          "means": "No direct fix, but there is a documented way around it."
+        },
+        {
+          "key": "platform",
+          "label": "Platform",
+          "means": "Webflow owns this one. Nothing for the customer to do; the case is shown so the reading is not hidden."
+        },
+        {
+          "key": "none",
+          "label": "No action available",
+          "means": "No documented remediation exists yet. Accept is not offered.",
+          "requires": "reason"
+        }
+      ],
+      "banned_as_label": [
+        "Review",
+        "Investigate",
+        "TBD",
+        "Unknown",
+        "Not actionable"
+      ],
+      "note": "Migration from CustomerActionability: none maps to platform (it was only written where the platform owns the audit on a Webflow page), review maps to none (no documented remediation, so there is nothing to accept — and that correctly blocks Accept). Rule 17: a none case must say in one sentence why there is no action, or it reads as a broken card."
     },
     "agent_result": {
       "field": "agentCheck.result",
@@ -434,7 +578,11 @@
     "Applicability is not lifecycle. If a control decides whether something counts, it is Exclude/Include — never a state.",
     "Before adding a concept, check whether an existing one already means it. Two words for one idea is the failure this registry exists to prevent; a new concept for a state an existing one covers is the same failure wearing different clothes.",
     "A state with no legal exit is a bug in this file, not a case for inventing a transition. If an implementer finds one, the registry is wrong.",
-    "A token is named for its role. A fill value used as ink, or a hairline value used as type, is a bug even though the token resolves — check contrast at the size and surface it is actually used at, not the one it was designed for."
+    "A token is named for its role. A fill value used as ink, or a hairline value used as type, is a bug even though the token resolves — check contrast at the size and surface it is actually used at, not the one it was designed for.",
+    "A state with no legal entry is the same bug as a state with no legal exit. Every state needs a way in and a way out, and the transition that provides it lives here, not in an implementer's local patch.",
+    "An evidence slot with no producer is not a slot. Define it when something writes to it: an empty slot reads to the user as a reading that found nothing.",
+    "A transition the system fires still writes history in the words the user reads. 'Resolved — the 30-day check agreed', never 'auto_resolved'.",
+    "When a case offers no action, it says why in one sentence. An action-less card with no explanation reads as a broken product, not as an honest one."
   ],
   "banned_global": {
     "$comment": "Hard-gated: these must not appear in user-facing copy anywhere in src/. This is the list the eslint rule enforces. A concept's banned_as_label list is narrower — it means 'not a valid label for THIS concept', not 'never write this word'.",
@@ -456,7 +604,7 @@
       "Watching outcomes"
     ],
     "allowlist": {
-      "$comment": "Pre-existing violations in files C1a does not own. Each entry names the chunk that clears it. The list may only shrink.",
+      "$comment": "Pre-existing violations in files C1a does not own. Each entry names the chunk that clears it. The list may only shrink. webflow-connection.tsx was cleared in C1a and removed in v5 — the rename it covered is done and the entry was dead.",
       "src/lib/guide.ts": "S9 — the glossary retires; its entries define the retired terms on purpose",
       "src/app/(app)/watchlist/page.tsx": "C2 — Ignore/Suppress become the applicability concept below",
       "src/app/(app)/pages/[id]/page.tsx": "S3 — same, plus native-element dispositions",

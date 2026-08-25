@@ -96,7 +96,7 @@ export const WORK_STATE_QUEUE: Record<WorkState, Queue> = {
 
 /* ── Action — the verbs that move an issue between states ───────────────── */
 
-export const ISSUE_ACTIONS = ["accept", "dismiss", "start", "mark_fixed", "reopen"] as const;
+export const ISSUE_ACTIONS = ["accept", "dismiss", "start", "mark_fixed", "resolve", "reopen"] as const;
 export type IssueAction = (typeof ISSUE_ACTIONS)[number];
 
 export const ISSUE_ACTION_LABEL: Record<IssueAction, string> = {
@@ -104,28 +104,149 @@ export const ISSUE_ACTION_LABEL: Record<IssueAction, string> = {
   dismiss: "Dismiss",
   start: "Start",
   mark_fixed: "Mark fixed",
+  resolve: "Resolve",
   reopen: "Reopen",
 };
+
+/** Who fires a transition. Not every move is a button. */
+export type TransitionActor = "person" | "system";
+
+/** What a transition needs before it may fire. */
+export type TransitionRequirement = "reason" | "checkpoint_agreement";
 
 export interface IssueTransition {
   readonly from: readonly WorkState[];
   readonly to: WorkState;
+  /** `reopen` is both: a person from dismissed, the system from a failed check. */
+  readonly actor: readonly TransitionActor[];
+  readonly requires: TransitionRequirement | null;
+  /** True only when `requires` is "reason". Convenience for the dismiss guard. */
   readonly requiresReason: boolean;
 }
 
 export const ISSUE_TRANSITIONS: Record<IssueAction, IssueTransition> = {
-  accept: { from: ["new", "reopened"], to: "todo", requiresReason: false },
-  dismiss: { from: ["new", "reopened"], to: "dismissed", requiresReason: true },
-  start: { from: ["todo"], to: "in_progress", requiresReason: false },
-  mark_fixed: { from: ["in_progress"], to: "fixed", requiresReason: false },
-  // From fixed: a checkpoint failed, so the change did not hold. From resolved:
-  // it came back later. From dismissed: someone changed their mind.
-  reopen: { from: ["fixed", "resolved", "dismissed"], to: "reopened", requiresReason: false },
+  accept: { from: ["new", "reopened"], to: "todo", actor: ["person"], requires: null, requiresReason: false },
+  dismiss: { from: ["new", "reopened"], to: "dismissed", actor: ["person"], requires: "reason", requiresReason: true },
+  start: { from: ["todo"], to: "in_progress", actor: ["person"], requires: null, requiresReason: false },
+  // Schedules the three checkpoints. The checkpoint concept says what reads them.
+  mark_fixed: { from: ["in_progress"], to: "fixed", actor: ["person"], requires: null, requiresReason: false },
+  // Nobody presses this — no button carries the label. The 30-day checkpoint
+  // fires it once every checkpoint that produced a reading agreed. Before v5
+  // Resolved had no legal entry at all, which rule 14 names as a bug.
+  resolve: { from: ["fixed"], to: "resolved", actor: ["system"], requires: "checkpoint_agreement", requiresReason: false },
+  // From fixed the system fires it — a checkpoint disagreed, so the change did
+  // not hold. From resolved it came back later. From dismissed a person changed
+  // their mind. All three land in Decide.
+  reopen: { from: ["fixed", "resolved", "dismissed"], to: "reopened", actor: ["person", "system"], requires: null, requiresReason: false },
 };
 
 /** Dismissing requires one of these reasons. */
 export const DISMISS_REASONS = ["Not applicable", "Intentional", "Accepted risk", "Not now"] as const;
 export type DismissReason = (typeof DISMISS_REASONS)[number];
+
+/* ── Checkpoint — one scheduled re-measurement of a fixed issue ─────────── */
+
+/**
+ * Three per issue, 2/7/30 days after Mark fixed, drawn as the three dots on the
+ * case. Not a lifecycle state: the issue stays Fixed while they run.
+ *
+ * These are deliberately not `passed`/`failed`. Those words belong to
+ * `agent_result`, on a check. A checkpoint is not a check — it asks whether an
+ * earlier conclusion still holds, so it agrees or disagrees with it.
+ */
+export const CHECKPOINT_RESULTS = ["scheduled", "agreed", "disagreed", "unavailable"] as const;
+export type CheckpointResult = (typeof CHECKPOINT_RESULTS)[number];
+
+export const CHECKPOINT_RESULT_LABEL: Record<CheckpointResult, string> = {
+  scheduled: "Scheduled",
+  agreed: "Agreed",
+  disagreed: "Disagreed",
+  unavailable: "Unavailable",
+};
+
+export const CHECKPOINT_RESULT_MEANS: Record<CheckpointResult, string> = {
+  scheduled: "Due in the future. Nothing has been measured yet.",
+  agreed: "The re-measurement no longer finds the problem.",
+  disagreed: "The re-measurement still finds the problem.",
+  unavailable:
+    "No reading could be taken — the page did not answer, or the collector had no data for the window. Neither agreement nor disagreement. Same condition as agent_result.unavailable on a different object, which rule 4 allows.",
+};
+
+/**
+ * The decided evaluation rules, verbatim from the registry. Carried here so the
+ * evaluator can be read against them without opening the JSON; the parity test
+ * asserts they match.
+ */
+export const CHECKPOINT_EVALUATION: readonly string[] = [
+  "A checkpoint that disagrees fires reopen at once. Remaining checkpoints are cancelled: the case is back in Decide, and the next mark_fixed schedules a fresh set of three.",
+  "Unavailable neither advances nor reopens. Retry once at +24h, then record Unavailable and carry on to the next checkpoint.",
+  "The 30-day checkpoint fires resolve when every checkpoint that produced a reading agreed. Unavailable readings are skipped, not counted against.",
+  "Three unavailable readings do not resolve. The case stays Fixed and says no check could be taken; the user may Reopen it or leave it in Watch.",
+  "The 2 and 7-day checkpoints never resolve on their own. Rule 5 says Resolved means the evidence agreed and held, and holding takes the full 30 days.",
+];
+
+/* ── Evidence source — who took a reading in the ledger ─────────────────── */
+
+/**
+ * One entry per system, never a blend. The ledger exists so that two systems
+ * disagreeing is visible rather than averaged away, which is why Ora has its
+ * own slot: sharing one with Page Watch's checks made `confidenceFrom` count
+ * them as a single voice, so that disagreement could never surface.
+ */
+export const EVIDENCE_SOURCES = [
+  "lighthouse",
+  "crux",
+  "native-elements",
+  "agent-readiness",
+  "ora",
+  "kitesurf",
+] as const;
+export type EvidenceSource = (typeof EVIDENCE_SOURCES)[number];
+
+export const EVIDENCE_SOURCE_LABEL: Record<EvidenceSource, string> = {
+  lighthouse: "Lighthouse",
+  crux: "Chrome UX Report",
+  "native-elements": "Native elements",
+  "agent-readiness": "Agent readiness checks",
+  ora: "Ora",
+  kitesurf: "Kitesurf",
+};
+
+/* ── Actionability — what the customer can do about a case ──────────────── */
+
+/** Decides whether Accept is offered at all. */
+export const ACTIONABILITIES = ["direct", "workaround", "platform", "none"] as const;
+export type Actionability = (typeof ACTIONABILITIES)[number];
+
+export const ACTIONABILITY_LABEL: Record<Actionability, string> = {
+  direct: "Direct fix",
+  workaround: "Workaround",
+  platform: "Platform",
+  none: "No action available",
+};
+
+export const ACTIONABILITY_MEANS: Record<Actionability, string> = {
+  direct: "There is a documented change the customer can make.",
+  workaround: "No direct fix, but there is a documented way around it.",
+  platform: "Webflow owns this one. Nothing for the customer to do; the case is shown so the reading is not hidden.",
+  none: "No documented remediation exists yet. Accept is not offered.",
+};
+
+/**
+ * Rule 17: a `none` case must say in one sentence why there is no action, or it
+ * reads as a broken card rather than an honest one.
+ */
+export const ACTIONABILITY_REQUIRES_REASON: Record<Actionability, boolean> = {
+  direct: false,
+  workaround: false,
+  platform: false,
+  none: true,
+};
+
+/** Accept is offered on everything except a case with no documented remediation. */
+export function acceptIsOffered(actionability: Actionability): boolean {
+  return actionability !== "none";
+}
 
 /* ── Trend — direction of the score line, never a health statement ──────── */
 
