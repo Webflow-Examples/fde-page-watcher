@@ -93,6 +93,15 @@ export interface Checkpoint {
   interval: CheckpointInterval;
   due?: string;
   result?: CheckpointResult;
+  /**
+   * How many times the collector has tried to take this reading.
+   *
+   * Absent until something tries. Evaluation rule 2 allows exactly one retry
+   * after a failure to read, and this is what distinguishes the first
+   * unavailable reading — which buys the retry and moves `due` — from the
+   * second, which records Unavailable and lets the run carry on.
+   */
+  attempts?: number;
 }
 
 export interface HistoryEntry {
@@ -101,6 +110,25 @@ export interface HistoryEntry {
   to: IssueState;
   actor: string;
   reason?: string;
+}
+
+/**
+ * Whether an entry records a move between states or a note against one.
+ *
+ * History is a log of events, not only of transitions: a checkpoint that could
+ * not be read is something that happened, and rule 16 owes the reader the
+ * sentence for it. Those entries carry the same state on both sides, which is
+ * the honest encoding of "the case did not move" — but it means a renderer that
+ * assumes every entry is a move will draw "Fixed → Fixed", which is worse than
+ * drawing nothing.
+ *
+ * So the distinction is a function rather than a convention. Ask this instead of
+ * comparing `from` and `to`, and the arrow cannot appear on a note. An entry
+ * with no `from` is a transition whose origin was not recorded — migrated
+ * history — not a note.
+ */
+export function isTransition(entry: HistoryEntry): boolean {
+  return entry.from === undefined || entry.from !== entry.to;
 }
 
 export interface Remediation {
@@ -358,7 +386,7 @@ const DAY_MS = 86_400_000;
  * Resolved means the evidence agreed *and held*, and holding takes the full
  * span.
  */
-const RESOLVING_INTERVAL: CheckpointInterval = (Object.keys(CHECKPOINT_DAYS) as CheckpointInterval[])
+export const RESOLVING_INTERVAL: CheckpointInterval = (Object.keys(CHECKPOINT_DAYS) as CheckpointInterval[])
   .reduce((longest, interval) => (CHECKPOINT_DAYS[interval] > CHECKPOINT_DAYS[longest] ? interval : longest));
 
 /**
