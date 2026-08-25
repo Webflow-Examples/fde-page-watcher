@@ -1,5 +1,6 @@
 import type {
   AgentCheck,
+  AgentIssueTaskEvidence,
   AppState,
   CategoryKey,
   ChangeMarker,
@@ -283,6 +284,31 @@ function pageStatus(scenario: Seed["scenario"]): PageStatus {
  * Scenario-rich local/demo state. Dates are anchored to the most recent past
  * 08:00 UTC so every 3/7/30-day view remains populated whenever it is seeded.
  */
+/**
+ * The one remediation two seeded cases share.
+ *
+ * `groupByRemediation` keys on the steps and the actionability together, so the
+ * steps must be IDENTICAL for the two to group — which is exactly the property
+ * worth exercising in a browser. Built from one function rather than written
+ * twice for that reason: two hand-copied arrays would drift on the first edit
+ * and the group would quietly become two groups of one.
+ */
+function sharedHeadFix(caseKey: string, title: string, capturedAt: string): AgentIssueTaskEvidence {
+  return {
+    caseKey,
+    title,
+    scope: "page",
+    capturedAt,
+    remediation: [
+      "Open Site settings → Custom code and find the site-wide head.",
+      "Move the stylesheet out of the head and let Webflow bundle it.",
+      "Republish and wait for the next nightly collection.",
+    ],
+    successCriteria: "The stylesheet no longer blocks first paint on any page that loads the site-wide head.",
+    verificationCheckIds: [],
+  };
+}
+
 export function buildSeedState(now = new Date()): AppState {
   const anchor = demoAnchor(now);
   let randomState = 20240716;
@@ -465,6 +491,31 @@ export function buildSeedState(now = new Date()): AppState {
       savings: "Field p75 620 ms", estTime: "Needs review", status: "inbox", taskStatus: "todo", added: dateKey(isoAt(anchor, -2)), doneDate: null,
       fieldSignals: { mobile: { metricKey: "responsiveness", metricLabel: "Responsiveness", relationship: "proxy", labLabel: "Lab TBT", labFormatted: "120 ms", fieldLabel: "Visitor INP p75", fieldValue: 620, fieldFormatted: "620 ms", fieldRating: "Poor", scope: "url", collectionStart: dateKey(isoAt(anchor, -29)), collectionEnd: dateKey(isoAt(anchor, -2)), detectedAt: isoAt(anchor, -2) } },
       fieldLifecycle: { mobile: { status: "active", firstDetectedAt: isoAt(anchor, -9), lastDetectedAt: isoAt(anchor, -2), lastEvaluatedCollectionEnd: dateKey(isoAt(anchor, -2)), consecutiveGoodWindows: 0 } },
+    },
+    // Two causes, one fix. These exist so the remediation GROUP renders in the
+    // browser: `groupByRemediation` keys on the steps and the actionability, so
+    // two cases only group when both match exactly. Until these landed the
+    // multi-member group was reachable only from a unit test, which meant
+    // nobody had ever looked at one.
+    //
+    // Different audits on different pages, deliberately: a group whose members
+    // share a cause would have been folded by `groupByCause` first and never
+    // reached the remediation step.
+    {
+      key: "enterprise:render-blocking-resources", pageId: "enterprise", pageTitle: "Enterprise", url: page("enterprise").url,
+      id: "render-blocking-resources", source: "lighthouse", strategies: ["mobile"], sourceRunId: page("enterprise").history.at(-1)!.runId,
+      title: "Eliminate render-blocking resources", category: "Performance", webflow: classifyWebflowPerformance("render-blocking-resources"),
+      savings: "0.9 s", estTime: "1 day", status: "inbox", taskStatus: "todo", added: dateKey(isoAt(anchor, -4)), doneDate: null,
+      aiSummary: "A stylesheet in the site-wide head delays first paint on the Enterprise page.",
+      agentIssue: sharedHeadFix("enterprise:render-blocking-resources", "Eliminate render-blocking resources", isoAt(anchor, -4)),
+    },
+    {
+      key: "ai:unused-css-rules", pageId: "ai", pageTitle: "AI", url: page("ai").url,
+      id: "unused-css-rules", source: "lighthouse", strategies: ["mobile"], sourceRunId: page("ai").history.at(-1)!.runId,
+      title: "Reduce unused CSS", category: "Performance", webflow: classifyWebflowPerformance("unused-css-rules"),
+      savings: "0.4 s", estTime: "1 day", status: "inbox", taskStatus: "todo", added: dateKey(isoAt(anchor, -4)), doneDate: null,
+      aiSummary: "Most of the same site-wide stylesheet goes unused on this page.",
+      agentIssue: sharedHeadFix("ai:unused-css-rules", "Reduce unused CSS", isoAt(anchor, -4)),
     },
     {
       key: "pricing:crux-field-only-lcp", pageId: "pricing", pageTitle: "Pricing", url: page("pricing").url,
@@ -658,12 +709,31 @@ export function buildSeedWebflowConnectionStatus(now = new Date()): WebflowConne
   };
 }
 
-/** Live environments begin empty; demo/local environments use the full fixture. */
+/**
+ * A project with nothing in it.
+ *
+ * This is the same shape `"live"` starts from, named so it can be asked for on
+ * purpose. Every empty state in the app — "No pages are being watched", the
+ * first-run pending copy, the queue empties — was reachable before this only by
+ * deploying with `DATASET_MODE=live`, which meant they were reviewed as unit
+ * tests and never actually looked at. A named state costs nothing and lets the
+ * empty screens be read the way a customer reads them.
+ */
+export function buildEmptySeedState(): AppState {
+  return {
+    pages: [], recs: [], visitorExperienceVisible: false, agentIgnoreDefaults: { checks: [], groups: [] },
+    performanceThresholds: { ...DEFAULT_PERFORMANCE_THRESHOLDS }, jobs: [], followUps: [],
+  };
+}
+
+/**
+ * Live environments begin empty; demo/local environments use the full fixture.
+ *
+ * `"empty"` is the demo equivalent of `"live"`'s starting point — the same
+ * state, requested deliberately rather than as a side effect of pointing the
+ * app at production.
+ */
 export function buildInitialState(mode: string | undefined = process.env.DATASET_MODE): AppState {
-  return mode === "live"
-    ? {
-      pages: [], recs: [], visitorExperienceVisible: false, agentIgnoreDefaults: { checks: [], groups: [] },
-      performanceThresholds: { ...DEFAULT_PERFORMANCE_THRESHOLDS }, jobs: [], followUps: [],
-    }
-    : buildSeedState();
+  if (mode === "live" || mode === "empty") return buildEmptySeedState();
+  return buildSeedState();
 }

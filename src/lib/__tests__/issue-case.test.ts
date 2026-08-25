@@ -13,6 +13,7 @@ import {
   checkpointsAgree,
   confidenceFrom,
   dismiss,
+  excludePage,
   EVIDENCE_SOURCE,
   EVIDENCE_SOURCE_FOR_AGENT_SYSTEM,
   fromAgentIssue,
@@ -1025,10 +1026,48 @@ describe("vocabulary discipline", () => {
     }
   });
 
-  it("has no applicability field, and never treats set aside and excluded as one thing", () => {
-    expect(source).not.toMatch(/applicability/);
-    expect(source).not.toMatch(/\bexcluded\b/);
+  it("never treats set aside and excluded as one thing", () => {
+    /**
+     * This used to be a source-text ban: no "applicability" and no "excluded"
+     * anywhere in the module. S2 gives a case's PAGES applicability — the
+     * registry's own concept, applied to the pages rather than to the case — so
+     * the text ban now forbids the decided design instead of the mistake it was
+     * written for.
+     *
+     * The mistake it was written for was conflating two concepts: `dismissed`
+     * (set aside — a decision about the case) and `excluded` (does not apply —
+     * a fact about a page). Those are asserted directly below, which is a
+     * stronger guard than the regex was: the regex would have passed a module
+     * that spelled dismissal "excluded" as long as it used neither word.
+     */
+
+    // 1. The CASE has no applicability of its own. Its state is the only
+    //    lifecycle it has, and "not this one" is spelled `dismissed`.
     expect(Object.keys(makeCase())).not.toContain("applicability");
+    expect(source).not.toMatch(/applicability:\s*("|')/);
+
+    // 2. Per-page applicability does not touch the case's queue. A case with an
+    //    excluded page is in exactly the queue its state puts it in.
+    const withExclusion = excludePage(
+      makeCase({ state: "todo", pageIds: ["p1", "p2"] }),
+      "p2",
+      "Intentional",
+      { actor: "person", at: AT },
+    );
+    expect(withExclusion.state).toBe("todo");
+    expect(queueOf(withExclusion.state)).toBe(queueOf("todo"));
+
+    // 3. Excluding is not dismissing. The last counted page cannot be excluded,
+    //    because a case that counts nothing is a Dismiss and there must not be
+    //    two ways to say it.
+    expect(() =>
+      excludePage(makeCase({ pageIds: ["p1"] }), "p1", "Intentional", { actor: "person", at: AT }),
+    ).toThrow(IssueCaseError);
+
+    // 4. Dismissing does not exclude anything, and excluding does not dismiss.
+    const setAside = dismiss(makeCase({ state: "new" }), { actor: "person", at: AT, reason: "Intentional" });
+    expect(setAside.excludedPages).toBeUndefined();
+    expect(withExclusion.state).not.toBe("dismissed");
   });
 
   it("keeps the retired lifecycles as read-only views", () => {

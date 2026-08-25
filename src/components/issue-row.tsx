@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
-import { hasMeasuredImpact, type Effort, type IssueCase } from "@/lib/issue-case";
+import type { Effort, IssueCase } from "@/lib/issue-case";
+import { formatGroupImpact, formatImpact } from "@/lib/impact-format";
 import type { Strategy } from "@/lib/types";
 import { CONFIDENCE_LABEL, DESTINATION_PATH } from "@/lib/vocabulary";
 import { withBasePath } from "@/lib/paths";
@@ -52,32 +53,11 @@ export const ISSUE_ROW_NEST_INDENT = 18;
 const STRATEGY_LABEL: Record<Strategy, string> = { mobile: "Mobile", desktop: "Desktop" };
 
 /**
- * A measured saving, in the unit it was measured in.
- *
- * An unmeasured case says so in words. Registry rule 18: a finding with no
- * reading is never shown as 0 and never as a blank cell — either would let it
- * read as a very small saving, and an empty cell would let it outrank a
- * 1,900 ms finding on nothing at all. "Not measured" is the reading.
+ * Impact formatting moved to `lib/impact-format.ts` when the case detail became
+ * a second renderer of the same figure. Re-exported here so the list's existing
+ * importers keep one name for it.
  */
-export function formatImpact(impactMs: number): { text: string; measured: boolean } {
-  if (!hasMeasuredImpact(impactMs)) return { text: "Not measured", measured: false };
-  if (impactMs < 1000) return { text: `${impactMs} ms`, measured: true };
-  const seconds = impactMs / 1000;
-  const rounded = seconds >= 10 ? Math.round(seconds).toString() : seconds.toFixed(1).replace(/\.0$/, "");
-  return { text: `${rounded} s`, measured: true };
-}
-
-/**
- * The same reading, on a group of cases rather than one.
- *
- * "up to", because a group carries the worst reading any member produced and
- * never a total (rule 19) — the number under this label is the one on one of
- * the rows beneath it, which is what makes the two reconcilable.
- */
-export function formatGroupImpact(impactMs: number): { text: string; measured: boolean } {
-  const impact = formatImpact(impactMs);
-  return impact.measured ? { text: `up to ${impact.text}`, measured: true } : impact;
-}
+export { formatGroupImpact, formatImpact };
 
 /**
  * Effort is a band on the case, not a registry concept, so its words live here

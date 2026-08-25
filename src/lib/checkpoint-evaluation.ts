@@ -1,6 +1,7 @@
 import {
   applyAction,
   checkpointsAgree,
+  includedPages,
   reopenForPages,
   type Checkpoint,
   type CheckpointInterval,
@@ -44,8 +45,13 @@ export interface CheckpointReading {
   /** When the reading was taken. */
   at: string;
   /**
-   * For a disagreement, the pages the problem came back on. Defaults to every
-   * page the case covers — `reopenForPages` narrows the case to these.
+   * For a disagreement, the pages the problem came back on. Defaults to the
+   * pages the case COUNTS — `reopenForPages` narrows the case to these.
+   *
+   * Counted, not covered: a page excluded on the case is one the reader said
+   * does not apply, and a checkpoint that reopened the case on it would
+   * override that decision silently. An exclusion the evaluator ignores is not
+   * an exclusion.
    */
   pageIds?: readonly string[];
 }
@@ -128,6 +134,20 @@ export function recordCheckpointReading(
   // checkpoints go with it — waiting out a run whose conclusion is already
   // overturned would keep the case out of Decide for another three weeks.
   if (outcome === "disagreed") {
+    // Only a counted page can bring the case back. A reading that names none of
+    // them measured something the case does not claim, so there is nothing to
+    // reopen: it is recorded and the run carries on.
+    const cameBack = (reading.pageIds ?? includedPages(issue)).filter((pageId) =>
+      includedPages(issue).includes(pageId),
+    );
+    if (cameBack.length === 0) {
+      const noted = withCheckpoint(issue, interval, (item) => ({
+        ...item,
+        attempts: attemptsOf(item) + 1,
+        result: "disagreed",
+      }));
+      return { issue: noted, effect: "recorded", interval };
+    }
     const marked = withCheckpoint(issue, interval, (item) => ({ ...item, result: "disagreed" }));
     const cancelled = {
       ...marked,
@@ -140,7 +160,7 @@ export function recordCheckpointReading(
       ),
     };
     return {
-      issue: reopenForPages(cancelled, reading.pageIds ?? issue.pageIds, {
+      issue: reopenForPages(cancelled, cameBack, {
         actor: "system",
         at,
         reason: historyReopened(interval),

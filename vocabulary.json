@@ -1,6 +1,6 @@
 {
-  "$comment": "Page Watch vocabulary registry. Source of truth for user-facing status words. Decided in Chunk F1. v4 closed three gaps C1a surfaced. v5 closes the gaps the F1/F2/F3/C1 build report surfaced: Resolved had no legal entry, checkpoints had no vocabulary and no evaluation rule, and two measuring systems shared one evidence slot. v7 installs rules 20 and 21 from the R1 review: state a fact once, and assert the decision rather than the code. v8 amends rule 18 with the distinction the R1 F3 finding cost us: absence withholds the claim, a broken invariant fails loudly.",
-  "version": 8,
+  "$comment": "Page Watch vocabulary registry. Source of truth for user-facing status words. Decided in Chunk F1. CHANGELOG: v4 closed three gaps C1a surfaced. v5 closed the gaps the F1/F2/F3/C1 build report surfaced — Resolved had no legal entry, checkpoints had no vocabulary or evaluation rule, and two measuring systems shared one evidence slot. v6 added rules 18 and 19 from S1. v7 added rules 20 and 21 from R1, and extended rule 18 with the withhold-versus-fail distinction after a wrong ruling on F3. v8 added concepts.action.actor_note. v9 is v8's content with tightened prose on rules 18, 20 and 21 and this changelog — renumbered because a registry that changes its content without changing its number is the drift it exists to prevent, and two files numbered 8 already differed.",
+  "version": 9,
   "decided": "2026-08-24",
   "concepts": {
     "work_state": {
@@ -133,6 +133,7 @@
     "action": {
       "field": "issue.transition",
       "description": "The verbs that move an issue between states. One lifecycle, no synonyms. Every legal move is here, whether a person or the system fires it — actor says which.",
+      "actor_note": "actor is a PERMISSION SET, not an identity: it says which classes of caller may fire this transition. It is not the record of who did. Those are two meanings for one word, which rule 4 forbids — so the runtime records the identity separately (by: \"checkpoint\", by: a user id) and validates that identity's CLASS against this list. 'checkpoint' is a system caller; a user id is a person caller. Validation is on the class, never on the string, which is why a richer identity string is legal and an unpermitted class is not. Added in v9 after W1 found applyAction recording actor without validating it: 'resolve is system-only' held because the evaluator was its only caller, not because anything enforced it — a stated rule with no mechanism, which is the gap rule 14 exists to name.",
       "values": [
         {
           "key": "accept",
@@ -294,7 +295,8 @@
         "Blended",
         "Consensus",
         "Overall"
-      ],
+      ]
+      ,
       "note": "v5 gives Ora its own slot. One slot for two systems meant confidenceFrom counted them as a single voice, so a disagreement between Page Watch and Ora could never surface — the exact failure the ledger was built to catch. is-agentic is removed: it had no producer, and an empty slot reads to the user as a reading that found nothing (rule 15)."
     },
     "trend": {
@@ -582,10 +584,10 @@
     "An evidence slot with no producer is not a slot. Define it when something writes to it: an empty slot reads to the user as a reading that found nothing.",
     "A transition the system fires still writes history in the words the user reads. 'Resolved — the 30-day check agreed', never 'auto_resolved'.",
     "When a case offers no action, it says why in one sentence. An action-less card with no explanation reads as a broken product, not as an honest one.",
-    "An absent measurement is not a small measurement. A finding with no reading is never folded, filtered or ranked as though its value were zero — it sorts last within its group and its row says 'not measured', never 0. Same principle as checkpoint.unavailable: no reading is neither good news nor bad. Absence and malformation are different events and get different answers. A reading that was never taken WITHHOLDS the claim that needed it: a claim about a group is withheld when any member is unmeasured, while every reading that WAS taken still reports — withholding good news must not swallow bad. A structure that should carry a reading and does not is a broken invariant, and FAILS LOUDLY naming what was malformed. Substituting a value for either — a flat delta, a perfect score — is how a claim gets printed over data that does not exist.",
+    "An absent measurement is not a small measurement. A finding with no reading is never folded, filtered or ranked as though its value were zero — it sorts last within its group and its row says 'not measured', never 0. Same principle as checkpoint.unavailable: no reading is neither good news nor bad. The response to absence is to WITHHOLD the claim, not to fail \u2014 a conclusion that depends on a reading nobody took is simply not stated, while a broken invariant, a shape that should have been impossible, fails loudly and names what was malformed. Confusing the two trades a false claim for a crashed screen. And withholding good news must never swallow bad news: a claim withheld for want of data still reports every drop it did measure.",
     "A number shown for a group is the same statistic as the number shown for one member: the worst observed reading, never a sum. Adding measurements across findings invents a figure no run produced, and a group total that cannot be reconciled with the rows beneath it is worse than no total.",
-    "A fact stated twice is a defect waiting, so state it once. Where a second statement is genuinely unavoidable — a pre-paint script that cannot import, a type that must not reach a provider module — the second copy carries a test that EXECUTES or TYPE-CHECKS the two against each other. A comment asking the next editor to remember is not a mechanism.",
-    "A test asserts the decision, not the code. Where a test names a literal that vocabulary.json also names, it is asserting a mirror against a mirror: it proves two copies agree, never that either is right."
+    "A fact stated twice is a defect waiting, so state it once. Where a second statement is genuinely unavoidable \u2014 a pre-paint script that cannot import, a type that must not reach a provider module \u2014 the second copy carries a test that executes or type-checks the two against each other. A comment asking the next editor to keep them in step is not a mechanism; every drift found in R1 had exactly such a comment and nothing else.",
+    "A test asserts the decision, not the code. Asserting a literal that vocabulary.json also names is asserting a mirror against a mirror: it proves two copies agree, never that either is right. Assert against the registry, or against the other half of the decision, so the test fails the moment the halves disagree."
   ],
   "banned_global": {
     "$comment": "Hard-gated: these must not appear in user-facing copy anywhere in src/. This is the list the eslint rule enforces. A concept's banned_as_label list is narrower — it means 'not a valid label for THIS concept', not 'never write this word'.",
