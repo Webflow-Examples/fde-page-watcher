@@ -15,6 +15,7 @@ import {
   fromAgentIssue,
   fromRec,
   groupByCause,
+  groupByRemediation,
   markFixed,
   parseEffort,
   parseImpactMs,
@@ -663,6 +664,154 @@ describe("grouping by cause", () => {
     const grouped = groupByCause([onPage("p1"), onPage("p2")], { at: AT });
     expect(grouped[0].evidence).toHaveLength(1);
     expect(new Set(grouped[0].evidence.map((item) => item.source)).size).toBe(1);
+  });
+});
+
+/* ── S1 — one remediation, one decision ─────────────────────────────────── */
+
+describe("grouping by remediation", () => {
+  const REMOVE_BUNDLE = ["Remove the unused bundle.", "Publish."];
+  const RESIZE = ["Export the hero at 2x.", "Publish."];
+
+  /** A cause-grouped case with a remediation on it. */
+  const withFix = (id: string, steps: string[], overrides: Partial<IssueCase> = {}): IssueCase => ({
+    ...makeCase({ id, cause: id, remediation: { steps, actionability: "direct" } }),
+    ...overrides,
+  });
+
+  it("puts two cases the same steps fix in one group", () => {
+    const groups = groupByRemediation([
+      withFix("a", REMOVE_BUNDLE, { pageIds: ["p1"], impactMs: 1800 }),
+      withFix("b", REMOVE_BUNDLE, { pageIds: ["p2"], impactMs: 600 }),
+    ], { at: AT });
+    expect(groups).toHaveLength(1);
+    expect(groups[0].cases.map((item) => item.id)).toEqual(["a", "b"]);
+    expect(groups[0].pageIds).toEqual(["p1", "p2"]);
+  });
+
+  it("keeps cases with different steps apart", () => {
+    const groups = groupByRemediation([withFix("a", REMOVE_BUNDLE), withFix("b", RESIZE)], { at: AT });
+    expect(groups).toHaveLength(2);
+  });
+
+  it("keeps cases apart when the same words are the platform's job on one of them", () => {
+    // Same steps, different owner. Not the same piece of work.
+    const groups = groupByRemediation([
+      withFix("a", REMOVE_BUNDLE),
+      { ...withFix("b", REMOVE_BUNDLE), remediation: { steps: REMOVE_BUNDLE, actionability: "platform" } },
+    ], { at: AT });
+    expect(groups).toHaveLength(2);
+  });
+
+  it("never groups cases that have no documented steps", () => {
+    // An empty remediation is the absence of a shared fix, not a shared one.
+    const groups = groupByRemediation([withFix("a", []), withFix("b", []), withFix("c", [])], { at: AT });
+    expect(groups).toHaveLength(3);
+    expect(groups.every((group) => group.cases.length === 1)).toBe(true);
+  });
+
+  it("reuses the cause grouping rather than repeating it", () => {
+    // Two findings, one cause, one remediation: one case, so one row listing
+    // both pages. Accepting that case covers both.
+    const shared = (pageId: string) =>
+      ({ ...fromRec(makeRec({ key: `${pageId}:unused-javascript`, pageId }), { at: AT }),
+         remediation: { steps: REMOVE_BUNDLE, actionability: "direct" as const } });
+    const groups = groupByRemediation([shared("p1"), shared("p2")], { at: AT });
+    expect(groups).toHaveLength(1);
+    expect(groups[0].cases).toHaveLength(1);
+    expect(groups[0].cases[0].pageIds).toEqual(["p1", "p2"]);
+    expect(groups[0].pageIds).toEqual(["p1", "p2"]);
+  });
+
+  it("takes the worst member reading, never a total, and keeps the one shared effort", () => {
+    const groups = groupByRemediation([
+      withFix("a", REMOVE_BUNDLE, { impactMs: 1800, effort: "hours" }),
+      withFix("b", REMOVE_BUNDLE, { impactMs: 600, effort: "hours" }),
+    ], { at: AT });
+    // Rule 19: the same statistic as the rows beneath it. 2400 would be a figure
+    // no run produced, and one the reader could not reconcile against 1800 + 600
+    // sitting under it.
+    expect(groups[0].impactMs).toBe(1800);
+    expect(groups[0].impactMs).toBe(Math.max(...groups[0].cases.map((item) => item.impactMs)));
+    expect(groups[0].cases.some((item) => item.impactMs === groups[0].impactMs)).toBe(true);
+    // Not "hours + hours" either. The remediation is carried out once.
+    expect(groups[0].effort).toBe("hours");
+  });
+
+  it("sorts an unmeasured member last and never lets it lead the group", () => {
+    // Rule 18: an absent measurement is not a small one, so it goes last rather
+    // than ranking on the zero it never measured.
+    const groups = groupByRemediation([
+      withFix("blank", REMOVE_BUNDLE, { impactMs: 0 }),
+      withFix("small", REMOVE_BUNDLE, { impactMs: 120 }),
+    ], { at: AT });
+    expect(groups[0].cases.map((item) => item.id)).toEqual(["small", "blank"]);
+    expect(groups[0].primary.id).toBe("small");
+    expect(groups[0].impactMs).toBe(120);
+  });
+
+  it("reports no reading at all when no member has one", () => {
+    const groups = groupByRemediation([
+      withFix("a", REMOVE_BUNDLE, { impactMs: 0 }),
+      withFix("b", REMOVE_BUNDLE, { impactMs: 0 }),
+    ], { at: AT });
+    expect(groups[0].impactMs).toBe(0);
+  });
+
+  it("takes the wider band where members disagree about the effort", () => {
+    const groups = groupByRemediation([
+      withFix("a", REMOVE_BUNDLE, { effort: "minutes" }),
+      withFix("b", REMOVE_BUNDLE, { effort: "days" }),
+    ], { at: AT });
+    expect(groups[0].effort).toBe("days");
+  });
+
+  it("never hides an active member behind a settled one", () => {
+    const groups = groupByRemediation([
+      withFix("a", REMOVE_BUNDLE, { state: "dismissed" }),
+      withFix("b", REMOVE_BUNDLE, { state: "reopened" }),
+    ], { at: AT });
+    expect(groups[0].state).toBe("reopened");
+    expect(queueOf(groups[0].state)).toBe("decide");
+  });
+
+  it("is no more certain than its least certain member", () => {
+    const groups = groupByRemediation([
+      withFix("a", REMOVE_BUNDLE, { confidence: "confirmed" }),
+      withFix("b", REMOVE_BUNDLE, { confidence: "unclear" }),
+    ], { at: AT });
+    expect(groups[0].confidence).toBe("unclear");
+  });
+
+  it("dates the group from its earliest member", () => {
+    const groups = groupByRemediation([
+      withFix("a", REMOVE_BUNDLE, { detectedAt: "2026-08-20T00:00:00.000Z" }),
+      withFix("b", REMOVE_BUNDLE, { detectedAt: "2026-08-11T00:00:00.000Z" }),
+    ], { at: AT });
+    expect(groups[0].detectedAt).toBe("2026-08-11T00:00:00.000Z");
+  });
+
+  it("shows the worst-measured member first, and always in the same order", () => {
+    const input = [
+      withFix("a", REMOVE_BUNDLE, { impactMs: 600 }),
+      withFix("b", REMOVE_BUNDLE, { impactMs: 2400 }),
+    ];
+    const groups = groupByRemediation(input, { at: AT });
+    expect(groups[0].primary.id).toBe("b");
+    expect(groupByRemediation(input, { at: AT })).toEqual(groups);
+  });
+
+  it("accounts for every case exactly once", () => {
+    const input = [
+      withFix("a", REMOVE_BUNDLE),
+      withFix("b", REMOVE_BUNDLE),
+      withFix("c", RESIZE),
+      withFix("d", []),
+    ];
+    const groups = groupByRemediation(input, { at: AT });
+    const ids = groups.flatMap((group) => group.cases.map((item) => item.id));
+    expect(ids.sort()).toEqual(["a", "b", "c", "d"]);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 });
 
