@@ -2,6 +2,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { TONES as VOCABULARY_TONES } from "../vocabulary";
 
 /**
  * Contrast contract for the F3 token layer (chunk F3, AC7).
@@ -74,9 +75,32 @@ function ratio(theme: Record<string, string>, fg: string, bg: string): number {
   return (hi + 0.05) / (lo + 0.05);
 }
 
-/** Every tone in `vocabulary.ts`. A missing one here means a chip has no colour. */
-const TONES = ["information", "neutral", "warning", "success", "danger"] as const;
-const HEALTHS = ["good", "warn", "poor", "none"] as const;
+/**
+ * Every tone the registry names, imported rather than copied.
+ *
+ * This list used to be written out here. A tone added to `vocabulary.json`
+ * would then have had no `--status-<tone>-*` pair and no failing test to say
+ * so — the chip would simply render with no colour, which is the failure the
+ * comment claimed this list prevented. Asserting a mirror against a mirror
+ * proves the two copies agree, never that either is right.
+ */
+const TONES = VOCABULARY_TONES;
+
+/**
+ * The health bands the stylesheet actually defines, discovered the same way the
+ * ink and fill lists are. A band added to the token block is covered on the
+ * next run instead of when someone remembers to extend a list.
+ *
+ * These are token role names, not the registry's `health` values: the token
+ * layer carries a `none` band for a reading that was never taken (rule 18),
+ * which is not a health verdict and has no registry entry.
+ */
+const HEALTHS = [...new Set(
+  Object.keys(LIGHT).flatMap((token) => {
+    const match = /^--health-([a-z0-9]+)-text$/.exec(token);
+    return match ? [match[1]] : [];
+  }),
+)].sort();
 
 /** The grounds any piece of app text can land on. */
 const SURFACES = ["--surface-page", "--surface-card", "--surface-input", "--surface-raised"] as const;
@@ -206,6 +230,72 @@ describe("token roles", () => {
   });
 });
 
+/* ── R1 — one map per fact ──────────────────────────────────────────────── */
+
+describe("device identity is named in one place", () => {
+  /**
+   * `--series-mobile` / `--series-desktop` were written out in three files: the
+   * chart that draws the line, the ScoreCard that draws its own, and the device
+   * label beside them. Nothing made the three agree, so a device could have
+   * been one hue in the chart and another in the label above it.
+   *
+   * `seriesToken` in `charts.tsx` is now the one map. This fails if a fourth
+   * copy appears — including a re-added one in a file that used to hold it.
+   */
+  const READERS = [
+    "src/components/ScoreCard.tsx",
+    "src/app/(app)/pages/[id]/page.tsx",
+  ];
+
+  /** Comments explaining the rule are prose; a token name in code is a copy. */
+  const withoutComments = (src: string) =>
+    src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
+  it("keeps the token names out of every file that only reads them", () => {
+    for (const file of READERS) {
+      const code = withoutComments(readFileSync(join(process.cwd(), file), "utf8"));
+      expect(code, `${file} names a device hue instead of reading seriesToken`)
+        .not.toMatch(/--series-(mobile|desktop)/);
+      expect(code, `${file} should read the one map`).toContain("seriesToken");
+    }
+  });
+
+  it("still resolves both device hues in both themes", () => {
+    for (const [, theme] of THEMES) {
+      for (const token of ["--series-mobile", "--series-desktop"]) {
+        expect(() => rgb(theme, token)).not.toThrow();
+      }
+    }
+  });
+});
+
+describe("the issues list does not double-encode confidence", () => {
+  /**
+   * The row already writes the word — Confirmed, Probable, Unclear. Painting it
+   * with `--confidence-weak` as well said "weak" underneath the word
+   * "Confirmed", which is a token painting the opposite of its role (registry
+   * rule 13), and encoded in hue a value the reader can already read.
+   *
+   * The strength tokens stay: `bits.tsx` uses them where there is no word.
+   */
+  const LIST = ["src/components/issue-row.tsx", "src/components/issue-group.tsx"];
+
+  it("keeps the strength tokens off the list rows", () => {
+    for (const file of LIST) {
+      const src = readFileSync(join(process.cwd(), file), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+      expect(src, `${file} paints confidence with a strength token`)
+        .not.toMatch(/var\(--confidence-(strong|weak)\)/);
+      expect(src, `${file} should still render the registry's word`).toContain("CONFIDENCE_LABEL");
+    }
+  });
+
+  it("leaves the strength axis available where there is no word", () => {
+    const bits = readFileSync(join(process.cwd(), "src/components/bits.tsx"), "utf8");
+    expect(bits).toContain("var(--confidence-strong)");
+    expect(bits).toContain("var(--confidence-weak)");
+  });
+});
+
 describe("contrast coverage", () => {
   // The coverage list must stay DERIVED. A hand-maintained list is what let both
   // rule-13 bugs ship: the tokens were simply not on it, so 841 green tests said
@@ -219,6 +309,17 @@ describe("contrast coverage", () => {
     // A literal array of token names assigned to either list means someone
     // replaced discovery with a list.
     expect(OWN_SOURCE).not.toMatch(/const (INK|FILL)_TOKENS\s*(:[^=]+)?=\s*\[/);
+  });
+
+  it("actually finds the health bands and the registry's tones", () => {
+    // A discovery that matched nothing would make every `it.each` below a
+    // no-op that reports as passing.
+    // Same idiom as the ink list above: name the load-bearing members and a
+    // floor, rather than restating the whole list and turning the discovery
+    // back into a maintained copy.
+    for (const band of ["good", "poor", "none"]) expect(HEALTHS).toContain(band);
+    expect(HEALTHS.length).toBeGreaterThanOrEqual(3);
+    expect(TONES.length).toBeGreaterThanOrEqual(5);
   });
 
   it("actually finds the app's ink tokens", () => {

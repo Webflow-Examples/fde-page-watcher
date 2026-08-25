@@ -5,7 +5,7 @@ import { useParams, usePathname, useRouter, useSearchParams } from "next/navigat
 import { ArrowUpRightIcon } from "@phosphor-icons/react";
 import { useStore } from "@/components/store";
 import { CATEGORIES } from "@/lib/types";
-import type { AgentCheck, CategoryKey, CollectionJob, CustomerActionability, DevicePolicy, KitesurfEvidence, Night, PagePerformanceThresholdOverrides, PageStatus, RangeDays, Rec, WatchPage } from "@/lib/types";
+import type { AgentCheck, CategoryKey, CollectionJob, CustomerActionability, DevicePolicy, KitesurfEvidence, Night, PagePerformanceThresholdOverrides, PageStatus, RangeDays, Rec, Strategy, WatchPage } from "@/lib/types";
 import { agentCheckKey, agentIgnoreOverrideMode, isAgentCheckIgnored, isAgentGroupIgnored, normalizeAgentIgnoreSettings, summarizeAgentChecks } from "@/lib/agentScoring";
 import { agentReadinessHistoryPoints } from "@/lib/agentHistory";
 import { effectivePerformanceThresholds } from "@/lib/performanceThresholds";
@@ -28,7 +28,7 @@ import { taskStatusWorkState } from "@/lib/workState";
 import { StatusChip } from "@/components/status-chip";
 import { TrendArrow } from "@/components/trend-arrow";
 import { Magnitude } from "@/components/magnitude";
-import { AgentReadinessChart, HistoryChart, Sparkline } from "@/components/charts";
+import { AgentReadinessChart, HistoryChart, Sparkline, seriesToken, type SeriesToken } from "@/components/charts";
 import { ScoreCard, scoreCardFlexItemStyle } from "@/components/ScoreCard";
 import type { ScoreCardDensity } from "@/components/ScoreCard";
 import { ScoreCardDensityControl } from "@/components/ScoreCardDensityControl";
@@ -145,14 +145,16 @@ function confidenceVar(confidence: string): string {
 }
 
 /**
- * Chart series identity by device (R4) — never a health or trend hue. The
- * return type is the closed pair rather than `string` so this keeps compiling
- * when `charts.tsx` narrows `Sparkline.color` off `string`.
+ * Chart series identity by device (R4) — never a health or trend hue.
+ *
+ * Reads `seriesToken` in `charts.tsx` rather than restating the pair. The two
+ * were separate literal maps: the device label beside a chart and the line
+ * inside it are the same identity, and nothing made them agree. (The note that
+ * used to sit here about `Sparkline.color` was stale — that prop became
+ * `device` and no longer takes a colour at all.)
  */
-type SeriesVar = "var(--series-mobile)" | "var(--series-desktop)";
-
-function seriesVar(strategy: "mobile" | "desktop"): SeriesVar {
-  return strategy === "desktop" ? "var(--series-desktop)" : "var(--series-mobile)";
+function seriesVar(strategy: Strategy): `var(${SeriesToken})` {
+  return `var(${seriesToken(strategy)})`;
 }
 
 export default function PageDetail() {

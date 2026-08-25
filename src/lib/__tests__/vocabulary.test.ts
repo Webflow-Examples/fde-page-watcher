@@ -29,6 +29,7 @@ import {
   AGENT_VERDICT_LABEL,
   CONFIDENCES,
   CONFIDENCE_LABEL,
+  COUNTED_QUEUES,
   DESTINATIONS,
   DESTINATION_LABEL,
   DESTINATION_PATH,
@@ -68,6 +69,7 @@ interface RegistryValue {
   means?: string;
   queue?: string;
   holds?: string[] | "*";
+  counted?: boolean;
   from?: string[];
   to?: string;
   requires?: string;
@@ -139,6 +141,20 @@ describe("vocabulary registry parity", () => {
     }
   });
 
+  /**
+   * `show_all` carries `"counted": false` in the registry and `COUNTED_QUEUES`
+   * lists the other three by hand. Nothing read the flag, so a queue marked
+   * uncounted would still have badged, and an added queue would have gone
+   * uncounted with no failure anywhere.
+   */
+  it("counts exactly the queues the registry marks as counted", () => {
+    const counted = concept("queue")
+      .filter((value) => (value as { counted?: boolean }).counted !== false)
+      .map((value) => value.key);
+    expect([...COUNTED_QUEUES]).toEqual(counted);
+    expect([...COUNTED_QUEUES]).not.toContain("show_all");
+  });
+
   it("agrees with the registry about which queue each state belongs to", () => {
     for (const value of concept("work_state")) {
       expect(WORK_STATE_QUEUE[value.key as keyof typeof WORK_STATE_QUEUE]).toBe(value.queue);
@@ -153,6 +169,27 @@ describe("vocabulary registry parity", () => {
       expect([...transition.from]).toEqual(value.from);
       expect(transition.to).toBe(value.to);
       expect(transition.requiresReason).toBe(value.requires === "reason");
+    }
+  });
+
+  /**
+   * `actor` and `requires` were carried in `IssueTransition` from v4 and v5 and
+   * asserted for `resolve` alone. Every other transition's copy of them was a
+   * mirror nothing checked, which is how `requires: "checkpoint_agreement"`
+   * could sit in the table while `applyAction` enforced only the reason guard.
+   */
+  it("agrees with the registry about who fires each transition", () => {
+    for (const value of concept("action")) {
+      const transition = ISSUE_TRANSITIONS[value.key as keyof typeof ISSUE_TRANSITIONS];
+      const actors = Array.isArray(value.actor) ? value.actor : [value.actor];
+      expect([...transition.actor], `${value.key} disagrees about its actor`).toEqual(actors);
+    }
+  });
+
+  it("carries every requirement the registry states, not just the reason ones", () => {
+    for (const value of concept("action")) {
+      const transition = ISSUE_TRANSITIONS[value.key as keyof typeof ISSUE_TRANSITIONS];
+      expect(transition.requires, `${value.key} disagrees about what it requires`).toBe(value.requires ?? null);
     }
   });
 

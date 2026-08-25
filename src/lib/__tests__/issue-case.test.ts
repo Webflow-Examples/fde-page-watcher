@@ -10,8 +10,11 @@ import {
   actionsFor,
   appendEvidence,
   applyAction,
+  checkpointsAgree,
   confidenceFrom,
   dismiss,
+  EVIDENCE_SOURCE,
+  EVIDENCE_SOURCE_FOR_AGENT_SYSTEM,
   fromAgentIssue,
   fromRec,
   groupByCause,
@@ -21,13 +24,15 @@ import {
   parseImpactMs,
   queueOf,
   recStatusOf,
+  scheduleCheckpoints,
   reopenForPages,
   taskStatusOf,
   type EvidenceEntry,
   type IssueCase,
   type IssueState,
 } from "../issue-case";
-import { COUNTED_QUEUES, DISMISS_REASONS, QUEUE_HOLDS, WORK_STATES, WORK_STATE_QUEUE, type IssueAction } from "../vocabulary";
+import { COUNTED_QUEUES, DISMISS_REASONS, EVIDENCE_SOURCES, QUEUE_HOLDS, WORK_STATES, WORK_STATE_QUEUE, type IssueAction } from "../vocabulary";
+import { taskStatusWorkState } from "../workState";
 import type { AgentIssueCase } from "../agentIssueCases";
 import type { Rec } from "../types";
 
@@ -75,6 +80,18 @@ function makeCase(overrides: Partial<IssueCase> = {}): IssueCase {
 }
 
 const AT = "2026-08-24T12:00:00.000Z";
+
+/**
+ * A case set up so the registry's stated requirement for `action` is met.
+ *
+ * Read off `action.requires` rather than branching on the action's name, so a
+ * requirement added to `vocabulary.json` arrives here as a missing arm rather
+ * than as a silently-satisfied one.
+ */
+function satisfying(action: RegistryAction, issue: IssueCase): IssueCase {
+  if (action.requires !== "checkpoint_agreement") return issue;
+  return { ...issue, checkpoints: [{ interval: "30d", result: "agreed" }] };
+}
 
 /* ── AC1 — one lifecycle field, union imported ──────────────────────────── */
 
@@ -281,7 +298,7 @@ describe("transitions", () => {
     const legal = new Set(registryActions.flatMap((action) => action.from.map((from) => `${from}:${action.key}`)));
     for (const state of ISSUE_STATES) {
       for (const action of registryActions) {
-        const issue = makeCase({ state });
+        const issue = satisfying(action, makeCase({ state }));
         const options = { actor: "matthew", at: AT, reason: DISMISS_REASONS[0] };
         if (legal.has(`${state}:${action.key}`)) {
           expect(() => applyAction(issue, action.key as IssueAction, options)).not.toThrow();
@@ -295,7 +312,7 @@ describe("transitions", () => {
   it("lands on the state the registry names", () => {
     for (const action of registryActions) {
       for (const from of action.from) {
-        const moved = applyAction(makeCase({ state: from as IssueState }), action.key as IssueAction, {
+        const moved = applyAction(satisfying(action, makeCase({ state: from as IssueState })), action.key as IssueAction, {
           actor: "matthew",
           at: AT,
           reason: DISMISS_REASONS[0],
@@ -367,6 +384,97 @@ describe("guards", () => {
       expect(dismissed.state).toBe("dismissed");
       expect(dismissed.history.at(-1)).toEqual({ at: AT, from: "new", to: "dismissed", actor: "matthew", reason });
     }
+  });
+
+  /**
+   * The registry states this requirement twice — `action.resolve.requires` is
+   * `checkpoint_agreement`, and `checkpoint.evaluation` says what agreement is.
+   * Until R1, `ISSUE_TRANSITIONS.resolve.requires` carried the word and
+   * `applyAction` enforced only the reason guard, so a case could reach
+   * Resolved with three checkpoints still scheduled.
+   *
+   * These assert the registry's sentences, not the predicate's code.
+   */
+  describe("checkpoint agreement — the requirement resolve states", () => {
+    const RESOLVE = registryActions.find((action) => action.key === "resolve")!;
+    const evaluation: string[] = registry.concepts.checkpoint.evaluation;
+    const fixedWith = (checkpoints: IssueCase["checkpoints"]) =>
+      makeCase({ state: "fixed", checkpoints });
+    const resolving = (issue: IssueCase) =>
+      applyAction(issue, "resolve", { actor: "checkpoint", at: AT });
+
+    it("is a requirement the registry actually states", () => {
+      expect(RESOLVE.requires).toBe("checkpoint_agreement");
+      expect(evaluation.length).toBeGreaterThan(0);
+    });
+
+    it("refuses a case whose checkpoints have not reported", () => {
+      expect(() => resolving(fixedWith(scheduleCheckpoints(AT)))).toThrow(IssueCaseError);
+      expect(() => resolving(fixedWith([]))).toThrow(/checkpoint agreement/);
+    });
+
+    it("resolves once the last checkpoint agreed", () => {
+      // Evaluation rule 3: the 30-day checkpoint fires resolve when every
+      // checkpoint that produced a reading agreed.
+      const agreed = fixedWith([
+        { interval: "2d", result: "agreed" },
+        { interval: "7d", result: "agreed" },
+        { interval: "30d", result: "agreed" },
+      ]);
+      expect(resolving(agreed).state).toBe("resolved");
+    });
+
+    it("skips unavailable readings rather than counting them against", () => {
+      // Evaluation rule 3, second sentence.
+      const patchy = fixedWith([
+        { interval: "2d", result: "unavailable" },
+        { interval: "7d", result: "unavailable" },
+        { interval: "30d", result: "agreed" },
+      ]);
+      expect(resolving(patchy).state).toBe("resolved");
+    });
+
+    it("does not resolve on three unavailable readings", () => {
+      // Evaluation rule 4: the case stays Fixed and says no check could be taken.
+      const dark = fixedWith([
+        { interval: "2d", result: "unavailable" },
+        { interval: "7d", result: "unavailable" },
+        { interval: "30d", result: "unavailable" },
+      ]);
+      expect(() => resolving(dark)).toThrow(IssueCaseError);
+      expect(checkpointsAgree(dark.checkpoints)).toBe(false);
+    });
+
+    it("never resolves on the 2 and 7-day checkpoints alone", () => {
+      // Evaluation rule 5: holding takes the full span.
+      const early = fixedWith([
+        { interval: "2d", result: "agreed" },
+        { interval: "7d", result: "agreed" },
+        { interval: "30d", result: "scheduled" },
+      ]);
+      expect(() => resolving(early)).toThrow(IssueCaseError);
+    });
+
+    it("never resolves when a checkpoint disagreed", () => {
+      // Evaluation rule 1: a disagreement fires reopen, not resolve.
+      const disagreed = fixedWith([
+        { interval: "2d", result: "disagreed" },
+        { interval: "7d", result: "agreed" },
+        { interval: "30d", result: "agreed" },
+      ]);
+      expect(() => resolving(disagreed)).toThrow(IssueCaseError);
+      expect(applyAction(disagreed, "reopen", { actor: "checkpoint", at: AT }).state).toBe("reopened");
+    });
+
+    it("names the resolving checkpoint from the schedule, not from a literal", () => {
+      // The schedule and the rule that reads it must name the same checkpoint.
+      const intervals = scheduleCheckpoints(AT).map((checkpoint) => checkpoint.interval);
+      const last = intervals.at(-1)!;
+      expect(checkpointsAgree([{ interval: last, result: "agreed" }])).toBe(true);
+      for (const earlier of intervals.slice(0, -1)) {
+        expect(checkpointsAgree([{ interval: earlier, result: "agreed" }])).toBe(false);
+      }
+    });
   });
 
   it("takes its reasons from the registry, not from a local list", () => {
@@ -589,6 +697,43 @@ describe("migrating an assembled agent-access issue", () => {
     // A check nobody counts is not evidence that the problem is absent.
     expect(migrated.evidence).toEqual([]);
     expect(migrated.confidence).toBe("unclear");
+  });
+
+  it("does not let a system that could not read count as one that disagrees", () => {
+    // `supports` is a boolean, so an unavailable reading in the ledger is
+    // indistinguishable from a system saying "the problem is not there". That
+    // turned a provider outage into a disagreement and dropped a corroborated
+    // diagnosis to Unclear.
+    //
+    // Registry rule 18 and checkpoint.unavailable both say an absent
+    // measurement is neither agreement nor disagreement, and the assembler
+    // already keeps `unavailable` out of its own `determined` set. This asserts
+    // the adapter agrees with the registry, not with the assembler's code.
+    const outage = fromAgentIssue({
+      ...issue,
+      sources: [
+        { system: "page-watch", label: "robots.txt", result: "failed", scope: "page", observedAt: "2026-08-20T00:00:00.000Z" },
+        { system: "ora", label: "AI policy", result: "unavailable", scope: "origin", observedAt: "2026-08-22T00:00:00.000Z" },
+      ],
+    }, { pageIds: ["p1"], at: AT });
+    expect(outage.evidence.map((item) => item.source)).toEqual(["agent-readiness"]);
+    expect(outage.confidence).toBe("probable");
+  });
+
+  it("does not resolve to unclear when every system was unavailable", () => {
+    // Nothing read, so nothing supports and nothing dissents. `unclear` is
+    // right here — but it must come from an empty ledger, not from readings
+    // counted as dissent.
+    const dark = fromAgentIssue({
+      ...issue,
+      sources: [
+        { system: "page-watch", label: "robots.txt", result: "unavailable", scope: "page" },
+        { system: "ora", label: "AI policy", result: "unavailable", scope: "origin" },
+      ],
+    }, { at: AT });
+    expect(dark.evidence).toEqual([]);
+    expect(dark.confidence).toBe("unclear");
+    expect(dark.confirmedRuns).toBe(0);
   });
 
   it("cannot be accepted when the family has no steps", () => {
@@ -816,6 +961,62 @@ describe("grouping by remediation", () => {
 });
 
 /* ── AC10, AC11 — vocabulary, and applicability kept out ────────────────── */
+
+/* ── R1 — pairs that were kept in step by a comment ─────────────────────── */
+
+describe("the legacy \"done\" mapping is one decision", () => {
+  it("migrates and displays a legacy done as the same work state", () => {
+    // The storage-side migration (`stateFromTaskStatus`) and the display-side
+    // adapter (`taskStatusWorkState`) are the same decision about the same
+    // legacy value, in two files, joined by a comment asking whoever edits one
+    // to remember the other. That comment is exactly what failed: this arm
+    // shipped as `fixed` on one side and `resolved` on the other.
+    //
+    // Asserting them against each other, rather than each against the literal
+    // it happens to hold, is what makes the pair a pair.
+    const migrated = fromRec(makeRec({ status: "task", taskStatus: "done" }), { at: AT });
+    expect(migrated.state).toBe(taskStatusWorkState("done"));
+  });
+
+  it("keeps the caveat that the mapping was approved on", () => {
+    // The two are only allowed to agree on `resolved` because the migration
+    // writes down that nothing was ever measured. If that record went away the
+    // case would be claiming a verification that never happened.
+    const migrated = fromRec(makeRec({ status: "task", taskStatus: "done" }), { at: AT });
+    const caveat = migrated.history.find((entry) => entry.to === "resolved" && entry.actor === "migration");
+    expect(caveat?.reason).toMatch(/no checkpoint evidence/i);
+  });
+
+  it("agrees on every legacy value the two adapters share", () => {
+    // `todo` deliberately differs — `taskStatus` alone carries no triage
+    // information, so the migration lands it on `new`. Only the values both
+    // adapters claim to decide the same way are compared.
+    for (const taskStatus of ["in-progress", "done"] as const) {
+      const migrated = fromRec(makeRec({ status: "task", taskStatus }), { at: AT });
+      expect(migrated.state, `${taskStatus} disagrees between the two adapters`)
+        .toBe(taskStatusWorkState(taskStatus));
+    }
+  });
+});
+
+describe("every evidence slot has a producer", () => {
+  it("writes to exactly the slots the registry defines — rule 15", () => {
+    // Rule 15: an evidence slot with no producer is not a slot, because an
+    // empty slot reads to the user as a reading that found nothing. The rule
+    // was stated in the registry and in three comments, and checked by a single
+    // assertion that `is-agentic` had gone. This derives it instead.
+    const produced = new Set<string>([
+      ...Object.values(EVIDENCE_SOURCE),
+      ...Object.values(EVIDENCE_SOURCE_FOR_AGENT_SYSTEM),
+    ]);
+    expect([...produced].sort()).toEqual([...EVIDENCE_SOURCES].sort());
+  });
+
+  it("names every slot in the registry, in the registry's spelling", () => {
+    const slots: string[] = registry.concepts.evidence_source.values.map((value: { key: string }) => value.key);
+    expect([...EVIDENCE_SOURCES]).toEqual(slots);
+  });
+});
 
 describe("vocabulary discipline", () => {
   it("uses none of the globally banned terms", () => {

@@ -62,7 +62,9 @@ function ColumnHeaders() {
         gap: ISSUE_ROW_GAP,
         alignItems: "center",
         padding: "0 40px 8px",
-        fontSize: 11.5,
+        // Registry rule 8: nothing carrying meaning renders below 12px, and a
+        // column header is what tells you which column you are reading.
+        fontSize: 12,
         fontWeight: 600,
         letterSpacing: ".04em",
         textTransform: "uppercase",

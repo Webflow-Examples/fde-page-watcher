@@ -78,7 +78,8 @@ export function IssueGroup({ group, basePath, pageTitles, nested = false }: Issu
           {`${group.cases.length} cases · ${scope}`}
         </span>
 
-        <span style={{ ...TRUNCATE_CELL, fontSize: 12.5, color: "var(--confidence-weak)" }}>
+        {/* The weakest member confidence, as a word. See the note in issue-row. */}
+        <span style={{ ...TRUNCATE_CELL, fontSize: 12.5, color: "var(--text-muted)" }}>
           {CONFIDENCE_LABEL[group.confidence]}
         </span>
 

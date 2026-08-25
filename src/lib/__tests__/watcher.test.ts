@@ -1,8 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { buildWatcher, buildWatcherCards } from "../watcher";
+import { rangeComparison } from "../scoring";
 import { agentCheckKey } from "../agentScoring";
 import type { CruxPageEvidence } from "../crux";
-import type { CategoryScore, NightScores, Rec, ScoreByCategory, StrategyScores, WatchPage } from "../types";
+import type { CategoryScore, Night, NightScores, Rec, ScoreByCategory, Strategy, StrategyScores, WatchPage } from "../types";
 
 const cat = (m: number): CategoryScore => ({ m, lo: m - 1, hi: m + 1 });
 const ns = (s: ScoreByCategory): NightScores => ({ perf: cat(s.perf), a11y: cat(s.a11y), bp: cat(s.bp), seo: cat(s.seo) });
@@ -49,6 +50,77 @@ describe("buildWatcher — concise Performance changes", () => {
     const mobileFirstCards = buildWatcherCards([regression, improvement], 3, undefined, "mobile");
     expect(mobileFirstCards.regressions[0].meta).toBe("M −20 · D −20");
     expect(mobileFirstCards.improvements[0].meta).toBe("M +12 · D +12");
+  });
+});
+
+/* ── R1 F3 — rule 18 in the Watcher's copy ──────────────────────────────── */
+
+describe("buildWatcher — a category nobody measured", () => {
+  /**
+   * `availableStrategies` lets a night report desktop and not mobile. Under
+   * `devicePolicy: "both"` a single pending device no longer makes the page
+   * pending, so a page with no mobile readings at all is still ranked — and the
+   * stability check then asked for its mobile comparison, got `null`, and read
+   * it as `?? 0` movement from a `?? 100` score.
+   *
+   * The result was "Accessibility and SEO are stable across the board." printed
+   * over a device that was never measured. Registry rule 18: an absent
+   * measurement is never treated as a value.
+   */
+  function desktopOnly(id: string, scores: ScoreByCategory = good): WatchPage {
+    return {
+      ...page(id, scores, scores),
+      history: [0, 1, 2].map((i) => ({
+        i,
+        date: `Jul 2${i}`,
+        scores: strat(scores),
+        availableStrategies: ["desktop"] as Strategy[],
+      })),
+      performanceThresholdOverrides: { devicePolicy: "both" },
+    };
+  }
+
+  it("does not claim stability for a device that never reported", () => {
+    const w = buildWatcher([desktopOnly("home")], [], "mobile");
+    expect(w.winning, "claimed stability over a device with no readings").toBeNull();
+  });
+
+  it("still claims stability for the device that did report", () => {
+    // The withholding must be about the missing reading, not about the page.
+    const w = buildWatcher([desktopOnly("home")], [], "desktop");
+    expect(w.winning).toBe("Accessibility and SEO are stable across the board.");
+  });
+
+  it("withholds the claim for the whole board when one page is unmeasured", () => {
+    // "Across the board" means every page on the board. A measured page that
+    // held does not cover for an unmeasured neighbour.
+    const measured = { ...page("pricing", good, good), performanceThresholdOverrides: { devicePolicy: "both" as const } };
+    const w = buildWatcher([measured, desktopOnly("home")], [], "mobile");
+    expect(w.winning).toBeNull();
+  });
+
+  it("still reports a real drop rather than going quiet", () => {
+    // Withholding the good news must not also swallow the bad news.
+    const dropped = { ...page("pricing", good, { ...good, a11y: 40 }), performanceThresholdOverrides: { devicePolicy: "both" as const } };
+    const w = buildWatcher([dropped, desktopOnly("home")], [], "mobile");
+    expect(w.changed.some((bullet) => bullet.text.includes("Accessibility"))).toBe(true);
+  });
+});
+
+describe("rangeComparison — a malformed night", () => {
+  it("names the invariant instead of reading the gap as a score", () => {
+    // A Night carries all four categories for every strategy it reports. One
+    // that does not is malformed, and the cast is the only way to build it —
+    // which is the point: the throw is what a later partial NightScores meets.
+    const partial = {
+      i: 0,
+      date: "Jul 20",
+      scores: { mobile: { perf: cat(80), bp: cat(95), seo: cat(95) }, desktop: ns(good) },
+    } as unknown as Night;
+    const history = [partial, { ...partial, i: 1 }];
+    expect(() => rangeComparison(history, "mobile", "a11y")).toThrow(/carries no a11y score/);
+    // The categories it does carry still compare.
+    expect(rangeComparison(history, "mobile", "perf")).toMatchObject({ delta: 0 });
   });
 });
 

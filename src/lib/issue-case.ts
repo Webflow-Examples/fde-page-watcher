@@ -42,6 +42,7 @@ import {
   WORK_STATES,
   type Actionability,
   type CheckpointResult,
+  type Confidence,
   type DismissReason,
   type EvidenceSource,
   type IssueAction,
@@ -50,7 +51,7 @@ import {
 } from "./vocabulary";
 import { isFieldRecommendationActionable, fieldRecommendationLifecycleStatus } from "./fieldOnlyRecommendations";
 import { parseMarkerDate } from "./ui";
-import type { AgentEvidenceSystem, AgentIssueCase } from "./agentIssueCases";
+import type { AgentEvidenceSystem, AgentIssueCase, AgentIssueStatus } from "./agentIssueCases";
 
 /**
  * The one lifecycle union, imported rather than redeclared.
@@ -126,8 +127,10 @@ export interface IssueCase {
   // 4 impact — ONE unit each. No display strings.
   impactMs: number;
   effort: Effort;
-  // 5 confidence — derived from source agreement, never a composite score
-  confidence: "confirmed" | "probable" | "unclear";
+  // 5 confidence — derived from source agreement, never a composite score.
+  //   The union is imported, not restated: the registry owns the three values
+  //   and a fourth added there must not be silently unrepresentable here.
+  confidence: Confidence;
   // 6 remediation — a case with no steps cannot be accepted
   remediation: Remediation;
   // 7 success criteria — what would prove this fixed
@@ -237,15 +240,21 @@ export function parseEffort(estTime: string | null | undefined): Effort {
   return "unknown";
 }
 
-const EFFORT_ORDER: readonly Effort[] = ["minutes", "hours", "days"];
+/**
+ * How a band ranks when two are merged into one. `unknown` ranks below every
+ * known band, so it loses to any of them — a band nobody estimated must not stand in for one
+ * somebody did.
+ *
+ * Not to be unified with the `EFFORT_ORDER` in `components/store.tsx`, which
+ * ranks the same four values for a different job: that one sorts least work
+ * first and puts `unknown` last, where this one makes `unknown` lose. Same
+ * values, two orders, because the two questions are not the same question.
+ */
+const EFFORT_MERGE_RANK: Record<Effort, number> = { unknown: -1, minutes: 0, hours: 1, days: 2 };
 
 /** The larger of two bands. `unknown` loses to any known band. */
 function widerEffort(left: Effort, right: Effort): Effort {
-  const leftRank = EFFORT_ORDER.indexOf(left);
-  const rightRank = EFFORT_ORDER.indexOf(right);
-  if (leftRank < 0) return right;
-  if (rightRank < 0) return left;
-  return leftRank >= rightRank ? left : right;
+  return EFFORT_MERGE_RANK[left] >= EFFORT_MERGE_RANK[right] ? left : right;
 }
 
 /**
@@ -336,6 +345,49 @@ function isDismissReason(value: string | undefined): value is DismissReason {
   return typeof value === "string" && (DISMISS_REASONS as readonly string[]).includes(value);
 }
 
+/** The three checkpoints a `mark_fixed` schedules, and their offsets. */
+const CHECKPOINT_DAYS: Record<CheckpointInterval, number> = { "2d": 2, "7d": 7, "30d": 30 };
+const DAY_MS = 86_400_000;
+
+/**
+ * The interval whose checkpoint can fire `resolve`.
+ *
+ * Read off `CHECKPOINT_DAYS` rather than written as "30d", so the schedule and
+ * the rule that reads it cannot name different checkpoints. Registry evaluation
+ * rule 5: the 2 and 7-day checkpoints never resolve on their own, because
+ * Resolved means the evidence agreed *and held*, and holding takes the full
+ * span.
+ */
+const RESOLVING_INTERVAL: CheckpointInterval = (Object.keys(CHECKPOINT_DAYS) as CheckpointInterval[])
+  .reduce((longest, interval) => (CHECKPOINT_DAYS[interval] > CHECKPOINT_DAYS[longest] ? interval : longest));
+
+/**
+ * Whether the checkpoints agree, which is what `resolve` requires.
+ *
+ * The registry states this requirement twice — `action.resolve.requires` is
+ * `checkpoint_agreement`, and `checkpoint.evaluation` says what agreement is —
+ * and until now nothing read either. `ISSUE_TRANSITIONS.resolve.requires`
+ * carried the word while `applyAction` only ever enforced the reason guard, so
+ * a case could reach Resolved with three checkpoints still scheduled.
+ *
+ * The predicate is the registry's three sentences, in order:
+ *
+ *   - the last checkpoint agreed (evaluation rules 3 and 5), which also means
+ *     three unavailable readings do not resolve (rule 4);
+ *   - nothing disagreed (rule 1 — a disagreement fires reopen, not resolve);
+ *   - anything still scheduled or unavailable is skipped, not counted against
+ *     (rules 2 and 3).
+ *
+ * Scheduling and firing the checkpoints is not implemented here. This is the
+ * guard that stops the transition being taken without them.
+ */
+export function checkpointsAgree(checkpoints: readonly Checkpoint[]): boolean {
+  if (checkpoints.some((checkpoint) => checkpoint.result === "disagreed")) return false;
+  return checkpoints.some(
+    (checkpoint) => checkpoint.interval === RESOLVING_INTERVAL && checkpoint.result === "agreed",
+  );
+}
+
 /**
  * Move a case through one registry transition.
  *
@@ -347,6 +399,11 @@ function isDismissReason(value: string | undefined): value is DismissReason {
  *     cannot be started. `todo` is only reachable through `accept`, so this
  *     guard closes every path to it.
  *   - `dismiss` refuses a reason that is not one the registry blesses.
+ *
+ * Beyond those, every requirement the registry states on a transition is
+ * enforced from the table itself rather than from a per-action branch, so a
+ * requirement added to `vocabulary.json` cannot be carried in the type and
+ * ignored in the guard the way `checkpoint_agreement` was.
  */
 export function applyAction(issue: IssueCase, action: IssueAction, options: TransitionOptions): IssueCase {
   const transition = ISSUE_TRANSITIONS[action];
@@ -363,6 +420,11 @@ export function applyAction(issue: IssueCase, action: IssueAction, options: Tran
   if (transition.requiresReason && !isDismissReason(options.reason)) {
     throw new IssueCaseError(
       `applyAction: ${action} requires one of these reasons — ${DISMISS_REASONS.join(", ")}.`,
+    );
+  }
+  if (transition.requires === "checkpoint_agreement" && !checkpointsAgree(issue.checkpoints)) {
+    throw new IssueCaseError(
+      `applyAction: ${action} requires checkpoint agreement — the ${RESOLVING_INTERVAL} checkpoint must have agreed and none may have disagreed.`,
     );
   }
   const at = options.at ?? new Date().toISOString();
@@ -401,8 +463,6 @@ export function reopen(issue: IssueCase, options: TransitionOptions): IssueCase 
   return applyAction(issue, "reopen", options);
 }
 
-const CHECKPOINT_DAYS: Record<CheckpointInterval, number> = { "2d": 2, "7d": 7, "30d": 30 };
-const DAY_MS = 86_400_000;
 
 /**
  * The checks that decide whether a fixed case becomes resolved.
@@ -531,7 +591,7 @@ function detectedAtFor(rec: Rec, options: FromRecOptions): string {
   return parsed ? parsed.toISOString() : "";
 }
 
-const EVIDENCE_SOURCE: Record<NonNullable<Rec["source"]>, EvidenceSource> = {
+export const EVIDENCE_SOURCE: Record<NonNullable<Rec["source"]>, EvidenceSource> = {
   lighthouse: "lighthouse",
   "crux-field-only": "crux",
   "native-elements": "native-elements",
@@ -655,13 +715,18 @@ export function fromRec(rec: Rec, options: FromRecOptions = {}): IssueCase {
 /**
  * Which ledger slot each agent evidence system writes to.
  *
+ * Exported, with the record above, so registry rule 15 can be checked rather
+ * than asserted in prose: between them these two maps are every producer in the
+ * app, and their values must be exactly `EVIDENCE_SOURCES`. A slot nothing
+ * writes to reads to the user as a reading that found nothing.
+ *
  * Ora has its own slot from v5. Sharing one with Page Watch's checks meant
  * `confidenceFrom` counted the two as a single voice, so a disagreement between
  * them could never reach `unclear` — the exact failure the ledger exists to
  * catch. There is deliberately no `is-agentic` slot: rule 15 says a slot with no
  * producer is not a slot, and it returns with its producer in the same change.
  */
-const EVIDENCE_SOURCE_FOR_AGENT_SYSTEM: Record<AgentEvidenceSystem, EvidenceSource> = {
+export const EVIDENCE_SOURCE_FOR_AGENT_SYSTEM: Record<AgentEvidenceSystem, EvidenceSource> = {
   "page-watch": "agent-readiness",
   ora: "ora",
   kitesurf: "kitesurf",
@@ -709,8 +774,18 @@ export function fromAgentIssue(issue: AgentIssueCase, options: FromAgentIssueOpt
   // state a policy. Neither is a reading about whether the problem is there, so
   // neither belongs in the ledger — and treating them as absence of the problem
   // would fold a decision about scope into a decision about work.
-  const readable = issue.sources.filter((source) =>
-    source.result !== "ignored" && source.result !== "not-applicable");
+  //
+  // `unavailable` is left out for the same reason from the other direction: the
+  // system could not take a reading at all. `supports` is a boolean, so an
+  // unavailable source that reached the ledger would land as `supports: false`
+  // and count in `confidenceFrom` as a system that disagrees — which is how a
+  // provider outage silently turned a corroborated diagnosis into "Unclear".
+  // Registry rule 18 and the checkpoint concept both say the same thing: an
+  // absent measurement is neither agreement nor disagreement. The assembler
+  // already keeps these five outcomes apart in `caseStatus` and
+  // `caseConfidence`; this is the adapter agreeing with it.
+  const UNREADABLE: readonly AgentIssueStatus[] = ["ignored", "not-applicable", "unavailable"];
+  const readable = issue.sources.filter((source) => !UNREADABLE.includes(source.result));
 
   const describe = (sources: typeof readable) =>
     sources.map((source) => source.detail ? `${source.label}: ${source.detail}` : source.label).join(" · ");
@@ -780,11 +855,24 @@ export function fromAgentIssue(issue: AgentIssueCase, options: FromAgentIssueOpt
  * behind a sibling that somebody resolved or set aside, because that is how a
  * live problem disappears from the Decide queue.
  */
-const MERGE_PRECEDENCE: readonly IssueState[] =
-  ["reopened", "new", "in_progress", "todo", "fixed", "resolved", "dismissed"];
+const MERGE_PRECEDENCE: Record<IssueState, number> = {
+  reopened: 0,
+  new: 1,
+  in_progress: 2,
+  todo: 3,
+  fixed: 4,
+  resolved: 5,
+  dismissed: 6,
+};
 
+/**
+ * A `Record` over the state union rather than an array, so a state added to the
+ * registry is a compile error here instead of an `indexOf` of -1 — which, being
+ * lower than every real rank, would have made the new state outrank all seven
+ * and win every merge silently.
+ */
 function mostUrgent(left: IssueState, right: IssueState): IssueState {
-  return MERGE_PRECEDENCE.indexOf(left) <= MERGE_PRECEDENCE.indexOf(right) ? left : right;
+  return MERGE_PRECEDENCE[left] <= MERGE_PRECEDENCE[right] ? left : right;
 }
 
 function scopeFor(scope: IssueCase["scope"], pageIds: readonly string[]): IssueCase["scope"] {
@@ -884,11 +972,17 @@ function remediationKey(issue: IssueCase): string {
   return `steps:${issue.remediation.actionability}:${JSON.stringify(steps)}`;
 }
 
-/** Weakest wins: a group is no more certain than its least certain member. */
-const CONFIDENCE_PRECEDENCE: readonly IssueCase["confidence"][] = ["unclear", "probable", "confirmed"];
+/**
+ * Weakest wins: a group is no more certain than its least certain member.
+ *
+ * Keyed over the registry's union for the same reason as `MERGE_PRECEDENCE`: an
+ * `indexOf` miss ranks -1, which is weaker than `unclear`, so a confidence
+ * value the registry gained would have quietly become the weakest of all.
+ */
+const CONFIDENCE_PRECEDENCE: Record<Confidence, number> = { unclear: 0, probable: 1, confirmed: 2 };
 
-function weakerConfidence(left: IssueCase["confidence"], right: IssueCase["confidence"]): IssueCase["confidence"] {
-  return CONFIDENCE_PRECEDENCE.indexOf(left) <= CONFIDENCE_PRECEDENCE.indexOf(right) ? left : right;
+function weakerConfidence(left: Confidence, right: Confidence): Confidence {
+  return CONFIDENCE_PRECEDENCE[left] <= CONFIDENCE_PRECEDENCE[right] ? left : right;
 }
 
 /**
@@ -932,7 +1026,7 @@ export interface RemediationGroup {
    */
   effort: Effort;
   /** The weakest member confidence. */
-  confidence: IssueCase["confidence"];
+  confidence: Confidence;
   /** The earliest detection among the members. */
   detectedAt: string;
 }
