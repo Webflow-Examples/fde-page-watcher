@@ -10,7 +10,8 @@ import { SegToggle } from "@/components/bits";
 import { Magnitude } from "@/components/magnitude";
 import { PlusIcon, TrashIcon } from "@/components/icons";
 import { flagCapacityError, MAX_ACTIVE_PAGES, MAX_PRIORITY_PAGES, watchCapacity } from "@/lib/watchCapacity";
-import { movePageWithinFlag, reorderPageWithinFlag, sortWatchlistPages } from "@/lib/watchlistOrder";
+import { movePageWithinFlag, reorderPageWithinFlag, sortWatchlistPages, WATCHLIST_TIERS } from "@/lib/watchlistOrder";
+import { watchlistGroupLabel, WATCHLIST_PAUSED_NOTE } from "@/lib/watchlist-copy";
 import { failedRunLabel } from "@/lib/collectionStatus";
 import { PageHeader } from "@/components/page-header";
 
@@ -26,6 +27,16 @@ import { PageHeader } from "@/components/page-header";
  * Both had gone by the time S8 looked; what this chunk removed was the tolerance
  * panel below, which was the last threshold UI anywhere in the app outside
  * /settings.
+ *
+ * C2 gave the three tiers a heading each. The sort already produced the groups —
+ * `sortWatchlistPages` has always put Priority above Watching above Paused — so
+ * what was missing was the line saying where one ends and the next begins, and
+ * the count that makes the priority cap visible where the pages are rather than
+ * only in the capacity line above them.
+ *
+ * The tier control stayed. The group states which tier a page is in; the control
+ * is how it changes, and it is the only thing that fires the capacity and
+ * priority-cap messages, so removing it would have taken those with it.
  */
 
 const GRID = "32px minmax(228px,2.4fr) 230px 1fr 120px";
@@ -144,6 +155,15 @@ function WatchlistContent() {
     canManageProject,
   } = useStore();
   const orderedPages = useMemo(() => sortWatchlistPages(pages), [pages]);
+  // One entry per tier, always all three: an empty group still says its tier
+  // exists and, for Priority, how much of the cap is unused.
+  const groups = useMemo(
+    () => WATCHLIST_TIERS.map((tier) => ({
+      tier,
+      tierPages: orderedPages.filter((page) => page.flag === tier),
+    })),
+    [orderedPages],
+  );
   const [draggedPageId, setDraggedPageId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<WatchlistDropTarget | null>(null);
   const [keyboardDragPageId, setKeyboardDragPageId] = useState<string | null>(null);
@@ -231,7 +251,20 @@ function WatchlistContent() {
           <div className="visually-hidden" aria-live="polite" aria-atomic="true">
             {reorderAnnouncement}
           </div>
-          {orderedPages.map((p) => {
+          {groups.map(({ tier, tierPages }) => (
+            <section key={tier} aria-labelledby={`watchlist-group-${tier}`}>
+              <h2
+                id={`watchlist-group-${tier}`}
+                style={{ margin: 0, padding: "11px 24px", borderBottom: "1px solid var(--border-hairline)", background: "var(--surface-raised)", color: "var(--text-body)", fontSize: 13, fontWeight: 600, letterSpacing: "-0.01em" }}
+              >
+                {watchlistGroupLabel(tier, tierPages.length)}
+              </h2>
+              {tier === "paused" ? (
+                <p style={{ margin: 0, padding: "10px 24px", borderBottom: "1px solid var(--border-hairline)", color: "var(--text-muted)", fontSize: 12.5, lineHeight: 1.5 }}>
+                  {WATCHLIST_PAUSED_NOTE}
+                </p>
+              ) : null}
+              {tierPages.map((p) => {
             const priorityError = flagCapacityError(pages, p.id, "priority");
             const watchingError = flagCapacityError(pages, p.id, "watching");
             const pauseBlocked = !!p.runState && p.runState !== "failed";
@@ -244,6 +277,13 @@ function WatchlistContent() {
               className={`watchlist-page-row${draggedPageId === p.id ? " is-dragging" : ""}${keyboardDragging ? " is-keyboard-dragging" : ""}${isDropTarget ? ` is-drop-${dropTarget.position}` : ""}`}
               style={{ display: "grid", gridTemplateColumns: GRID, alignItems: "center", padding: "15px 24px", borderBottom: "1px solid var(--border-hairline)" }}
             >
+              {p.flag === "paused" ? (
+                // Absent, not disabled. A paused page holds no place in the
+                // order, so there is nothing here to reorder — and a control
+                // that can never act should not sit in the tab order or the
+                // accessibility tree announcing itself as unavailable.
+                <div aria-hidden="true" />
+              ) : (
               <button
                 type="button"
                 className={`watchlist-drag-handle${keyboardDragging ? " is-grabbed" : ""}`}
@@ -304,6 +344,7 @@ function WatchlistContent() {
               >
                 <DotsSixVerticalIcon size={17} weight="bold" aria-hidden="true" />
               </button>
+              )}
               <div style={{ minWidth: 0, paddingRight: 16 }}>
                 <EditablePageTitle pageId={p.id} title={p.title} onSave={renamePage} disabled={!canManageProject} />
                 <div
@@ -365,6 +406,8 @@ function WatchlistContent() {
               </div>
             </div>
           );})}
+            </section>
+          ))}
         </div>
       </div>
     </div>

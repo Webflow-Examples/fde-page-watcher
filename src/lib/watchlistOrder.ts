@@ -13,6 +13,18 @@ const FLAG_RANK: Record<Flag, number> = {
   paused: 2,
 };
 
+/**
+ * The tier order, stated once.
+ *
+ * It is the outer sort below AND the order the watchlist renders its three
+ * groups in, so it is derived from `FLAG_RANK` rather than written out a second
+ * time: a screen whose groups disagreed with the sort would render a heading
+ * with the wrong rows under it. `FLAG_RANK` keeps its `Record<Flag, number>`
+ * annotation so a new tier is a type error here before it is a missing group.
+ */
+export const WATCHLIST_TIERS: readonly Flag[] = (Object.keys(FLAG_RANK) as Flag[])
+  .sort((left, right) => FLAG_RANK[left] - FLAG_RANK[right]);
+
 /** Group pages by monitoring flag while preserving the stored order in each tier. */
 export function sortWatchlistPages<T extends WatchlistOrderPage>(
   pages: ReadonlyArray<T>,
