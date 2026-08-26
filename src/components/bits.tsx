@@ -9,7 +9,7 @@ import { Magnitude } from "@/components/magnitude";
 import { TREND_LABEL } from "@/lib/vocabulary";
 import type { Tone, Trend, WorkState } from "@/lib/vocabulary";
 import type { VisitorExperienceTrend } from "@/lib/visitorExperience";
-import { remediationTone } from "@/lib/webflowPerformance";
+import { metricDisplay, remediationTone } from "@/lib/webflowPerformance";
 import type { PerformanceIssueStatus } from "@/lib/performanceIssues";
 import type { LabFieldComparisonStatus } from "@/lib/labFieldComparison";
 import type { RecommendationEvidenceSignal } from "@/lib/fieldPrioritization";
@@ -154,7 +154,7 @@ export function WebflowClassificationChips({
         // The weight is a quantity, so it carries its own emphasis rather than
         // a hue; the metric name beside it is a label, not a verdict.
         <span style={{ ...CHIP, gap: 4, color: "var(--text-muted)", background: "var(--surface-input)" }}>
-          {classification.metric}
+          {metricDisplay(classification.metric)}
           <span aria-hidden="true">·</span>
           <Magnitude value={classification.metricWeight} unit="%" fontSize={MIN_FONT_SIZE} style={{ gap: 0 }} />
         </span>

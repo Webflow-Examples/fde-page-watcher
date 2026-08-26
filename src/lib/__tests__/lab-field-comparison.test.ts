@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compareLabAndField } from "../labFieldComparison";
+import { compareLabAndField, LAB_FIELD_HEADLINE } from "../labFieldComparison";
 import type { CruxPageEvidence, CruxSnapshot } from "../crux";
 import type { Night } from "../types";
 
@@ -53,7 +53,7 @@ function evidence(value: CruxSnapshot): CruxPageEvidence {
 describe("lab and field comparison", () => {
   it("aligns direct metrics while labeling TBT versus INP as a proxy", () => {
     const result = compareLabAndField([lab()], "mobile", evidence(snapshot()));
-    expect(result).toMatchObject({ status: "aligned", headline: "Lab and visitor signals align" });
+    expect(result).toMatchObject({ status: "aligned", headline: LAB_FIELD_HEADLINE.agree });
     expect(result.metrics.map((metric) => [metric.key, metric.relationship, metric.verdict])).toEqual([
       ["lcp", "direct", "aligned-good"],
       ["responsiveness", "proxy", "aligned-good"],
@@ -64,7 +64,7 @@ describe("lab and field comparison", () => {
 
   it("identifies visitor problems that Lighthouse does not reproduce", () => {
     const result = compareLabAndField([lab()], "mobile", evidence(snapshot({ lcpP75Ms: 4_500 })));
-    expect(result).toMatchObject({ status: "divergent", headline: "Lab and visitor evidence diverge" });
+    expect(result).toMatchObject({ status: "divergent", headline: LAB_FIELD_HEADLINE.disagree });
     expect(result.metrics.find((metric) => metric.key === "lcp")).toMatchObject({
       verdict: "field-only-risk",
       lab: { rating: "Good" },
@@ -103,7 +103,9 @@ describe("lab and field comparison", () => {
 
   it("treats origin-wide CrUX as context rather than page-level proof", () => {
     const result = compareLabAndField([lab()], "mobile", evidence(snapshot({ scope: "origin", effectiveUrl: "https://example.com" })));
-    expect(result).toMatchObject({ status: "partial", headline: "Origin-level visitor context only", fieldWindow: { scope: "origin" } });
-    expect(result.detail).toContain("rather than proving conditions on this page");
+    expect(result).toMatchObject({ status: "partial", headline: LAB_FIELD_HEADLINE.whole_site_only, fieldWindow: { scope: "origin" } });
+    // The point of the clause: these figures describe the site, and the copy has
+    // to say they prove nothing about this page rather than leaving it implied.
+    expect(result.detail).toContain("do not prove anything about this page");
   });
 });

@@ -50,7 +50,7 @@ import { normalizeCollectionSchedule } from "@/lib/collectionSchedule";
 import { evidenceForPage, visitorExperienceTrend } from "@/lib/visitorExperience";
 import { performanceIssueCounts, siteCulpritRollups, sitePerformanceIssues } from "@/lib/performanceIssues";
 import type { PerformanceIssueStatus } from "@/lib/performanceIssues";
-import { customerActionabilityFor, recommendationIsCustomerActionable, remediationTone, triageActionLabel, webflowClassificationFor } from "@/lib/webflowPerformance";
+import { customerActionabilityFor, metricDisplay, recommendationIsCustomerActionable, remediationTone, triageActionLabel, webflowClassificationFor } from "@/lib/webflowPerformance";
 import { siteNativeElementRollups } from "@/lib/nativeElements";
 import { compareLabAndField } from "@/lib/labFieldComparison";
 import { fieldPriorityRankForRec, recommendationEvidenceSignal } from "@/lib/fieldPrioritization";
@@ -780,7 +780,7 @@ function DashboardContent({
                     <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 6, marginTop: 11 }}>
                       {rollup.metrics.filter((metric) => metric.metric !== "other").map((metric) => (
                         <span key={`${metric.metric}:${metric.metricWeight}`} style={{ display: "inline-flex", alignItems: "baseline", gap: 5, fontSize: 12, color: "var(--text-muted)", background: "var(--surface-raised)", padding: "2px 7px", borderRadius: 5 }}>
-                          {metric.metric} ·
+                          {metricDisplay(metric.metric)} ·
                           {/* The unit sits tight against the numeral so it
                               still reads as a percent sign, not a word. */}
                           <Magnitude value={metric.metricWeight} unit="%" fontSize={12} style={{ gap: 1 }} />
