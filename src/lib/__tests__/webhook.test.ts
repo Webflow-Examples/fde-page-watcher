@@ -18,8 +18,6 @@ afterEach(() => {
 });
 
 const AT = "2026-08-04T06:00:00.000Z";
-/** F4 records who fired a transition, not merely that a person did. */
-const PERSON: Caller = { kind: "person", userId: "rae@webflow.com" };
 
 /**
  * Whoever marked the fix. The payload is the digest message and the digest is
