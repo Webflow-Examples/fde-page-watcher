@@ -7,6 +7,7 @@ import {
 import { buildDigest, type Digest } from "../digest";
 import { renderDigestMessage } from "../digest-email";
 import { markFixed, type IssueCase } from "../issue-case";
+import type { Caller } from "../caller";
 import { recordCheckpointReading } from "../checkpoint-evaluation";
 import { normalizePerformanceThresholds } from "../performanceThresholds";
 import { pendingPage } from "../mutations";
@@ -17,6 +18,12 @@ afterEach(() => {
 });
 
 const AT = "2026-08-04T06:00:00.000Z";
+
+/**
+ * Whoever marked the fix. The payload is the digest message and the digest is
+ * about cases, so this only ever satisfies the transition guard.
+ */
+const PERSON: Caller = { kind: "person", userId: "rae@webflow.com" };
 
 function caseOf(overrides: Partial<IssueCase> = {}): IssueCase {
   return {
@@ -71,7 +78,7 @@ describe("alert webhook", () => {
      * sections, same sentences.
      */
     const digest = digestOf([
-      recordCheckpointReading(markFixed(caseOf(), { actor: "person", at: AT }), {
+      recordCheckpointReading(markFixed(caseOf(), { by: PERSON, at: AT }), {
         interval: "7d",
         outcome: "disagreed",
         at: AT,

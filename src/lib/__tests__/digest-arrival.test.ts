@@ -21,6 +21,7 @@ import {
   type IssueCase,
   type IssueState,
 } from "../issue-case";
+import type { Caller } from "../caller";
 import { recordCheckpointReading } from "../checkpoint-evaluation";
 import { normalizePerformanceThresholds } from "../performanceThresholds";
 import { ISSUE_TRANSITIONS, QUEUES, WORK_STATES, type IssueAction } from "../vocabulary";
@@ -42,6 +43,15 @@ const appDir = path.resolve(moduleDir, "../../app/(app)");
 const AT = "2026-08-25T06:00:00.000Z";
 const DATE = "2026-08-25";
 const APP = "https://watch.example.com/page-watch";
+
+/**
+ * Whoever walked the case down the lifecycle below.
+ *
+ * The address is the case's id and nothing else, so who moved it is exactly the
+ * kind of fact the link is not allowed to carry. This exists to satisfy the
+ * transition guard and is never asserted on.
+ */
+const PERSON: Caller = { kind: "person", userId: "rae@webflow.com" };
 
 function caseOf(overrides: Partial<IssueCase> = {}): IssueCase {
   return {
@@ -129,9 +139,9 @@ describe("the case route", () => {
      */
     const link = digestOf([caseOf()]).sections[0].lines[0].href;
     let issue = caseOf();
-    issue = accept(issue, { actor: "person", at: AT });
-    issue = start(issue, { actor: "person", at: AT });
-    issue = markFixed(issue, { actor: "person", at: AT });
+    issue = accept(issue, { by: PERSON, at: AT });
+    issue = start(issue, { by: PERSON, at: AT });
+    issue = markFixed(issue, { by: PERSON, at: AT });
     issue = recordCheckpointReading(issue, { interval: "7d", outcome: "disagreed", at: AT }).issue;
     expect(issue.state).toBe("reopened");
     expect(issue.id).toBe("PW-2291");
@@ -187,7 +197,7 @@ describe("the context banner", () => {
 
   it("repeats the line the message wrote, because both come from one writer", () => {
     const reopened = recordCheckpointReading(
-      markFixed(caseOf({ state: "in_progress" }), { actor: "person", at: AT }),
+      markFixed(caseOf({ state: "in_progress" }), { by: PERSON, at: AT }),
       { interval: "7d", outcome: "disagreed", at: AT },
     ).issue;
     const digest = digestOf([reopened]);
