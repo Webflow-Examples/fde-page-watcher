@@ -1,9 +1,16 @@
 # Product decisions pending sign-off
 
+<<<<<<< HEAD
 The implementation resolved product questions that were previously undefined.
 They are reasonable defaults, but they should be confirmed (or changed) by
 product rather than remaining implicit in the code. Each notes where it lives so
 a change is a small, located edit.
+=======
+The implementation resolved five previously-undefined product questions. They
+are reasonable defaults, but they should be confirmed (or changed) by product
+rather than remaining implicit in the code. Each notes where it lives so a
+change is a one-line edit.
+>>>>>>> origin/main
 
 ## 1. Status is driven by mobile Performance only
 
@@ -38,55 +45,76 @@ flat history still tolerates normal PSI jitter.
 ## 4. Collection starts at the workspace's saved local time
 
 The first watched page initializes the workspace to **midnight in that user's
-browser timezone**. The Watchlist setting can override both time and IANA
+browser timezone**. The Settings screen can override both time and IANA
 timezone. Active pages receive stable offsets after the chosen start so the
 workspace does not burst every page or PSI sample simultaneously.
 
-- Where: `src/lib/collectionSchedule.ts`, the Watchlist settings panel, and the
+- Where: `src/lib/collectionSchedule.ts`, the Settings screen, and the
   collector's 15-minute due-page cron.
 
-## 5. Excluding a page and excluding a check are one idea, stored as two records
+## 5. Sensitivity is one control with three positions (option 10b)
 
-Applicability is a single concept in the registry, and S8's excluded list shows
-pages and checks together — one list, each row carrying its reason and an
-Include control. The open question is whether they share that list because they
-are **one idea**, or only because showing them together is convenient. The
-answer decides where the reason lives, and it is a product call rather than an
-implementation detail: it is the same question as whether "this page does not
-apply to this remediation" and "this check does not apply to this site" are
-things a user would expect to manage, undo, and audit in one place.
+What a site considers worth reporting is **one setting**, not twelve. The three
+positions are Only big moves / Normal / Everything, and each resolves to a
+complete threshold set. The limits it resolves to are **displayed beneath the
+control, in the strings the digest itself writes**, so the abstraction is never
+opaque: a reader who wants to know why a line said "above the 250 ms you set"
+can see the 250 ms and see which position put it there.
 
-Today they are two records with two gates:
+What the numbers are at each position is the part product should confirm. What
+is settled, and should not be reopened without a decision:
 
-- a case's excluded pages — `CaseDecisionRecord`, gated by `case-decisions.ts` (F5).
-- an agent check's exclusion — `AgentIgnoreSettings.reasons`, gated by
-  `agentCheckExclusionReason` (S4).
+- **Twelve per-metric thresholds** were rejected. Every number honest, and
+  nobody could say what any of them would do to tonight's digest.
+- **No thresholds at all** were rejected. The digest's threshold clause is the
+  reason a reader trusts the line, and it needs a setting behind it to be true.
+- **Per-page sensitivity** does not exist anywhere. S3 removed the page-detail
+  calibration panel and S8 gives it no new home; a site has one answer to "what
+  is worth telling you" because the digest that asks it is one message per site.
+- **No position resolves the savings gate to 0.** At 0 there is no limit the
+  reader set, so the digest withholds the clause and there is nothing to show
+  under the control. "Everything" is 1 ms, which is every measurement there is.
+- A site whose thresholds were hand-tuned before this landed is **mapped to the
+  nearest position and told once**, in the digest footer. Discarding somebody's
+  configuration silently is worse than the configuration was.
 
-What is already settled, and should not change either way: both keep `reason` as
-a plain string in `types.ts`, because that module imports nothing and so cannot
-reach the registry; and both narrow it to `EXCLUSION_REASONS` at exactly one
-place, on read and on write. Two validators for one record is how a reason the
-registry retired stays acceptable on one path and not the other.
+- Where: `SENSITIVITY_THRESHOLDS` in `src/lib/sensitivity.ts` is the only place
+  the numbers appear; `DEFAULT_PERFORMANCE_THRESHOLDS` reads the Normal position
+  from it. The migration is `normalizeState` in `src/lib/store/normalize.ts`.
 
-If the answer is **one idea**, S8 folds `AgentIgnoreSettings.reasons` into the
-decision log and `agentCheckExclusionReason` delegates to `case-decisions.ts`
-instead of narrowing itself. No caller changes: they already take
-`ExclusionReason | null`. If the answer is **two**, nothing moves and S8's list
-joins the two records when it renders.
+## 6. An exclusion made on one page records no reason
 
-Two properties to preserve on either answer, because both are load-bearing and
-neither is obvious:
+S8 settled the shape: exclusions are **one list and several records** —
+`CaseDecisionRecord` for a case's pages, `AgentIgnoreSettings.reasons` for agent
+checks and categories, `NativeElementControl.excluded` for element findings —
+with `settings-exclusions.ts` joining them on read. That is not the open
+question. This is:
 
-- The resolver returns `null` for "does not apply", never for "is gone". A
-  reason survives an Include and applies again on a re-exclude, so a user who
-  puts something back and then takes it out again is not asked twice.
-- Nothing synthesises a reason. An exclusion recorded before reasons were stored
-  has none, and reads as `Ignored` with no reason text rather than taking a
-  default (registry rule 18).
+A reason is only ever recorded **for the whole site**. `updateAgentIgnoreSettings`
+takes one, and the only two callers that pass it write to `agentIgnoreDefaults`;
+the per-page path, `updateAgentIgnoreOverride`, calls it without a reason, and
+`settings-exclusions.ts` reads reasons from the defaults alone. So excluding a
+check on one page is a decision the app takes and never asks about, and a reader
+looking for it in the excluded list will not find it there either.
 
-- Where: `agentCheckExclusionReason` and `agentAccessExclusions` in
-  `src/lib/agent-access.ts`; `AgentIgnoreSettings.reasons` in `src/lib/types.ts`;
-  `caseDecisionFrom` / `decisionOf` in `src/lib/case-decisions.ts` (F5). The set
-  of narrowing sites is pinned by a test in
-  `src/lib/__tests__/agent-access.test.ts`, so adding or moving one fails the
-  suite rather than passing quietly.
+The registry says applicability requires a reason, so one of two things should
+be true, and which one is a product call:
+
+- **A per-page exclusion is a real exclusion.** It asks for a reason like the
+  site-wide one does, and the excluded list grows a row for it scoped to the
+  page. This is the reading that matches the registry.
+- **A per-page exclusion is an override, not an exclusion.** It is a local
+  answer to a site-wide setting, and the thing that needs a reason is the
+  setting. Then the per-page control should stop being worded as Exclude, and
+  the excluded list is already complete.
+
+Until that is decided, `AgentAccessInput.excluded` in `src/lib/agent-access.ts`
+is modelled and rendered with no producer wired in: a source-level exclusion
+keeps its row, greys, and carries its reason and last reading whenever S8 hands
+one over. S4 deliberately does not resolve a reason itself — `reasonFor` in
+`settings-exclusions.ts` already does that for this record, and a second
+resolver is a second opinion about what a valid reason is.
+
+- Where: `updateAgentIgnoreSettings` and `updateAgentIgnoreOverride` in
+  `src/lib/agentScoring.ts`; `reasonFor` in `src/lib/settings-exclusions.ts`;
+  `setAgentIgnore` / `setDefaultAgentIgnore` in `src/components/store.tsx`.

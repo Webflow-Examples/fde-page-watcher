@@ -23,38 +23,34 @@ export function agentCheckKey(check: Pick<AgentCheck, "group" | "name">): string
 }
 
 /**
- * Reasons as stored: a plain map of strings, checked for shape and nothing
- * else.
+ * How a reason is keyed to the thing it explains.
  *
- * Deliberately NOT checked against the registry here. This module decides
- * whether a check applies, and it imports no vocabulary — narrowing a stored
- * string to a decided reason is one job with one owner, and that owner is
- * `agentCheckExclusionReason` in `agent-access.ts`. A second check here would
- * be a second validator that could come to disagree with it.
- *
- * A reason whose key is no longer excluded is kept rather than pruned. It is a
- * decision somebody made, and the resolver reports that it does not apply
- * today; dropping it here would make "does not apply" indistinguishable from
- * "was never recorded".
+ * Scoped, because a category and a check may share a name and their exclusions
+ * are different decisions. One function so the writer and the reader cannot
+ * disagree about the shape of the key (rule 20).
  */
-function storedReasons(settings?: AgentIgnoreSettings): Record<string, string> | undefined {
-  const raw = settings?.reasons;
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
-  const entries = Object.entries(raw)
-    .filter(([key, value]) => typeof key === "string" && key.length > 0
-      && typeof value === "string" && value.length > 0);
-  return entries.length ? Object.fromEntries(entries) : undefined;
+export function agentExclusionKey(scope: AgentIgnoreScope, value: string): string {
+  return `${scope}${CHECK_KEY_SEPARATOR}${value}`;
 }
 
 export function normalizeAgentIgnoreSettings(settings?: AgentIgnoreSettings): AgentIgnoreSettings {
   const checks = Array.isArray(settings?.checks) ? settings.checks : [];
   const groups = Array.isArray(settings?.groups) ? settings.groups : [];
-  const reasons = storedReasons(settings);
-  return {
+  const normalized: AgentIgnoreSettings = {
     checks: [...new Set(checks.filter((value) => typeof value === "string" && value.length > 0))].sort(),
     groups: [...new Set(groups.filter((value) => typeof value === "string" && value.length > 0))].sort(),
-    ...(reasons ? { reasons } : {}),
   };
+  // A reason for something that is not excluded is not a reason. Keeping one
+  // would let an Include followed by an Exclude silently reinstate a reason
+  // nobody chose the second time.
+  const excluded = new Set([
+    ...normalized.groups.map((value) => agentExclusionKey("group", value)),
+    ...normalized.checks.map((value) => agentExclusionKey("check", value)),
+  ]);
+  const reasons = Object.entries(settings?.reasons ?? {})
+    .filter(([key, reason]) => excluded.has(key) && typeof reason === "string" && reason.length > 0);
+  if (reasons.length > 0) normalized.reasons = Object.fromEntries(reasons.sort());
+  return normalized;
 }
 
 export function updateAgentIgnoreSettings(
@@ -62,13 +58,22 @@ export function updateAgentIgnoreSettings(
   scope: AgentIgnoreScope,
   value: string,
   ignored: boolean,
+  /**
+   * Why it does not apply. Required by the registry to exclude, and meaningless
+   * to include — `normalizeAgentIgnoreSettings` drops the record either way
+   * when the thing is counted again.
+   */
+  reason?: string,
 ): AgentIgnoreSettings {
   const normalized = normalizeAgentIgnoreSettings(settings);
   const key = scope === "group" ? "groups" : "checks";
   const values = new Set(normalized[key]);
   if (ignored) values.add(value);
   else values.delete(value);
-  return { ...normalized, [key]: [...values].sort() };
+  const reasons = { ...normalized.reasons };
+  if (ignored && reason) reasons[agentExclusionKey(scope, value)] = reason;
+  else delete reasons[agentExclusionKey(scope, value)];
+  return normalizeAgentIgnoreSettings({ ...normalized, [key]: [...values].sort(), reasons });
 }
 
 export function agentIgnoreOverrideMode(
@@ -112,59 +117,21 @@ export function isAgentGroupIgnored(
   return normalizeAgentIgnoreSettings(defaults).groups.includes(group);
 }
 
-/** The record that excluded a check, and the key it was excluded under. */
-export interface AgentExclusionSource {
-  /** The settings record that decided it — where its reason, if any, is kept. */
-  settings: AgentIgnoreSettings;
-  /** The key inside that record: a check key, or a group name. */
-  key: string;
-  scope: AgentIgnoreScope;
-}
-
-/**
- * Which record excluded this check, or null if nothing did.
- *
- * The precedence — page restore, page ignore, group restore, group ignore, then
- * the workspace defaults — is stated here and only here. `isAgentCheckIgnored`
- * asks this question and throws the answer away; the reason resolver asks the
- * same question and keeps it. Two walks over the same five rules would be the
- * defect rule 20 names: they agree today and the day they stop, a check reads
- * as excluded for a reason belonging to a record that did not exclude it.
- */
-export function agentCheckExclusionSource(
-  check: Pick<AgentCheck, "group" | "name">,
-  ignores?: AgentIgnoreSettings,
-  defaults?: AgentIgnoreSettings,
-  restores?: AgentIgnoreSettings,
-): AgentExclusionSource | null {
-  const pageIgnores = normalizeAgentIgnoreSettings(ignores);
-  const pageRestores = normalizeAgentIgnoreSettings(restores);
-  const checkKey = agentCheckKey(check);
-  if (pageRestores.checks.includes(checkKey)) return null;
-  if (pageIgnores.checks.includes(checkKey)) {
-    return { settings: pageIgnores, key: checkKey, scope: "check" };
-  }
-  if (pageRestores.groups.includes(check.group)) return null;
-  if (pageIgnores.groups.includes(check.group)) {
-    return { settings: pageIgnores, key: check.group, scope: "group" };
-  }
-  const globalDefaults = normalizeAgentIgnoreSettings(defaults);
-  if (globalDefaults.groups.includes(check.group)) {
-    return { settings: globalDefaults, key: check.group, scope: "group" };
-  }
-  if (globalDefaults.checks.includes(checkKey)) {
-    return { settings: globalDefaults, key: checkKey, scope: "check" };
-  }
-  return null;
-}
-
 export function isAgentCheckIgnored(
   check: Pick<AgentCheck, "group" | "name">,
   ignores?: AgentIgnoreSettings,
   defaults?: AgentIgnoreSettings,
   restores?: AgentIgnoreSettings,
 ): boolean {
-  return agentCheckExclusionSource(check, ignores, defaults, restores) !== null;
+  const pageIgnores = normalizeAgentIgnoreSettings(ignores);
+  const pageRestores = normalizeAgentIgnoreSettings(restores);
+  const checkKey = agentCheckKey(check);
+  if (pageRestores.checks.includes(checkKey)) return false;
+  if (pageIgnores.checks.includes(checkKey)) return true;
+  if (pageRestores.groups.includes(check.group)) return false;
+  if (pageIgnores.groups.includes(check.group)) return true;
+  const globalDefaults = normalizeAgentIgnoreSettings(defaults);
+  return globalDefaults.groups.includes(check.group) || globalDefaults.checks.includes(checkKey);
 }
 
 export function summarizeAgentChecks(

@@ -4,9 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   agentAccess,
-  agentAccessExclusions,
   agentAgreement,
-  agentCheckExclusionReason,
   agentReadings,
   AGENT_ACCESS_SOURCES,
   AGENT_ACCESS_SOURCE_OMISSIONS,
@@ -39,7 +37,6 @@ import {
 } from "../vocabulary";
 import { caseHref } from "../../components/issue-row";
 import { ALL_AGENT_CHECKS } from "../agentChecks";
-import { agentCheckKey, normalizeAgentIgnoreSettings, updateAgentIgnoreSettings } from "../agentScoring";
 import type { ExternalAgentFinding, ExternalAgentOriginAudit } from "../agentAudit";
 import type { AgentCheck, KitesurfEvidence, NativeElementScan } from "../types";
 
@@ -257,87 +254,6 @@ describe("the published-HTML scan and Lighthouse", () => {
 
 /* ── Exclusion ──────────────────────────────────────────────────────────── */
 
-describe("resolving a stored exclusion reason", () => {
-  const sitemap = check("Sitemap", false);
-  const key = agentCheckKey(sitemap);
-
-  it("narrows a stored string to the registry's reason", () => {
-    const ignores = { checks: [key], groups: [], reasons: { [key]: "Intentional" } };
-    expect(agentCheckExclusionReason(sitemap, ignores)).toBe("Intentional");
-  });
-
-  it("accepts every reason the registry blesses, without a copy of the list", () => {
-    for (const reason of EXCLUSION_REASONS) {
-      const ignores = { checks: [key], groups: [], reasons: { [key]: reason } };
-      expect(agentCheckExclusionReason(sitemap, ignores)).toBe(reason);
-    }
-  });
-
-  it("returns null for an excluded check nobody gave a reason for", () => {
-    // The gap that exists today, and it stays a gap. Rule 18.
-    expect(agentCheckExclusionReason(sitemap, { checks: [key], groups: [] })).toBeNull();
-  });
-
-  it("returns null for a reason the registry does not name", () => {
-    const ignores = { checks: [key], groups: [], reasons: { [key]: "Because I said so" } };
-    expect(agentCheckExclusionReason(sitemap, ignores)).toBeNull();
-  });
-
-  it("returns null when the check is not excluded, and leaves the record alone", () => {
-    // "Does not apply", never "is gone": the stored entry survives the read.
-    const ignores = { checks: [], groups: [], reasons: { [key]: "Intentional" } };
-    expect(agentCheckExclusionReason(sitemap, ignores)).toBeNull();
-    expect(normalizeAgentIgnoreSettings(ignores).reasons).toEqual({ [key]: "Intentional" });
-  });
-
-  it("reads the reason from whichever record did the excluding", () => {
-    // A group exclusion in the workspace defaults, not on the page.
-    const defaults = {
-      checks: [],
-      groups: [sitemap.group],
-      reasons: { [sitemap.group]: "Accepted risk" as const },
-    };
-    expect(agentCheckExclusionReason(sitemap, undefined, defaults)).toBe("Accepted risk");
-    // A page restore outranks it, so no reason applies at all.
-    const restores = { checks: [key], groups: [] };
-    expect(agentCheckExclusionReason(sitemap, undefined, defaults, restores)).toBeNull();
-  });
-
-  it("never takes a reason from a record that did not exclude the check", () => {
-    // The page excludes it; the defaults hold a different reason under the
-    // group. Precedence picks the page, so the group's reason must not leak.
-    const ignores = { checks: [key], groups: [], reasons: { [key]: "Intentional" as const } };
-    const defaults = {
-      checks: [],
-      groups: [sitemap.group],
-      reasons: { [sitemap.group]: "Accepted risk" as const },
-    };
-    expect(agentCheckExclusionReason(sitemap, ignores, defaults)).toBe("Intentional");
-  });
-
-  it("survives an include and applies again on a re-exclude", () => {
-    // The property the whole shape turns on: null was "does not apply", so the
-    // decision was still there to be found when the check came back.
-    const stored = { checks: [key], groups: [], reasons: { [key]: "Intentional" as const } };
-    const included = updateAgentIgnoreSettings(stored, "check", key, false);
-    expect(agentCheckExclusionReason(sitemap, included)).toBeNull();
-    expect(included.reasons).toEqual({ [key]: "Intentional" });
-
-    const reExcluded = updateAgentIgnoreSettings(included, "check", key, true);
-    expect(agentCheckExclusionReason(sitemap, reExcluded)).toBe("Intentional");
-  });
-
-  it("keeps the precedence walk in one place", () => {
-    // `isAgentCheckIgnored` and the reason resolver must never disagree about
-    // whether a check is excluded, so they ask the same function.
-    const scoring = readFileSync(
-      path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "agentScoring.ts"),
-      "utf8",
-    );
-    expect(scoring.match(/pageRestores\.checks\.includes/g) ?? []).toHaveLength(1);
-    expect(scoring).toContain("agentCheckExclusionSource");
-  });
-});
 
 describe("a source excluded from the table", () => {
   const excludedAccess = () => accessFor({
@@ -373,180 +289,30 @@ describe("a source excluded from the table", () => {
   });
 });
 
-describe("deriving which sources are excluded", () => {
-  const sitemap = check("Sitemap", false);
-  const markdown = check("Markdown negotiation", false);
-  const keyOf = agentCheckKey;
-
-  it("excludes the source when every check is excluded under one reason", () => {
-    const ignores = {
-      checks: [keyOf(sitemap), keyOf(markdown)],
-      groups: [],
-      reasons: { [keyOf(sitemap)]: "Intentional", [keyOf(markdown)]: "Intentional" },
-    };
-    expect(agentAccessExclusions({ checks: [sitemap, markdown], ignores }))
-      .toEqual({ "agent-readiness": "Intentional" });
-  });
-
-  it("does not exclude the source when only some checks are", () => {
-    const ignores = {
-      checks: [keyOf(sitemap)],
-      groups: [],
-      reasons: { [keyOf(sitemap)]: "Intentional" },
-    };
-    expect(agentAccessExclusions({ checks: [sitemap, markdown], ignores })).toEqual({});
-  });
-
-  it("does not exclude the source when a reason was never recorded", () => {
-    // The state everything is in today. The row reads Ignored, which is true,
-    // rather than Excluded with a reason this module made up.
-    const ignores = { checks: [keyOf(sitemap), keyOf(markdown)], groups: [] };
-    expect(agentAccessExclusions({ checks: [sitemap, markdown], ignores })).toEqual({});
-  });
-
-  it("does not collapse two different reasons into one", () => {
-    const ignores = {
-      checks: [keyOf(sitemap), keyOf(markdown)],
-      groups: [],
-      reasons: { [keyOf(sitemap)]: "Intentional", [keyOf(markdown)]: "Accepted risk" },
-    };
-    expect(agentAccessExclusions({ checks: [sitemap, markdown], ignores })).toEqual({});
-  });
-
-  it("excludes nothing when there are no checks to exclude", () => {
-    expect(agentAccessExclusions({ checks: [] })).toEqual({});
-  });
-
-  it("renders the reason on the row when one resolves, and Ignored when none does", () => {
-    const withReason = agentReadings({
-      cases: [],
-      excluded: agentAccessExclusions({
-        checks: [sitemap],
-        ignores: {
-          checks: [keyOf(sitemap)],
-          groups: [],
-          reasons: { [keyOf(sitemap)]: "Accepted risk" },
-        },
-      }),
-    });
-    const row = withReason.find((reading) => reading.source === "agent-readiness");
-    if (row?.applicability !== "excluded") throw new Error("expected an excluded row");
-    expect(agentExcluded(row.reason)).toContain("Accepted risk");
-
-    // Without a stored reason the source keeps its row and its result word, and
-    // no reason text is rendered — never a placeholder standing in for one.
-    const access = accessFor({
-      checks: [sitemap],
-      checksObservedAt: CHECKS_AT,
-      ignores: { checks: [keyOf(sitemap)], groups: [] },
-    }, {
-      excluded: agentAccessExclusions({
-        checks: [sitemap],
-        ignores: { checks: [keyOf(sitemap)], groups: [] },
-      }),
-    });
-    const plain = rowFor(access, "agent-readiness");
-    expect(plain.applicability).toBe("included");
-    expect(plain.result).toBe("ignored");
-    expect(AGENT_RESULT_LABEL[plain.result]).toBe("Ignored");
-  });
-});
-
-describe("the write side is not here", () => {
-  it("narrows a stored reason once per record, and nowhere else", () => {
-    // One gate per stored record. A second gate on the SAME record is a second
-    // opinion about what a valid reason is, and the two disagree the day the
-    // registry changes.
-    //
-    // Each site below is named with the record it gates, so a new one has to be
-    // justified here rather than added quietly:
-    //
-    //   agent-access.ts    AgentIgnoreSettings.reasons        (S4, this chunk)
-    //   case-decisions.ts  CaseDecisionRecord.reason          (F5)
-    //   issue-case.ts      IssueCase.excludedPages            (F2)
-    //   nativeElements.ts  NativeElementControl.excluded      (F5)
-    //   mutations.ts       NativeElementControl.excluded      (F5) — SECOND gate
-    //   native-elements    NativeElementControl.excluded      (F5) — THIRD gate
-    //     /route.ts
-    //
-    // The last two check the same value `nativeElements.ts` already gates, and
-    // `mutations.ts` does it three lines before calling the normaliser that
-    // would have rejected it anyway. Harmless today, and exactly the shape rule
-    // 20 names: three statements of one rule that agree until they do not.
-    // Listed rather than left loose so they are reported and not blessed — they
-    // are F5's to collapse into `isExclusionReason`, not this chunk's.
-    const src = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-    const files: string[] = [];
-    const walk = (dir: string) => {
-      for (const entry of readdirSync(dir, { withFileTypes: true })) {
-        const full = path.join(dir, entry.name);
-        if (entry.isDirectory() && entry.name !== "__tests__") walk(full);
-        else if (/\.tsx?$/.test(entry.name)) files.push(full);
-      }
-    };
-    walk(src);
-    const narrowing = files.filter((file) =>
-      /EXCLUSION_REASONS\s+as\s+readonly\s+string\[\]\s*\)\s*\.includes/.test(readFileSync(file, "utf8")));
-    expect(narrowing.map((file) => path.relative(src, file)).sort()).toEqual([
-      "app/api/pages/[id]/native-elements/route.ts",
-      "lib/agent-access.ts",
-      "lib/case-decisions.ts",
-      "lib/issue-case.ts",
-      "lib/mutations.ts",
-      "lib/nativeElements.ts",
-    ]);
-  });
-
-  it("gates the agent-check record in exactly one place", () => {
-    // The part that is this chunk's to keep: whatever else narrows a reason for
-    // its own record, only one place reads `AgentIgnoreSettings.reasons`.
-    const src = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-    const files: string[] = [];
-    const walk = (dir: string) => {
-      for (const entry of readdirSync(dir, { withFileTypes: true })) {
-        const full = path.join(dir, entry.name);
-        if (entry.isDirectory() && entry.name !== "__tests__") walk(full);
-        else if (/\.tsx?$/.test(entry.name)) files.push(full);
-      }
-    };
-    walk(src);
-    const readers = files.filter((file) => /\.reasons\?\.\[/.test(readFileSync(file, "utf8")));
-    expect(readers.map((file) => path.relative(src, file))).toEqual(["lib/agent-access.ts"]);
-  });
-
-  it("writes no exclusion reason anywhere under src/", () => {
-    // S8 owns the excluded list and the control that fills it in. Nothing here
-    // assigns to `reasons`, so the read side cannot invent what it reads.
-    const src = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-    const files: string[] = [];
-    const walk = (dir: string) => {
-      for (const entry of readdirSync(dir, { withFileTypes: true })) {
-        const full = path.join(dir, entry.name);
-        if (entry.isDirectory() && entry.name !== "__tests__") walk(full);
-        else if (/\.tsx?$/.test(entry.name)) files.push(full);
-      }
-    };
-    walk(src);
-    for (const file of files) {
-      const code = readFileSync(file, "utf8");
-      const where = path.relative(src, file);
-      expect(code, `${where} writes an agent-check exclusion reason`)
-        .not.toMatch(/reasons\s*:\s*\{[^}]/);
-      expect(code, `${where} assigns into the reasons map`)
-        .not.toMatch(/\.reasons\s*\[[^\]]*\]\s*=/);
-    }
+describe("S4 resolves no exclusion reason of its own", () => {
+  it("leaves the narrowing to the module that owns the record", () => {
+    // S8 owns exclusions end to end and `settings-exclusions.ts` already turns a
+    // stored string into a decided reason for the agent-check record. A second
+    // resolver here would be a second opinion about what a valid reason is, and
+    // the two disagree the day the registry changes. This module takes reasons
+    // already narrowed and renders them.
+    const agentAccessSource = readFileSync(
+      path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "agent-access.ts"),
+      "utf8",
+    );
+    expect(agentAccessSource).not.toContain("EXCLUSION_REASONS");
+    expect(agentAccessSource).not.toMatch(/\.reasons\b/);
   });
 
   it("keeps types.ts importing nothing, so the registry cannot reach the stored shape", () => {
+    // The property the whole arrangement rests on: the persisted shape cannot
+    // name a registry type, so a reason is a plain string there and is narrowed
+    // by whichever module owns that record.
     const types = readFileSync(
       path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "types.ts"),
       "utf8",
     );
     expect([...types.matchAll(/(?:^|\n)\s*import[^;]*?from\s*["']([^"']+)["']/g)]).toEqual([]);
-    // The stored field is a plain string there, and narrowed elsewhere. The
-    // registry's type appears nowhere in the declarations — the prose is free
-    // to name it, which is why comments are stripped before looking.
-    expect(types).toContain("reasons?: Record<string, string>");
     const declarations = types
       .split("\n")
       .filter((line) => !/^\s*(?:\/\/|\/\*|\*)/.test(line))
@@ -555,7 +321,7 @@ describe("the write side is not here", () => {
   });
 });
 
-/* ── The verdict ────────────────────────────────────────────────────────── */
+/* ── The verdict ─────────────────────────────────────────────────────── */
 
 describe("one verdict per origin", () => {
   it("only ever produces a registry verdict key", () => {

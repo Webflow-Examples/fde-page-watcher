@@ -34,8 +34,6 @@ import { pendingPage } from "../mutations";
  */
 
 const AT = "2026-08-25T06:00:00.000Z";
-/** F4 records who fired a transition, not merely that a person did. */
-const PERSON: Caller = { kind: "person", userId: "rae@webflow.com" };
 const DATE = "2026-08-25";
 const APP = "https://watch.example.com/page-watch";
 const SCHEDULE = { localTime: "00:00", timeZone: "America/Chicago", overridden: true };
@@ -290,8 +288,14 @@ describe("a reading nobody took", () => {
   });
 
   it("withholds it again when there is no limit the reader set", () => {
-    // At 0 the gate is off, so there is nothing to attribute to anyone.
-    const digest = digestOf({ cases: [cameBackCase()] });
+    // At 0 the gate is off, so there is nothing to attribute to anyone. No
+    // sensitivity position resolves to 0 — that is precisely why they do not,
+    // since a position with no limit has nothing to show under the control —
+    // but the digest must still be honest about a stored set that has one.
+    const digest = digestOf({
+      cases: [cameBackCase()],
+      thresholds: normalizePerformanceThresholds({ minimumSavingsMs: 0 }),
+    });
     expect(linesIn(digest, "came_back")[0].text).toBe("The Unused JavaScript on Home is back.");
   });
 

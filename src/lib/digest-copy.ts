@@ -1,4 +1,6 @@
 import { DIGEST_CADENCE_LABEL, type DigestCadence } from "./digestCadence";
+import { formatImpact } from "./impact-format";
+import type { PerformanceThresholds } from "./types";
 import { formatDate } from "./watch-copy";
 
 /**
@@ -71,6 +73,26 @@ export interface DigestThreshold {
   reading: string;
   /** The limit, in the same unit. Also from `impact-format`. */
   limit: string;
+}
+
+/**
+ * The limit a digest line names, written exactly as the line writes it.
+ *
+ * Exported because Settings shows the same string under the sensitivity
+ * control, and rule 20 is explicit about what happens otherwise: two spellings
+ * of one limit agree until somebody changes the unit on one of them, and then
+ * the screen that promises "this is what your digest will say" says something
+ * else. So the screen reads the limit from here rather than formatting the
+ * milliseconds again, and `settings-sensitivity.test.ts` asserts that what the
+ * screen shows is character-for-character what a built digest wrote.
+ *
+ * Null when the gate is off. There is then no limit the reader set, so there is
+ * nothing to attribute to them and nothing to display — which is why no
+ * sensitivity position resolves to 0.
+ */
+export function digestLimit(thresholds: PerformanceThresholds): string | null {
+  if (thresholds.minimumSavingsMs <= 0) return null;
+  return formatImpact(thresholds.minimumSavingsMs).text;
 }
 
 /**
@@ -169,9 +191,21 @@ export function digestFooter(
   time: string,
   cadence: DigestCadence,
   site: string,
+  /**
+   * A sentence owed to this reader once, appended rather than sent alone.
+   *
+   * S8 maps a site's hand-tuned thresholds onto a sensitivity position instead
+   * of discarding them, and a migration nobody is told about is the same
+   * silent loss as discarding it. The footer is where it goes because the
+   * footer is already the sentence about how this message is configured, and
+   * because a message that exists only to announce a settings change is a
+   * message nobody asked for.
+   */
+  notice?: string | null,
 ): string {
   const pages = `${pagesMeasured} ${pagesMeasured === 1 ? "page" : "pages"} measured at ${time}.`;
-  return `${pages} ${DIGEST_CADENCE_LABEL[cadence]} digest for ${site} — ${DIGEST_FOOTER_CHANGE}.`;
+  const footer = `${pages} ${DIGEST_CADENCE_LABEL[cadence]} digest for ${site} — ${DIGEST_FOOTER_CHANGE}.`;
+  return notice ? `${footer} ${notice}` : footer;
 }
 
 /* ── Arrival ────────────────────────────────────────────────────────────── */

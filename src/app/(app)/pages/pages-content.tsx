@@ -28,7 +28,7 @@ import type { SegmentRole } from "@/components/segmented-control";
 import { CATEGORIES } from "@/lib/types";
 import type { AgentIgnoreSettings, Night, WebflowRemediationLevel } from "@/lib/types";
 import { agentReadinessForNight, summarizeAgentChecks } from "@/lib/agentScoring";
-import { effectivePerformanceThresholds, normalizePerformanceThresholds } from "@/lib/performanceThresholds";
+import { normalizePerformanceThresholds } from "@/lib/performanceThresholds";
 import { historyForRange, pageAgentSnapshotForRange, pageRangeLatestNightForStrategy, pageRangeTrend } from "@/lib/scoring";
 import { flagChip, savingsValue } from "@/lib/ui";
 import { DESTINATION_LABEL, DESTINATION_PATH, QUEUE_LABEL } from "@/lib/vocabulary";
@@ -295,7 +295,7 @@ function DashboardContent({
   const nativeElementRollups = siteNativeElementRollups(activePages);
 
   const rows = pages.map((p, watchlistOrder) => {
-    const pageThresholds = effectivePerformanceThresholds(thresholds, p);
+    const pageThresholds = normalizePerformanceThresholds(thresholds);
     const mobileTrend = pageRangeTrend(p, "mobile", rangeDays, pageThresholds);
     const desktopTrend = pageRangeTrend(p, "desktop", rangeDays, pageThresholds);
     const visitorEvidence = evidenceForPage(visitorExperience, p.id, strategy);

@@ -8,7 +8,7 @@ import { useIssuesView, useStore } from "@/components/store";
 import { CATEGORIES } from "@/lib/types";
 import type { CategoryKey, CollectionJob, Night, RangeDays, WatchPage } from "@/lib/types";
 import { agentReadinessHistoryPoints } from "@/lib/agentHistory";
-import { effectivePerformanceThresholds } from "@/lib/performanceThresholds";
+import { normalizePerformanceThresholds } from "@/lib/performanceThresholds";
 import {
   historyForStrategy,
   nightHasStrategy,
@@ -78,7 +78,7 @@ import type { NativeElementLifecycle } from "@/lib/nativeElements";
 import { collectionLocalDateTime, normalizeCollectionSchedule } from "@/lib/collectionSchedule";
 import { AgentAccessPanel } from "@/components/agent-access";
 import { assembleAgentIssueCases } from "@/lib/agentIssueCases";
-import { agentAccess, agentAccessExclusions } from "@/lib/agent-access";
+import { agentAccess } from "@/lib/agent-access";
 import { agentIssueRecId } from "@/lib/agentIssueTasks";
 import { issueCasesFrom } from "@/lib/issue-cases";
 import { externalAuditForPage } from "@/lib/externalAgentEvidence";
@@ -856,8 +856,9 @@ function ReadingsSection({
       }
       : {}),
     ...(lighthouseNight?.iso ? { lighthouse: { observedAt: lighthouseNight.iso } } : {}),
-    // Read only. Nothing here writes a reason; S8's excluded list does that.
-    excluded: agentAccessExclusions({ checks: agentChecks, ignores, ignoreDefaults, ignoreRestores }),
+    // No `excluded` producer here on purpose: S8 owns exclusions end to end, and
+    // a second resolver for the same record would be a second opinion about
+    // what a valid reason is. See DECISIONS.md 5 for the remaining seam.
   });
   // Where each family's case lives, keyed on the CAUSE and never on a case id.
   // A case is a group with no identity of its own — the merged case takes the id
@@ -872,7 +873,7 @@ function ReadingsSection({
     }).map((item) => [item.cause, caseHref(store.basePath, item.id)] as const),
   );
   const hrefForCase = (key: string) => hrefByCause.get(agentIssueRecId(key));
-  const thresholds = effectivePerformanceThresholds(store.performanceThresholds, page);
+  const thresholds = normalizePerformanceThresholds(store.performanceThresholds);
   const readinessHistory = agentReadinessHistoryPoints(
     agentRangeHistory,
     page.agentIgnores,
@@ -1376,7 +1377,7 @@ export default function PageDetail() {
   const collectionBlocked = page.flag === "paused" || (!!page.runState && page.runState !== "failed");
   const activeJob = store.jobs?.find((job) => job.runId === page.runId);
   const watchedPageHref = /^[a-z][a-z\d+.-]*:\/\//i.test(page.url) ? page.url : `https://${page.url}`;
-  const thresholds = effectivePerformanceThresholds(store.performanceThresholds, page);
+  const thresholds = normalizePerformanceThresholds(store.performanceThresholds);
   // A development-only comparison of the two trend renderings side by side.
   const isStatusPreview = process.env.NODE_ENV === "development" && searchParams.get("statusPreview") === "compare";
   const mobileTrend = isStatusPreview ? "regressing" : pageRangeTrend(page, "mobile", rangeDays, thresholds);

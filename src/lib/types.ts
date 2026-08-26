@@ -473,31 +473,21 @@ export interface AgentCheck {
 export type AgentIgnoreScope = "check" | "group";
 export type AgentIgnoreOverrideMode = "inherit" | "ignore" | "restore";
 
-/**
- * Agent-check applicability settings that survive future scans.
- *
- * `checks` and `groups` say WHICH checks do not apply to this site. `reasons`
- * says WHY, keyed by the same string that appears in one of those two lists —
- * the check key for a check, the group name for a group. Applicability requires
- * a reason, and until something writes one the map is simply absent: an
- * exclusion carried over from before reasons were stored has no reason, and
- * that is a gap to be shown rather than a default to be filled in.
- *
- * `reason` is a plain string HERE and only here. This module imports nothing
- * (`agent-audit-isolation` enforces that, so a provider module can never reach
- * it through the state's types), and the registry's reason list lives in
- * `vocabulary.ts`. `agentCheckExclusionReason` in `agent-access.ts` is the one
- * gate: it narrows a stored string to one of the decided reasons or to null,
- * and null means the reason does not apply, never that it was removed.
- *
- * Nothing in `src/` writes this yet. S8 owns the excluded list and the control
- * that fills it in; the same shape reads correctly empty until then.
- *
- * Registry: `concepts.applicability`. Do NOT import `ExclusionReason` here.
- */
+/** Agent-check applicability settings that survive future scans. */
 export interface AgentIgnoreSettings {
   checks: string[];
   groups: string[];
+  /**
+   * Why each excluded check or category does not apply, keyed by
+   * `agentExclusionKey`.
+   *
+   * Optional because the control that wrote these never asked. A record with no
+   * reason predates the question and reads as `UNLABELLED_EXCLUSION_REASON`,
+   * which is the definition of the state the old toggle put it in rather than a
+   * reason invented on the reader's behalf. Stored as a string for the same
+   * reason `NativeElementControl.excluded.reason` is: this module is the
+   * persisted shape and cannot import the registry.
+   */
   reasons?: Record<string, string>;
 }
 
@@ -533,8 +523,6 @@ export interface PerformanceThresholds {
   minimumSavingsKilobytes: number;
 }
 
-/** Optional page-specific values layered over the team monitoring defaults. */
-export type PagePerformanceThresholdOverrides = Partial<PerformanceThresholds>;
 
 /** Legacy per-page event-delivery state retained for persisted-state compatibility. */
 export interface PerformanceAlertState {
@@ -592,8 +580,7 @@ export interface WatchPage {
   agent: AgentCheck[]; // latest agent-readiness scan (per-check)
   agentIgnores?: AgentIgnoreSettings; // page-specific ignores, applied after global defaults
   agentIgnoreRestores?: AgentIgnoreSettings; // page-specific restores of globally ignored checks/categories
-  /** Sparse page-specific calibration; omitted values inherit team defaults. */
-  performanceThresholdOverrides?: PagePerformanceThresholdOverrides;
+
   /** Legacy event-alert state; daily digests use AppState.alertDigests. */
   performanceAlertState?: PerformanceAlertState;
   /** Page-scoped triage controls keyed by stable native-element finding id. */
@@ -897,7 +884,33 @@ export interface AppState {
    */
   externalAgentAuditEnabled?: boolean;
   agentIgnoreDefaults?: AgentIgnoreSettings;
+  /**
+   * The one sensitivity control's position, as a plain string.
+   *
+   * Narrowed to a decided position by `normalizeSensitivity` on read, the same
+   * way an exclusion reason is narrowed by `normalizeNativeElementControls`:
+   * this module is the persisted shape and cannot import the concept modules
+   * that own the value lists.
+   */
+  sensitivity?: string;
+  /**
+   * The limits `sensitivity` resolves to, kept resolved rather than derived at
+   * every read.
+   *
+   * It is not a second setting. `normalizeState` rewrites it from the position
+   * on every read, so a stored set that disagrees with the position loses —
+   * which is what makes the position, not this, the thing a reader edits.
+   */
   performanceThresholds?: PerformanceThresholds;
+  /**
+   * A position that hand-tuned thresholds were mapped to, still owed its one
+   * sentence. Cleared by the digest that carries it.
+   */
+  sensitivityNotice?: string;
+  /** How often the digest is sent. Narrowed by `normalizeDigestCadence`. */
+  digestCadence?: string;
+  /** Who the digest is for. Empty means nobody has been named yet. */
+  digestRecipients?: string[];
   collectionSchedule?: CollectionSchedule;
   measurementIncident?: MeasurementIncident;
   jobs?: CollectionJob[];

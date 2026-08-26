@@ -25,7 +25,6 @@
 
 import {
   EVIDENCE_SOURCES,
-  EXCLUSION_REASONS,
   type AgentResult,
   type AgentVerdict,
   type EvidenceSource,
@@ -41,8 +40,7 @@ import {
   type AgentIssueStatus,
 } from "./agentIssueCases";
 import { EVIDENCE_SOURCE_FOR_AGENT_SYSTEM } from "./issue-case";
-import { agentCheckExclusionSource } from "./agentScoring";
-import type { AgentCheck, AgentIgnoreSettings, NativeElementScan } from "./types";
+import type { NativeElementScan } from "./types";
 
 export type { AgentHalf };
 
@@ -208,87 +206,25 @@ export interface AgentAccessInput {
   /**
    * Sources the user has taken out of this origin's results, with the reason.
    *
-   * `agentAccessExclusions` derives this from the stored settings. Nothing in
-   * `src/` writes a reason into those settings yet — S8 owns the excluded list
-   * and the control that fills it in — so today this arrives empty, and an
-   * excluded check with no recorded reason reads as `Ignored` on its source's
-   * row rather than as an exclusion whose reason somebody invented.
+   * Modelled and rendered, with no producer wired in here on purpose. S8 owns
+   * exclusions end to end — the excluded list, the control that writes a reason,
+   * and `settings-exclusions.ts`, which already resolves a stored string to a
+   * decided reason for that record. A resolver here would be a second opinion
+   * about what a valid reason is, and the two would disagree the day the
+   * registry changes.
+   *
+   * What this input guarantees is the render: whenever S8 hands the panel a
+   * source-level exclusion, the row stays, greys, and carries its reason and its
+   * last reading. Dropping the row instead would be the deletion the
+   * applicability concept exists to prevent.
+   *
+   * The remaining seam is noted in DECISIONS.md 5: S8 resolves reasons from the
+   * workspace defaults, and a page-level exclusion's reason has no reader yet.
    */
   excluded?: Partial<Record<AgentAccessSource, ExclusionReason>>;
 }
 
-/* ── The gate between a stored string and the registry's list ───────────── */
 
-/**
- * The one place a stored agent-check exclusion reason becomes a decided one.
- *
- * `types.ts` imports nothing — `agent-audit-isolation` enforces it, and that is
- * what keeps provider evidence out of the persisted state — so the stored field
- * is a plain string and the registry's list cannot reach it. This function is
- * the gate between the two, and it is the only narrowing site for that record:
- * `agentScoring` deliberately checks the map's shape and never its values, so
- * there is no second opinion about what a valid reason is.
- *
- * `null` means the reason does not apply, never that it is gone. Three ways to
- * get it, and all three leave the stored record exactly as it was:
- *
- *   - the check is not excluded, so there is no reason to give;
- *   - it is excluded and nothing recorded why, which is a gap and is shown as
- *     one (rule 18: an absent value says so rather than taking a default);
- *   - a reason is recorded that the registry no longer names, which is the same
- *     gap arrived at from the other direction.
- */
-export function agentCheckExclusionReason(
-  check: Pick<AgentCheck, "group" | "name">,
-  ignores?: AgentIgnoreSettings,
-  defaults?: AgentIgnoreSettings,
-  restores?: AgentIgnoreSettings,
-): ExclusionReason | null {
-  // Which record excluded it is `agentScoring`'s question, asked once there.
-  const decided = agentCheckExclusionSource(check, ignores, defaults, restores);
-  if (!decided) return null;
-  const stored = decided.settings.reasons?.[decided.key];
-  return stored !== undefined && (EXCLUSION_REASONS as readonly string[]).includes(stored)
-    ? stored as ExclusionReason
-    : null;
-}
-
-export interface AgentAccessExclusionsInput {
-  checks: readonly AgentCheck[];
-  ignores?: AgentIgnoreSettings;
-  ignoreDefaults?: AgentIgnoreSettings;
-  ignoreRestores?: AgentIgnoreSettings;
-}
-
-/**
- * Which of the five sources have been taken out of this origin's results.
- *
- * Only `agent-readiness` can be today: it is the one source whose readings are
- * excluded item by item, and the only stored record that has anywhere to keep a
- * reason. Its row goes Excluded when every check it took is excluded AND every
- * one of those exclusions resolves to the same recorded reason.
- *
- * All three conditions are load-bearing, and the strictness is the point:
- *
- *   - one check excluded out of ten does not exclude the source. The row still
- *     has readings, and the excluded one shows as `Ignored` beside them.
- *   - an excluded check with no recorded reason does not exclude the source.
- *     Applicability requires a reason and this module will not supply one, so
- *     the row reads `Ignored` — which is true — rather than Excluded with a
- *     reason nobody chose.
- *   - two different reasons do not collapse into one. A row carries one
- *     reason, and picking between two would be answering for the reader.
- */
-export function agentAccessExclusions(
-  input: AgentAccessExclusionsInput,
-): Partial<Record<AgentAccessSource, ExclusionReason>> {
-  if (input.checks.length === 0) return {};
-  const reasons = input.checks.map((check) =>
-    agentCheckExclusionReason(check, input.ignores, input.ignoreDefaults, input.ignoreRestores));
-  const first = reasons[0];
-  if (first === null) return {};
-  return reasons.every((reason) => reason === first) ? { "agent-readiness": first } : {};
-}
 
 /* ── Readings ───────────────────────────────────────────────────────────── */
 

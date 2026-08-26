@@ -11,7 +11,7 @@ import { generateText } from "./anthropic";
 import { buildWatcher } from "./watcher";
 import { getEnv } from "./env";
 import { mediansOf, pageRangeComparison, pageRangeTrend } from "./scoring";
-import { effectivePerformanceThresholds, normalizePerformanceThresholds, recommendationMeetsEvidenceThresholds } from "./performanceThresholds";
+import { normalizePerformanceThresholds, recommendationMeetsEvidenceThresholds } from "./performanceThresholds";
 import { parseMarkerDate, shortDate } from "./ui";
 import { CATEGORIES, STRATEGIES } from "./types";
 import type {
@@ -183,7 +183,7 @@ export async function insertRecommendations(
   const snapshot = await dataStore.getState();
   const page = snapshot.pages.find((item) => item.id === pageId);
   if (!page) return snapshot;
-  const thresholds = effectivePerformanceThresholds(snapshot.performanceThresholds, page);
+  const thresholds = normalizePerformanceThresholds(snapshot.performanceThresholds);
   const added = shortDate(now);
   const actionable = opportunities.filter((opportunity) =>
     recommendationMeetsEvidenceThresholds(opportunity, thresholds)
@@ -270,7 +270,7 @@ export async function generateWatcherNote(dataStore: DataStore, now: Date): Prom
   const w = buildWatcher(state.pages, state.recs, "desktop", 30, state.agentIgnoreDefaults, thresholds, visitorEvidence);
   const regressionDetail = state.pages.flatMap((p) => {
     if (!isPageActivelyMonitored(p)) return [];
-    if (pageRangeTrend(p, "desktop", 30, effectivePerformanceThresholds(thresholds, p)) !== "regressing" || !p.baseline) return [];
+    if (pageRangeTrend(p, "desktop", 30, normalizePerformanceThresholds(thresholds)) !== "regressing" || !p.baseline) return [];
     const drop = Math.abs(pageRangeComparison(p, "desktop", "perf", 30)?.delta ?? 0);
     const marker = p.markers.length ? p.markers[p.markers.length - 1].text : null;
     return [`${p.title}: dropped ${drop} performance points${marker ? ` after "${marker}"` : ""}`];

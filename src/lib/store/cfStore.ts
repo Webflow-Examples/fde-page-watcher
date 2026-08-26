@@ -2,7 +2,7 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { TENANT, type AppState, type ChangeMarker, type CollectionJob, type Night } from "../types";
 import { buildInitialState, buildSeedCruxEvidence, DEMO_DATA_VERSION } from "../seed";
 import { captureAgentReadiness } from "../agentScoring";
-import { effectivePerformanceThresholds } from "../performanceThresholds";
+import { normalizePerformanceThresholds } from "../performanceThresholds";
 import { mediansOf, pageTrend } from "../scoring";
 import { resolveMarkerIndex } from "../followups";
 import type { DataStore } from "./fsStore";
@@ -254,7 +254,7 @@ class CfDataStore implements DataStore {
         desktop: mediansOf(night.scores.desktop),
       };
       page.agent = agent ?? [];
-      page.status = pageTrend(page, "mobile", effectivePerformanceThresholds(draft.performanceThresholds, page));
+      page.status = pageTrend(page, "mobile", normalizePerformanceThresholds(draft.performanceThresholds));
       page.runState = undefined;
       page.lastRunAt = night.iso ?? new Date().toISOString();
       page.lastCollectionStatus = "trusted";

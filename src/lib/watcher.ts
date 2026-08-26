@@ -1,6 +1,6 @@
 import type { AgentIgnoreSettings, PerformanceThresholds, RangeDays, Rec, Strategy, WatchPage } from "./types";
 import { summarizeAgentChecks } from "./agentScoring";
-import { DEFAULT_PERFORMANCE_THRESHOLDS, effectivePerformanceThresholds, normalizePerformanceThresholds } from "./performanceThresholds";
+import { DEFAULT_PERFORMANCE_THRESHOLDS, normalizePerformanceThresholds } from "./performanceThresholds";
 import { savingsValue } from "./ui";
 import {
   pageAgentSnapshotForRange,
@@ -152,7 +152,7 @@ export function buildWatcherCards(
   const now = Date.now();
 
   for (const page of activePages) {
-    const thresholds = effectivePerformanceThresholds(teamThresholds, page);
+    const thresholds = normalizePerformanceThresholds(teamThresholds);
     const trends = {
       mobile: pageRangeTrend(page, "mobile", rangeDays, thresholds, now),
       desktop: pageRangeTrend(page, "desktop", rangeDays, thresholds, now),
@@ -233,7 +233,7 @@ export function buildWatcher(
   const teamThresholds = normalizePerformanceThresholds(performanceThresholds);
   const devices = orderedDevices(strategy);
   const trends = new Map(activePages.map((page) => {
-    const thresholds = effectivePerformanceThresholds(teamThresholds, page);
+    const thresholds = normalizePerformanceThresholds(teamThresholds);
     const byDevice = {
       mobile: pageRangeTrend(page, "mobile", rangeDays, thresholds),
       desktop: pageRangeTrend(page, "desktop", rangeDays, thresholds),
@@ -255,26 +255,26 @@ export function buildWatcher(
   const lowPerformance = activePages.filter((page) => devicesForPolicy(
     devices.filter((device) => {
       const score = latestScore(page, device, "perf", rangeDays);
-      return score !== null && score < effectivePerformanceThresholds(teamThresholds, page).lowPerformance;
+      return score !== null && score < normalizePerformanceThresholds(teamThresholds).lowPerformance;
     }),
     strategy,
-    effectivePerformanceThresholds(teamThresholds, page).devicePolicy,
+    normalizePerformanceThresholds(teamThresholds).devicePolicy,
   ).length > 0).length;
   const agentGaps = activePages.filter((page) => {
     const snapshot = pageAgentSnapshotForRange(page, rangeDays);
     if (!snapshot) return false;
     const summary = summarizeAgentChecks(snapshot.checks, page.agentIgnores, agentIgnoreDefaults, page.agentIgnoreRestores);
-    return summary.total > 0 && summary.percent < effectivePerformanceThresholds(teamThresholds, page).agentReadiness;
+    return summary.total > 0 && summary.percent < normalizePerformanceThresholds(teamThresholds).agentReadiness;
   }).length;
   const qualityIssues = activePages.filter((page) => devicesForPolicy(
     devices.filter((device) => (["a11y", "bp", "seo"] as const).some((key) => {
       const score = latestScore(page, device, key, rangeDays);
-      const thresholds = effectivePerformanceThresholds(teamThresholds, page);
+      const thresholds = normalizePerformanceThresholds(teamThresholds);
       const qualityCutoffs = { a11y: thresholds.accessibility, bp: thresholds.bestPractices, seo: thresholds.seo } as const;
       return score !== null && score < qualityCutoffs[key];
     })),
     strategy,
-    effectivePerformanceThresholds(teamThresholds, page).devicePolicy,
+    normalizePerformanceThresholds(teamThresholds).devicePolicy,
   ).length > 0).length;
   const fieldByPage = new Map(activePages.map((page) => [page.id, pageFieldPriority(page, strategy, visitorEvidence)]));
   const hasExactUrlSignal = (page: WatchPage, key: "corroborated" | "fieldOnly") => {
@@ -317,7 +317,7 @@ export function buildWatcher(
       const readings = ranked.map((page) => ({
         page,
         comparison: pageRangeComparison(page, strategy, key, rangeDays),
-        thresholds: effectivePerformanceThresholds(teamThresholds, page),
+        thresholds: normalizePerformanceThresholds(teamThresholds),
       }));
       const dropped = readings.filter(({ comparison, thresholds }) =>
         comparison !== null

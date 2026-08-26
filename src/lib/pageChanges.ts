@@ -1,6 +1,6 @@
 import type { IssueCase } from "./issue-case";
 import { queueOf } from "./issue-case";
-import { effectivePerformanceThresholds, normalizePerformanceThresholds } from "./performanceThresholds";
+import { normalizePerformanceThresholds } from "./performanceThresholds";
 import type { ScoreBand } from "./scoring";
 import {
   historyForStrategy,
@@ -421,7 +421,7 @@ export function buildPageChanges({
   const monitored = pages.filter(isPageActivelyMonitored);
 
   const rows: PageChangeRow[] = monitored.map((page) => {
-    const thresholds = effectivePerformanceThresholds(teamThresholds, page);
+    const thresholds = normalizePerformanceThresholds(teamThresholds);
     const readings = readingsFor(page, thresholds, reference);
     const arrivedAt = pageArrivedAt(page);
     const arrivedMs = parsedISO(arrivedAt);
