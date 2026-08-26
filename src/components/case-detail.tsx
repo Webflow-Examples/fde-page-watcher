@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { attributionOf } from "@/lib/caller";
 import {
   RESOLVING_INTERVAL,
   includedPages,
@@ -249,31 +250,45 @@ export function CaseDetail({
             <li style={{ padding: "7px 0", fontSize: 12.5, color: "var(--text-muted)" }}>
               {historyDetected(issue.pageIds.length)} · {formatDate(issue.detectedAt, locale)}
             </li>
-            {issue.history.map((entry, index) => (
-              <li
-                key={`${entry.at}-${index}`}
-                style={{
-                  display: "flex",
-                  gap: 12,
-                  padding: "7px 0",
-                  borderTop: "1px solid var(--border-hairline)",
-                  fontSize: 12.5,
-                }}
-              >
-                <span style={{ flex: "0 0 auto", color: "var(--text-muted)" }}>
-                  {formatDate(entry.at, locale)}
-                </span>
-                <span style={{ flex: "1 1 auto", color: "var(--text-body)" }}>
-                  {/* A note carries the same state on both sides, so it gets no
-                      arrow — "Fixed → Fixed" is worse than no line. `isTransition`
-                      is the one place that knows the difference. */}
-                  {entry.reason
-                    ?? (isTransition(entry)
-                      ? `${entry.from ? `${WORK_STATE_LABEL[entry.from]} → ` : ""}${WORK_STATE_LABEL[entry.to]}`
-                      : WORK_STATE_LABEL[entry.to])}
-                </span>
-              </li>
-            ))}
+            {issue.history.map((entry, index) => {
+              /* Attribution is a field of its own beside the date, never
+                 joined onto the line. Both person-fired lines lead with a page
+                 — "/archive/2019 excluded — Intentional" — so "{line} by
+                 {name}" turns the name into part of the reason. A system-fired
+                 line leaves the field out entirely rather than naming the job
+                 that ran, which is the implementation talking. */
+              const attribution = attributionOf(entry.by);
+              return (
+                <li
+                  key={`${entry.at}-${index}`}
+                  style={{
+                    display: "flex",
+                    gap: 12,
+                    padding: "7px 0",
+                    borderTop: "1px solid var(--border-hairline)",
+                    fontSize: 12.5,
+                  }}
+                >
+                  <span style={{ flex: "0 0 auto", color: "var(--text-muted)" }}>
+                    {formatDate(entry.at, locale)}
+                  </span>
+                  <span style={{ flex: "1 1 auto", color: "var(--text-body)" }}>
+                    {/* A note carries the same state on both sides, so it gets no
+                        arrow — "Fixed → Fixed" is worse than no line. `isTransition`
+                        is the one place that knows the difference. */}
+                    {entry.reason
+                      ?? (isTransition(entry)
+                        ? `${entry.from ? `${WORK_STATE_LABEL[entry.from]} → ` : ""}${WORK_STATE_LABEL[entry.to]}`
+                        : WORK_STATE_LABEL[entry.to])}
+                  </span>
+                  {attribution ? (
+                    <span style={{ flex: "0 0 auto", color: "var(--text-muted)" }}>
+                      {attribution}
+                    </span>
+                  ) : null}
+                </li>
+              );
+            })}
           </ol>
         </Section>
       </div>
