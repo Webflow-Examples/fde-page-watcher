@@ -127,11 +127,11 @@ export function alertFieldContext(page: WatchPage, strategies: Strategy[], evide
   const scopeNote = scopes.has("origin") ? " Origin-wide CrUX is contextual, not page-level proof." : "";
   if (corroborated.length) return {
     signature: `corroborated:${corroborated.sort().join("|")}:${[...scopes].sort().join(",")}`,
-    text: `CrUX corroborates ${corroborated.join(", ")}.${scopeNote}`,
+    text: `Real visitors confirm ${corroborated.join(", ")}.${scopeNote}`,
   };
   if (fieldOnly.length) return {
     signature: `field-only:${fieldOnly.sort().join("|")}:${[...scopes].sort().join(",")}`,
-    text: `CrUX also shows field-only risk for ${fieldOnly.join(", ")}.${scopeNote}`,
+    text: `Real visitors are also seeing a problem on ${fieldOnly.join(", ")}.${scopeNote}`,
   };
   if (labOnly.length) return {
     signature: `lab-only:${labOnly.sort().join("|")}:${[...scopes].sort().join(",")}`,

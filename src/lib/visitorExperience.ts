@@ -61,17 +61,36 @@ export function visitorExperienceTrend(item: CruxPageEvidence | null): VisitorEx
   return "stable";
 }
 
+/**
+ * How the two sides read together, in words.
+ *
+ * Named and exported for the same two reasons as the comparison's headlines:
+ * they were seven literals in one function, asserted by seven more in the test,
+ * and every one of them said "Lighthouse" and "visitor experience" — the name of
+ * the tool and a phrase of ours — where the reader has a nightly test and some
+ * real visitors. What is measured has not changed; what it is called has.
+ */
+export const VISITOR_CONFIDENCE_LABEL = {
+  not_enough: "Not enough visitor figures yet",
+  worse_both: "Worse in the nightly test and for real visitors",
+  worse_test_only: "Worse in the nightly test; steady for real visitors",
+  better_test_only: "Better in the nightly test; steady for real visitors",
+  worse_visitors: "Getting worse for real visitors",
+  better_visitors: "Getting better for real visitors",
+  steady: "Steady for real visitors",
+} as const;
+
 export function visitorConfidenceLabel(
   labTrend: PageStatus,
   visitorTrend: VisitorExperienceTrend,
 ): string {
-  if (visitorTrend === "insufficient") return "Visitor experience unavailable";
-  if (labTrend === "regressing" && visitorTrend === "worsening") return "Lighthouse and visitor experience worsening";
-  if (labTrend === "regressing" && visitorTrend === "stable") return "Lighthouse worsening; visitor experience stable";
-  if (labTrend === "improving" && visitorTrend === "stable") return "Lighthouse improving; visitor experience stable";
-  if (visitorTrend === "worsening") return "Visitor experience worsening";
-  if (visitorTrend === "improving") return "Visitor experience improving";
-  return "Visitor experience stable";
+  if (visitorTrend === "insufficient") return VISITOR_CONFIDENCE_LABEL.not_enough;
+  if (labTrend === "regressing" && visitorTrend === "worsening") return VISITOR_CONFIDENCE_LABEL.worse_both;
+  if (labTrend === "regressing" && visitorTrend === "stable") return VISITOR_CONFIDENCE_LABEL.worse_test_only;
+  if (labTrend === "improving" && visitorTrend === "stable") return VISITOR_CONFIDENCE_LABEL.better_test_only;
+  if (visitorTrend === "worsening") return VISITOR_CONFIDENCE_LABEL.worse_visitors;
+  if (visitorTrend === "improving") return VISITOR_CONFIDENCE_LABEL.better_visitors;
+  return VISITOR_CONFIDENCE_LABEL.steady;
 }
 
 export function formatVisitorMetric(key: VisitorMetricKey, value: number | null): string {

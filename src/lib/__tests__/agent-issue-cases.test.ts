@@ -14,6 +14,7 @@ import { ORA_CHECK_ISSUE_KEYS } from "../ora";
 import { ALL_AGENT_CHECKS } from "../agentChecks";
 import type { ExternalAgentFinding, ExternalAgentOriginAudit } from "../agentAudit";
 import type { AgentCheck } from "../types";
+import { EVIDENCE_SOURCE_LABEL } from "../vocabulary";
 
 function check(name: string, pass: boolean, extra: Partial<AgentCheck> = {}): AgentCheck {
   const known = ALL_AGENT_CHECKS.find((item) => item.name === name);
@@ -219,8 +220,13 @@ describe("result vocabulary stays distinct", () => {
     });
     const item = caseFor(cases, "agent-discoverability:sitemap");
     expect(item.confidence).toBe("conflicting");
-    expect(item.conflict).toContain("Ora");
-    expect(item.conflict).toContain("Page Watch HTTP");
+    // Named from the registry's evidence ledger, not from literals here. Rule
+    // 21: two copies of a name agreeing proves neither is the decided one, and
+    // this assertion used to hold a third spelling — "Page Watch HTTP" — that
+    // the ledger never named. Now a relabel in `vocabulary.json` moves the
+    // sentence and this check together, and a drift between them fails.
+    expect(item.conflict).toContain(EVIDENCE_SOURCE_LABEL.ora);
+    expect(item.conflict).toContain(EVIDENCE_SOURCE_LABEL["agent-readiness"]);
     // Both readings survive so a user can judge for themselves.
     expect(item.sources.map((s) => s.result).sort()).toEqual(["failed", "pass"]);
   });

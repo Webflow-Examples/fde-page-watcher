@@ -8,6 +8,7 @@ import {
   visitorSnapshotForNight,
   visitorConfidenceLabel,
   visitorExperienceTrend,
+  VISITOR_CONFIDENCE_LABEL,
 } from "../visitorExperience";
 
 function snapshot(overrides: Partial<CruxSnapshot> = {}): CruxSnapshot {
@@ -62,8 +63,10 @@ describe("visitor experience presentation", () => {
     expect(metricRating("inpP75Ms", 350)).toBe("Needs improvement");
     expect(formatVisitorMetric("lcpP75Ms", 2_450)).toBe("2.5 s");
     expect(formatVisitorMetric("clsP75", 0.081)).toBe("0.08");
-    expect(visitorConfidenceLabel("regressing", "stable")).toBe("Lighthouse worsening; visitor experience stable");
-    expect(visitorConfidenceLabel("regressing", "worsening")).toBe("Lighthouse and visitor experience worsening");
+    // Asserts which conclusion each pair of trends resolves to, from the one
+    // place those conclusions are written (rule 21).
+    expect(visitorConfidenceLabel("regressing", "stable")).toBe(VISITOR_CONFIDENCE_LABEL.worse_test_only);
+    expect(visitorConfidenceLabel("regressing", "worsening")).toBe(VISITOR_CONFIDENCE_LABEL.worse_both);
   });
 
   it("matches nightly rows to the latest eligible weekly CrUX window", () => {

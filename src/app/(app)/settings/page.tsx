@@ -10,7 +10,7 @@ import { ProjectMembers } from "@/components/ProjectMembers";
 import { SegmentedControl } from "@/components/segmented-control";
 import { useStore } from "@/components/store";
 import { WebflowConnection } from "@/components/webflow-connection";
-import { AGENT_CHECK_GROUPS, ALL_AGENT_CHECKS } from "@/lib/agentChecks";
+import { AGENT_CHECK_GROUPS, ALL_AGENT_CHECKS, agentCheckLabel, agentGroupLabel } from "@/lib/agentChecks";
 import { agentCheckKey, normalizeAgentIgnoreSettings } from "@/lib/agentScoring";
 import { digestLimit } from "@/lib/digest-copy";
 import { DIGEST_CADENCES, DIGEST_CADENCE_LABEL, normalizeDigestCadence } from "@/lib/digestCadence";
@@ -42,12 +42,15 @@ import {
   SETTINGS_SENSITIVITY_LIMIT_LABEL,
   SETTINGS_SYSTEMS_HELP,
   SETTINGS_SYSTEMS_LABEL,
+  SETTINGS_SYSTEM_CONTRIBUTES,
   settingsSubtitle,
 } from "@/lib/settings-copy";
 import { excludedFromResults, type ExcludedRow } from "@/lib/settings-exclusions";
 import { alertWebhookUrlIsValid } from "@/lib/webhook";
 import {
   DESTINATION_LABEL,
+  EVIDENCE_SOURCES,
+  EVIDENCE_SOURCE_LABEL,
   applicabilityActionLabel,
   type ExclusionReason,
 } from "@/lib/vocabulary";
@@ -300,12 +303,12 @@ function ExcludedGroup({ disabled }: { disabled: boolean }) {
   const excludable = [
     ...AGENT_CHECK_GROUPS
       .filter((group) => !defaults.groups.includes(group.name))
-      .map((group) => ({ key: `group:${group.name}`, label: group.name, scope: "group" as const, value: group.name })),
+      .map((group) => ({ key: `group:${group.name}`, label: agentGroupLabel(group.name), scope: "group" as const, value: group.name })),
     ...ALL_AGENT_CHECKS
       .filter((check) => !defaults.groups.includes(check.group) && !defaults.checks.includes(agentCheckKey(check)))
       .map((check) => ({
         key: `check:${agentCheckKey(check)}`,
-        label: `${check.group} · ${check.name}`,
+        label: `${agentGroupLabel(check.group)} · ${agentCheckLabel(check.name)}`,
         scope: "check" as const,
         value: agentCheckKey(check),
       })),
@@ -448,13 +451,44 @@ function ConnectedSystemsGroup({ disabled }: { disabled: boolean }) {
         syncUrl={pathFor("/api/settings/webflow/sync")}
       />
 
+      {/*
+        The systems with nothing to configure, and what each one contributes.
+
+        This is the operational half of the retired glossary, and it sits here
+        rather than on a reference page for the reason the glossary was retired:
+        a reader who has to leave the screen to find out what took a reading
+        will not go, and most of this product's copy is read outside the app
+        entirely, where no link is reachable.
+
+        Derived from the registry's evidence sources rather than listed by hand,
+        so a system added to the ledger appears here instead of arriving
+        unexplained. Ora is the one with a control and has its own row below.
+      */}
+      <div className="settings-system settings-system--stacked">
+        <div style={{ minWidth: 0 }}>
+          <h3 className="settings-system__name">Always on</h3>
+          <p className="settings-system__note">
+            These need no connecting and cannot be switched off. Each one is a separate voice in the evidence
+            ledger, so where two of them disagree you see both readings rather than an average.
+          </p>
+        </div>
+        <dl className="settings-contributes">
+          {EVIDENCE_SOURCES.filter((source) => source !== "ora").map((source) => (
+            <div key={source} className="settings-contributes__row">
+              <dt className="settings-contributes__name">{EVIDENCE_SOURCE_LABEL[source]}</dt>
+              <dd className="settings-contributes__note">{SETTINGS_SYSTEM_CONTRIBUTES[source]}</dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+
       <div className="settings-system">
         <div style={{ minWidth: 0 }}>
-          <h3 className="settings-system__name">Ora</h3>
+          <h3 className="settings-system__name">{EVIDENCE_SOURCE_LABEL.ora}</h3>
           <p className="settings-system__note">
-            An independent, origin-level agent-readiness audit. Enabling it sends the production origin of each
-            watched page to Ora, whose scans are public: the result enters Ora&apos;s directory and is readable by
-            anyone. Webflow staging domains are never sent.
+            {SETTINGS_SYSTEM_CONTRIBUTES.ora} Switching it on sends the live web address of each watched page to
+            Ora, whose scans are public: the result enters Ora&apos;s directory and anyone can read it. Webflow
+            staging addresses are never sent.
           </p>
         </div>
         <SegmentedControl

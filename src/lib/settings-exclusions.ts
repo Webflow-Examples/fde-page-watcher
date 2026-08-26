@@ -1,4 +1,4 @@
-import { AGENT_CHECK_GROUPS, ALL_AGENT_CHECKS } from "./agentChecks";
+import { AGENT_CHECK_GROUPS, ALL_AGENT_CHECKS, agentCheckLabel, agentGroupLabel } from "./agentChecks";
 import { agentCheckKey, agentExclusionKey, normalizeAgentIgnoreSettings } from "./agentScoring";
 import { formatImpact, NOT_MEASURED } from "./impact-format";
 import { excludedPageIds, exclusionReasonOf, type IssueCase } from "./issue-case";
@@ -132,7 +132,8 @@ function agentRows(state: AppState): ExcludedRow[] {
     return [{
       id: `agent-group:${name}`,
       kind: "check",
-      title: name,
+      // The stored value is the key; the row shows the words for it.
+      title: agentGroupLabel(name),
       scope: null,
       reason: reasonFor(defaults, "group", name),
       reading: reading ?? NOT_MEASURED,
@@ -154,8 +155,8 @@ function agentRows(state: AppState): ExcludedRow[] {
     return [{
       id: `agent-check:${key}`,
       kind: "check",
-      title: check.name,
-      scope: check.group,
+      title: agentCheckLabel(check.name),
+      scope: agentGroupLabel(check.group),
       reason: reasonFor(defaults, "check", key),
       reading: reading ?? NOT_MEASURED,
       measured: reading !== null,

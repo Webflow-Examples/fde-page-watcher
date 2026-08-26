@@ -303,7 +303,7 @@ function ReportModal() {
             </div>
           ))}
         </div>
-        <div style={{ fontSize: 12, fontWeight: 550, letterSpacing: "0.05em", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: 8 }}>Raw PSI payload (object storage)</div>
+        <div style={{ fontSize: 12, fontWeight: 550, letterSpacing: "0.05em", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: 8 }}>The full reply from the nightly test</div>
         <pre
           style={{ margin: 0, fontFamily: "ui-monospace, SFMono-Regular, monospace", fontSize: 12, lineHeight: 1.6, background: "var(--surface-page)", color: "var(--text-muted)", border: "1px solid var(--border-hairline)", padding: 16, borderRadius: 9, overflow: "auto" }}
         >

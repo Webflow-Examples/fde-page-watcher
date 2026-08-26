@@ -60,7 +60,13 @@ describe("scenario-rich demo data", () => {
     expect(state.collectionSchedule).toMatchObject({ timeZone: "America/Chicago", overridden: true });
     expect(state.followUps?.some(({ sent }) => sent)).toBe(true);
     expect(state.followUps?.some(({ retryAfterISO }) => !!retryAfterISO)).toBe(true);
-    expect(state.watcherNote?.text).toContain("provider incident");
+    // The note must still account for the excluded nights — a demo that shows
+    // two missing readings and never says why teaches the reader to distrust
+    // the record. Asserted on the claim rather than on the old phrase
+    // "provider incident", which named the fault in our words rather than in
+    // the reader's (S9).
+    expect(state.watcherNote?.text).toMatch(/left out|excluded/);
+    expect(state.watcherNote?.text).toMatch(/testing service|provider/);
   });
 
   it("keeps live mode empty and free of demo-only metadata", () => {
