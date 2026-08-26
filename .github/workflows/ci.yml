@@ -9,9 +9,19 @@ on:
 permissions:
   contents: read
 
+# Pull-request runs supersede each other: only the newest push to a PR branch
+# needs an answer, and the run it cancels belongs to a sha nobody will merge.
+#
+# Post-merge runs on main are not interchangeable that way. Each one is the
+# record of what a single merge commit shipped, and two merges landing a minute
+# apart share a ref, so the old grouping had the second merge cancel the first.
+# A cancelled run is recorded as a red check against the commit it superseded --
+# see 1622ed7 (F5), cancelled 17s in by the R2 merge and still carrying an X for
+# code that was never judged. So push runs get a group per sha and are never
+# cancelled: the record of a merge is always that merge's own result.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   checks:
