@@ -102,18 +102,18 @@ const DEVICE_NAME: Record<Strategy, string> = { mobile: "Mobile", desktop: "Desk
  * rather than two that happen to agree.
  */
 export function usePageChanges(): PageChangesView {
-  const { pages, recs, performanceThresholds } = useStore();
+  const { pages, recs, performanceThresholds, caseDecisions } = useStore();
   return useMemo(
     () => buildPageChanges({
       pages,
-      cases: issueCasesFrom({ recs, pages }),
+      cases: issueCasesFrom({ recs, pages, caseDecisions }),
       performanceThresholds,
       // The newest completed run, not the wall clock: it keeps a render a pure
       // function of stored state, and dates arrival against the last thing that
       // actually measured anything.
       now: lastRunAtOf(pages),
     }),
-    [pages, recs, performanceThresholds],
+    [pages, recs, caseDecisions, performanceThresholds],
   );
 }
 

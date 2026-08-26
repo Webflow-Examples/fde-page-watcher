@@ -85,6 +85,20 @@ export const NO_ACTION_REASON = {
   platform: "Webflow owns this one. It is shown so the reading is not hidden from you.",
 } as const;
 
+/* ── A decision that no longer applies ──────────────────────────────────── */
+
+/**
+ * What a case says when a decision about it was stranded.
+ *
+ * The case is undecided and its buttons are live, so this is not an apology for
+ * a missing control — it is the reason the reader is being asked a question they
+ * remember answering. Naming the cause is the whole value: without it the case
+ * looks like it lost their decision, which is the failure, rather than like the
+ * fix moved out from under it, which is what happened.
+ */
+export const DECISION_STRANDED =
+  "The fix for this changed after it was accepted, so it needs deciding again.";
+
 /* ── History ────────────────────────────────────────────────────────────── */
 
 export function historyDetected(pages: number): string {

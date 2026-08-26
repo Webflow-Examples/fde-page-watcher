@@ -230,6 +230,41 @@ export interface NativeElementControl {
   updatedAt: string;
 }
 
+/**
+ * One decision somebody took about a remediation, as it is stored.
+ *
+ * Keyed on the remediation and never on a case. A case is a group with no
+ * identity of its own — the merged case takes the id of whichever member came
+ * first, and membership changes whenever evidence does — so a decision keyed on
+ * one would detach from the thing it was about the first time a page joined or
+ * left. `remediationKey` in `issue-case.ts` produces the key.
+ *
+ * Two grains share the log, which is why two fields are optional rather than
+ * two record types being declared. `pageId` is set for `exclude` and `include`,
+ * which are about one page of the remediation, and absent for `accept` and
+ * `dismiss`, which are about the remediation entire. `reason` is set where the
+ * registry requires one. Neither is optional at the door: `caseDecisionFrom`
+ * refuses an entry missing what its decision needs, and the narrow union it
+ * returns has no way to express the wrong combination.
+ *
+ * `reason` is a plain string here for the same reason `NativeElementControl`'s
+ * is: this module imports nothing (`agent-audit-isolation` enforces it), and
+ * the registry's reason lists live in `vocabulary.ts`. `case-decisions.ts` is
+ * the one gate, narrowing on write and on read.
+ */
+export type CaseDecisionKind = "exclude" | "include" | "accept" | "dismiss";
+
+export interface CaseDecisionRecord {
+  decision: CaseDecisionKind;
+  remediationKey: string;
+  pageId?: string;
+  reason?: string;
+  /** ISO. Also the entry's place in the log, which is kept in append order. */
+  at: string;
+  /** The same `actor` word every transition writes today. F4 migrates it. */
+  actor: string;
+}
+
 /** Privacy-safe page-content finding for a known Webflow-native element footprint. */
 export interface NativeElementFinding {
   id: string;
@@ -797,6 +832,17 @@ export interface AppState {
   projectArchivePageFlags?: Record<string, Flag>;
   pages: WatchPage[];
   recs: Rec[];
+  /**
+   * What people decided about remediations, oldest first.
+   *
+   * Append-only, and separate from `recs` on purpose. The collector rewrites
+   * records nightly and how it merges them is its own business, so a decision
+   * written onto one would be a decision the next run could overwrite. Nothing
+   * in the collector writes this; nothing anywhere edits an entry in place or
+   * prunes one on read. An entry matching nothing today is a decision somebody
+   * made, not a decision that stopped existing.
+   */
+  caseDecisions?: CaseDecisionRecord[];
   /** Workspace-owned HTTPS endpoint for confirmed performance-regression alerts. */
   alertWebhookUrl?: string | null;
   /** Recent scheduled digest claims/deliveries, retained for idempotency and retries. */
