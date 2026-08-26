@@ -49,7 +49,7 @@ import { normalizeCollectionSchedule } from "@/lib/collectionSchedule";
 import { evidenceForPage, visitorExperienceTrend } from "@/lib/visitorExperience";
 import { performanceIssueCounts, siteCulpritRollups, sitePerformanceIssues } from "@/lib/performanceIssues";
 import type { PerformanceIssueStatus } from "@/lib/performanceIssues";
-import { customerActionabilityFor, recommendationIsCustomerActionable, remediationTone, triageActionLabel, webflowClassificationFor } from "@/lib/webflowPerformance";
+import { customerActionabilityFor, recommendationIsCustomerActionable, remediationTone, webflowClassificationFor } from "@/lib/webflowPerformance";
 import { siteNativeElementRollups } from "@/lib/nativeElements";
 import { compareLabAndField } from "@/lib/labFieldComparison";
 import { fieldPriorityRankForRec, recommendationEvidenceSignal } from "@/lib/fieldPrioritization";
@@ -260,7 +260,6 @@ function DashboardContent({
     setRangeDays,
     dashSort,
     sortDash,
-    triageRec,
     pathFor,
     visitorExperienceVisible,
     visitorExperience,
@@ -567,13 +566,8 @@ function DashboardContent({
             <span className="watcher-ribbon__running" aria-label="Analysis is running">
               <Circle size={10} weight="fill" />
             </span>
-          ) : topRibbonRec ? (
-            <>
-              {topRibbonEvidence && <FieldEvidenceChip signal={topRibbonEvidence} />}
-              <button type="button" className="watcher-ribbon__primary" onClick={() => triageRec(topRibbonRec.key)}>
-                {triageActionLabel(topRibbonRec)}
-              </button>
-            </>
+          ) : topRibbonRec && topRibbonEvidence ? (
+            <FieldEvidenceChip signal={topRibbonEvidence} />
           ) : null}
           <Link className="watcher-ribbon__inbox" href={pathFor(`${DESTINATION_PATH.issues}?queue=decide`)}>
             {`Open ${QUEUE_LABEL.decide}`}

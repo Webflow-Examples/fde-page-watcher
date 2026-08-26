@@ -67,34 +67,6 @@ export async function requestAgentAuditRefresh(
   });
 }
 
-/**
- * Ask the collector to re-verify one implemented agent task. The task key is
- * the only input; the collector resolves the provider check ids server-side.
- */
-export async function requestAgentAuditVerify(
-  tenant: string,
-  recKey: string,
-  fetchFn: typeof fetch = fetch,
-): Promise<Response> {
-  const configured = getEnv("FDE_DATA_URL") ?? getEnv("COLLECTOR_URL");
-  if (!configured && getEnv("DATASET_MODE") !== "live") {
-    return Response.json({
-      error: "external agent verification is unavailable without a collector",
-      code: "ORA_SCAN_DISABLED",
-    }, { status: 503 });
-  }
-  return fetchFn(`${collectorBaseUrl()}/data/${encodeURIComponent(tenant)}/agent-audits/ora/verify`, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${collectorSecret()}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({ recKey }),
-    cache: "no-store",
-    signal: AbortSignal.timeout(60_000),
-  });
-}
-
 /** Relay a collector response with a bounded body and no caching. */
 export async function relayAgentAuditResponse(response: Response): Promise<Response> {
   const body = await response.text();

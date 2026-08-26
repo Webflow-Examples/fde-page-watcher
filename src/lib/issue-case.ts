@@ -53,7 +53,7 @@ import {
   type Queue,
   type WorkState,
 } from "./vocabulary";
-import type { Caller } from "./caller";
+import { attributionOf, type Caller } from "./caller";
 import { historyExcluded, historyIncluded } from "./case-copy";
 import { isFieldRecommendationActionable, fieldRecommendationLifecycleStatus } from "./fieldOnlyRecommendations";
 import { parseMarkerDate } from "./ui";
@@ -197,9 +197,49 @@ export interface IssueCase {
   evidence: EvidenceEntry[];
   // 9 history — every transition, append-only
   history: HistoryEntry[];
-  // work view (D4) — added in place, never a copy
+  /* ── The work view — two fields, and no hand on either ──────────────── */
+  /**
+   * Who picked this up — the identity `attributionOf` gives their caller.
+   * Written by `start` and by nothing else.
+   *
+   * There is no setter for this and no input bound to it, which is the whole
+   * design rather than an omission. An owner a person can retype is an owner
+   * that disagrees with the history entry beside it the first time somebody
+   * corrects a spelling, and then the case has two answers to "who has this"
+   * — the same defect, one field smaller, that the four merged lifecycles
+   * were. Whoever fired `start` is the owner; if that is wrong, the remedy is
+   * a transition, not a text field.
+   *
+   * An identity rather than a `Caller`, because F4 split the two on purpose:
+   * the class is a permission and this is the record of who. `start` is
+   * person-only, so the class here is already known and constant, and a field
+   * typed to admit `{ kind: "system" }` is a field that eventually holds one.
+   *
+   * Absent is common and is a real answer. A legacy record that arrives
+   * already `in_progress` through `stateFromTaskStatus` never passed through
+   * `start`; a migrated person caller carries `UNKNOWN_USER`, which recorded
+   * the class and threw the identity away. Rule 18 applies to a name as much
+   * as to a reading — the queue says there is no owner rather than inventing
+   * one or printing a sentinel.
+   */
   owner?: string;
-  checklist?: { text: string; done: boolean }[];
+  /**
+   * When they picked it up. Written by `start`, alongside `owner`.
+   *
+   * The pair is written together and read together. This is the only date the
+   * fix queue nudges with — past thirty days it renders amber, which is a
+   * statement of fact and not an alert. There is no due date and no second
+   * threshold behind it.
+   */
+  startedAt?: string;
+  /**
+   * Free text for whoever picks this up.
+   *
+   * No schema, no required fields, nothing derived from it. A note is the one
+   * place on a case where the app does not have an opinion about the shape of
+   * what you write, which is what makes it usable for the thing that did not
+   * fit any of the other eight sections.
+   */
   notes?: string;
 }
 
@@ -521,6 +561,14 @@ export function checkpointsAgree(checkpoints: readonly Checkpoint[]): boolean {
  * nothing offers a Resolve button. Reaching this throw means a caller was
  * written against a permission it does not have, so it names the transition,
  * the classes the registry permits, and the class it was handed.
+ *
+ * Two transitions write more than a state and a history line, and both write it
+ * here rather than in their named wrapper below. `mark_fixed` schedules the
+ * checkpoints that will settle the case; `start` stamps the owner and the start
+ * date. Putting both on this function is what makes "no other path writes
+ * either" true of the codebase rather than merely intended: `start` is a
+ * one-line call to `applyAction`, so there is no second door into `in_progress`
+ * that could reach it without the stamp.
  */
 export function applyAction(issue: IssueCase, action: IssueAction, options: TransitionOptions): IssueCase {
   const transition = ISSUE_TRANSITIONS[action];
@@ -562,7 +610,37 @@ export function applyAction(issue: IssueCase, action: IssueAction, options: Tran
     state: transition.to,
     history: [...issue.history, entry],
   };
-  return action === "mark_fixed" ? { ...moved, checkpoints: scheduleCheckpoints(at) } : moved;
+  if (action === "mark_fixed") return { ...moved, checkpoints: scheduleCheckpoints(at) };
+  /**
+   * Starting is what assigns the case. Whoever fired the transition is the
+   * owner, and the instant they fired it is the start date — the same `at` the
+   * history entry above carries, so the two can never disagree about when this
+   * began.
+   *
+   * The identity comes through `attributionOf` rather than off `options.by`
+   * directly, so the owner field and the attribution column in history are the
+   * same answer to the same question and cannot part (rule 20). It also means
+   * the two identities F4 declines to render are the two this declines to
+   * store: a system caller, and the migrated person nobody can name. Both leave
+   * the field absent, and the row then says there is no owner rather than
+   * printing a class or a sentinel as though it were a person.
+   *
+   * `start` is person-only in the registry, so the system arm is unreachable
+   * today. It is handled anyway because `attributionOf` is what decides, not a
+   * belief here about who is permitted — widening `action.start.actor` must not
+   * silently start writing "grouping" into an owner field.
+   *
+   * A second `start` cannot happen: the registry allows it only from `todo`,
+   * and a case that has been started is `in_progress`. So these are written
+   * once and are not overwritten by any later move. Reopening a case sends it
+   * back to `reopened`, which has to be accepted and started again — and that
+   * start, from the new owner, is the one that stamps it.
+   */
+  if (action === "start") {
+    const owner = attributionOf(options.by);
+    return { ...moved, ...(owner ? { owner } : {}), startedAt: at };
+  }
+  return moved;
 }
 
 export function accept(issue: IssueCase, options: TransitionOptions): IssueCase {
@@ -585,6 +663,21 @@ export function reopen(issue: IssueCase, options: TransitionOptions): IssueCase 
   return applyAction(issue, "reopen", options);
 }
 
+/**
+ * When a case last entered a state, read off its history.
+ *
+ * Read rather than stored, which is what keeps the date a surface shows and the
+ * date the transition happened the same fact. The LAST such entry wins: a case
+ * that came back and was accepted again was accepted on the second date, and a
+ * row saying otherwise would be quoting a decision that has since been retaken.
+ *
+ * Undefined is a real answer — a state the case never entered, and a migrated
+ * case whose history begins mid-lifecycle. Rule 18: callers say so rather than
+ * substituting `detectedAt`, which is a different date about a different event.
+ */
+export function enteredAt(issue: IssueCase, state: IssueState): string | undefined {
+  return [...issue.history].reverse().find((entry) => entry.to === state)?.at;
+}
 
 /**
  * The checks that decide whether a fixed case becomes resolved.

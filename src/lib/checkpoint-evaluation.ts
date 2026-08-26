@@ -1,6 +1,7 @@
 import {
   applyAction,
   checkpointsAgree,
+  enteredAt,
   includedPages,
   reopenForPages,
   type Checkpoint,
@@ -391,9 +392,14 @@ export function nextDueAt(issue: IssueCase): string | null {
  * date the row shows and the date the transition happened are the same fact.
  * The last such entry wins — a case that came back and was fixed again is
  * being watched from the second fix, not the first.
+ *
+ * `enteredAt` is that read, generalised in S5 when the fix queue needed the same
+ * question asked about `todo`. This keeps its name because Watch's readers ask
+ * for the fix date rather than for a state, and the reasoning above is about the
+ * fix date specifically.
  */
 export function fixedAtOf(issue: IssueCase): string | undefined {
-  return [...issue.history].reverse().find((entry) => entry.to === "fixed")?.at;
+  return enteredAt(issue, "fixed");
 }
 
 /**

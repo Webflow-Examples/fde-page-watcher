@@ -400,10 +400,6 @@ export function effortLabel(item: { estTime: string; id: string; title?: string;
   return item.estTime;
 }
 
-export function triageActionLabel(item: { id: string; title?: string; webflow?: WebflowPerformanceClassification }): string {
-  return customerActionabilityFor(item) === "workaround" ? "Add workaround to tasks" : "Add to tasks";
-}
-
 export function classificationForPage(
   item: { id: string; title?: string },
   webflowGenerated: boolean,
