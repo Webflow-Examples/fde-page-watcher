@@ -32,7 +32,8 @@ import {
   type IssueCase,
   type IssueState,
 } from "../issue-case";
-import { COUNTED_QUEUES, DISMISS_REASONS, EVIDENCE_SOURCES, QUEUE_HOLDS, WORK_STATES, WORK_STATE_QUEUE, type IssueAction } from "../vocabulary";
+import { COUNTED_QUEUES, DISMISS_REASONS, EVIDENCE_SOURCES, QUEUE_HOLDS, WORK_STATES, WORK_STATE_QUEUE, type IssueAction, type TransitionActor } from "../vocabulary";
+import { attributionOf, type Caller } from "../caller";
 import { taskStatusWorkState } from "../workState";
 import type { AgentIssueCase } from "../agentIssueCases";
 import type { Rec } from "../types";
@@ -49,8 +50,61 @@ const sourcePath = path.resolve(moduleDir, "../issue-case.ts");
 const registry = JSON.parse(readFileSync(registryPath, "utf8"));
 const source = readFileSync(sourcePath, "utf8");
 
-interface RegistryAction { key: string; from: string[]; to: string; requires?: string }
+interface RegistryAction { key: string; from: string[]; to: string; requires?: string; actor: string | string[] }
 const registryActions: RegistryAction[] = registry.concepts.action.values;
+
+/**
+ * The classes the registry permits to fire a transition, always as a list.
+ *
+ * Read off the registry rather than off `ISSUE_TRANSITIONS`, so these tests
+ * check the table against the decision instead of against its own mirror.
+ */
+function permittedClasses(action: RegistryAction): TransitionActor[] {
+  return (Array.isArray(action.actor) ? action.actor : [action.actor]) as TransitionActor[];
+}
+
+/** Every class the registry names anywhere, so no test hand-lists them. */
+const CALLER_CLASSES: TransitionActor[] = [
+  ...new Set(registryActions.flatMap(permittedClasses)),
+];
+
+const TESTER = "rae@webflow.com";
+
+/**
+ * One caller of a given class.
+ *
+ * Two arms rather than a table, and exhaustive over the union: the payload is
+ * different for each class because the class IS the shape. A third class added
+ * to the registry stops this compiling, which is the point — there would be no
+ * way to construct a caller of it.
+ */
+function callerOfClass(kind: TransitionActor): Caller {
+  return kind === "person" ? { kind, userId: TESTER } : { kind, agent: "test-harness" };
+}
+
+/** A caller the registry permits for this transition, whichever class that is. */
+function permittedCaller(action: RegistryAction): Caller {
+  return callerOfClass(permittedClasses(action)[0]);
+}
+
+const PERSON = callerOfClass("person");
+const CHECKPOINT: Caller = { kind: "system", agent: "checkpoint" };
+
+/**
+ * The agent that wrote a row, or null when a person did.
+ *
+ * Rows the app writes for itself are asserted on the agent — `migration`,
+ * `grouping` — which is a name this repo chose and the registry has never
+ * heard of. The class beside it is the registry's word, and asserting that
+ * would be asserting a mirror (rule 21); `attributionOf` returning nothing is
+ * the half of the decision worth checking, because it is what the reader sees.
+ */
+function agentOf(entry: { by: Caller }): string | null {
+  return entry.by.kind === "system" ? entry.by.agent : null;
+}
+
+const MIGRATION_AGENT = "migration";
+const GROUPING_AGENT = "grouping";
 
 function makeRec(overrides: Partial<Rec> = {}): Rec {
   return {
@@ -300,7 +354,7 @@ describe("transitions", () => {
     for (const state of ISSUE_STATES) {
       for (const action of registryActions) {
         const issue = satisfying(action, makeCase({ state }));
-        const options = { actor: "matthew", at: AT, reason: DISMISS_REASONS[0] };
+        const options = { by: permittedCaller(action), at: AT, reason: DISMISS_REASONS[0] };
         if (legal.has(`${state}:${action.key}`)) {
           expect(() => applyAction(issue, action.key as IssueAction, options)).not.toThrow();
         } else {
@@ -314,7 +368,7 @@ describe("transitions", () => {
     for (const action of registryActions) {
       for (const from of action.from) {
         const moved = applyAction(satisfying(action, makeCase({ state: from as IssueState })), action.key as IssueAction, {
-          actor: "matthew",
+          by: permittedCaller(action),
           at: AT,
           reason: DISMISS_REASONS[0],
         });
@@ -324,17 +378,25 @@ describe("transitions", () => {
   });
 
   it("appends every move to history and never rewrites it", () => {
-    const accepted = accept(makeCase({ state: "new", history: [] }), { actor: "matthew", at: AT });
-    const started = applyAction(accepted, "start", { actor: "matthew", at: AT });
+    const accepted = accept(makeCase({ state: "new", history: [] }), { by: PERSON, at: AT });
+    const started = applyAction(accepted, "start", { by: PERSON, at: AT });
     expect(started.history).toEqual([
-      { at: AT, from: "new", to: "todo", actor: "matthew" },
-      { at: AT, from: "todo", to: "in_progress", actor: "matthew" },
+      { at: AT, from: "new", to: "todo", by: PERSON },
+      { at: AT, from: "todo", to: "in_progress", by: PERSON },
     ]);
     expect(accepted.history).toHaveLength(1);
   });
 
+  it("records who did it, whole, rather than which class they were", () => {
+    // The identity survives the row. A stored class alone — which is all the
+    // pre-v9 field kept for a person — answers a question nobody asks of
+    // history, and loses the one it is read for.
+    const accepted = accept(makeCase({ state: "new", history: [] }), { by: PERSON, at: AT });
+    expect(attributionOf(accepted.history[0].by)).toBe(TESTER);
+  });
+
   it("schedules the checks that settle a fixed case", () => {
-    const fixed = markFixed(makeCase({ state: "in_progress" }), { actor: "matthew", at: AT });
+    const fixed = markFixed(makeCase({ state: "in_progress" }), { by: PERSON, at: AT });
     expect(fixed.checkpoints.map((item) => item.interval)).toEqual(["2d", "7d", "30d"]);
     expect(fixed.checkpoints.every((item) => item.result === "scheduled")).toBe(true);
     expect(fixed.checkpoints[0].due).toBe("2026-08-26T12:00:00.000Z");
@@ -346,8 +408,8 @@ describe("transitions", () => {
 describe("guards", () => {
   it("refuses to accept a case with no remediation steps", () => {
     const issue = makeCase({ state: "new", remediation: { steps: [], actionability: "none" } });
-    expect(() => accept(issue, { actor: "matthew", at: AT })).toThrow(IssueCaseError);
-    expect(() => accept(issue, { actor: "matthew", at: AT })).toThrow(/no remediation steps/);
+    expect(() => accept(issue, { by: PERSON, at: AT })).toThrow(IssueCaseError);
+    expect(() => accept(issue, { by: PERSON, at: AT })).toThrow(/no remediation steps/);
   });
 
   it("closes every path to the fix queue for a case with no steps", () => {
@@ -360,7 +422,7 @@ describe("guards", () => {
       for (const action of registryActions) {
         try {
           const moved = applyAction({ ...stepless, state }, action.key as IssueAction, {
-            actor: "matthew",
+            by: permittedCaller(action),
             at: AT,
             reason: DISMISS_REASONS[0],
           });
@@ -374,16 +436,16 @@ describe("guards", () => {
 
   it("refuses to dismiss without a reason the registry blesses", () => {
     const issue = makeCase({ state: "new" });
-    expect(() => dismiss(issue, { actor: "matthew", at: AT, reason: "" })).toThrow(IssueCaseError);
-    expect(() => dismiss(issue, { actor: "matthew", at: AT, reason: "Because I said so" })).toThrow(IssueCaseError);
-    expect(() => applyAction(issue, "dismiss", { actor: "matthew", at: AT })).toThrow(/Not applicable/);
+    expect(() => dismiss(issue, { by: PERSON, at: AT, reason: "" })).toThrow(IssueCaseError);
+    expect(() => dismiss(issue, { by: PERSON, at: AT, reason: "Because I said so" })).toThrow(IssueCaseError);
+    expect(() => applyAction(issue, "dismiss", { by: PERSON, at: AT })).toThrow(/Not applicable/);
   });
 
   it("records the dismissal reason in history", () => {
     for (const reason of DISMISS_REASONS) {
-      const dismissed = dismiss(makeCase({ state: "new", history: [] }), { actor: "matthew", at: AT, reason });
+      const dismissed = dismiss(makeCase({ state: "new", history: [] }), { by: PERSON, at: AT, reason });
       expect(dismissed.state).toBe("dismissed");
-      expect(dismissed.history.at(-1)).toEqual({ at: AT, from: "new", to: "dismissed", actor: "matthew", reason });
+      expect(dismissed.history.at(-1)).toEqual({ at: AT, from: "new", to: "dismissed", by: PERSON, reason });
     }
   });
 
@@ -402,7 +464,7 @@ describe("guards", () => {
     const fixedWith = (checkpoints: IssueCase["checkpoints"]) =>
       makeCase({ state: "fixed", checkpoints });
     const resolving = (issue: IssueCase) =>
-      applyAction(issue, "resolve", { actor: "checkpoint", at: AT });
+      applyAction(issue, "resolve", { by: CHECKPOINT, at: AT });
 
     it("is a requirement the registry actually states", () => {
       expect(RESOLVE.requires).toBe("checkpoint_agreement");
@@ -464,7 +526,7 @@ describe("guards", () => {
         { interval: "30d", result: "agreed" },
       ]);
       expect(() => resolving(disagreed)).toThrow(IssueCaseError);
-      expect(applyAction(disagreed, "reopen", { actor: "checkpoint", at: AT }).state).toBe("reopened");
+      expect(applyAction(disagreed, "reopen", { by: CHECKPOINT, at: AT }).state).toBe("reopened");
     });
 
     it("names the resolving checkpoint from the schedule, not from a literal", () => {
@@ -483,7 +545,86 @@ describe("guards", () => {
   });
 });
 
-/* ── AC3 — the four old lifecycles collapse into one ────────────────────── */
+/* ── F4 — the permission set, enforced against the caller's class ───────── */
+
+/**
+ * `action.*.actor` was a permission set nothing consulted.
+ *
+ * `applyAction` recorded the string it was handed and moved the case, so
+ * "resolve is system-only" was true only because the checkpoint evaluator was
+ * its one caller and hardcoded the word. These assert the registry's list
+ * against what actually gets through, in both directions, for every transition
+ * — so widening a permission in `vocabulary.json` is the only edit that widens
+ * one here, and narrowing one fails the moment a caller keeps firing it.
+ */
+describe("who may fire a transition", () => {
+  it("has a class to check, on every transition the registry names", () => {
+    for (const action of registryActions) {
+      expect(permittedClasses(action).length, `${action.key} says nobody may fire it`).toBeGreaterThan(0);
+    }
+    expect(CALLER_CLASSES.length).toBeGreaterThan(1);
+  });
+
+  it("lets through exactly the classes the registry permits, and no others", () => {
+    for (const action of registryActions) {
+      const permitted = permittedClasses(action);
+      for (const from of action.from) {
+        for (const kind of CALLER_CLASSES) {
+          const issue = satisfying(action, makeCase({ state: from as IssueState }));
+          const fire = () => applyAction(issue, action.key as IssueAction, {
+            by: callerOfClass(kind),
+            at: AT,
+            reason: DISMISS_REASONS[0],
+          });
+          if (permitted.includes(kind)) {
+            expect(fire, `${action.key} refuses ${kind}, which the registry permits`).not.toThrow();
+          } else {
+            expect(fire, `${action.key} accepts ${kind}, which the registry does not permit`)
+              .toThrow(IssueCaseError);
+          }
+        }
+      }
+    }
+  });
+
+  it("names the transition, the classes it permits and the class it was handed", () => {
+    // A programming error, so the message is for whoever wrote the caller — no
+    // UI path reaches one. Every refused pairing the registry produces is
+    // checked, rather than one chosen by hand, so this says nothing about which
+    // transitions happen to be restricted today.
+    for (const action of registryActions) {
+      for (const kind of CALLER_CLASSES.filter((candidate) => !permittedClasses(action).includes(candidate))) {
+        const issue = satisfying(action, makeCase({ state: action.from[0] as IssueState }));
+        let message = "";
+        try {
+          applyAction(issue, action.key as IssueAction, {
+            by: callerOfClass(kind),
+            at: AT,
+            reason: DISMISS_REASONS[0],
+          });
+        } catch (error) {
+          message = (error as Error).message;
+        }
+        expect(message, `${action.key} refused ${kind} without saying so`).toContain(action.key);
+        for (const permitted of permittedClasses(action)) expect(message).toContain(permitted);
+        expect(message).toContain(kind);
+      }
+    }
+  });
+
+  it("carries the class in the tag, so no caller can state it twice", () => {
+    // The rejected shapes: a `class` field beside the identity, or a lookup
+    // from identity string to class. Either lets a caller assert a class it is
+    // not. Here the class is the constructor, and the row keeps the whole
+    // caller — no second statement of the class to disagree with the first.
+    const moved = accept(makeCase({ state: "new", history: [] }), { by: PERSON, at: AT });
+    const by = moved.history[0].by;
+    expect(Object.keys(by).sort()).toEqual(["kind", "userId"]);
+    expect(CALLER_CLASSES).toContain(by.kind);
+  });
+});
+
+/* ── AC3 ── the four old lifecycles collapse into one ─────────────────────── */
 
 describe("migrating a legacy recommendation", () => {
   it("maps every pairing the design names", () => {
@@ -530,7 +671,8 @@ describe("migrating a legacy recommendation", () => {
     });
     const issue = fromRec(rec, { at: AT });
     expect(issue.state).toBe("reopened");
-    expect(issue.history.at(-1)?.actor).toBe("migration");
+    expect(agentOf(issue.history.at(-1)!)).toBe(MIGRATION_AGENT);
+    expect(attributionOf(issue.history.at(-1)!.by)).toBeNull();
   });
 
   it("resolves a contradictory pair to the later state and writes the ambiguity down", () => {
@@ -539,7 +681,8 @@ describe("migrating a legacy recommendation", () => {
     expect(issue.state).toBe("resolved");
     // Two entries: the pair disagreed, and the outcome is asserted not verified.
     expect(issue.history).toHaveLength(2);
-    expect(issue.history[0]).toMatchObject({ at: AT, to: "resolved", actor: "migration" });
+    expect(issue.history[0]).toMatchObject({ at: AT, to: "resolved" });
+    expect(agentOf(issue.history[0])).toBe(MIGRATION_AGENT);
     expect(issue.history[0].reason).toMatch(/disagreed/);
   });
 
@@ -557,7 +700,8 @@ describe("migrating a legacy recommendation", () => {
     expect(issue.state).toBe("resolved");
     const caveat = issue.history.find((entry) => /no checkpoint evidence/i.test(entry.reason ?? ""));
     expect(caveat, "a migrated done must say the outcome is asserted, not verified").toBeDefined();
-    expect(caveat).toMatchObject({ at: AT, to: "resolved", actor: "migration" });
+    expect(caveat).toMatchObject({ at: AT, to: "resolved" });
+    expect(agentOf(caveat!)).toBe(MIGRATION_AGENT);
     expect(issue.checkpoints).toEqual([]);
   });
 
@@ -570,7 +714,7 @@ describe("migrating a legacy recommendation", () => {
   it("keeps a set-aside record set aside, and says so when work progress disagreed", () => {
     const issue = fromRec(makeRec({ status: "ignored", taskStatus: "done" }), { at: AT });
     expect(issue.state).toBe("dismissed");
-    expect(issue.history[0]?.actor).toBe("migration");
+    expect(agentOf(issue.history[0])).toBe(MIGRATION_AGENT);
   });
 
   it("leaves history empty when the old pair agreed", () => {
@@ -681,10 +825,10 @@ describe("migrating an assembled agent-access issue", () => {
     // reopen.from gained "fixed" in registry v3: a 2, 7, or 30-day checkpoint
     // can fail, and the case has to have somewhere to go when it does.
     const fixed: IssueCase = { ...fromAgentIssue(issue, { pageIds: ["p1"], at: AT }), state: "fixed" };
-    const reopened = reopenForPages(fixed, ["p1"], { actor: "checkpoint", at: AT });
+    const reopened = reopenForPages(fixed, ["p1"], { by: CHECKPOINT, at: AT });
     expect(reopened.state).toBe("reopened");
     expect(queueOf(reopened.state)).toBe("decide");
-    expect(reopened.history.at(-1)).toMatchObject({ from: "fixed", to: "reopened", actor: "checkpoint" });
+    expect(reopened.history.at(-1)).toMatchObject({ from: "fixed", to: "reopened", by: CHECKPOINT });
   });
 
   it("leaves applicability and policy readings out of the ledger", () => {
@@ -740,7 +884,7 @@ describe("migrating an assembled agent-access issue", () => {
   it("cannot be accepted when the family has no steps", () => {
     const stepless = fromAgentIssue({ ...issue, remediation: [] }, { at: AT });
     expect(stepless.remediation.actionability).toBe("none");
-    expect(() => accept(stepless, { actor: "matthew", at: AT })).toThrow(IssueCaseError);
+    expect(() => accept(stepless, { by: PERSON, at: AT })).toThrow(IssueCaseError);
   });
 });
 
@@ -769,7 +913,8 @@ describe("grouping by cause", () => {
       onPage("p2", { status: "inbox", taskStatus: "todo" }),
     ], { at: AT });
     expect(grouped[0].state).toBe("new");
-    expect(grouped[0].history.at(-1)).toMatchObject({ from: "dismissed", to: "new", actor: "grouping" });
+    expect(grouped[0].history.at(-1)).toMatchObject({ from: "dismissed", to: "new" });
+    expect(agentOf(grouped[0].history.at(-1)!)).toBe(GROUPING_AGENT);
   });
 
   it("takes the worst observed impact rather than inventing a sum", () => {
@@ -782,8 +927,8 @@ describe("grouping by cause", () => {
 
   it("resolving the case resolves it for every page it covers", () => {
     const grouped = groupByCause([onPage("p1"), onPage("p2")], { at: AT });
-    const accepted = accept({ ...grouped[0], remediation: { steps: ["Remove it."], actionability: "direct" } }, { actor: "matthew", at: AT });
-    const fixed = markFixed(applyAction(accepted, "start", { actor: "matthew", at: AT }), { actor: "matthew", at: AT });
+    const accepted = accept({ ...grouped[0], remediation: { steps: ["Remove it."], actionability: "direct" } }, { by: PERSON, at: AT });
+    const fixed = markFixed(applyAction(accepted, "start", { by: PERSON, at: AT }), { by: PERSON, at: AT });
     const resolved: IssueCase = { ...fixed, state: "resolved" };
     expect(resolved.pageIds).toEqual(["p1", "p2"]);
     expect(queueOf(resolved.state)).toBe("show_all");
@@ -792,18 +937,18 @@ describe("grouping by cause", () => {
   it("reopens on a subset scoped to the pages that came back", () => {
     const grouped = groupByCause([onPage("p1"), onPage("p2")], { at: AT });
     const resolved: IssueCase = { ...grouped[0], state: "resolved" };
-    const reopened = reopenForPages(resolved, ["p2"], { actor: "checkpoint", at: AT });
+    const reopened = reopenForPages(resolved, ["p2"], { by: CHECKPOINT, at: AT });
     expect(reopened.state).toBe("reopened");
     expect(reopened.pageIds).toEqual(["p2"]);
     expect(reopened.scope).toBe("page");
     expect(queueOf(reopened.state)).toBe("decide");
-    expect(reopened.history.at(-1)).toMatchObject({ from: "resolved", to: "reopened", actor: "checkpoint" });
+    expect(reopened.history.at(-1)).toMatchObject({ from: "resolved", to: "reopened", by: CHECKPOINT });
   });
 
   it("refuses to reopen for a page the case does not cover", () => {
     const resolved: IssueCase = { ...groupByCause([onPage("p1")], { at: AT })[0], state: "resolved" };
-    expect(() => reopenForPages(resolved, ["p9"], { actor: "checkpoint", at: AT })).toThrow(IssueCaseError);
-    expect(() => reopenForPages(resolved, [], { actor: "checkpoint", at: AT })).toThrow(IssueCaseError);
+    expect(() => reopenForPages(resolved, ["p9"], { by: CHECKPOINT, at: AT })).toThrow(IssueCaseError);
+    expect(() => reopenForPages(resolved, [], { by: CHECKPOINT, at: AT })).toThrow(IssueCaseError);
   });
 
   it("keeps one entry per source when two ledgers merge", () => {
@@ -984,7 +1129,7 @@ describe("the legacy \"done\" mapping is one decision", () => {
     // writes down that nothing was ever measured. If that record went away the
     // case would be claiming a verification that never happened.
     const migrated = fromRec(makeRec({ status: "task", taskStatus: "done" }), { at: AT });
-    const caveat = migrated.history.find((entry) => entry.to === "resolved" && entry.actor === "migration");
+    const caveat = migrated.history.find((entry) => entry.to === "resolved" && agentOf(entry) === MIGRATION_AGENT);
     expect(caveat?.reason).toMatch(/no checkpoint evidence/i);
   });
 
@@ -1052,7 +1197,7 @@ describe("vocabulary discipline", () => {
       makeCase({ state: "todo", pageIds: ["p1", "p2"] }),
       "p2",
       "Intentional",
-      { actor: "person", at: AT },
+      { by: PERSON, at: AT },
     );
     expect(withExclusion.state).toBe("todo");
     expect(queueOf(withExclusion.state)).toBe(queueOf("todo"));
@@ -1061,11 +1206,11 @@ describe("vocabulary discipline", () => {
     //    because a case that counts nothing is a Dismiss and there must not be
     //    two ways to say it.
     expect(() =>
-      excludePage(makeCase({ pageIds: ["p1"] }), "p1", "Intentional", { actor: "person", at: AT }),
+      excludePage(makeCase({ pageIds: ["p1"] }), "p1", "Intentional", { by: PERSON, at: AT }),
     ).toThrow(IssueCaseError);
 
     // 4. Dismissing does not exclude anything, and excluding does not dismiss.
-    const setAside = dismiss(makeCase({ state: "new" }), { actor: "person", at: AT, reason: "Intentional" });
+    const setAside = dismiss(makeCase({ state: "new" }), { by: PERSON, at: AT, reason: "Intentional" });
     expect(setAside.excludedPages).toBeUndefined();
     expect(withExclusion.state).not.toBe("dismissed");
   });

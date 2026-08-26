@@ -13,6 +13,7 @@ import {
   type IssueCase,
 } from "../issue-case";
 import { recordCheckpointReading } from "../checkpoint-evaluation";
+import { attributionOf, type Caller } from "../caller";
 import { acceptLabel, excludedNote, historyExcluded, historyIncluded, pagesCount } from "../case-copy";
 
 import { formatImpact } from "../impact-format";
@@ -30,6 +31,10 @@ import { EXCLUSION_REASONS } from "../vocabulary";
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const AT = "2026-08-20T00:00:00.000Z";
+
+/** Exclude and Include are a person's two moves, so the caller says who. */
+const RAE = "rae@webflow.com";
+const PERSON: Caller = { kind: "person", userId: RAE };
 
 function caseOf(overrides: Partial<IssueCase> = {}): IssueCase {
   return {
@@ -69,25 +74,25 @@ describe("a case's pages", () => {
   it("changes the Accept label when a page is excluded", () => {
     const issue = caseOf();
     expect(acceptLabel(includedPages(issue).length, issue.pageIds.length)).toBe("Accept");
-    const narrowed = excludePage(issue, "p3", "Not applicable to this site", { actor: "person", at: AT });
+    const narrowed = excludePage(issue, "p3", "Not applicable to this site", { by: PERSON, at: AT });
     expect(acceptLabel(includedPages(narrowed).length, narrowed.pageIds.length)).toBe("Accept for 2 pages");
   });
 
   it("writes a history entry naming the page and the reason", () => {
     const narrowed = excludePage(caseOf(), "p2", "Intentional", {
-      actor: "person",
+      by: PERSON,
       at: AT,
       page: "/pricing",
     });
     expect(narrowed.history.at(-1)).toMatchObject({
-      actor: "person",
+      by: PERSON,
       reason: historyExcluded("/pricing", "Intentional"),
     });
     expect(narrowed.history.at(-1)?.reason).toBe("/pricing excluded — Intentional");
   });
 
   it("keeps the page, its row and its reading — excluding is not deleting", () => {
-    const narrowed = excludePage(caseOf(), "p2", "Accepted risk", { actor: "person", at: AT });
+    const narrowed = excludePage(caseOf(), "p2", "Accepted risk", { by: PERSON, at: AT });
     // Still covered by the case, and still countable again.
     expect(narrowed.pageIds).toContain("p2");
     expect(excludedPageIds(narrowed)).toEqual(["p2"]);
@@ -98,8 +103,8 @@ describe("a case's pages", () => {
   });
 
   it("puts a page back, with no reason required", () => {
-    const narrowed = excludePage(caseOf(), "p2", "Intentional", { actor: "person", at: AT });
-    const restored = includePage(narrowed, "p2", { actor: "person", at: AT, page: "/pricing" });
+    const narrowed = excludePage(caseOf(), "p2", "Intentional", { by: PERSON, at: AT });
+    const restored = includePage(narrowed, "p2", { by: PERSON, at: AT, page: "/pricing" });
     expect(includedPages(restored)).toEqual(["p1", "p2", "p3"]);
     // The map goes away entirely rather than lingering as an empty object.
     expect(restored.excludedPages).toBeUndefined();
@@ -107,13 +112,28 @@ describe("a case's pages", () => {
     expect(restored.history.at(-1)?.reason).toBe("/pricing included again");
   });
 
+  it("attributes the two person-fired lines without touching the line", () => {
+    // Both locked lines lead with a page, so there is no "{line} by {name}"
+    // that reads correctly: "/pricing excluded — Intentional by Rae" makes the
+    // name part of the reason. The identity is a field of its own beside the
+    // date, and the sentence is exactly what the registry's copy says.
+    const narrowed = excludePage(caseOf(), "p2", "Intentional", { by: PERSON, at: AT, page: "/pricing" });
+    const restored = includePage(narrowed, "p2", { by: PERSON, at: AT, page: "/pricing" });
+    for (const entry of restored.history) {
+      expect(attributionOf(entry.by)).toBe(RAE);
+      expect(entry.reason).not.toContain(RAE);
+    }
+    expect(narrowed.history.at(-1)?.reason).toBe(historyExcluded("/pricing", "Intentional"));
+    expect(restored.history.at(-1)?.reason).toBe(historyIncluded("/pricing"));
+  });
+
   it("refuses a reason the registry does not bless", () => {
     expect(() =>
       // @ts-expect-error — the type forbids it; the guard is for untyped callers.
-      excludePage(caseOf(), "p2", "Because I said so", { actor: "person", at: AT }),
+      excludePage(caseOf(), "p2", "Because I said so", { by: PERSON, at: AT }),
     ).toThrow(IssueCaseError);
     for (const reason of EXCLUSION_REASONS) {
-      expect(() => excludePage(caseOf(), "p2", reason, { actor: "person", at: AT })).not.toThrow();
+      expect(() => excludePage(caseOf(), "p2", reason, { by: PERSON, at: AT })).not.toThrow();
     }
   });
 
@@ -121,20 +141,20 @@ describe("a case's pages", () => {
     // A case counting nothing is a Dismiss. Two ways to say one thing is what
     // rule 11 exists to stop.
     const one = caseOf({ pageIds: ["p1"] });
-    expect(() => excludePage(one, "p1", "Intentional", { actor: "person", at: AT })).toThrow(
+    expect(() => excludePage(one, "p1", "Intentional", { by: PERSON, at: AT })).toThrow(
       IssueCaseError,
     );
   });
 
   it("refuses a page the case does not cover, and a double exclude", () => {
-    expect(() => excludePage(caseOf(), "p9", "Intentional", { actor: "person", at: AT })).toThrow(
+    expect(() => excludePage(caseOf(), "p9", "Intentional", { by: PERSON, at: AT })).toThrow(
       IssueCaseError,
     );
-    const once = excludePage(caseOf(), "p2", "Intentional", { actor: "person", at: AT });
-    expect(() => excludePage(once, "p2", "Intentional", { actor: "person", at: AT })).toThrow(
+    const once = excludePage(caseOf(), "p2", "Intentional", { by: PERSON, at: AT });
+    expect(() => excludePage(once, "p2", "Intentional", { by: PERSON, at: AT })).toThrow(
       IssueCaseError,
     );
-    expect(() => includePage(caseOf(), "p2", { actor: "person", at: AT })).toThrow(IssueCaseError);
+    expect(() => includePage(caseOf(), "p2", { by: PERSON, at: AT })).toThrow(IssueCaseError);
   });
 });
 
@@ -144,10 +164,10 @@ describe("an excluded page and W1's checkpoints", () => {
   /** Fixed, with one page excluded before the fix shipped. */
   function fixedWithExclusion(): IssueCase {
     const narrowed = excludePage(caseOf({ state: "in_progress" }), "p3", "Intentional", {
-      actor: "person",
+      by: PERSON,
       at: AT,
     });
-    return markFixed(narrowed, { actor: "person", at: AT });
+    return markFixed(narrowed, { by: PERSON, at: AT });
   }
 
   it("does not reopen the case when only an excluded page comes back", () => {
@@ -269,7 +289,7 @@ describe("the exclude control", () => {
   it("still shows every page, and still renders an exclusion it is given", () => {
     // Gating the control must not hide a reading. The model is untouched by the
     // gate, so a persisted exclusion renders the moment F5 supplies one.
-    const narrowed = excludePage(caseOf(), "p2", "Intentional", { actor: "person", at: AT });
+    const narrowed = excludePage(caseOf(), "p2", "Intentional", { by: PERSON, at: AT });
     expect(narrowed.pageIds).toHaveLength(3);
     expect(applicabilityOf(narrowed, "p2")).toBe("excluded");
     expect(table).toMatch(/textDecoration: isExcluded \? "line-through"/);
@@ -354,7 +374,7 @@ describe("the checkpoint track on a case", () => {
   });
 
   it("appears once the case is fixed", () => {
-    const fixed = markFixed(caseOf({ state: "in_progress" }), { actor: "person", at: AT });
+    const fixed = markFixed(caseOf({ state: "in_progress" }), { by: PERSON, at: AT });
     expect(fixed.checkpoints).toHaveLength(3);
   });
 

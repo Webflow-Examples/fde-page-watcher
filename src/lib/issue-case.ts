@@ -53,6 +53,7 @@ import {
   type Queue,
   type WorkState,
 } from "./vocabulary";
+import type { Caller } from "./caller";
 import { historyExcluded, historyIncluded } from "./case-copy";
 import { isFieldRecommendationActionable, fieldRecommendationLifecycleStatus } from "./fieldOnlyRecommendations";
 import { parseMarkerDate } from "./ui";
@@ -113,7 +114,15 @@ export interface HistoryEntry {
   at: string;
   from?: IssueState;
   to: IssueState;
-  actor: string;
+  /**
+   * Who did it, whole.
+   *
+   * The identity and its class arrive together in one value, so nothing here
+   * stores a bare class: a row saying only "a person" is a row that threw away
+   * the answer to the question history is asked. `Caller` is the shape, and
+   * `callerFromLegacyActor` is how a row written before the split becomes one.
+   */
+  by: Caller;
   reason?: string;
 }
 
@@ -384,8 +393,14 @@ export function appendEvidence(issue: IssueCase, entry: EvidenceEntry): IssueCas
 /* ── Transitions — the registry's table, enforced ───────────────────────── */
 
 export interface TransitionOptions {
-  /** Who moved it. Recorded in history verbatim. */
-  actor: string;
+  /**
+   * Who is moving it. Validated against the transition's permission set and
+   * then recorded in history whole.
+   *
+   * Not `actor`: that word belongs to the registry, where it names which
+   * classes MAY fire a transition. This is the one who did.
+   */
+  by: Caller;
   /** Required by `dismiss`; must be one of the registry's reasons. */
   reason?: string;
   /** ISO timestamp for the history entry. Defaults to now. */
@@ -505,13 +520,31 @@ export function checkpointsAgree(checkpoints: readonly Checkpoint[]): boolean {
  * Beyond those, every requirement the registry states on a transition is
  * enforced from the table itself rather than from a per-action branch, so a
  * requirement added to `vocabulary.json` cannot be carried in the type and
- * ignored in the guard the way `checkpoint_agreement` was.
+ * ignored in the guard the way `checkpoint_agreement` was — or the way
+ * `actor` was until v9, recorded on every entry and checked on none.
+ *
+ * The caller's class is one of those requirements now. It is read off
+ * `transition.actor`, which is the registry's permission set, so widening
+ * `action.resolve.actor` in `vocabulary.json` is the whole of what it takes to
+ * let a person resolve a case, and no edit here would do it. That is the
+ * difference between a rule and a sentence about a rule.
+ *
+ * A rejected call is a programming error rather than a user error. No UI path
+ * reaches one — the only transition a person cannot fire is `resolve`, and
+ * nothing offers a Resolve button. Reaching this throw means a caller was
+ * written against a permission it does not have, so it names the transition,
+ * the classes the registry permits, and the class it was handed.
  */
 export function applyAction(issue: IssueCase, action: IssueAction, options: TransitionOptions): IssueCase {
   const transition = ISSUE_TRANSITIONS[action];
   if (!transition.from.includes(issue.state)) {
     throw new IssueCaseError(
       `applyAction: ${action} is not legal from ${issue.state} (legal from ${transition.from.join(", ")}).`,
+    );
+  }
+  if (!transition.actor.includes(options.by.kind)) {
+    throw new IssueCaseError(
+      `applyAction: ${action} may be fired by ${transition.actor.join(", ")}; the caller offered ${options.by.kind}.`,
     );
   }
   if (action === "accept" && issue.remediation.steps.length === 0) {
@@ -534,7 +567,7 @@ export function applyAction(issue: IssueCase, action: IssueAction, options: Tran
     at,
     from: issue.state,
     to: transition.to,
-    actor: options.actor,
+    by: options.by,
     ...(options.reason ? { reason: options.reason } : {}),
   };
   const moved: IssueCase = {
@@ -653,7 +686,14 @@ function stateFromTaskStatus(taskStatus: TaskStatus): ProgressState {
   return "new";
 }
 
-const MIGRATION_ACTOR = "migration";
+/**
+ * The adapters below are a system caller, and they say which one.
+ *
+ * `migration` is an agent name rather than a class: the rows it writes are
+ * about a record that arrived from the old lifecycles, and "the system did it"
+ * would not tell a reader that three weeks later.
+ */
+const MIGRATION_CALLER: Caller = { kind: "system", agent: "migration" };
 
 export interface FromRecOptions {
   /**
@@ -736,7 +776,7 @@ function evidenceFromRec(rec: Rec, observedAt: string): EvidenceEntry[] {
  * far triage got and `Rec.taskStatus` says how far work got, so the pair is
  * resolved to whichever is further along; where they disagree — a record still
  * untriaged but marked done — the later state wins and the disagreement is
- * written into history under the actor `migration` rather than quietly
+ * written into history by the `migration` agent rather than quietly
  * discarded. A field lifecycle that has resolved or regressed, and an agent
  * verification that came back, are newer information than either, so they
  * override the pair and are recorded the same way.
@@ -745,7 +785,7 @@ export function fromRec(rec: Rec, options: FromRecOptions = {}): IssueCase {
   const at = options.at ?? new Date().toISOString();
   const history: HistoryEntry[] = [];
   const note = (to: IssueState, reason: string, from?: IssueState) => {
-    history.push({ at, ...(from ? { from } : {}), to, actor: MIGRATION_ACTOR, reason });
+    history.push({ at, ...(from ? { from } : {}), to, by: MIGRATION_CALLER, reason });
   };
 
   const fromStatus = stateFromRecStatus(rec.status);
@@ -918,7 +958,7 @@ export function fromAgentIssue(issue: AgentIssueCase, options: FromAgentIssueOpt
       at,
       from: state,
       to: "reopened",
-      actor: MIGRATION_ACTOR,
+      by: MIGRATION_CALLER,
       reason: "A verification run found the problem back.",
     });
     state = "reopened";
@@ -951,6 +991,9 @@ export function fromAgentIssue(issue: AgentIssueCase, options: FromAgentIssueOpt
 }
 
 /* ── Grouping by cause ──────────────────────────────────────────────────── */
+
+/** The merge below is its own agent: no person chose to fold these two rows. */
+const GROUPING_CALLER: Caller = { kind: "system", agent: "grouping" };
 
 /**
  * Which state survives when findings that share a cause become one case.
@@ -1029,7 +1072,7 @@ export function groupByCause(cases: readonly IssueCase[], options: { at?: string
         at,
         from: existing.state,
         to: state,
-        actor: "grouping",
+        by: GROUPING_CALLER,
         reason: `Grouped with a finding on ${item.pageIds.join(", ") || "another page"} sharing this cause.`,
       });
     }
@@ -1323,7 +1366,7 @@ export function excludePage(
       {
         at: options.at ?? new Date().toISOString(),
         to: issue.state,
-        actor: options.actor,
+        by: options.by,
         // The reader's own path where there is one — a page id is an internal
         // handle, and history is read by people.
         reason: historyExcluded(options.page ?? pageId, reason),
@@ -1352,7 +1395,7 @@ export function includePage(
       {
         at: options.at ?? new Date().toISOString(),
         to: issue.state,
-        actor: options.actor,
+        by: options.by,
         reason: historyIncluded(options.page ?? pageId),
       },
     ],
