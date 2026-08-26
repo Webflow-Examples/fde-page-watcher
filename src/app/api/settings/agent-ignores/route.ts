@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { setDefaultAgentIgnore } from "@/lib/mutations";
 import type { AgentIgnoreScope } from "@/lib/types";
+import { EXCLUSION_REASONS, type ExclusionReason } from "@/lib/vocabulary";
 import { projectStore } from "@/lib/projects";
 
 export const runtime = "nodejs";
@@ -10,6 +11,8 @@ interface Body {
   scope?: AgentIgnoreScope;
   value?: string;
   ignored?: boolean;
+  /** Required to exclude, since S8; ignored on an include, which needs none. */
+  reason?: unknown;
 }
 
 export async function POST(req: Request) {
@@ -23,8 +26,19 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "ignored must be a boolean" }, { status: 400 });
   }
 
+  const reason = body.reason;
+  if (reason !== undefined && !(EXCLUSION_REASONS as readonly string[]).includes(reason as string)) {
+    return NextResponse.json({ error: "reason must be one of the decided exclusion reasons" }, { status: 400 });
+  }
+
   try {
-    const state = await setDefaultAgentIgnore(body.scope, value, body.ignored, await projectStore(req));
+    const state = await setDefaultAgentIgnore(
+      body.scope,
+      value,
+      body.ignored,
+      await projectStore(req),
+      reason as ExclusionReason | undefined,
+    );
     return NextResponse.json({ state });
   } catch (error) {
     const message = String(error);

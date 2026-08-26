@@ -22,7 +22,8 @@ import type {
   CruxSnapshot,
 } from "./crux";
 import type { WebflowConnectionStatus } from "./webflowTypes";
-import { DEFAULT_PERFORMANCE_THRESHOLDS } from "./performanceThresholds";
+import { DEFAULT_SENSITIVITY, thresholdsFor } from "./sensitivity";
+import { DEFAULT_DIGEST_CADENCE } from "./digestCadence";
 import { AGENT_CHECK_GROUPS } from "./agentChecks";
 import { agentCheckKey, captureAgentReadiness } from "./agentScoring";
 import { nativeElementScan, unavailableNativeElementScan } from "./nativeElements";
@@ -447,9 +448,6 @@ export function buildSeedState(now = new Date()): AppState {
       updatedAt: isoAt(anchor, -1),
     },
   };
-  page("pricing").performanceThresholdOverrides = {
-    regression: 10, confirmationRuns: 2, devicePolicy: "both", minimumFindingRuns: 2, minimumSavingsMs: 250,
-  };
 
   page("pricing").markers = [
     marker("pricing-hero", page("pricing").history, N - 15, "Published new pricing hero video"),
@@ -564,13 +562,15 @@ export function buildSeedState(now = new Date()): AppState {
     recs,
     visitorExperienceVisible: true,
     agentIgnoreDefaults: { checks: [], groups: [GLOBAL_IGNORED_GROUP] },
-    performanceThresholds: {
-      ...DEFAULT_PERFORMANCE_THRESHOLDS,
-      confirmationRuns: 2,
-      minimumFindingRuns: 2,
-      minimumSavingsMs: 200,
-      minimumSavingsKilobytes: 100,
-    },
+    // A position, and the limits it resolves to. The fixture used to carry a
+    // hand-tuned threshold set, which would now make every demo project a
+    // migrated one and put the migration notice in every demo digest — true,
+    // but a fixture should show the ordinary case and let the tests exercise
+    // the migration.
+    sensitivity: DEFAULT_SENSITIVITY,
+    performanceThresholds: thresholdsFor(DEFAULT_SENSITIVITY),
+    digestCadence: DEFAULT_DIGEST_CADENCE,
+    digestRecipients: ["performance@brandstudio.example"],
     collectionSchedule: { timeZone: "America/Chicago", localTime: "02:30", overridden: true },
     measurementIncident: {
       id: "demo-psi-provider-incident",
@@ -728,7 +728,8 @@ export function buildSeedWebflowConnectionStatus(now = new Date()): WebflowConne
 export function buildEmptySeedState(): AppState {
   return {
     pages: [], recs: [], visitorExperienceVisible: false, agentIgnoreDefaults: { checks: [], groups: [] },
-    performanceThresholds: { ...DEFAULT_PERFORMANCE_THRESHOLDS }, jobs: [], followUps: [],
+    sensitivity: DEFAULT_SENSITIVITY,
+    performanceThresholds: thresholdsFor(DEFAULT_SENSITIVITY), jobs: [], followUps: [],
   };
 }
 

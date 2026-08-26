@@ -477,6 +477,18 @@ export type AgentIgnoreOverrideMode = "inherit" | "ignore" | "restore";
 export interface AgentIgnoreSettings {
   checks: string[];
   groups: string[];
+  /**
+   * Why each excluded check or category does not apply, keyed by
+   * `agentExclusionKey`.
+   *
+   * Optional because the control that wrote these never asked. A record with no
+   * reason predates the question and reads as `UNLABELLED_EXCLUSION_REASON`,
+   * which is the definition of the state the old toggle put it in rather than a
+   * reason invented on the reader's behalf. Stored as a string for the same
+   * reason `NativeElementControl.excluded.reason` is: this module is the
+   * persisted shape and cannot import the registry.
+   */
+  reasons?: Record<string, string>;
 }
 
 export type DevicePolicy = "either" | "both" | "preferred";
@@ -511,8 +523,6 @@ export interface PerformanceThresholds {
   minimumSavingsKilobytes: number;
 }
 
-/** Optional page-specific values layered over the team monitoring defaults. */
-export type PagePerformanceThresholdOverrides = Partial<PerformanceThresholds>;
 
 /** Legacy per-page event-delivery state retained for persisted-state compatibility. */
 export interface PerformanceAlertState {
@@ -570,8 +580,7 @@ export interface WatchPage {
   agent: AgentCheck[]; // latest agent-readiness scan (per-check)
   agentIgnores?: AgentIgnoreSettings; // page-specific ignores, applied after global defaults
   agentIgnoreRestores?: AgentIgnoreSettings; // page-specific restores of globally ignored checks/categories
-  /** Sparse page-specific calibration; omitted values inherit team defaults. */
-  performanceThresholdOverrides?: PagePerformanceThresholdOverrides;
+
   /** Legacy event-alert state; daily digests use AppState.alertDigests. */
   performanceAlertState?: PerformanceAlertState;
   /** Page-scoped triage controls keyed by stable native-element finding id. */
@@ -875,7 +884,33 @@ export interface AppState {
    */
   externalAgentAuditEnabled?: boolean;
   agentIgnoreDefaults?: AgentIgnoreSettings;
+  /**
+   * The one sensitivity control's position, as a plain string.
+   *
+   * Narrowed to a decided position by `normalizeSensitivity` on read, the same
+   * way an exclusion reason is narrowed by `normalizeNativeElementControls`:
+   * this module is the persisted shape and cannot import the concept modules
+   * that own the value lists.
+   */
+  sensitivity?: string;
+  /**
+   * The limits `sensitivity` resolves to, kept resolved rather than derived at
+   * every read.
+   *
+   * It is not a second setting. `normalizeState` rewrites it from the position
+   * on every read, so a stored set that disagrees with the position loses —
+   * which is what makes the position, not this, the thing a reader edits.
+   */
   performanceThresholds?: PerformanceThresholds;
+  /**
+   * A position that hand-tuned thresholds were mapped to, still owed its one
+   * sentence. Cleared by the digest that carries it.
+   */
+  sensitivityNotice?: string;
+  /** How often the digest is sent. Narrowed by `normalizeDigestCadence`. */
+  digestCadence?: string;
+  /** Who the digest is for. Empty means nobody has been named yet. */
+  digestRecipients?: string[];
   collectionSchedule?: CollectionSchedule;
   measurementIncident?: MeasurementIncident;
   jobs?: CollectionJob[];

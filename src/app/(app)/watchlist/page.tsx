@@ -2,29 +2,34 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { DotsSixVerticalIcon, Info } from "@phosphor-icons/react";
+import { DotsSixVerticalIcon } from "@phosphor-icons/react";
 import { useStore } from "@/components/store";
-import { AGENT_CHECK_GROUPS, ALL_AGENT_CHECKS } from "@/lib/agentChecks";
-import { agentCheckKey, isAgentCheckIgnored, isAgentGroupIgnored, normalizeAgentIgnoreSettings } from "@/lib/agentScoring";
-import { DEFAULT_PERFORMANCE_THRESHOLDS, normalizePerformanceThresholds, PERFORMANCE_THRESHOLD_LIMITS } from "@/lib/performanceThresholds";
-import type { DevicePolicy, PerformanceThresholds } from "@/lib/types";
-import { normalizeCollectionSchedule } from "@/lib/collectionSchedule";
 import { naturalDate } from "@/lib/ui";
-import { applicabilityActionLabel, DESTINATION_LABEL } from "@/lib/vocabulary";
+import { DESTINATION_LABEL } from "@/lib/vocabulary";
 import { SegToggle } from "@/components/bits";
-import { Magnitude, MAGNITUDE_WEIGHT } from "@/components/magnitude";
-import { ChevronDownIcon, PlusIcon, TrashIcon } from "@/components/icons";
+import { Magnitude } from "@/components/magnitude";
+import { PlusIcon, TrashIcon } from "@/components/icons";
 import { flagCapacityError, MAX_ACTIVE_PAGES, MAX_PRIORITY_PAGES, watchCapacity } from "@/lib/watchCapacity";
 import { movePageWithinFlag, reorderPageWithinFlag, sortWatchlistPages } from "@/lib/watchlistOrder";
 import { failedRunLabel } from "@/lib/collectionStatus";
-import { WebflowConnection } from "@/components/webflow-connection";
-import { alertWebhookUrlIsValid } from "@/lib/webhook";
 import { PageHeader } from "@/components/page-header";
 
+/**
+ * The watchlist, and only the watchlist.
+ *
+ * It carried the settings screen as a second mode until S8 — one component, one
+ * `mode` prop, and two pages that shared a header and nothing else. Settings is
+ * its own route now, so what is left here is the page list, the flags, and the
+ * reordering.
+ *
+ * Nothing on this screen sets a threshold, and nothing on it carries a severity.
+ * Both had gone by the time S8 looked; what this chunk removed was the tolerance
+ * panel below, which was the last threshold UI anywhere in the app outside
+ * /settings.
+ */
+
 const GRID = "32px minmax(228px,2.4fr) 230px 1fr 120px";
-type NumericToleranceKey = keyof typeof PERFORMANCE_THRESHOLD_LIMITS;
 type WatchlistDropTarget = { pageId: string; position: "before" | "after" };
-const NUMERIC_TOLERANCE_KEYS = Object.keys(PERFORMANCE_THRESHOLD_LIMITS) as NumericToleranceKey[];
 
 function EditablePageTitle({
   pageId,
@@ -126,311 +131,24 @@ function EditablePageTitle({
   );
 }
 
-function SettingTooltip({ id, label, help }: { id: string; label: string; help: string }) {
-  return (
-    <span className="setting-tooltip">
-      <button
-        type="button"
-        className="setting-tooltip-trigger"
-        aria-label={`About ${label}`}
-        aria-describedby={id}
-      >
-        <Info size={13} weight="bold" />
-      </button>
-      <span className="setting-tooltip-content" id={id} role="tooltip">
-        {help}
-      </span>
-    </span>
-  );
-}
-
-function SettingHeader({
-  id,
-  label,
-  help,
-  resetDisabled,
-  onReset,
-}: {
-  id: string;
-  label: string;
-  help: string;
-  resetDisabled: boolean;
-  onReset: () => void;
-}) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", minWidth: 0, gap: 6 }}>
-      <span id={`${id}-label`} style={{ minWidth: 0, color: "var(--text-body)", fontSize: 13, fontWeight: 600 }}>
-        {label}
-      </span>
-      <SettingTooltip id={`${id}-help`} label={label} help={help} />
-      <button
-        type="button"
-        className="setting-reset-button"
-        aria-label={`Reset ${label} to its team default`}
-        disabled={resetDisabled}
-        onClick={onReset}
-      >
-        Reset
-      </button>
-    </div>
-  );
-}
-
-function NumberStepper({
-  id,
-  ariaLabel,
-  value,
-  min,
-  max,
-  suffix,
-  onChange,
-}: {
-  id: string;
-  ariaLabel: string;
-  value: string;
-  min: number;
-  max: number;
-  suffix: string;
-  onChange: (value: string) => void;
-}) {
-  const stepValue = (amount: number) => {
-    const parsed = Number(value);
-    const current = Number.isFinite(parsed) ? parsed : min;
-    onChange(String(Math.max(min, Math.min(max, current + amount))));
-  };
-
-  return (
-    <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-      <span className="tolerance-stepper" style={{ position: "relative", display: "inline-flex", width: 92, height: 36 }}>
-        <input
-          className="tolerance-number-input"
-          id={id}
-          type="number"
-          inputMode="numeric"
-          value={value}
-          min={min}
-          max={max}
-          step={1}
-          aria-label={ariaLabel}
-          onChange={(event) => onChange(event.target.value)}
-          style={{
-            width: "100%",
-            height: "100%",
-            padding: "0 38px 0 10px",
-            border: "1px solid var(--border-strong)",
-            borderRadius: 7,
-            background: "var(--surface-input)",
-            color: "var(--magnitude-value)",
-            font: "inherit",
-            fontSize: 14,
-            fontWeight: MAGNITUDE_WEIGHT,
-            textAlign: "right",
-          }}
-        />
-        <span
-          style={{
-            position: "absolute",
-            top: 1,
-            right: 1,
-            bottom: 1,
-            display: "grid",
-            width: 28,
-            gridTemplateRows: "1fr 1fr",
-            borderLeft: "1px solid var(--border-strong)",
-            borderRadius: "0 6px 6px 0",
-            overflow: "hidden",
-          }}
-        >
-          <button
-            className="tolerance-stepper-button"
-            type="button"
-            aria-label={`Increase ${ariaLabel}`}
-            aria-controls={id}
-            disabled={Number(value) >= max}
-            onClick={() => stepValue(1)}
-          >
-            <ChevronDownIcon size={10} style={{ transform: "rotate(180deg)" }} />
-          </button>
-          <button
-            className="tolerance-stepper-button"
-            type="button"
-            aria-label={`Decrease ${ariaLabel}`}
-            aria-controls={id}
-            disabled={Number(value) <= min}
-            onClick={() => stepValue(-1)}
-          >
-            <ChevronDownIcon size={10} />
-          </button>
-        </span>
-      </span>
-      <span style={{ minWidth: 40, color: "var(--magnitude-unit)", fontSize: 12 }}>{suffix}</span>
-    </span>
-  );
-}
-
-function ToleranceField({
-  id,
-  label,
-  help,
-  value,
-  defaultValue,
-  min,
-  max,
-  suffix,
-  onChange,
-  onReset,
-  wide = false,
-}: {
-  id: string;
-  label: string;
-  help: string;
-  value: string;
-  defaultValue: number;
-  min: number;
-  max: number;
-  suffix: string;
-  onChange: (value: string) => void;
-  onReset: () => void;
-  wide?: boolean;
-}) {
-  return (
-    <div className={`watchlist-setting-card${wide ? " watchlist-setting-card--wide" : ""}`}>
-      <SettingHeader
-        id={id}
-        label={label}
-        help={help}
-        resetDisabled={value === String(defaultValue)}
-        onReset={onReset}
-      />
-      <NumberStepper
-        id={id}
-        ariaLabel={label}
-        value={value}
-        min={min}
-        max={max}
-        suffix={suffix}
-        onChange={onChange}
-      />
-    </div>
-  );
-}
-
-function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
+function WatchlistContent() {
   const router = useRouter();
   const {
     pages,
-    agentIgnoreDefaults,
     setFlag,
     reorderPages,
     renamePage,
-    setDefaultAgentIgnore,
     removePage,
     openAdd,
     pathFor,
-    preferredStrategy,
-    setPreferredStrategy,
-    performanceThresholds,
-    updatePerformanceThresholds,
-    collectionSchedule,
-    updateCollectionSchedule,
-    alertWebhookUrl,
-    updateAlertWebhookUrl,
-    visitorExperienceVisible,
-    externalAgentAuditEnabled,
-    setVisitorExperienceVisible,
-    setExternalAgentAuditEnabled,
     canManageProject,
   } = useStore();
   const orderedPages = useMemo(() => sortWatchlistPages(pages), [pages]);
-  const defaultIgnores = normalizeAgentIgnoreSettings(agentIgnoreDefaults);
-  const thresholds = normalizePerformanceThresholds(performanceThresholds);
-  const normalizedSchedule = normalizeCollectionSchedule(collectionSchedule);
-  const [collectionTimeDraft, setCollectionTimeDraft] = useState(normalizedSchedule.localTime);
-  const [collectionTimeZoneDraft, setCollectionTimeZoneDraft] = useState(normalizedSchedule.timeZone);
-  const [alertWebhookDraft, setAlertWebhookDraft] = useState(alertWebhookUrl ?? "");
-  const [timeZones, setTimeZones] = useState<string[]>([]);
-  const [thresholdDrafts, setThresholdDrafts] = useState<Record<NumericToleranceKey, string>>(() =>
-    Object.fromEntries(NUMERIC_TOLERANCE_KEYS.map((key) => [key, String(thresholds[key])])) as Record<NumericToleranceKey, string>
-  );
-  const [devicePolicyDraft, setDevicePolicyDraft] = useState<DevicePolicy>(thresholds.devicePolicy);
   const [draggedPageId, setDraggedPageId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<WatchlistDropTarget | null>(null);
   const [keyboardDragPageId, setKeyboardDragPageId] = useState<string | null>(null);
   const [reorderAnnouncement, setReorderAnnouncement] = useState("");
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      if (!collectionSchedule) {
-        const browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-        if (browserTimeZone) setCollectionTimeZoneDraft(browserTimeZone);
-      }
-      const supportedValuesOf = (
-        Intl as typeof Intl & { supportedValuesOf?: (key: "timeZone") => string[] }
-      ).supportedValuesOf;
-      if (supportedValuesOf) setTimeZones(supportedValuesOf("timeZone"));
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [collectionSchedule]);
-  const ignoredByDefault = ALL_AGENT_CHECKS.filter((check) => isAgentCheckIgnored(check, undefined, defaultIgnores)).length;
   const capacity = watchCapacity(pages);
-  const thresholdValues = Object.fromEntries(
-    NUMERIC_TOLERANCE_KEYS.map((key) => [key, Number(thresholdDrafts[key])]),
-  ) as Record<NumericToleranceKey, number>;
-  const thresholdsValid = NUMERIC_TOLERANCE_KEYS.every((key) => {
-    const value = thresholdValues[key];
-    const limits = PERFORMANCE_THRESHOLD_LIMITS[key];
-    return Number.isInteger(value) && value >= limits.min && value <= limits.max;
-  });
-  const nextThresholds = {
-    ...thresholdValues,
-    devicePolicy: devicePolicyDraft,
-  } as PerformanceThresholds;
-  const thresholdsDirty = thresholdsValid && (
-    NUMERIC_TOLERANCE_KEYS.some((key) => thresholdValues[key] !== thresholds[key])
-    || devicePolicyDraft !== thresholds.devicePolicy
-  );
-  const thresholdDraftsAtDefaults = NUMERIC_TOLERANCE_KEYS.every(
-    (key) => thresholdDrafts[key] === String(DEFAULT_PERFORMANCE_THRESHOLDS[key]),
-  ) && devicePolicyDraft === DEFAULT_PERFORMANCE_THRESHOLDS.devicePolicy;
-
-  const setThresholdDraft = (key: NumericToleranceKey, value: string) => {
-    setThresholdDrafts((current) => ({ ...current, [key]: value }));
-  };
-
-  const saveThresholds = () => {
-    if (!thresholdsValid) return;
-    updatePerformanceThresholds(nextThresholds);
-  };
-  const collectionScheduleDirty =
-    collectionTimeDraft !== normalizedSchedule.localTime
-    || collectionTimeZoneDraft !== normalizedSchedule.timeZone
-    || !normalizedSchedule.overridden;
-  const saveCollectionSchedule = () => {
-    updateCollectionSchedule({
-      localTime: collectionTimeDraft,
-      timeZone: collectionTimeZoneDraft,
-      overridden: true,
-    });
-  };
-  const normalizedAlertWebhookDraft = alertWebhookDraft.trim();
-  const alertWebhookValid = !normalizedAlertWebhookDraft || alertWebhookUrlIsValid(normalizedAlertWebhookDraft);
-  const alertWebhookDirty = normalizedAlertWebhookDraft !== (alertWebhookUrl ?? "");
-  const saveAlertWebhook = () => {
-    if (alertWebhookValid) updateAlertWebhookUrl(normalizedAlertWebhookDraft);
-  };
-
-  const resetThresholds = (keys: NumericToleranceKey[]) => {
-    setThresholdDrafts((current) => ({
-      ...current,
-      ...Object.fromEntries(keys.map((key) => [key, String(DEFAULT_PERFORMANCE_THRESHOLDS[key])])),
-    }));
-  };
-
-  const resetAllThresholds = () => {
-    setThresholdDrafts(
-      Object.fromEntries(NUMERIC_TOLERANCE_KEYS.map((key) => [key, String(DEFAULT_PERFORMANCE_THRESHOLDS[key])])) as Record<NumericToleranceKey, string>,
-    );
-    setDevicePolicyDraft(DEFAULT_PERFORMANCE_THRESHOLDS.devicePolicy);
-  };
 
   const persistReorder = (
     pageId: string,
@@ -480,11 +198,9 @@ function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
   return (
     <div>
       <PageHeader
-        title={mode === "watchlist" ? DESTINATION_LABEL.watchlist : DESTINATION_LABEL.settings}
-        purpose={mode === "watchlist"
-          ? "Priority and Watching pages are monitored nightly. Paused pages keep their history without collecting new data."
-          : "Configure how Page Watch displays performance, evaluates changes, schedules collections, and calculates agent-readiness."}
-        action={mode === "watchlist" && canManageProject ? (
+        title={DESTINATION_LABEL.watchlist}
+        purpose="Priority and Watching pages are monitored nightly. Paused pages keep their history without collecting new data."
+        action={canManageProject ? (
           <button
             onClick={openAdd}
             style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", border: "none", borderRadius: 8, background: "var(--action-primary-bg)", color: "var(--action-primary-text)", fontSize: 13, fontWeight: 550, cursor: "pointer" }}
@@ -496,8 +212,6 @@ function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
       />
 
       <div style={{ padding: "0 40px 48px" }}>
-        {mode === "watchlist" ? (
-          <>
         <div style={{ background: "var(--surface-card)", border: "1px solid var(--border-hairline)", borderRadius: 14, overflow: "hidden" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 18, padding: "12px 24px", borderBottom: "1px solid var(--border-hairline)", fontSize: 12, color: "var(--text-muted)" }}>
             <Magnitude value={`${capacity.active}/${MAX_ACTIVE_PAGES}`} unit="active" fontSize={12} />
@@ -652,450 +366,6 @@ function WatchlistContent({ mode }: { mode: "watchlist" | "settings" }) {
             </div>
           );})}
         </div>
-          </>
-        ) : (
-          <>
-
-        <WebflowConnection
-          connectionUrl={pathFor("/api/settings/webflow")}
-          syncUrl={pathFor("/api/settings/webflow/sync")}
-        />
-
-        <section aria-labelledby="alert-webhook-heading" style={{ background: "var(--surface-card)", border: "1px solid var(--border-hairline)", borderRadius: 14, padding: "20px", marginBottom: 16 }}>
-          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 24 }}>
-            <div>
-              <div id="alert-webhook-heading" style={{ fontSize: 13.5, fontWeight: 600 }}>Alert webhook</div>
-              <div style={{ maxWidth: 720, marginTop: 4, color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>
-                Send one JSON digest after each day&apos;s scheduled collection cohort settles. It includes a stable digest ID, date, title, summary, text, and a machine-readable list of every page that needs attention.
-              </div>
-            </div>
-            <button
-              type="button"
-              disabled={!alertWebhookDirty || !alertWebhookValid}
-              onClick={saveAlertWebhook}
-              style={{ border: "none", background: "var(--action-primary-bg)", color: "var(--action-primary-text)", fontSize: 12, fontWeight: 600, padding: "9px 13px", borderRadius: 7, cursor: "pointer", flex: "none" }}
-            >
-              Save webhook
-            </button>
-          </div>
-          <label htmlFor="alert-webhook-url" style={{ display: "grid", gap: 7, marginTop: 16, color: "var(--text-muted)", fontSize: 12 }}>
-            Webhook URL
-            <input
-              id="alert-webhook-url"
-              type="url"
-              inputMode="url"
-              autoComplete="url"
-              maxLength={2048}
-              value={alertWebhookDraft}
-              onChange={(event) => setAlertWebhookDraft(event.target.value)}
-              placeholder="https://hooks.example.com/page-watch"
-              aria-invalid={!alertWebhookValid}
-              aria-describedby="alert-webhook-help"
-              style={{ width: "100%", background: "var(--surface-input)", color: "var(--text-body)", border: `1px solid ${alertWebhookValid ? "var(--border-strong)" : "var(--status-danger-border)"}`, borderRadius: 7, padding: "9px 10px", fontSize: 13 }}
-            />
-          </label>
-          <div id="alert-webhook-help" aria-live="polite" style={{ marginTop: 7, color: alertWebhookValid ? "var(--text-muted)" : "var(--status-danger-text)", fontSize: 12, lineHeight: 1.5 }}>
-            {alertWebhookValid
-              ? normalizedAlertWebhookDraft ? "HTTPS only. Treat this URL as a secret; it is used only for outbound alert delivery." : "Leave blank to disable webhook alerts."
-              : "Enter a valid HTTPS URL without embedded username or password credentials."}
-          </div>
-        </section>
-
-        <section aria-labelledby="default-chart-device-heading" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 24, background: "var(--surface-card)", border: "1px solid var(--border-hairline)", borderRadius: 13, padding: "17px 20px", marginBottom: 16 }}>
-          <div>
-            <div id="default-chart-device-heading" style={{ fontSize: 13.5, fontWeight: 600 }}>Default chart device</div>
-            <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>Choose which device is primary when the app opens. Both device Change labels remain visible.</div>
-          </div>
-          <div style={{ flex: "none" }}>
-            <SegToggle
-              label="Default chart device"
-              value={preferredStrategy}
-              onChange={setPreferredStrategy}
-              options={[
-                { value: "desktop", label: "Desktop" },
-                { value: "mobile", label: "Mobile" },
-              ]}
-            />
-          </div>
-        </section>
-
-        <section aria-labelledby="visitor-experience-heading" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 24, background: "var(--surface-card)", border: "1px solid var(--border-hairline)", borderRadius: 13, padding: "17px 20px", marginBottom: 16 }}>
-          <div>
-            <div id="visitor-experience-heading" style={{ fontSize: 13.5, fontWeight: 600 }}>Visitor experience data</div>
-            <div style={{ maxWidth: 720, fontSize: 12, color: "var(--text-muted)", marginTop: 4, lineHeight: 1.5 }}>
-              Show or hide Chrome visitor measurements throughout the app. Collection continues weekly while this is hidden.
-            </div>
-          </div>
-          <div style={{ flex: "none" }}>
-            <SegToggle
-              label="Visitor experience data visibility"
-              value={visitorExperienceVisible ? "visible" : "hidden"}
-              onChange={(value) => setVisitorExperienceVisible(value === "visible")}
-              options={[
-                { value: "visible", label: "Visible" },
-                { value: "hidden", label: "Hidden" },
-              ]}
-            />
-          </div>
-        </section>
-
-        <section aria-labelledby="external-agent-audit-heading" style={{ background: "var(--surface-card)", border: "1px solid var(--border-hairline)", borderRadius: 13, padding: "17px 20px", marginBottom: 16 }}>
-          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 24 }}>
-            <div>
-              <div id="external-agent-audit-heading" style={{ fontSize: 13.5, fontWeight: 600 }}>External agent audit</div>
-              <div style={{ maxWidth: 720, fontSize: 12, color: "var(--text-muted)", marginTop: 4, lineHeight: 1.5 }}>
-                Adds an independent, origin-level agent-readiness audit from Ora, the scanner behind Is Agentic. It runs
-                only when you ask for it, and it never changes your Page Watch checks, performance scores, or page status.
-              </div>
-              <div style={{ maxWidth: 720, fontSize: 12, color: "var(--text-muted)", marginTop: 7, lineHeight: 1.5 }}>
-                Enabling this sends the production origin of each watched page to Ora. <strong style={{ color: "var(--text-muted)", fontWeight: 600 }}>Ora scans
-                are public:</strong>{" "}
-                the result is stored in Ora&apos;s directory, can appear in its leaderboard and research
-                statistics, and is readable by anyone. Webflow staging domains are never sent.
-              </div>
-            </div>
-            <div style={{ flex: "none" }}>
-              <SegToggle
-                label="External agent audit"
-                value={externalAgentAuditEnabled ? "enabled" : "disabled"}
-                onChange={(value) => setExternalAgentAuditEnabled(value === "enabled")}
-                options={[
-                  { value: "enabled", label: "Enabled" },
-                  { value: "disabled", label: "Off" },
-                ]}
-              />
-            </div>
-          </div>
-        </section>
-
-        <section aria-labelledby="collection-schedule-heading" style={{ background: "var(--surface-card)", border: "1px solid var(--border-hairline)", borderRadius: 14, padding: "20px", marginBottom: 16 }}>
-          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 24 }}>
-            <div>
-              <div id="collection-schedule-heading" style={{ fontSize: 13.5, fontWeight: 600 }}>Default collection time</div>
-              <div style={{ maxWidth: 720, marginTop: 4, color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>
-                This starts the workspace&apos;s daily collection window. Active pages are spread out after this time, and each page&apos;s PSI samples are staggered.
-              </div>
-              <div style={{ marginTop: 7, color: "var(--text-muted)", fontSize: 12 }}>
-                {normalizedSchedule.overridden
-                  ? "Using your saved override."
-                  : "Defaults to midnight in the timezone captured when the first page is added."}
-              </div>
-            </div>
-            <button
-              type="button"
-              disabled={!collectionScheduleDirty}
-              onClick={saveCollectionSchedule}
-              style={{ border: "none", background: "var(--action-primary-bg)", color: "var(--action-primary-text)", fontSize: 12, fontWeight: 600, padding: "9px 13px", borderRadius: 7, cursor: "pointer" }}
-            >
-              Save schedule
-            </button>
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "minmax(150px,220px) minmax(260px,1fr)", gap: 12, marginTop: 16 }}>
-            <label style={{ display: "grid", gap: 7, color: "var(--text-muted)", fontSize: 12 }}>
-              Local time
-              <input
-                type="time"
-                value={collectionTimeDraft}
-                onChange={(event) => setCollectionTimeDraft(event.target.value)}
-                style={{ background: "var(--surface-input)", color: "var(--text-body)", border: "1px solid var(--border-strong)", borderRadius: 7, padding: "9px 10px", fontSize: 13 }}
-              />
-            </label>
-            <label style={{ display: "grid", gap: 7, color: "var(--text-muted)", fontSize: 12 }}>
-              Timezone
-              <input
-                list="collection-timezones"
-                value={collectionTimeZoneDraft}
-                onChange={(event) => setCollectionTimeZoneDraft(event.target.value)}
-                placeholder="America/Chicago"
-                style={{ background: "var(--surface-input)", color: "var(--text-body)", border: "1px solid var(--border-strong)", borderRadius: 7, padding: "9px 10px", fontSize: 13 }}
-              />
-              <datalist id="collection-timezones">
-                {timeZones.map((timeZone) => <option key={timeZone} value={timeZone} />)}
-              </datalist>
-            </label>
-          </div>
-        </section>
-
-        <section aria-labelledby="performance-tolerances-heading" style={{ background: "var(--surface-card)", border: "1px solid var(--border-hairline)", borderRadius: 14, padding: "20px", marginBottom: 16 }}>
-          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 24, marginBottom: 16 }}>
-            <div>
-              <div id="performance-tolerances-heading" style={{ fontSize: 13.5, fontWeight: 600 }}>Monitoring tolerances</div>
-              <div style={{ maxWidth: 720, marginTop: 4, color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>
-                Team defaults for when pages enter dashboard cards, Watcher summaries, page statuses, and alerts. Hover or focus an info icon for details.
-              </div>
-            </div>
-            <button
-              type="button"
-              className="setting-reset-all-button"
-              disabled={thresholdDraftsAtDefaults}
-              onClick={resetAllThresholds}
-            >
-              Reset all
-            </button>
-          </div>
-
-          <div className="watchlist-tolerance-grid" style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 12 }}>
-            <ToleranceField
-              id="improvement-threshold"
-              label="Improvement threshold"
-              help="A page is improving when its Performance gain meets this minimum and also clears its normal measurement noise."
-              value={thresholdDrafts.improvement}
-              defaultValue={DEFAULT_PERFORMANCE_THRESHOLDS.improvement}
-              min={PERFORMANCE_THRESHOLD_LIMITS.improvement.min}
-              max={PERFORMANCE_THRESHOLD_LIMITS.improvement.max}
-              suffix="points"
-              onChange={(value) => setThresholdDraft("improvement", value)}
-              onReset={() => resetThresholds(["improvement"])}
-            />
-            <ToleranceField
-              id="regression-threshold"
-              label="Regression tolerance"
-              help="A Performance decline must meet or exceed this many points before it can be classified as a regression."
-              value={thresholdDrafts.regression}
-              defaultValue={DEFAULT_PERFORMANCE_THRESHOLDS.regression}
-              min={PERFORMANCE_THRESHOLD_LIMITS.regression.min}
-              max={PERFORMANCE_THRESHOLD_LIMITS.regression.max}
-              suffix="points"
-              onChange={(value) => setThresholdDraft("regression", value)}
-              onReset={() => resetThresholds(["regression"])}
-            />
-            <ToleranceField
-              id="confirmation-runs"
-              label="Confirmation runs"
-              help="Require this many consecutive qualifying scans before a regression is surfaced."
-              value={thresholdDrafts.confirmationRuns}
-              defaultValue={DEFAULT_PERFORMANCE_THRESHOLDS.confirmationRuns}
-              min={PERFORMANCE_THRESHOLD_LIMITS.confirmationRuns.min}
-              max={PERFORMANCE_THRESHOLD_LIMITS.confirmationRuns.max}
-              suffix="scans"
-              onChange={(value) => setThresholdDraft("confirmationRuns", value)}
-              onReset={() => resetThresholds(["confirmationRuns"])}
-            />
-            <ToleranceField
-              id="regression-floor"
-              label="Regression floor"
-              help="Ignore a decline when the latest Performance score remains at or above this value."
-              value={thresholdDrafts.regressionFloor}
-              defaultValue={DEFAULT_PERFORMANCE_THRESHOLDS.regressionFloor}
-              min={PERFORMANCE_THRESHOLD_LIMITS.regressionFloor.min}
-              max={PERFORMANCE_THRESHOLD_LIMITS.regressionFloor.max}
-              suffix="/ 100"
-              onChange={(value) => setThresholdDraft("regressionFloor", value)}
-              onReset={() => resetThresholds(["regressionFloor"])}
-            />
-
-            <div className="watchlist-setting-card">
-              <SettingHeader
-                id="device-policy"
-                label="Device policy"
-                help="Choose whether either device, both devices, or only the default chart device can place a page in a summary status."
-                resetDisabled={devicePolicyDraft === DEFAULT_PERFORMANCE_THRESHOLDS.devicePolicy}
-                onReset={() => setDevicePolicyDraft(DEFAULT_PERFORMANCE_THRESHOLDS.devicePolicy)}
-              />
-              <SegToggle
-                label="Device policy"
-                value={devicePolicyDraft}
-                onChange={setDevicePolicyDraft}
-                options={[
-                  { value: "either", label: "Either" },
-                  { value: "both", label: "Both" },
-                  { value: "preferred", label: "Default" },
-                ]}
-              />
-            </div>
-
-            <ToleranceField
-              id="agent-readiness-cutoff"
-              label="Agent-readiness cutoff"
-              help="Pages with an agent-readiness score below this percentage appear in Agent gaps."
-              value={thresholdDrafts.agentReadiness}
-              defaultValue={DEFAULT_PERFORMANCE_THRESHOLDS.agentReadiness}
-              min={PERFORMANCE_THRESHOLD_LIMITS.agentReadiness.min}
-              max={PERFORMANCE_THRESHOLD_LIMITS.agentReadiness.max}
-              suffix="%"
-              onChange={(value) => setThresholdDraft("agentReadiness", value)}
-              onReset={() => resetThresholds(["agentReadiness"])}
-            />
-
-            <div className="watchlist-setting-card watchlist-setting-card--wide">
-              <SettingHeader
-                id="metric-cutoffs"
-                label="Metric-specific cutoffs"
-                help="A metric is considered low when its latest score falls below the corresponding cutoff."
-                resetDisabled={(["lowPerformance", "accessibility", "bestPractices", "seo"] as NumericToleranceKey[]).every(
-                  (key) => thresholdDrafts[key] === String(DEFAULT_PERFORMANCE_THRESHOLDS[key]),
-                )}
-                onReset={() => resetThresholds(["lowPerformance", "accessibility", "bestPractices", "seo"])}
-              />
-              <div className="metric-cutoff-grid">
-                {([
-                  ["lowPerformance", "Performance"],
-                  ["accessibility", "Accessibility"],
-                  ["bestPractices", "Best practices"],
-                  ["seo", "SEO"],
-                ] as [NumericToleranceKey, string][]).map(([key, label]) => (
-                  <div key={key} className="metric-cutoff-control">
-                    <span>{label}</span>
-                    <NumberStepper
-                      id={`metric-cutoff-${key}`}
-                      ariaLabel={`${label} cutoff`}
-                      value={thresholdDrafts[key]}
-                      min={PERFORMANCE_THRESHOLD_LIMITS[key].min}
-                      max={PERFORMANCE_THRESHOLD_LIMITS[key].max}
-                      suffix="/ 100"
-                      onChange={(value) => setThresholdDraft(key, value)}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <ToleranceField
-              id="new-page-grace-runs"
-              label="New-page grace period"
-              help="Wait for this many completed post-baseline scans before showing trend statuses or sending regression alerts."
-              value={thresholdDrafts.newPageGraceRuns}
-              defaultValue={DEFAULT_PERFORMANCE_THRESHOLDS.newPageGraceRuns}
-              min={PERFORMANCE_THRESHOLD_LIMITS.newPageGraceRuns.min}
-              max={PERFORMANCE_THRESHOLD_LIMITS.newPageGraceRuns.max}
-              suffix="scans"
-              onChange={(value) => setThresholdDraft("newPageGraceRuns", value)}
-              onReset={() => resetThresholds(["newPageGraceRuns"])}
-              wide
-            />
-
-            <ToleranceField
-              id="minimum-finding-runs"
-              label="Finding evidence"
-              help="Require this many repeatable Lighthouse captures before a quantified finding can enter Inbox."
-              value={thresholdDrafts.minimumFindingRuns}
-              defaultValue={DEFAULT_PERFORMANCE_THRESHOLDS.minimumFindingRuns}
-              min={PERFORMANCE_THRESHOLD_LIMITS.minimumFindingRuns.min}
-              max={PERFORMANCE_THRESHOLD_LIMITS.minimumFindingRuns.max}
-              suffix="runs"
-              onChange={(value) => setThresholdDraft("minimumFindingRuns", value)}
-              onReset={() => resetThresholds(["minimumFindingRuns"])}
-            />
-            <ToleranceField
-              id="minimum-time-saving"
-              label="Minimum time saving"
-              help="Suppress new quantified Inbox findings whose estimated time saving is below this value, unless their transfer saving clears its own threshold."
-              value={thresholdDrafts.minimumSavingsMs}
-              defaultValue={DEFAULT_PERFORMANCE_THRESHOLDS.minimumSavingsMs}
-              min={PERFORMANCE_THRESHOLD_LIMITS.minimumSavingsMs.min}
-              max={PERFORMANCE_THRESHOLD_LIMITS.minimumSavingsMs.max}
-              suffix="ms"
-              onChange={(value) => setThresholdDraft("minimumSavingsMs", value)}
-              onReset={() => resetThresholds(["minimumSavingsMs"])}
-            />
-            <ToleranceField
-              id="minimum-transfer-saving"
-              label="Minimum transfer saving"
-              help="Suppress new quantified Inbox findings below this transfer saving, unless their estimated time saving clears its own threshold. Structural findings with no estimate remain visible."
-              value={thresholdDrafts.minimumSavingsKilobytes}
-              defaultValue={DEFAULT_PERFORMANCE_THRESHOLDS.minimumSavingsKilobytes}
-              min={PERFORMANCE_THRESHOLD_LIMITS.minimumSavingsKilobytes.min}
-              max={PERFORMANCE_THRESHOLD_LIMITS.minimumSavingsKilobytes.max}
-              suffix="KB"
-              onChange={(value) => setThresholdDraft("minimumSavingsKilobytes", value)}
-              onReset={() => resetThresholds(["minimumSavingsKilobytes"])}
-            />
-          </div>
-
-          <div className="watchlist-tolerance-actions" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginTop: 16 }}>
-            <div aria-live="polite" style={{ color: thresholdsValid ? "var(--text-muted)" : "var(--status-danger-text)", fontSize: 12 }}>
-              {thresholdsValid
-                ? thresholdsDirty ? "Unsaved tolerance changes." : "All monitoring tolerances are saved."
-                : "One or more values are outside the supported range."}
-            </div>
-            <div style={{ display: "flex", flex: "none", alignItems: "center", gap: 8 }}>
-              <button
-                type="button"
-                onClick={saveThresholds}
-                disabled={!thresholdsDirty}
-                style={{ border: "none", background: "var(--action-primary-bg)", color: "var(--action-primary-text)", fontSize: 12, fontWeight: 600, padding: "9px 13px", borderRadius: 7, cursor: "pointer" }}
-              >
-                Save changes
-              </button>
-            </div>
-          </div>
-        </section>
-
-        <section aria-labelledby="default-agent-checks-heading" style={{ background: "var(--surface-card)", border: "1px solid var(--border-hairline)", borderRadius: 14, padding: "20px" }}>
-          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 24, marginBottom: 18 }}>
-            <div>
-              <div id="default-agent-checks-heading" style={{ fontSize: 13.5, fontWeight: 600 }}>Default agent checks to exclude</div>
-              <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4, maxWidth: 680, lineHeight: 1.5 }}>
-                Excluded checks are left out of agent-readiness scores on every page. Individual pages can override these defaults.
-              </div>
-            </div>
-            <div style={{ flex: "none", padding: "5px 9px", borderRadius: 6, background: "var(--surface-raised)" }}>
-              <Magnitude value={`${ignoredByDefault} of ${ALL_AGENT_CHECKS.length}`} unit="excluded" fontSize={12} />
-            </div>
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16, alignItems: "start" }}>
-            {AGENT_CHECK_GROUPS.map((group) => {
-              const groupIgnored = isAgentGroupIgnored(group.name, undefined, defaultIgnores);
-              return (
-                <div
-                  key={group.name}
-                  style={{
-                    background: groupIgnored ? "var(--surface-raised)" : "var(--surface-card)",
-                    border: `1px solid ${groupIgnored ? "var(--border-strong)" : "var(--border-hairline)"}`,
-                    borderRadius: 12,
-                    padding: "16px 18px",
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-                    <div style={{ minWidth: 0, fontSize: 12, fontWeight: 550, letterSpacing: "0.05em", textTransform: "uppercase", color: "var(--text-muted)" }}>
-                      {group.name}
-                    </div>
-                    <button
-                      type="button"
-                      aria-label={`${applicabilityActionLabel(groupIgnored ? "excluded" : "included")} ${group.name} category by default`}
-                      onClick={() => setDefaultAgentIgnore("group", group.name, !groupIgnored)}
-                      style={{ marginLeft: "auto", flex: "none", border: "1px solid var(--border-strong)", background: "var(--surface-input)", color: "var(--text-muted)", fontSize: 12, fontWeight: 550, padding: "4px 8px", borderRadius: 6, cursor: "pointer" }}
-                    >
-                      {`${applicabilityActionLabel(groupIgnored ? "excluded" : "included")} category`}
-                    </button>
-                  </div>
-
-                  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                    {group.items.map((name) => {
-                      const check = { group: group.name, name };
-                      const checkKey = agentCheckKey(check);
-                      const individuallyIgnored = defaultIgnores.checks.includes(checkKey);
-                      const checkIgnored = groupIgnored || individuallyIgnored;
-                      return (
-                        <div key={name} style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}>
-                          <span style={{ flex: "none", width: 18, height: 18, borderRadius: 5, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: "var(--text-muted)", background: "var(--surface-raised)" }}>
-                            {checkIgnored ? "–" : "✓"}
-                          </span>
-                          <span style={{ minWidth: 0, flex: 1, fontSize: 13, color: "var(--text-body)" }}>{name}</span>
-                          {groupIgnored ? (
-                            <span style={{ flex: "none", fontSize: 12, fontWeight: 600, color: "var(--text-muted)" }}>excluded by category</span>
-                          ) : (
-                            <button
-                              type="button"
-                              aria-label={`${applicabilityActionLabel(individuallyIgnored ? "excluded" : "included")} ${name} check by default`}
-                              onClick={() => setDefaultAgentIgnore("check", checkKey, !individuallyIgnored)}
-                              style={{ flex: "none", border: "none", background: "transparent", color: "var(--text-muted)", fontSize: 12, fontWeight: 550, padding: "2px 0", cursor: "pointer" }}
-                            >
-                              {applicabilityActionLabel(individuallyIgnored ? "excluded" : "included")}
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-          </>
-        )}
       </div>
     </div>
   );
@@ -1108,9 +378,5 @@ export default function WatchlistPage() {
     if (!canManageProject) router.replace(pathFor("/dashboard"));
   }, [canManageProject, pathFor, router]);
   if (!canManageProject) return null;
-  return <WatchlistContent mode="watchlist" />;
-}
-
-export function SettingsPageContent() {
-  return <WatchlistContent mode="settings" />;
+  return <WatchlistContent />;
 }

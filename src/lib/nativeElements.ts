@@ -10,7 +10,7 @@ import type {
   WebflowRemediationLevel,
 } from "./types";
 import type { PerformanceIssueCapture, PerformanceIssueStatus } from "./performanceIssues";
-import { EXCLUSION_REASONS, type Applicability, type ExclusionReason } from "./vocabulary";
+import { EXCLUSION_REASONS, UNLABELLED_EXCLUSION_REASON, type Applicability, type ExclusionReason } from "./vocabulary";
 import { classifyWebflowPerformance, culpritGroupLabel } from "./webflowPerformance";
 
 interface DetectionDefinition {
@@ -137,15 +137,12 @@ interface RetiredNativeElementControl {
 /**
  * The reason a retired `suppressed` record carries forward.
  *
- * Not a reason invented on the reader's behalf: it is the definition of the
- * state the old button put the finding into. `APPLICABILITY_MEANS.excluded` is
- * "Deliberately not counted, because it does not apply to this site", and the
- * retired control offered exactly that one meaning, unlabelled, with nowhere to
- * record anything narrower. Migrating it to the reason that restates the state
- * keeps the exclusion the reader asked for; dropping the record instead would
- * quietly put the finding back in the count.
+ * The argument for this particular reason lives on `UNLABELLED_EXCLUSION_REASON`
+ * in `vocabulary.ts`, which the agent-check defaults read too. It was stated
+ * here first and moved in S8 rather than copied — two spellings of one
+ * migration rule is the drift rule 20 names.
  */
-const RETIRED_SUPPRESSED_REASON: ExclusionReason = "Not applicable to this site";
+const RETIRED_SUPPRESSED_REASON: ExclusionReason = UNLABELLED_EXCLUSION_REASON;
 
 /**
  * The gate between a stored string and the registry's reason list.

@@ -1,6 +1,6 @@
 import type { AppState, ChangeMarker, Night } from "../types";
 import { captureAgentReadiness } from "../agentScoring";
-import { effectivePerformanceThresholds } from "../performanceThresholds";
+import { normalizePerformanceThresholds } from "../performanceThresholds";
 import { mediansOf, pageTrend } from "../scoring";
 import { resolveMarkerIndex } from "../followups";
 import { getEnv } from "../env";
@@ -128,7 +128,7 @@ export class RemoteDataStore implements DataStore {
         desktop: mediansOf(night.scores.desktop),
       };
       page.agent = agent ?? [];
-      page.status = pageTrend(page, "mobile", effectivePerformanceThresholds(draft.performanceThresholds, page));
+      page.status = pageTrend(page, "mobile", normalizePerformanceThresholds(draft.performanceThresholds));
       page.runState = undefined;
       page.lastRunAt = night.iso ?? new Date().toISOString();
       page.lastCollectionStatus = "trusted";

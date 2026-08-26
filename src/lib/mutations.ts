@@ -1,13 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { isKnownAgentIgnoreTarget } from "./agentChecks";
 import { updateAgentIgnoreOverride, updateAgentIgnoreSettings } from "./agentScoring";
-import { effectivePerformanceThresholds, normalizePerformanceThresholdOverrides, normalizePerformanceThresholds, performanceThresholdOverridesAreValid, performanceThresholdsAreValid } from "./performanceThresholds";
+import { normalizePerformanceThresholds } from "./performanceThresholds";
+import { isSensitivity, thresholdsFor, type Sensitivity } from "./sensitivity";
+import { isDigestCadence, type DigestCadence } from "./digestCadence";
+import { normalizeDigestRecipients } from "./digestRecipients";
 import { collectionScheduleIsValid, ensureCollectionOffsets } from "./collectionSchedule";
 import { pageTrend } from "./scoring";
 import { getStore } from "./store";
 import type { DataStore } from "./store";
 import { shortDate } from "./ui";
-import type { AgentIgnoreOverrideMode, AgentIgnoreScope, AppState, CollectionSchedule, Flag, PagePerformanceThresholdOverrides, PerformanceThresholds, RecStatus, ScoreByCategory, TaskStatus, WatchPage } from "./types";
+import type { AgentIgnoreOverrideMode, AgentIgnoreScope, AppState, CollectionSchedule, Flag, RecStatus, ScoreByCategory, TaskStatus, WatchPage } from "./types";
 import { defaultNewPageFlag, flagCapacityError } from "./watchCapacity";
 import { applyWatchlistPageOrder, changePageFlagOrder, sortWatchlistPages } from "./watchlistOrder";
 import { removeTaskMarker } from "./taskMarkers";
@@ -92,17 +95,30 @@ export function setAgentIgnore(
   }, dataStore);
 }
 
+/**
+ * Set a check or a category aside for this site, or count it again.
+ *
+ * The reason is required to exclude, because applicability requires one — the
+ * control that used to write this never asked, and S8's Excluded list does. An
+ * unlabelled exclusion is still accepted so an older client is not broken by a
+ * 500; it reads as `UNLABELLED_EXCLUSION_REASON` on the way out, which is what
+ * that record has always meant.
+ */
 export function setDefaultAgentIgnore(
   scope: AgentIgnoreScope,
   value: string,
   ignored: boolean,
   dataStore: DataStore = getStore(),
+  reason?: ExclusionReason,
 ): Promise<AppState> {
   return withState((state) => {
     if (!isKnownAgentIgnoreTarget(scope, value)) {
       throw new Error(`setDefaultAgentIgnore: ${scope} does not exist`);
     }
-    state.agentIgnoreDefaults = updateAgentIgnoreSettings(state.agentIgnoreDefaults, scope, value, ignored);
+    if (reason !== undefined && !(EXCLUSION_REASONS as readonly string[]).includes(reason)) {
+      throw new Error(`setDefaultAgentIgnore: "${reason}" is not an exclusion reason`);
+    }
+    state.agentIgnoreDefaults = updateAgentIgnoreSettings(state.agentIgnoreDefaults, scope, value, ignored, reason);
   }, dataStore);
 }
 
@@ -186,36 +202,54 @@ export async function recordCaseDecision(
   }, dataStore);
 }
 
-export function setPerformanceThresholds(
-  thresholds: PerformanceThresholds,
+/**
+ * Move the one sensitivity control, and resolve the limits behind it.
+ *
+ * Both halves in one mutation, because they are one fact. The position is what
+ * the reader chose; the limits are what it means; storing the first without
+ * rewriting the second would leave a screen saying "Normal" over yesterday's
+ * numbers, which is precisely the opacity option 10b was chosen to avoid.
+ *
+ * A malformed position fails loudly rather than falling back to Normal. Rule 18
+ * draws that line: an absent value is withheld, but a value that should have
+ * been one of three and is not is a shape that should have been impossible, and
+ * quietly resetting a reader's sensitivity to the default is a worse outcome
+ * than a 400.
+ */
+export function setSensitivity(
+  sensitivity: Sensitivity,
   dataStore: DataStore = getStore(),
 ): Promise<AppState> {
-  if (!performanceThresholdsAreValid(thresholds)) {
-    throw new Error("setPerformanceThresholds: values are outside the supported range");
+  if (!isSensitivity(sensitivity)) {
+    throw new Error(`setSensitivity: "${sensitivity}" is not a sensitivity position`);
   }
   return withState((state) => {
-    state.performanceThresholds = normalizePerformanceThresholds(thresholds);
+    state.sensitivity = sensitivity;
+    state.performanceThresholds = thresholdsFor(sensitivity);
+    // A reader who has just set this by hand has been told everything the
+    // migration notice would have said, so it is no longer owed.
+    delete state.sensitivityNotice;
     for (const page of state.pages) {
-      page.status = pageTrend(page, "mobile", effectivePerformanceThresholds(state.performanceThresholds, page));
+      page.status = pageTrend(page, "mobile", normalizePerformanceThresholds(state.performanceThresholds));
     }
     delete state.watcherNote;
   }, dataStore);
 }
 
-export function setPagePerformanceThresholdOverrides(
-  id: string,
-  overrides: PagePerformanceThresholdOverrides,
+/**
+ * How often the digest arrives and who it goes to. One site, one answer to
+ * each — there is no other granularity, by decision.
+ */
+export function setDigestSettings(
+  settings: { cadence: DigestCadence; recipients: readonly string[] },
   dataStore: DataStore = getStore(),
 ): Promise<AppState> {
-  if (!performanceThresholdOverridesAreValid(overrides)) {
-    throw new Error("setPagePerformanceThresholdOverrides: values are outside the supported range");
+  if (!isDigestCadence(settings.cadence)) {
+    throw new Error(`setDigestSettings: "${settings.cadence}" is not a digest cadence`);
   }
   return withState((state) => {
-    const page = state.pages.find((item) => item.id === id);
-    if (!page) throw new Error(`setPagePerformanceThresholdOverrides: page ${id} not found`);
-    page.performanceThresholdOverrides = normalizePerformanceThresholdOverrides(overrides);
-    page.status = pageTrend(page, "mobile", effectivePerformanceThresholds(state.performanceThresholds, page));
-    delete state.watcherNote;
+    state.digestCadence = settings.cadence;
+    state.digestRecipients = normalizeDigestRecipients([...settings.recipients]);
   }, dataStore);
 }
 

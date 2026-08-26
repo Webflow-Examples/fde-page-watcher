@@ -1,12 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_PERFORMANCE_THRESHOLDS,
-  effectivePerformanceThresholds,
   normalizePerformanceThresholds,
-  performanceThresholdOverridesAreValid,
   performanceThresholdsAreValid,
   recommendationMeetsEvidenceThresholds,
 } from "../performanceThresholds";
+import { DEFAULT_SENSITIVITY, SENSITIVITY_THRESHOLDS } from "../sensitivity";
 
 describe("performance thresholds", () => {
   it("normalizes missing and out-of-range persisted values", () => {
@@ -52,14 +51,13 @@ describe("performance thresholds", () => {
     expect(performanceThresholdsAreValid({ lowPerformance: 70, regression: 5 })).toBe(false);
   });
 
-  it("layers sparse page calibration over normalized team defaults", () => {
-    expect(effectivePerformanceThresholds(
-      { ...DEFAULT_PERFORMANCE_THRESHOLDS, regression: 8, confirmationRuns: 2 },
-      { regression: 14, devicePolicy: "both" },
-    )).toMatchObject({ regression: 14, confirmationRuns: 2, devicePolicy: "both" });
-    expect(performanceThresholdOverridesAreValid({ regression: 14, minimumFindingRuns: 3 })).toBe(true);
-    expect(performanceThresholdOverridesAreValid({ regression: 0 })).toBe(false);
-    expect(performanceThresholdOverridesAreValid({ mystery: 2 })).toBe(false);
+  /**
+   * The default set and the default sensitivity position are one fact. This is
+   * the assertion rule 20 asks for when a value has two readers: it fails the
+   * moment somebody edits the default here instead of moving the position.
+   */
+  it("defaults to the limits the Normal position resolves to", () => {
+    expect(DEFAULT_PERFORMANCE_THRESHOLDS).toBe(SENSITIVITY_THRESHOLDS[DEFAULT_SENSITIVITY]);
   });
 
   it("gates only quantified recommendations and preserves structural findings", () => {
