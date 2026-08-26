@@ -39,6 +39,7 @@ function issue(overrides: Partial<AgentIssueCase> = {}): AgentIssueCase {
     title: "Agents cannot reliably discover machine-readable API documentation",
     consequence: "Without a published contract an agent has to infer endpoints.",
     scope: "origin",
+    half: "comprehension",
     status: "failed",
     tier: "essential",
     confidence: "corroborated",

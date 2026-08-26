@@ -767,6 +767,7 @@ describe("migrating an assembled agent-access issue", () => {
     title: "Agent crawler policy is unclear",
     consequence: "Agents read robots.txt before anything else.",
     scope: "origin",
+    half: "reach",
     status: "failed",
     tier: "essential",
     confidence: "corroborated",

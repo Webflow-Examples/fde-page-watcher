@@ -40,10 +40,13 @@ import { failedRunDetailMessage, formatSuccessfulRunAt, lastSuccessfulRunAt } fr
 import { isTaskMarker, taskMarkerText } from "@/lib/taskMarkers";
 import { VisitorExperiencePanel } from "@/components/visitor-experience";
 import { ExternalAgentAuditPanel } from "@/components/agent-audit";
-import { AgentAccessVerdictCard, AgentIssueCaseList } from "@/components/agent-access";
-import { agentAccessSummary, assembleAgentIssueCases } from "@/lib/agentIssueCases";
-import { externalAuditAgeLabel } from "@/lib/externalAgentEvidence";
-import { latestExternalAgentSnapshot } from "@/lib/agentAudit";
+import { AgentAccessPanel, AgentIssueCaseList } from "@/components/agent-access";
+import { assembleAgentIssueCases } from "@/lib/agentIssueCases";
+import { agentAccess, agentAccessExclusions, agentCheckExclusionReason } from "@/lib/agent-access";
+import { agentExcluded } from "@/lib/agent-copy";
+import { agentIssueRecId } from "@/lib/agentIssueTasks";
+import { caseHref } from "@/components/issue-row";
+import { issueCasesFrom } from "@/components/store";
 import { externalAuditForPage } from "@/lib/externalAgentEvidence";
 import {
   evidenceForPage,
@@ -1547,7 +1550,8 @@ function AgentTab({
   const restores = normalizeAgentIgnoreSettings(page.agentIgnoreRestores);
   const defaults = normalizeAgentIgnoreSettings(store.agentIgnoreDefaults);
   const allApplicableUnavailable = checks.length > 0 && pass === 0 && fail === 0 && unavailable > 0;
-  const latestKitesurf = [...pageAgentHistoryForRange(page, rangeDays)].reverse().find((night) => night.kitesurf)?.kitesurf ?? null;
+  const agentHistory = pageAgentHistoryForRange(page, rangeDays);
+  const latestKitesurf = [...agentHistory].reverse().find((night) => night.kitesurf)?.kitesurf ?? null;
   const audit = externalAuditForPage(store.externalAgentAudits, page.url);
   // One issue per problem, merged across every source. The per-check lists
   // below remain available as source detail rather than as the headline.
@@ -1560,23 +1564,61 @@ function AgentTab({
     audit,
     kitesurf: latestKitesurf,
   });
-  const summary = agentAccessSummary(issueCases);
+
+  // The two sources that reach the table without going through the assembler.
+  // Each keeps its own date: the readings table shows when that system last
+  // looked, never when the newest of the five did.
+  const nativeElementsNight = [...pageHistoryForRange(page, rangeDays)].reverse()
+    .find((night) => night.nativeElements);
+  const lighthouseNight = [...pageHistoryForRange(page, rangeDays)].reverse()
+    .find((night) => night.iso);
+  const access = agentAccess({
+    cases: issueCases,
+    ...(nativeElementsNight?.nativeElements
+      ? {
+        nativeElements: {
+          scan: nativeElementsNight.nativeElements,
+          ...(nativeElementsNight.iso ? { observedAt: nativeElementsNight.iso } : {}),
+        },
+      }
+      : {}),
+    ...(lighthouseNight?.iso ? { lighthouse: { observedAt: lighthouseNight.iso } } : {}),
+    // Read only. Nothing here writes a reason; S8's excluded list does that.
+    excluded: agentAccessExclusions({
+      checks,
+      ignores,
+      ignoreDefaults: defaults,
+      ignoreRestores: restores,
+    }),
+  });
+
   const trackedKeys = new Set(
     store.recs
       .filter((rec) => rec.pageId === page.id && rec.source === "agent-readiness")
       .map((rec) => rec.agentIssue?.caseKey ?? rec.id.replace(/^agent-issue:/, "")),
   );
-  const auditAge = audit
-    ? externalAuditAgeLabel(latestExternalAgentSnapshot(audit))
-    : undefined;
+  // A family key resolves to the case id the issues list derived for it, so the
+  // link lands on /issues/{id} rather than on a key this screen made up. Until
+  // the finding is tracked there is no case, and no link is offered.
+  const caseIdByCause = new Map(
+    issueCasesFrom({ recs: store.recs, pages: store.pages }).map((item) => [item.cause, item.id]),
+  );
+  const hrefForCase = (key: string) => {
+    const id = caseIdByCause.get(agentIssueRecId(key));
+    return id ? caseHref(store.basePath, id) : undefined;
+  };
+  // The audit's freshness label is gone from here on purpose: Ora's row in the
+  // readings table carries the provider's own scan date, so a second, differently
+  // worded age beside the verdict was the same fact said twice.
   return (
     <div>
-      <AgentAccessVerdictCard summary={summary} freshness={auditAge} />
+      <AgentAccessPanel access={access} caseHref={hrefForCase} />
       <AgentIssueCaseList
         cases={issueCases}
         canManage={store.canManageProject}
         trackedKeys={trackedKeys}
-        onAddToTasks={(issue) => store.addAgentIssueTask(page.id, issue.key)}
+        caseHref={hrefForCase}
+        onTrack={(issue) => store.addAgentIssueTask(page.id, issue.key)}
       />
       <KitesurfProbeCard evidence={latestKitesurf} />
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20, padding: "15px 18px", background: "var(--surface-card)", border: "1px solid var(--border-hairline)", borderRadius: 11 }}>
@@ -1645,6 +1687,11 @@ function AgentTab({
                       const checkKey = agentCheckKey(chk);
                       const checkMode = agentIgnoreOverrideMode(ignores, restores, "check", checkKey);
                       const checkIgnored = isAgentCheckIgnored(chk, ignores, defaults, restores);
+                      // Why it does not apply, if anybody recorded why. Null is
+                      // a gap, not a default: an exclusion made before reasons
+                      // were stored shows the check set aside and says nothing
+                      // further, rather than borrowing a reason nobody chose.
+                      const checkReason = agentCheckExclusionReason(chk, ignores, defaults, restores);
                       // Four states: pass, fail, unavailable, and ignored.
                       const mark = checkIgnored || chk.unavailable ? "–" : chk.pass ? "✓" : "✕";
                       // The glyph is decorative; the result reaches assistive
@@ -1662,7 +1709,14 @@ function AgentTab({
                         <div key={chk.name} style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}>
                           <span aria-hidden="true" style={{ flex: "none", width: 18, height: 18, borderRadius: 5, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: markColor, background: markBg }}>{mark}</span>
                           <span className="sr-only">{markLabel}</span>
-                          <span style={{ minWidth: 0, flex: 1, fontSize: 13, color: textColor }}>{chk.name}</span>
+                          <span style={{ minWidth: 0, flex: 1, fontSize: 13, color: textColor }}>
+                            {chk.name}
+                            {checkReason && (
+                              <span style={{ display: "block", fontSize: 12, color: "var(--text-disabled-app)" }}>
+                                {agentExcluded(checkReason)}
+                              </span>
+                            )}
+                          </span>
                           {!checkIgnored && chk.unavailable && (
                             <span style={{ flex: "none", fontSize: 12, fontWeight: 600, color: "var(--health-none-text)", background: "var(--health-none-bg)", padding: "1px 7px", borderRadius: 4 }}>{AGENT_RESULT_LABEL.unavailable}</span>
                           )}

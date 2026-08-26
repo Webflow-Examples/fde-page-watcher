@@ -390,10 +390,32 @@ export interface AgentCheck {
 export type AgentIgnoreScope = "check" | "group";
 export type AgentIgnoreOverrideMode = "inherit" | "ignore" | "restore";
 
-/** Agent-check applicability settings that survive future scans. */
+/**
+ * Agent-check applicability settings that survive future scans.
+ *
+ * `checks` and `groups` say WHICH checks do not apply to this site. `reasons`
+ * says WHY, keyed by the same string that appears in one of those two lists —
+ * the check key for a check, the group name for a group. Applicability requires
+ * a reason, and until something writes one the map is simply absent: an
+ * exclusion carried over from before reasons were stored has no reason, and
+ * that is a gap to be shown rather than a default to be filled in.
+ *
+ * `reason` is a plain string HERE and only here. This module imports nothing
+ * (`agent-audit-isolation` enforces that, so a provider module can never reach
+ * it through the state's types), and the registry's reason list lives in
+ * `vocabulary.ts`. `agentCheckExclusionReason` in `agent-access.ts` is the one
+ * gate: it narrows a stored string to one of the decided reasons or to null,
+ * and null means the reason does not apply, never that it was removed.
+ *
+ * Nothing in `src/` writes this yet. S8 owns the excluded list and the control
+ * that fills it in; the same shape reads correctly empty until then.
+ *
+ * Registry: `concepts.applicability`. Do NOT import `ExclusionReason` here.
+ */
 export interface AgentIgnoreSettings {
   checks: string[];
   groups: string[];
+  reasons?: Record<string, string>;
 }
 
 export type DevicePolicy = "either" | "both" | "preferred";

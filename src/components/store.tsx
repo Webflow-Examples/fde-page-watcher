@@ -19,7 +19,7 @@ import {
   type IssueCase,
   type RemediationGroup,
 } from "@/lib/issue-case";
-import { COUNTED_QUEUES, type Queue } from "@/lib/vocabulary";
+import { COUNTED_QUEUES, QUEUE_LABEL, type Queue } from "@/lib/vocabulary";
 import { localISODate } from "@/lib/ui";
 import { withBasePath } from "@/lib/paths";
 import { defaultNewPageFlag, flagCapacityError } from "@/lib/watchCapacity";
@@ -871,13 +871,13 @@ export function StoreProvider({
           });
           const body = (await response.json().catch(() => null)) as { state?: AppState } | null;
           if (!response.ok || !body?.state) {
-            flash("Couldn't add this to Tasks — try again");
+            flash(`Couldn't add this to ${QUEUE_LABEL.fix} — try again`);
             return;
           }
           apply(normalizeState(body.state));
-          flash("Added to Tasks with its verification target");
+          flash(`Added to ${QUEUE_LABEL.fix} with its verification target`);
         } catch {
-          flash("Couldn't add this to Tasks — try again");
+          flash(`Couldn't add this to ${QUEUE_LABEL.fix} — try again`);
         }
       })();
     },
