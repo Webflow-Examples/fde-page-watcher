@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { markShapesOf, runOf } from "../checkpoint-evaluation";
 import { markFixed, type Checkpoint, type IssueCase } from "../issue-case";
+import type { Caller } from "../caller";
 
 /**
  * The notation's invariants (13a, 14c, 15d).
@@ -20,6 +21,7 @@ const TRACK = readFileSync(join(process.cwd(), "src/components/checkpoint-track.
 const CSS = readFileSync(join(process.cwd(), "src/app/globals.css"), "utf8");
 
 const FIXED_AT = "2026-08-01T00:00:00.000Z";
+const PERSON: Caller = { kind: "person", userId: "rae@webflow.com" };
 
 function fixed(checkpoints?: Checkpoint[]): IssueCase {
   const base: IssueCase = {
@@ -42,7 +44,7 @@ function fixed(checkpoints?: Checkpoint[]): IssueCase {
     evidence: [],
     history: [],
   };
-  const marked = markFixed(base, { actor: "person", at: FIXED_AT });
+  const marked = markFixed(base, { by: PERSON, at: FIXED_AT });
   return checkpoints ? { ...marked, checkpoints } : marked;
 }
 

@@ -8,6 +8,7 @@ import {
   type IssueCase,
   IssueCaseError,
 } from "./issue-case";
+import type { Caller } from "./caller";
 import { CHECKPOINT_EVALUATION, type CheckpointResult } from "./vocabulary";
 import { HISTORY_RESOLVED, historyReopened, historyUnavailable } from "./watch-copy";
 
@@ -70,6 +71,21 @@ export interface CheckpointEvaluation {
 const RETRY_AFTER_MS = 24 * 60 * 60 * 1000;
 
 /**
+ * This evaluator, as the caller it is.
+ *
+ * `system` is the class the registry permits to fire `resolve`, and it is the
+ * tag rather than a claim beside the identity — `applyAction` reads it off this
+ * value and checks it against `action.resolve.actor`. Before v9 the same word
+ * was passed as a bare string and nothing looked at it, so "resolve is
+ * system-only" was true only because this file was its one caller.
+ *
+ * `checkpoint` is the agent, not `system` again: the row a reader sees says a
+ * scheduled re-measurement moved the case, and there is no other agent it
+ * could be confused with. Nothing renders it — see `attributionOf`.
+ */
+const CHECKPOINT_CALLER: Caller = { kind: "system", agent: "checkpoint" };
+
+/**
  * How many times a checkpoint has been read.
  *
  * A checkpoint carries no attempt count until it needs one. Rule 2 allows
@@ -106,7 +122,7 @@ function withCheckpoint(
 function note(issue: IssueCase, at: string, reason: string): IssueCase {
   return {
     ...issue,
-    history: [...issue.history, { at, from: issue.state, to: issue.state, actor: "system", reason }],
+    history: [...issue.history, { at, from: issue.state, to: issue.state, by: CHECKPOINT_CALLER, reason }],
   };
 }
 
@@ -161,7 +177,7 @@ export function recordCheckpointReading(
     };
     return {
       issue: reopenForPages(cancelled, cameBack, {
-        actor: "system",
+        by: CHECKPOINT_CALLER,
         at,
         reason: historyReopened(interval),
       }),
@@ -207,7 +223,7 @@ export function recordCheckpointReading(
   // falls through to `recorded` and only the last one can resolve.
   if (checkpointsAgree(agreed.checkpoints)) {
     return {
-      issue: applyAction(agreed, "resolve", { actor: "system", at, reason: HISTORY_RESOLVED }),
+      issue: applyAction(agreed, "resolve", { by: CHECKPOINT_CALLER, at, reason: HISTORY_RESOLVED }),
       effect: "resolved",
       interval,
     };

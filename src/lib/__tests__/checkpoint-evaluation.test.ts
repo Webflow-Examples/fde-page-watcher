@@ -17,7 +17,8 @@ import {
   scheduleCheckpoints,
   type IssueCase,
 } from "../issue-case";
-import { CHECKPOINT_EVALUATION } from "../vocabulary";
+import { CHECKPOINT_EVALUATION, ISSUE_TRANSITIONS } from "../vocabulary";
+import { attributionOf, type Caller } from "../caller";
 
 /**
  * The evaluator, checked against the registry's five rules rather than against
@@ -35,6 +36,9 @@ const registryPath = path.resolve(moduleDir, "../../../vocabulary.json");
 const registry = JSON.parse(readFileSync(registryPath, "utf8"));
 
 const FIXED_AT = "2026-08-01T00:00:00.000Z";
+
+/** The person who shipped the fix, and the caller every schedule starts from. */
+const PERSON: Caller = { kind: "person", userId: "rae@webflow.com" };
 const DAY = 86_400_000;
 const after = (days: number) => new Date(Date.parse(FIXED_AT) + days * DAY).toISOString();
 
@@ -60,7 +64,7 @@ function fixedCase(overrides: Partial<IssueCase> = {}): IssueCase {
     evidence: [],
     history: [],
   };
-  return { ...markFixed(base, { actor: "person", at: FIXED_AT }), ...overrides };
+  return { ...markFixed(base, { by: PERSON, at: FIXED_AT }), ...overrides };
 }
 
 /* ── Rule 1 — a disagreement reopens at once ────────────────────────────── */
@@ -110,9 +114,11 @@ describe("a checkpoint that disagrees", () => {
     });
     expect(issue.history.at(-1)).toMatchObject({
       to: "reopened",
-      actor: "system",
       reason: "Reopened — the 7-day check still found the problem.",
     });
+    // A system-fired row attributes nobody. "by the checkpoint evaluator" is
+    // the implementation talking, and the line already says what happened.
+    expect(attributionOf(issue.history.at(-1)!.by)).toBeNull();
   });
 
   it("narrows the case to the pages that came back", () => {
@@ -217,9 +223,9 @@ describe("agreement", () => {
     expect(queueOf(last.issue.state)).not.toBe("watch");
     expect(last.issue.history.at(-1)).toMatchObject({
       to: "resolved",
-      actor: "system",
       reason: "Resolved — the 30-day check agreed.",
     });
+    expect(attributionOf(last.issue.history.at(-1)!.by)).toBeNull();
   });
 
   it("does not resolve on the 2 or 7-day check", () => {
@@ -254,11 +260,18 @@ describe("agreement", () => {
     expect(last.issue.state).toBe("fixed");
   });
 
-  it("is fired by the system, never by a person", () => {
+  it("is fired by a caller class the registry permits for resolve", () => {
+    // The registry names the permission set; this is who actually fired it.
+    // Asserting the class as a literal would assert a mirror (rule 21), so it
+    // is checked against `action.resolve.actor` — which, being system-only,
+    // is also what makes "never by a person" true rather than merely intended.
     let issue = fixedCase();
     issue = recordCheckpointReading(issue, { interval: "30d", outcome: "agreed", at: after(30) }).issue;
-    expect(issue.history.at(-1)?.actor).toBe("system");
+    const by = issue.history.at(-1)!.by;
+    expect(ISSUE_TRANSITIONS.resolve.actor).toContain(by.kind);
+    expect(attributionOf(by)).toBeNull();
   });
+
 });
 
 /* ── Rule 4 — three failures to read resolve nothing ───────────────────── */
@@ -411,7 +424,7 @@ describe("the evaluator and the registry", () => {
     }).issue;
     expect(isTransition(reopened.history.at(-1)!)).toBe(true);
     // Migrated history, whose origin was never recorded, is still a move.
-    expect(isTransition({ at: after(1), to: "fixed", actor: "system" })).toBe(true);
+    expect(isTransition({ at: after(1), to: "fixed", by: PERSON })).toBe(true);
   });
 
   it("leaves no component to work out what a note is for itself", () => {
