@@ -46,6 +46,15 @@ const PERSON: Caller = { kind: "person", userId: "rae@webflow.com" };
 const DATE = "2026-08-25";
 const APP = "https://watch.example.com/page-watch";
 
+/**
+ * Whoever walked the case down the lifecycle below.
+ *
+ * The address is the case's id and nothing else, so who moved it is exactly the
+ * kind of fact the link is not allowed to carry. This exists to satisfy the
+ * transition guard and is never asserted on.
+ */
+const PERSON: Caller = { kind: "person", userId: "rae@webflow.com" };
+
 function caseOf(overrides: Partial<IssueCase> = {}): IssueCase {
   return {
     id: "PW-2291",

@@ -64,6 +64,12 @@ function caseOf(overrides: Partial<IssueCase> = {}): IssueCase {
   };
 }
 
+/**
+ * Whoever marked the fix. The digest never renders them — it is about cases, not
+ * about who moved them — so this exists only to satisfy the transition guard.
+ */
+const PERSON: Caller = { kind: "person", userId: "rae@webflow.com" };
+
 /** A case the system brought back, produced by the evaluator rather than posed. */
 function cameBackCase(overrides: Partial<IssueCase> = {}): IssueCase {
   const fixed = markFixed(caseOf({ state: "in_progress", ...overrides }), { by: PERSON, at: AT });
