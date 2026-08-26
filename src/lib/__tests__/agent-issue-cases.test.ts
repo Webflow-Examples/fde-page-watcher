@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   actionableAgentIssueCases,
-  agentAccessSummary,
-  agentVerdictLabel,
   AGENT_ISSUE_FAMILIES,
   assembleAgentIssueCases,
+  determinedAgentIssueCases,
+  disputedAgentIssueCases,
   essentialAgentBlockers,
   familyForLocalCheck,
   familyForOraCheck,
@@ -264,64 +264,13 @@ describe("scope and tier", () => {
   });
 });
 
-describe("product verdict", () => {
-  it("is blocked when an essential issue is failing", () => {
-    const summary = agentAccessSummary(assembleAgentIssueCases({
-      checks: [check("API Catalog", false)],
-      audit: audit([finding("openapi-spec", "failed", { tier: "essential" })]),
-    }));
-    expect(summary.verdict).toBe("blocked");
-    expect(agentVerdictLabel(summary.verdict)).toBe("Blocked");
-    expect(summary.blockers).toBe(1);
-    expect(summary.primary?.key).toBe("agent-api:openapi");
-    // The next action is Page Watch's first step, not a score.
-    expect(summary.nextAction).toBe(AGENT_ISSUE_FAMILIES["agent-api:openapi"].remediation[0]);
-  });
-
-  it("needs attention when only non-essential issues remain", () => {
-    const summary = agentAccessSummary(assembleAgentIssueCases({
-      checks: [],
-      audit: audit([finding("rate-limit-headers", "failed", { tier: "recommended" })]),
-    }));
-    expect(summary.verdict).toBe("needs-attention");
-    expect(summary.blockers).toBe(0);
-    expect(summary.improvements).toBe(1);
-  });
-
-  it("treats a partial essential finding as attention, not a block", () => {
-    const summary = agentAccessSummary(assembleAgentIssueCases({
-      checks: [],
-      audit: audit([finding("content-no-js", "partial", { tier: "essential" })]),
-    }));
-    expect(summary.verdict).toBe("needs-attention");
-    expect(summary.blockers).toBe(0);
-  });
-
-  it("is ready when everything determined is passing", () => {
-    const summary = agentAccessSummary(assembleAgentIssueCases({
-      checks: [check("Sitemap", true)],
-      audit: audit([finding("sitemap", "pass"), finding("x402-support", "not-applicable")]),
-    }));
-    expect(summary.verdict).toBe("ready");
-    expect(summary.primary).toBeNull();
-    expect(summary.nextAction).toBeNull();
-  });
-
-  it("is unknown with no evidence at all", () => {
-    const summary = agentAccessSummary([]);
-    expect(summary.verdict).toBe("unknown");
-    expect(summary.headline).toBe("No agent-access evidence yet");
-  });
-
-  it("is unknown when nothing could be determined, and says so distinctly", () => {
-    const summary = agentAccessSummary(assembleAgentIssueCases({
-      checks: [check("Sitemap", true, { unavailable: true })],
-    }));
-    expect(summary.verdict).toBe("unknown");
-    expect(summary.headline).toBe("Agent access could not be determined");
-    expect(summary.undetermined).toBe(1);
-  });
-
+/**
+ * The origin verdict itself lives in `agent-access.ts` and is tested in
+ * `agent-access.test.ts`. What this file still owns is the two questions the
+ * verdict asks of the cases: did anything determine a result, and do the
+ * systems that did agree with each other.
+ */
+describe("what the cases can support", () => {
   it("never counts an ignored or not-applicable case as an issue", () => {
     const cases = assembleAgentIssueCases({
       checks: [check("WebMCP", false)],
@@ -329,7 +278,109 @@ describe("product verdict", () => {
       audit: audit([finding("x402-support", "not-applicable")]),
     });
     expect(actionableAgentIssueCases(cases)).toEqual([]);
-    expect(agentAccessSummary(cases).verdict).toBe("unknown");
+    expect(determinedAgentIssueCases(cases)).toEqual([]);
+  });
+
+  it("determines nothing from an unavailable reading", () => {
+    // Rule 18: an absent measurement is not a small measurement.
+    const cases = assembleAgentIssueCases({
+      checks: [check("Sitemap", true, { unavailable: true })],
+    });
+    expect(cases).toHaveLength(1);
+    expect(determinedAgentIssueCases(cases)).toEqual([]);
+  });
+
+  it("reports a case as disputed when two systems contradict each other", () => {
+    const cases = assembleAgentIssueCases({
+      checks: [check("Sitemap", true)],
+      audit: audit([finding("sitemap", "failed")]),
+    });
+    expect(disputedAgentIssueCases(cases).map((item) => item.key))
+      .toEqual(["agent-discoverability:sitemap"]);
+    // And it is still determined: two systems read it, they just disagreed.
+    expect(determinedAgentIssueCases(cases)).toHaveLength(1);
+  });
+
+  it("reports no dispute when the systems agree", () => {
+    const cases = assembleAgentIssueCases({
+      checks: [check("Sitemap", false)],
+      audit: audit([finding("sitemap", "failed")]),
+    });
+    expect(disputedAgentIssueCases(cases)).toEqual([]);
+  });
+});
+
+describe("the two halves of agent access", () => {
+  it("gives every family a half", () => {
+    // Required by the type; asserted here so the two values stay the only two.
+    for (const [key, family] of Object.entries(AGENT_ISSUE_FAMILIES)) {
+      expect(["reach", "comprehension"], `${key} has half ${family.half}`).toContain(family.half);
+    }
+  });
+
+  it("puts admission and discovery on the reach side", () => {
+    const halves = Object.fromEntries(
+      Object.entries(AGENT_ISSUE_FAMILIES).map(([key, family]) => [key, family.half]),
+    );
+    expect(halves["agent-access:reachability"]).toBe("reach");
+    expect(halves["agent-discoverability:robots"]).toBe("reach");
+    expect(halves["agent-auth:bot-auth"]).toBe("reach");
+    // And everything read out of a response that did arrive on the other.
+    expect(halves["agent-content:no-js"]).toBe("comprehension");
+    expect(halves["agent-api:openapi"]).toBe("comprehension");
+  });
+
+  it("treats a provider-only finding as comprehension", () => {
+    // The provider reached the origin — that is the only way it had anything to
+    // report — so whatever it found wrong is past the response.
+    const cases = assembleAgentIssueCases({
+      checks: [],
+      audit: audit([finding("pricing-info", "failed")]),
+    });
+    expect(caseFor(cases, "ora:pricing-info").half).toBe("comprehension");
+  });
+});
+
+describe("the rendered-page probe", () => {
+  const probe = (
+    status: "available" | "unavailable",
+    httpStatus?: number,
+  ) => ({
+    schemaVersion: 1 as const,
+    engine: "kitesurf" as const,
+    status,
+    capturedAt: "2026-08-24T02:00:00.000Z",
+    ...(httpStatus === undefined ? {} : { httpStatus }),
+  });
+
+  it("reads reachability, in its own words", () => {
+    const cases = assembleAgentIssueCases({ checks: [], kitesurf: probe("available", 200) });
+    const source = caseFor(cases, "agent-access:reachability").sources[0];
+    expect(source.system).toBe("kitesurf");
+    expect(source.result).toBe("pass");
+    expect(source.detail).toBe("HTTP 200");
+    expect(source.observedAt).toBe("2026-08-24T02:00:00.000Z");
+  });
+
+  it("fails on a status the origin refused with", () => {
+    const cases = assembleAgentIssueCases({ checks: [], kitesurf: probe("available", 403) });
+    expect(caseFor(cases, "agent-access:reachability").sources[0].result).toBe("failed");
+  });
+
+  it("is unavailable rather than failing when the probe itself could not run", () => {
+    const cases = assembleAgentIssueCases({ checks: [], kitesurf: probe("unavailable") });
+    expect(caseFor(cases, "agent-access:reachability").sources[0].result).toBe("unavailable");
+    expect(determinedAgentIssueCases(cases)).toEqual([]);
+  });
+
+  it("can contradict the provider about reachability", () => {
+    const cases = assembleAgentIssueCases({
+      checks: [],
+      kitesurf: probe("available", 200),
+      audit: audit([finding("bot-detection", "failed")]),
+    });
+    expect(disputedAgentIssueCases(cases).map((item) => item.key))
+      .toEqual(["agent-access:reachability"]);
   });
 });
 

@@ -23,7 +23,7 @@ import {
 import { issueCasesFrom, lastRunAtOf } from "@/lib/issue-cases";
 import type { CaseDecision, CaseDecisionRequest } from "@/lib/case-decisions";
 import { partitionByImpact } from "@/lib/impact-format";
-import { APPLICABILITY_LABEL, COUNTED_QUEUES, ISSUE_ACTION_LABEL, type ExclusionReason, type Queue } from "@/lib/vocabulary";
+import { APPLICABILITY_LABEL, COUNTED_QUEUES, ISSUE_ACTION_LABEL, QUEUE_LABEL, type ExclusionReason, type Queue } from "@/lib/vocabulary";
 import { normalizeNativeElementControls } from "@/lib/nativeElements";
 import { localISODate } from "@/lib/ui";
 import { withBasePath } from "@/lib/paths";
@@ -937,13 +937,13 @@ export function StoreProvider({
           });
           const body = (await response.json().catch(() => null)) as { state?: AppState } | null;
           if (!response.ok || !body?.state) {
-            flash("Couldn't add this to Tasks — try again");
+            flash(`Couldn't add this to ${QUEUE_LABEL.fix} — try again`);
             return;
           }
           apply(normalizeState(body.state));
-          flash("Added to Tasks with its verification target");
+          flash(`Added to ${QUEUE_LABEL.fix} with its verification target`);
         } catch {
-          flash("Couldn't add this to Tasks — try again");
+          flash(`Couldn't add this to ${QUEUE_LABEL.fix} — try again`);
         }
       })();
     },

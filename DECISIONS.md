@@ -1,9 +1,16 @@
 # Product decisions pending sign-off
 
+<<<<<<< HEAD
+The implementation resolved product questions that were previously undefined.
+They are reasonable defaults, but they should be confirmed (or changed) by
+product rather than remaining implicit in the code. Each notes where it lives so
+a change is a small, located edit.
+=======
 The implementation resolved five previously-undefined product questions. They
 are reasonable defaults, but they should be confirmed (or changed) by product
 rather than remaining implicit in the code. Each notes where it lives so a
 change is a one-line edit.
+>>>>>>> origin/main
 
 ## 1. Status is driven by mobile Performance only
 
@@ -74,3 +81,40 @@ is settled, and should not be reopened without a decision:
 - Where: `SENSITIVITY_THRESHOLDS` in `src/lib/sensitivity.ts` is the only place
   the numbers appear; `DEFAULT_PERFORMANCE_THRESHOLDS` reads the Normal position
   from it. The migration is `normalizeState` in `src/lib/store/normalize.ts`.
+
+## 6. An exclusion made on one page records no reason
+
+S8 settled the shape: exclusions are **one list and several records** —
+`CaseDecisionRecord` for a case's pages, `AgentIgnoreSettings.reasons` for agent
+checks and categories, `NativeElementControl.excluded` for element findings —
+with `settings-exclusions.ts` joining them on read. That is not the open
+question. This is:
+
+A reason is only ever recorded **for the whole site**. `updateAgentIgnoreSettings`
+takes one, and the only two callers that pass it write to `agentIgnoreDefaults`;
+the per-page path, `updateAgentIgnoreOverride`, calls it without a reason, and
+`settings-exclusions.ts` reads reasons from the defaults alone. So excluding a
+check on one page is a decision the app takes and never asks about, and a reader
+looking for it in the excluded list will not find it there either.
+
+The registry says applicability requires a reason, so one of two things should
+be true, and which one is a product call:
+
+- **A per-page exclusion is a real exclusion.** It asks for a reason like the
+  site-wide one does, and the excluded list grows a row for it scoped to the
+  page. This is the reading that matches the registry.
+- **A per-page exclusion is an override, not an exclusion.** It is a local
+  answer to a site-wide setting, and the thing that needs a reason is the
+  setting. Then the per-page control should stop being worded as Exclude, and
+  the excluded list is already complete.
+
+Until that is decided, `AgentAccessInput.excluded` in `src/lib/agent-access.ts`
+is modelled and rendered with no producer wired in: a source-level exclusion
+keeps its row, greys, and carries its reason and last reading whenever S8 hands
+one over. S4 deliberately does not resolve a reason itself — `reasonFor` in
+`settings-exclusions.ts` already does that for this record, and a second
+resolver is a second opinion about what a valid reason is.
+
+- Where: `updateAgentIgnoreSettings` and `updateAgentIgnoreOverride` in
+  `src/lib/agentScoring.ts`; `reasonFor` in `src/lib/settings-exclusions.ts`;
+  `setAgentIgnore` / `setDefaultAgentIgnore` in `src/components/store.tsx`.

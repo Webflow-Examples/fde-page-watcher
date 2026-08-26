@@ -37,7 +37,8 @@ import { StatusChip } from "@/components/status-chip";
 import { TrendArrow } from "@/components/trend-arrow";
 import { Magnitude } from "@/components/magnitude";
 import { AgentAccessChip } from "@/components/agent-access";
-import { agentAccessSummary, assembleAgentIssueCases } from "@/lib/agentIssueCases";
+import { assembleAgentIssueCases } from "@/lib/agentIssueCases";
+import { agentAccess } from "@/lib/agent-access";
 import { externalAuditForPage } from "@/lib/externalAgentEvidence";
 import { scoreCardDataForCategory } from "@/lib/scoreCardAdapter";
 import { XSmallScoreCard } from "@/components/ScoreCard";
@@ -353,14 +354,18 @@ function DashboardContent({
       flag: flagChip(p.flag),
       scoreCardData,
       // The Page Watch verdict, not a provider score. Provider numbers stay on
-      // the page's own Agent-readiness tab.
-      agentVerdict: agentAccessSummary(assembleAgentIssueCases({
-        checks: rangeAgentSnapshot?.checks ?? [],
-        ignores: p.agentIgnores,
-        ignoreDefaults: agentIgnoreDefaults,
-        ignoreRestores: p.agentIgnoreRestores,
-        audit: externalAuditForPage(externalAgentAudits, p.url),
-      })).verdict,
+      // the page's own agent tab. The whole conclusion is carried, not just the
+      // word: the chip renders the last-checked date beside it, and this row is
+      // where that date comes from.
+      agentAccess: agentAccess({
+        cases: assembleAgentIssueCases({
+          checks: rangeAgentSnapshot?.checks ?? [],
+          ignores: p.agentIgnores,
+          ignoreDefaults: agentIgnoreDefaults,
+          ignoreRestores: p.agentIgnoreRestores,
+          audit: externalAuditForPage(externalAgentAudits, p.url),
+        }),
+      }),
       // Legacy pages may only have a latest page-level scan. A single point is
       // shown as a flat sparkline until the next retained collection arrives.
       agentSeries: total ? (readinessSeries.length ? readinessSeries : [pct]) : ([] as number[]),
@@ -990,7 +995,10 @@ function DashboardContent({
                 {/* The Page Watch verdict sits under the readiness trend; the
                     trend is a percentage over time, the verdict is a conclusion. */}
                 <div style={{ display: "flex", justifyContent: "center" }}>
-                  <AgentAccessChip verdict={row.agentVerdict} />
+                  <AgentAccessChip
+                    verdict={row.agentAccess.verdict}
+                    lastChecked={row.agentAccess.lastChecked}
+                  />
                 </div>
               </div>
             </div>

@@ -13,6 +13,7 @@ import {
   historyForStrategy,
   nightHasStrategy,
   pageAgentHistoryForRange,
+  pageAgentSnapshotForRange,
   pageHistoryForRange,
   pagePreviousPeriodMedian,
   pageRangeTrend,
@@ -75,6 +76,13 @@ import {
 } from "@/lib/nativeElements";
 import type { NativeElementLifecycle } from "@/lib/nativeElements";
 import { collectionLocalDateTime, normalizeCollectionSchedule } from "@/lib/collectionSchedule";
+import { AgentAccessPanel } from "@/components/agent-access";
+import { assembleAgentIssueCases } from "@/lib/agentIssueCases";
+import { agentAccess } from "@/lib/agent-access";
+import { agentIssueRecId } from "@/lib/agentIssueTasks";
+import { issueCasesFrom } from "@/lib/issue-cases";
+import { externalAuditForPage } from "@/lib/externalAgentEvidence";
+import { normalizeAgentIgnoreSettings } from "@/lib/agentScoring";
 
 /**
  * One page, on one scroll.
@@ -798,6 +806,73 @@ function ReadingsSection({
     ...run,
     startsDateGroup: run.dateKey !== runMetadata[index - 1]?.dateKey,
   }));
+
+  /**
+   * Agent access, as one verdict over five readings.
+   *
+   * It sits in Readings and not in Status because it IS a reading question:
+   * the verdict exists to be checked against the five rows underneath it, and
+   * separating the two would put a conclusion on one screenful and its evidence
+   * on another, which is the arrangement S4 exists to replace.
+   *
+   * Its failures are still cases and its history is still a chart, exactly as
+   * this file's header says. What it adds is the origin-level conclusion that
+   * neither of those carries, and the next action links back to the case rather
+   * than restating it here.
+   */
+  const agentSnapshot = pageAgentSnapshotForRange(page, rangeDays);
+  const agentChecks = agentSnapshot?.checks ?? [];
+  // The scan's own ISO stamp, not its display date. `PageAgentSnapshot.date` is
+  // a label like "Jul 16", and a row that parsed one would put a plausible
+  // wrong date beside a reading; absent, the row says the date is unknown.
+  const agentObservedAt = [...agentRangeHistory].reverse()
+    .find((night) => Array.isArray(night.agent))?.agentCapturedAt;
+  const ignores = normalizeAgentIgnoreSettings(page.agentIgnores);
+  const ignoreDefaults = normalizeAgentIgnoreSettings(store.agentIgnoreDefaults);
+  const ignoreRestores = normalizeAgentIgnoreSettings(page.agentIgnoreRestores);
+  const latestKitesurf = [...agentRangeHistory].reverse().find((night) => night.kitesurf)?.kitesurf ?? null;
+  const agentCases = assembleAgentIssueCases({
+    checks: agentChecks,
+    ...(agentObservedAt ? { checksObservedAt: agentObservedAt } : {}),
+    ignores,
+    ignoreDefaults,
+    ignoreRestores,
+    audit: externalAuditForPage(store.externalAgentAudits, page.url),
+    kitesurf: latestKitesurf,
+  });
+  // The two rows that do not come through the assembler. Each keeps its own
+  // date: the table shows when that system last looked, never when the newest
+  // of the five did.
+  const nativeElementsNight = [...rangeHistory].reverse().find((night) => night.nativeElements);
+  const lighthouseNight = [...rangeHistory].reverse().find((night) => night.iso);
+  const access = agentAccess({
+    cases: agentCases,
+    ...(nativeElementsNight?.nativeElements
+      ? {
+        nativeElements: {
+          scan: nativeElementsNight.nativeElements,
+          ...(nativeElementsNight.iso ? { observedAt: nativeElementsNight.iso } : {}),
+        },
+      }
+      : {}),
+    ...(lighthouseNight?.iso ? { lighthouse: { observedAt: lighthouseNight.iso } } : {}),
+    // No `excluded` producer here on purpose: S8 owns exclusions end to end, and
+    // a second resolver for the same record would be a second opinion about
+    // what a valid reason is. See DECISIONS.md 5 for the remaining seam.
+  });
+  // Where each family's case lives, keyed on the CAUSE and never on a case id.
+  // A case is a group with no identity of its own — the merged case takes the id
+  // of whichever member came first, and membership changes whenever evidence
+  // does — so the id is used to form the address and nothing else is held by it.
+  // Until a finding is tracked there is no case, and no link is offered.
+  const hrefByCause = new Map(
+    issueCasesFrom({
+      recs: store.recs,
+      pages: store.pages,
+      ...(store.caseDecisions ? { caseDecisions: store.caseDecisions } : {}),
+    }).map((item) => [item.cause, caseHref(store.basePath, item.id)] as const),
+  );
+  const hrefForCase = (key: string) => hrefByCause.get(agentIssueRecId(key));
   const thresholds = normalizePerformanceThresholds(store.performanceThresholds);
   const readinessHistory = agentReadinessHistoryPoints(
     agentRangeHistory,
@@ -889,6 +964,7 @@ function ReadingsSection({
         />
       }
     >
+      <AgentAccessPanel access={access} caseHref={hrefForCase} />
       <div
         style={{
           background: "var(--surface-card)",
