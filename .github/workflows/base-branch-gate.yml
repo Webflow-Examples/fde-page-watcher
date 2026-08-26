@@ -39,7 +39,11 @@ concurrency:
 
 jobs:
   publish:
-    name: base-branch-green
+    # Deliberately NOT named `base-branch-green`. This job succeeds whenever it
+    # manages to publish, including when what it publishes is a failure. The
+    # gate is the commit status it posts, and branch protection must require
+    # that; a same-named check run here would shadow it and always be green.
+    name: Publish base branch verdict
     runs-on: ubuntu-latest
     # On workflow_run, only a post-merge run on the branch itself changes the
     # verdict. A PR's own CI run says nothing about the branch it targets.
