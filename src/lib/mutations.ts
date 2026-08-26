@@ -13,8 +13,10 @@ import { applyWatchlistPageOrder, changePageFlagOrder, sortWatchlistPages } from
 import { removeTaskMarker } from "./taskMarkers";
 import { promoteAgentIssueToTask } from "./agentIssueTasks";
 import type { AgentIssueCase } from "./agentIssueCases";
-import { isKnownNativeElementId } from "./nativeElements";
-import type { NativeElementDisposition } from "./types";
+import { isKnownNativeElementId, normalizeNativeElementControls } from "./nativeElements";
+import { EXCLUSION_REASONS, type ExclusionReason } from "./vocabulary";
+import { caseDecisionFrom, type CaseDecisionInput } from "./case-decisions";
+import type { Caller } from "./caller";
 import { alertWebhookUrlIsValid } from "./webhook";
 import { COLLECTION_JOB_STALE_AFTER_MS, collectionJobIsStale } from "./collectionRetry";
 
@@ -104,31 +106,83 @@ export function setDefaultAgentIgnore(
   }, dataStore);
 }
 
-export function setNativeElementDisposition(
+/**
+ * Exclude a native-element finding from this site's results, or put it back.
+ *
+ * Applicability, and only applicability. It says whether the finding counts for
+ * this site, never how far along anybody is with it — so it deliberately does
+ * NOT touch the record's status. The retired control did both at once, which is
+ * how one button came to mean "this does not apply here" and "I have seen this
+ * and I am not acting" at the same time.
+ *
+ * A reason is required to exclude and must be one the registry blesses; `null`
+ * is Include, which needs none. Excluding is not deleting: the finding keeps its
+ * last reading, and the reader who comes back to it is told why it is set aside.
+ */
+export function setNativeElementApplicability(
   id: string,
   findingId: string,
-  disposition: NativeElementDisposition | null,
+  reason: ExclusionReason | null,
   dataStore: DataStore = getStore(),
   now: Date = new Date(),
 ): Promise<AppState> {
   return withState((state) => {
     const page = state.pages.find((item) => item.id === id);
-    if (!page) throw new Error(`setNativeElementDisposition: page ${id} not found`);
+    if (!page) throw new Error(`setNativeElementApplicability: page ${id} not found`);
     if (!isKnownNativeElementId(findingId)) {
-      throw new Error(`setNativeElementDisposition: finding ${findingId} does not exist`);
+      throw new Error(`setNativeElementApplicability: finding ${findingId} does not exist`);
     }
-    const controls = { ...(page.nativeElementControls ?? {}) };
-    if (disposition === null) delete controls[findingId];
-    else controls[findingId] = { disposition, updatedAt: now.toISOString() };
+    if (reason !== null && !(EXCLUSION_REASONS as readonly string[]).includes(reason)) {
+      throw new Error(`setNativeElementApplicability: "${reason}" is not an exclusion reason`);
+    }
+    // Normalised first, so a retired record is migrated rather than half-edited.
+    const controls = normalizeNativeElementControls(page.nativeElementControls);
+    const existing = controls[findingId];
+    const updatedAt = now.toISOString();
+    if (reason === null) {
+      // Include drops the applicability half and leaves the other alone: a
+      // finding that also carries a dismissal is still dismissed.
+      if (existing?.dismissed) controls[findingId] = { dismissed: true, updatedAt };
+      else delete controls[findingId];
+    } else {
+      controls[findingId] = {
+        ...(existing?.dismissed ? { dismissed: true } : {}),
+        excluded: { reason },
+        updatedAt,
+      };
+    }
     page.nativeElementControls = controls;
-
-    // Triage matching Inbox noise without disrupting work already committed
-    // to Tasks. Clearing the disposition deliberately does not recreate it.
-    if (disposition) {
-      const rec = state.recs.find((item) => item.key === `${id}:${findingId}`);
-      if (rec?.status === "inbox") rec.status = "ignored";
-    }
     delete state.watcherNote;
+  }, dataStore);
+}
+
+/**
+ * Append one decision to the log.
+ *
+ * The only writer, and it only ever appends: an entry is never edited and never
+ * removed, so the log is the history the case panel renders rather than a
+ * summary that has to be kept in step with one. Reversing a decision is another
+ * entry saying so, which is also how the panel can show that somebody changed
+ * their mind.
+ *
+ * Nothing here touches `recs`. The collector rewrites those nightly and how it
+ * merges them is not this app's property, so a decision written onto one is a
+ * decision the next run may quietly drop.
+ *
+ * The stamp is the server's. When a decision was taken and who took it are
+ * facts about the request, and a body that could name its own author could name
+ * somebody else — so `by` is resolved from the verified identity by the route
+ * and passed in, never read out of the body.
+ */
+export async function recordCaseDecision(
+  input: CaseDecisionInput,
+  by: Caller,
+  dataStore: DataStore = getStore(),
+  now: Date = new Date(),
+): Promise<AppState> {
+  const decision = caseDecisionFrom(input, { at: now.toISOString(), by });
+  return withState((state) => {
+    state.caseDecisions = [...(state.caseDecisions ?? []), decision];
   }, dataStore);
 }
 

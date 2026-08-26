@@ -435,11 +435,17 @@ export function buildSeedState(now = new Date()): AppState {
   page("templates").lastRunAt = isoAt(anchor, 0, 1);
   page("templates").lastCollectionStatus = "inconclusive";
   page("templates").lastError = "Run exceeded the 30 minute stale limit";
+  // The two dispositions, in the two concepts that cover them: a real finding
+  // the reader has seen and set aside (dismissed), and one that does not apply
+  // to this site at all (excluded, with the reason applicability requires).
   page("templates").nativeElementControls = {
-    "webflow-video-embed-eager": { disposition: "acknowledged", updatedAt: isoAt(anchor, -2) },
+    "webflow-video-embed-eager": { dismissed: true, updatedAt: isoAt(anchor, -2) },
   };
   page("pricing").nativeElementControls = {
-    "webflow-image-unresponsive": { disposition: "suppressed", updatedAt: isoAt(anchor, -1) },
+    "webflow-image-unresponsive": {
+      excluded: { reason: "Not applicable to this site" },
+      updatedAt: isoAt(anchor, -1),
+    },
   };
   page("pricing").performanceThresholdOverrides = {
     regression: 10, confirmationRuns: 2, devicePolicy: "both", minimumFindingRuns: 2, minimumSavingsMs: 250,

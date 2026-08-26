@@ -8,9 +8,10 @@ import {
   includedPages,
   type IssueCase,
 } from "@/lib/issue-case";
-import { EXCLUSION_REASONS, applicabilityActionLabel, type ExclusionReason } from "@/lib/vocabulary";
+import { applicabilityActionLabel, type ExclusionReason } from "@/lib/vocabulary";
 import { excludedNote, pagesCount } from "@/lib/case-copy";
 import { formatImpact } from "@/lib/impact-format";
+import { ExclusionReasonPicker } from "@/components/exclusion-reason-picker";
 
 /**
  * The pages this case covers, and which of them it counts (4b).
@@ -54,58 +55,6 @@ export interface CasePagesProps {
   impactByPage?: Record<string, number>;
 }
 
-function ExcludeMenu({
-  onChoose,
-  onCancel,
-}: {
-  onChoose: (reason: ExclusionReason) => void;
-  onCancel: () => void;
-}) {
-  return (
-    <div
-      role="group"
-      aria-label="Reason for excluding"
-      style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}
-    >
-      {/* The reason is required, so it is asked for before the exclusion
-          happens rather than left to a follow-up nobody completes. */}
-      {EXCLUSION_REASONS.map((reason) => (
-        <button
-          key={reason}
-          type="button"
-          onClick={() => onChoose(reason)}
-          style={{
-            appearance: "none",
-            cursor: "pointer",
-            fontSize: 12,
-            padding: "4px 9px",
-            borderRadius: 6,
-            border: "1px solid var(--border-strong)",
-            background: "var(--surface-card)",
-            color: "var(--text-body)",
-          }}
-        >
-          {reason}
-        </button>
-      ))}
-      <button
-        type="button"
-        onClick={onCancel}
-        style={{
-          appearance: "none",
-          cursor: "pointer",
-          fontSize: 12,
-          padding: "4px 6px",
-          border: 0,
-          background: "transparent",
-          color: "var(--text-muted)",
-        }}
-      >
-        Cancel
-      </button>
-    </div>
-  );
-}
 
 export function CasePages({
   issue,
@@ -177,7 +126,7 @@ export function CasePages({
                 ) : null}
                 {choosingFor === pageId ? (
                   <div style={{ marginTop: 8 }}>
-                    <ExcludeMenu
+                    <ExclusionReasonPicker
                       onChoose={(chosen) => {
                         setChoosingFor(null);
                         onExclude?.(pageId, chosen);

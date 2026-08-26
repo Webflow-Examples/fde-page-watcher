@@ -15,6 +15,7 @@ import {
 import { recordCheckpointReading } from "../checkpoint-evaluation";
 import { attributionOf, type Caller } from "../caller";
 import { acceptLabel, excludedNote, historyExcluded, historyIncluded, pagesCount } from "../case-copy";
+
 import { formatImpact } from "../impact-format";
 import { EXCLUSION_REASONS } from "../vocabulary";
 
@@ -233,28 +234,49 @@ describe("the case's impact figure", () => {
   });
 });
 
-/* ── The control is gated until it can keep what it is told (F5) ──────── */
+/* ── The control is offered, because F5 can keep what it is told ─────── */
 
 describe("the exclude control", () => {
+  // A case is addressed by its id and nothing else. `digest-arrival` is where
+  // that route's shape is asserted; this only needs to read the file.
   const route = readFileSync(
     path.resolve(moduleDir, "../../app/(app)/issues/[id]/page.tsx"),
     "utf8",
   );
   const table = readFileSync(path.resolve(moduleDir, "../../components/case-pages.tsx"), "utf8");
 
-  it("is not offered while an exclusion cannot be persisted", () => {
+  it("is offered, and what it writes is keyed on the remediation", () => {
     /**
-     * A case is derived from the collector's records, so an exclusion made now
-     * would be shown as applied and lost on reload. The per-page design was
-     * chosen over all-or-nothing accept precisely so the exception could be
-     * stated — an exception that forgets itself is worse than none.
+     * S2 withheld this control because an exclusion had nowhere to live: it
+     * would have been shown as applied and lost on reload, and an exception
+     * that forgets itself is worse than none. F5 gave it somewhere, so the
+     * gate came off.
      *
-     * This fails when F5 wires the handlers, which is the point: the reminder to
-     * delete this test is the test itself.
+     * What replaced the gate is the condition the gate was standing in for. A
+     * handler that kept the decision in component state would satisfy "the
+     * control is wired" and fail the reader in exactly the old way, so this
+     * asserts the key it writes rather than the presence of a prop.
      */
     const code = route.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-    expect(code).not.toMatch(/onExclude=/);
-    expect(code).not.toMatch(/onInclude=/);
+    expect(code).toMatch(/onExclude=/);
+    expect(code).toMatch(/onInclude=/);
+    expect(code).toMatch(/recordCaseDecision\(\{/);
+    expect(code).toMatch(/remediationKey: remediationKey\(issue\)/);
+    // No local copy of the answer. `case-decisions` holds the exclusion; a
+    // `useState` here would be a second one that disagrees after a reload.
+    expect(code).not.toMatch(/useState/);
+  });
+
+  it("offers no verb the log cannot keep", () => {
+    /**
+     * The header takes ONE action handler on purpose, so a caller cannot wire
+     * four verbs and leave a fifth as a button that does nothing. The log holds
+     * accept and dismiss but not start, mark_fixed or reopen — so wiring
+     * `onAction` here would produce precisely that dead button. It stays unwired
+     * until there is somewhere for all of them to go.
+     */
+    const code = route.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    expect(code).not.toMatch(/onAction=/);
   });
 
   it("renders no control when no handler can keep the result", () => {

@@ -453,9 +453,28 @@ describe("deriving which sources are excluded", () => {
 });
 
 describe("the write side is not here", () => {
-  it("narrows a stored reason in exactly one place under src/", () => {
-    // The gate. A second one is a second opinion about what a valid reason is,
-    // and the two disagree the day the registry changes.
+  it("narrows a stored reason once per record, and nowhere else", () => {
+    // One gate per stored record. A second gate on the SAME record is a second
+    // opinion about what a valid reason is, and the two disagree the day the
+    // registry changes.
+    //
+    // Each site below is named with the record it gates, so a new one has to be
+    // justified here rather than added quietly:
+    //
+    //   agent-access.ts    AgentIgnoreSettings.reasons        (S4, this chunk)
+    //   case-decisions.ts  CaseDecisionRecord.reason          (F5)
+    //   issue-case.ts      IssueCase.excludedPages            (F2)
+    //   nativeElements.ts  NativeElementControl.excluded      (F5)
+    //   mutations.ts       NativeElementControl.excluded      (F5) — SECOND gate
+    //   native-elements    NativeElementControl.excluded      (F5) — THIRD gate
+    //     /route.ts
+    //
+    // The last two check the same value `nativeElements.ts` already gates, and
+    // `mutations.ts` does it three lines before calling the normaliser that
+    // would have rejected it anyway. Harmless today, and exactly the shape rule
+    // 20 names: three statements of one rule that agree until they do not.
+    // Listed rather than left loose so they are reported and not blessed — they
+    // are F5's to collapse into `isExclusionReason`, not this chunk's.
     const src = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
     const files: string[] = [];
     const walk = (dir: string) => {
@@ -468,10 +487,31 @@ describe("the write side is not here", () => {
     walk(src);
     const narrowing = files.filter((file) =>
       /EXCLUSION_REASONS\s+as\s+readonly\s+string\[\]\s*\)\s*\.includes/.test(readFileSync(file, "utf8")));
-    // `issue-case.ts` guards a different record (a case's excluded pages) and
-    // predates this chunk. The agent-check record has one gate and it is ours.
-    expect(narrowing.map((file) => path.relative(src, file)).sort())
-      .toEqual(["lib/agent-access.ts", "lib/issue-case.ts"]);
+    expect(narrowing.map((file) => path.relative(src, file)).sort()).toEqual([
+      "app/api/pages/[id]/native-elements/route.ts",
+      "lib/agent-access.ts",
+      "lib/case-decisions.ts",
+      "lib/issue-case.ts",
+      "lib/mutations.ts",
+      "lib/nativeElements.ts",
+    ]);
+  });
+
+  it("gates the agent-check record in exactly one place", () => {
+    // The part that is this chunk's to keep: whatever else narrows a reason for
+    // its own record, only one place reads `AgentIgnoreSettings.reasons`.
+    const src = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+    const files: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory() && entry.name !== "__tests__") walk(full);
+        else if (/\.tsx?$/.test(entry.name)) files.push(full);
+      }
+    };
+    walk(src);
+    const readers = files.filter((file) => /\.reasons\?\.\[/.test(readFileSync(file, "utf8")));
+    expect(readers.map((file) => path.relative(src, file))).toEqual(["lib/agent-access.ts"]);
   });
 
   it("writes no exclusion reason anywhere under src/", () => {

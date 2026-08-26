@@ -341,6 +341,25 @@ export function nextScheduled(issue: IssueCase): Checkpoint | null {
 }
 
 /**
+ * The checkpoint whose disagreement brought a case back, if one did.
+ *
+ * Lives here because this module is the only thing in the app that reads a
+ * checkpoint result, and that is the rule the digest would otherwise have
+ * broken: a second reader is how the five evaluation rules drift, with one place
+ * reopening on a disagreement and another quietly treating it as a failed check.
+ *
+ * A reopen the system fired leaves the disagreeing checkpoint on the case and
+ * cancels the ones that had not read yet, so the disagreement is still there to
+ * be found. A reopen a person fired leaves none — which is what separates "a
+ * check found it again" from "somebody changed their mind" without storing a
+ * second field saying which happened, and is why the digest can tell its Came
+ * back section from its To decide one.
+ */
+export function disagreedCheckpointOf(issue: IssueCase): Checkpoint | undefined {
+  return issue.checkpoints.find((item) => item.result === "disagreed");
+}
+
+/**
  * Whether every checkpoint was read and none of them could be.
  *
  * Rule 4's case, and the only row in Watch that offers an action. The case is

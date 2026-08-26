@@ -1,14 +1,22 @@
 import { NextResponse } from "next/server";
-import { setNativeElementDisposition } from "@/lib/mutations";
-import type { NativeElementDisposition } from "@/lib/types";
+import { setNativeElementApplicability } from "@/lib/mutations";
+import { EXCLUSION_REASONS, type ExclusionReason } from "@/lib/vocabulary";
 import { projectStore } from "@/lib/projects";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/**
+ * Applicability on one native-element finding.
+ *
+ * `reason` is the exclusion reason the registry requires; `null` includes the
+ * finding again. The retired `disposition` field is gone: it carried
+ * applicability and lifecycle in one value, and a dismissal now happens on the
+ * case, where the lifecycle lives.
+ */
 interface Body {
   findingId?: string;
-  disposition?: NativeElementDisposition | null;
+  reason?: ExclusionReason | null;
 }
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -16,16 +24,24 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const body = (await req.json().catch(() => ({}))) as Body;
   const findingId = body.findingId?.trim();
   if (!findingId) return NextResponse.json({ error: "findingId is required" }, { status: 400 });
-  if (body.disposition !== null && body.disposition !== "acknowledged" && body.disposition !== "suppressed") {
-    return NextResponse.json({ error: "disposition must be 'acknowledged', 'suppressed', or null" }, { status: 400 });
+  const reason = body.reason ?? null;
+  if (reason !== null && !(EXCLUSION_REASONS as readonly string[]).includes(reason)) {
+    return NextResponse.json(
+      { error: `reason must be null or one of: ${EXCLUSION_REASONS.join(", ")}` },
+      { status: 400 },
+    );
   }
 
   try {
-    const state = await setNativeElementDisposition(id, findingId, body.disposition ?? null, await projectStore(req));
+    const state = await setNativeElementApplicability(id, findingId, reason, await projectStore(req));
     return NextResponse.json({ state });
   } catch (error) {
     const message = String(error);
-    const status = message.includes(`page ${id} not found`) ? 404 : message.includes("does not exist") ? 400 : 500;
+    const status = message.includes(`page ${id} not found`)
+      ? 404
+      : message.includes("does not exist") || message.includes("is not an exclusion reason")
+        ? 400
+        : 500;
     return NextResponse.json({ error: message }, { status });
   }
 }

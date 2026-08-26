@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createFsStore, type DataStore } from "../store/fsStore";
-import { addPage, advanceTask, pendingPage, setAgentIgnore, setAlertWebhookUrl, setDefaultAgentIgnore, setNativeElementDisposition, setPageFlag, setPageOrder, setPagePerformanceThresholdOverrides, setPageTitle, setPerformanceThresholds } from "../mutations";
+import { addPage, advanceTask, pendingPage, setAgentIgnore, setAlertWebhookUrl, setDefaultAgentIgnore, setNativeElementApplicability, setPageFlag, setPageOrder, setPagePerformanceThresholdOverrides, setPageTitle, setPerformanceThresholds } from "../mutations";
 import { DEFAULT_PERFORMANCE_THRESHOLDS } from "../performanceThresholds";
 import { agentCheckKey } from "../agentScoring";
 import { captureBaseline, insertRecommendations, runNightly, runPage } from "../collector";
@@ -222,7 +222,7 @@ describe("atomic tenant updates", () => {
     expect(state.pages[0].agentIgnoreRestores?.checks).toEqual([checkKey]);
   });
 
-  it("persists native-element triage without deleting history and clears Inbox noise", async () => {
+  it("persists native-element applicability without deleting history or moving the record", async () => {
     const dataStore = await storeWithState();
     await dataStore.updateState((state) => {
       state.recs.push({
@@ -241,18 +241,39 @@ describe("atomic tenant updates", () => {
       }];
     });
 
-    await setNativeElementDisposition("page", "webflow-background-video", "suppressed", dataStore, new Date("2026-08-03T12:00:00.000Z"));
-    const suppressed = await dataStore.getState();
-    expect(suppressed.pages[0].nativeElementControls).toEqual({
-      "webflow-background-video": { disposition: "suppressed", updatedAt: "2026-08-03T12:00:00.000Z" },
+    await setNativeElementApplicability(
+      "page",
+      "webflow-background-video",
+      "Not applicable to this site",
+      dataStore,
+      new Date("2026-08-03T12:00:00.000Z"),
+    );
+    const excluded = await dataStore.getState();
+    expect(excluded.pages[0].nativeElementControls).toEqual({
+      "webflow-background-video": {
+        excluded: { reason: "Not applicable to this site" },
+        updatedAt: "2026-08-03T12:00:00.000Z",
+      },
     });
-    expect(suppressed.pages[0].history).toHaveLength(1);
-    expect(suppressed.recs.find((item) => item.id === "webflow-background-video")?.status).toBe("ignored");
+    expect(excluded.pages[0].history).toHaveLength(1);
+    // Applicability is not lifecycle: excluding says the finding does not count
+    // for this site, and it must not quietly set the record aside as well.
+    expect(excluded.recs.find((item) => item.id === "webflow-background-video")?.status).toBe("inbox");
 
-    await setNativeElementDisposition("page", "webflow-background-video", null, dataStore);
-    const restored = await dataStore.getState();
-    expect(restored.pages[0].nativeElementControls).toEqual({});
-    expect(restored.recs.find((item) => item.id === "webflow-background-video")?.status).toBe("ignored");
+    await setNativeElementApplicability("page", "webflow-background-video", null, dataStore);
+    const included = await dataStore.getState();
+    expect(included.pages[0].nativeElementControls).toEqual({});
+    expect(included.recs.find((item) => item.id === "webflow-background-video")?.status).toBe("inbox");
+  });
+
+  it("refuses to exclude a native-element finding for a reason the registry does not name", async () => {
+    const dataStore = await storeWithState();
+    await expect(setNativeElementApplicability(
+      "page",
+      "webflow-background-video",
+      "Because I said so" as never,
+      dataStore,
+    )).rejects.toThrow(/is not an exclusion reason/);
   });
 
   it("freezes readiness and ignored checks with every successful collection", async () => {
@@ -397,12 +418,19 @@ describe("atomic tenant updates", () => {
     });
 
     expect(alertFn).toHaveBeenCalledTimes(1);
-    expect(alertFn.mock.calls[0][1]).toMatchObject({
+    const payload = alertFn.mock.calls[0][1];
+    expect(payload).toMatchObject({
       event: "page_watch.daily_digest",
+      version: 2,
       id: "nightly:2026-08-02",
       date: "2026-08-02",
-      pages: [{ title: "Page", status: "regressing", categories: ["Performance"] }],
+      site: "example.com",
     });
+    // S7: the payload is the digest rather than a second summary of the same
+    // night, so what is asserted here is the delivery — one per nightly cohort,
+    // none for a manual run — and that its subject answers the day on its own.
+    // What the digest says about the run is `digest.test.ts`'s business.
+    expect(payload.subject.startsWith("example.com · ")).toBe(true);
     expect((await dataStore.getState()).alertDigests).toEqual([
       expect.objectContaining({ cohortId: "nightly:2026-08-02", attempts: 1, sentAt: "2026-08-02T12:00:00.000Z" }),
     ]);

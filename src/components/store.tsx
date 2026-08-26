@@ -2,7 +2,8 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_RANGE_DAYS } from "@/lib/types";
-import type { AgentIgnoreOverrideMode, AgentIgnoreScope, AppState, CategoryKey, CollectionSchedule, Flag, NativeElementDisposition, PagePerformanceThresholdOverrides, PerformanceThresholds, RangeDays, ScoreByCategory, Strategy, WatchPage } from "@/lib/types";
+import type { AgentIgnoreOverrideMode, AgentIgnoreScope, AppState, CategoryKey, CollectionSchedule, Flag, PagePerformanceThresholdOverrides, PerformanceThresholds, RangeDays, ScoreByCategory, Strategy } from "@/lib/types";
+
 import type { CruxPageEvidence } from "@/lib/crux";
 import type { ExternalAgentOriginAudit } from "@/lib/agentAudit";
 import { updateAgentIgnoreOverride, updateAgentIgnoreSettings } from "@/lib/agentScoring";
@@ -11,15 +12,16 @@ import { effectivePerformanceThresholds, normalizePerformanceThresholdOverrides,
 import {
   byWorstMeasured,
   casesInQueue,
-  fromRec,
-  groupByCause,
   groupByRemediation,
-  hasMeasuredImpact,
   type Effort,
   type IssueCase,
   type RemediationGroup,
 } from "@/lib/issue-case";
-import { COUNTED_QUEUES, QUEUE_LABEL, type Queue } from "@/lib/vocabulary";
+import { issueCasesFrom, lastRunAtOf } from "@/lib/issue-cases";
+import type { CaseDecision, CaseDecisionRequest } from "@/lib/case-decisions";
+import { partitionByImpact } from "@/lib/impact-format";
+import { APPLICABILITY_LABEL, COUNTED_QUEUES, ISSUE_ACTION_LABEL, QUEUE_LABEL, type ExclusionReason, type Queue } from "@/lib/vocabulary";
+import { normalizeNativeElementControls } from "@/lib/nativeElements";
 import { localISODate } from "@/lib/ui";
 import { withBasePath } from "@/lib/paths";
 import { defaultNewPageFlag, flagCapacityError } from "@/lib/watchCapacity";
@@ -97,9 +99,9 @@ interface StoreValue extends AppState {
   setTaskView: (v: "list" | "kanban") => void;
   taskSort: SortState;
   sortTask: (col: string) => void;
-  // page detail
-  tab: "overview" | "history" | "audits" | "agent";
-  setTab: (t: "overview" | "history" | "audits" | "agent") => void;
+  // page detail. The four tabs' state used to live here; the page is one
+  // scroll now, so the only view preference it still has is the chart's
+  // category.
   chartCat: CategoryKey;
   setChartCat: (c: CategoryKey) => void;
   // modals / toast / report
@@ -128,7 +130,13 @@ interface StoreValue extends AppState {
   renamePage: (id: string, title: string) => void;
   setAgentIgnore: (id: string, scope: AgentIgnoreScope, value: string, mode: AgentIgnoreOverrideMode) => void;
   setDefaultAgentIgnore: (scope: AgentIgnoreScope, value: string, ignored: boolean) => void;
-  setNativeElementDisposition: (id: string, findingId: string, disposition: NativeElementDisposition | null) => void;
+  /** Applicability on one native-element finding. `null` includes it again. */
+  setNativeElementApplicability: (id: string, findingId: string, reason: ExclusionReason | null) => void;
+  /**
+   * Append one decision about a remediation. Never edits an earlier one —
+   * reversing a decision is another entry saying so.
+   */
+  recordCaseDecision: (decision: CaseDecisionRequest) => void;
   updatePerformanceThresholds: (thresholds: PerformanceThresholds) => void;
   updatePagePerformanceThresholds: (id: string, overrides: PagePerformanceThresholdOverrides) => void;
   updateCollectionSchedule: (schedule: CollectionSchedule) => void;
@@ -238,7 +246,6 @@ export function StoreProvider({
   const [taskDescriptions, setTaskDescriptionsState] = useState<"show" | "hide">("show");
   const [taskView, setTaskView] = useState<"list" | "kanban">("list");
   const [taskSort, setTaskSort] = useState<SortState>({ col: null, dir: "desc" });
-  const [tab, setTab] = useState<"overview" | "history" | "audits" | "agent">("overview");
   const [chartCat, setChartCat] = useState<CategoryKey>("perf");
   const [modal, setModal] = useState<"add" | "marker" | "report" | null>(null);
   const [markerPageId, setMarkerPageId] = useState<string | null>(null);
@@ -650,8 +657,8 @@ export function StoreProvider({
     [mutate],
   );
 
-  const setNativeElementDisposition = useCallback(
-    (id: string, findingId: string, disposition: NativeElementDisposition | null) => {
+  const setNativeElementApplicability = useCallback(
+    (id: string, findingId: string, reason: ExclusionReason | null) => {
       const cur = dataRef.current;
       const updatedAt = new Date().toISOString();
       mutate(
@@ -660,23 +667,66 @@ export function StoreProvider({
           watcherNote: undefined,
           pages: cur.pages.map((page) => {
             if (page.id !== id) return page;
-            const controls = { ...(page.nativeElementControls ?? {}) };
-            if (disposition === null) delete controls[findingId];
-            else controls[findingId] = { disposition, updatedAt };
+            // Same rule as the server mutation: applicability only. The
+            // record's status is the lifecycle's business, and this is not it.
+            const controls = normalizeNativeElementControls(page.nativeElementControls);
+            const dismissed = controls[findingId]?.dismissed ? { dismissed: true } : {};
+            if (reason === null) {
+              if (controls[findingId]?.dismissed) controls[findingId] = { dismissed: true, updatedAt };
+              else delete controls[findingId];
+            } else {
+              controls[findingId] = { ...dismissed, excluded: { reason }, updatedAt };
+            }
             return { ...page, nativeElementControls: controls };
           }),
-          recs: disposition
-            ? cur.recs.map((rec) => rec.key === `${id}:${findingId}` && rec.status === "inbox" ? { ...rec, status: "ignored" } : rec)
-            : cur.recs,
         },
-        { url: `/api/pages/${id}/native-elements`, body: { findingId, disposition } },
+        { url: `/api/pages/${id}/native-elements`, body: { findingId, reason } },
         {
-          success: disposition === "acknowledged" ? "Finding acknowledged" : disposition === "suppressed" ? "Finding suppressed from active rollups" : "Finding returned to active review",
+          success: reason
+            ? `${APPLICABILITY_LABEL.excluded} — ${reason}`
+            : `${APPLICABILITY_LABEL.included} again`,
           failure: "Couldn't update the native-element finding — try again",
         },
       );
     },
     [mutate],
+  );
+
+  /**
+   * Keep one decision about a remediation.
+   *
+   * Optimistically appended in the same shape the server will store, so the
+   * case re-derives with the decision applied on the next render rather than
+   * waiting for the round trip — and reverts with everything else if the write
+   * fails, because a decision that reports success it did not have is the exact
+   * failure the control was withheld to avoid.
+   *
+   * The local stamp is a prediction. The authoritative state that comes back
+   * carries the server's, which is the one that persists.
+   */
+  const recordCaseDecision = useCallback(
+    (decision: CaseDecisionRequest) => {
+      const cur = dataRef.current;
+      const optimistic: CaseDecision = {
+        ...decision,
+        at: new Date().toISOString(),
+        // The same caller the route will resolve from the verified identity.
+        by: { kind: "person", userId: user.email },
+      };
+      mutate(
+        { ...cur, caseDecisions: [...(cur.caseDecisions ?? []), optimistic] },
+        { url: "/api/decisions", body: decision },
+        {
+          success: decision.decision === "exclude"
+            ? `${APPLICABILITY_LABEL.excluded} — ${decision.reason}`
+            : decision.decision === "include"
+              ? `${APPLICABILITY_LABEL.included} again`
+              : ISSUE_ACTION_LABEL[decision.decision],
+          failure: "Couldn't keep that decision — try again",
+        },
+      );
+    },
+    [mutate, user.email],
   );
 
   const updatePerformanceThresholds = useCallback(
@@ -1229,8 +1279,6 @@ export function StoreProvider({
     setTaskView,
     taskSort,
     sortTask,
-    tab,
-    setTab,
     chartCat,
     setChartCat,
     modal,
@@ -1255,7 +1303,8 @@ export function StoreProvider({
     renamePage,
     setAgentIgnore,
     setDefaultAgentIgnore,
-    setNativeElementDisposition,
+    setNativeElementApplicability,
+    recordCaseDecision,
     updatePerformanceThresholds,
     updatePagePerformanceThresholds,
     updateCollectionSchedule,
@@ -1299,34 +1348,12 @@ export { CAT_KEYS };
  */
 
 /**
- * The newest completed run across the watchlist.
- *
- * Used as the reference "now" for the case adapters, so a render is a pure
- * function of stored state: `fromRec` and `groupByCause` otherwise stamp
- * history with `new Date()`, which differs between the server render and the
- * client one. It also dates the "what changed" sort, which is a question about
- * the last run rather than about the wall clock.
+ * The case derivation moved to `lib/issue-cases.ts` in S7, when the collector
+ * started building the digest from it — a Worker cannot reasonably import a
+ * `"use client"` module to find out what is open. Re-exported so the list's
+ * existing importers keep one name for each.
  */
-export function lastRunAtOf(pages: readonly WatchPage[]): string | undefined {
-  return pages
-    .map((page) => page.lastRunAt)
-    .filter((value): value is string => !!value)
-    .sort()
-    .at(-1);
-}
-
-/**
- * The canonical case list: one case per problem.
- *
- * Recommendations are the stored shape; `fromRec` reads their four legacy
- * lifecycles and `groupByCause` collapses the same problem seen on several
- * pages. Both come from `issue-case.ts` — this only feeds them.
- */
-export function issueCasesFrom(state: Pick<AppState, "recs" | "pages">): IssueCase[] {
-  const at = lastRunAtOf(state.pages);
-  const options = at ? { at, referenceYear: Number(at.slice(0, 4)) } : {};
-  return groupByCause(state.recs.map((rec) => fromRec(rec, options)), options);
-}
+export { issueCasesFrom, lastRunAtOf };
 
 /**
  * How many cases each counted queue holds.
@@ -1346,34 +1373,11 @@ export function queueCountsOf(cases: readonly IssueCase[]): QueueCounts {
 /* ── The low-impact tail ────────────────────────────────────────────────── */
 
 /**
- * Cases split into what the list shows inline and what folds into one row.
- *
- * A case is in the tail when it has a measured saving smaller than the
- * project's `minimumSavingsMs`. Two cases are deliberately not in it:
- *
- *   - A case with no measured time at all. Registry rule 18: an absent
- *     measurement is not a small measurement, so a finding with no reading is
- *     never folded as though its value were zero. It is the same call
- *     `recommendationMeetsEvidenceThresholds` already makes when it lets an
- *     unmeasured finding past the savings gate.
- *   - Anything, when the threshold is 0. At 0 the gate is off, so the fold is
- *     empty and the list is flat.
- *
- * Every case lands in exactly one side. The tail is folded, never filtered:
- * the row that holds it says how many and expands in place.
+ * The fold moved to `lib/impact-format.ts` in S7, when the digest became a
+ * second reader of the project's savings gate. Re-exported so the list's
+ * existing importers keep one name for it.
  */
-export function partitionByImpact(
-  cases: readonly IssueCase[],
-  minimumSavingsMs: number,
-): { inline: IssueCase[]; tail: IssueCase[] } {
-  const inline: IssueCase[] = [];
-  const tail: IssueCase[] = [];
-  for (const item of cases) {
-    const folds = minimumSavingsMs > 0 && hasMeasuredImpact(item.impactMs) && item.impactMs < minimumSavingsMs;
-    (folds ? tail : inline).push(item);
-  }
-  return { inline, tail };
-}
+export { partitionByImpact };
 
 /* ── Sorting ────────────────────────────────────────────────────────────── */
 
@@ -1467,9 +1471,13 @@ export interface IssuesView {
  * preference worth persisting.
  */
 export function useIssuesView(queue: Queue, sort: IssueSort): IssuesView {
-  const { recs, pages, performanceThresholds } = useStore();
+  const { recs, pages, performanceThresholds, caseDecisions } = useStore();
   return useMemo(() => {
-    const cases = issueCasesFrom({ recs, pages });
+    // The decisions log is part of the derivation's input, not a filter applied
+    // after it: what someone decided about a remediation changes which queue
+    // its cases are in, so the counts and the rows have to be read from the
+    // same pass or the badge and the list disagree.
+    const cases = issueCasesFrom({ recs, pages, caseDecisions });
     const lastRunAt = lastRunAtOf(pages);
     const at = lastRunAt ? { at: lastRunAt } : {};
     const { minimumSavingsMs } = normalizePerformanceThresholds(performanceThresholds);
@@ -1486,5 +1494,5 @@ export function useIssuesView(queue: Queue, sort: IssueSort): IssuesView {
       pageTitles: Object.fromEntries(pages.map((page) => [page.id, page.title])),
       lastRunAt,
     };
-  }, [recs, pages, performanceThresholds, queue, sort]);
+  }, [recs, pages, caseDecisions, performanceThresholds, queue, sort]);
 }

@@ -609,10 +609,9 @@
       "Watching outcomes"
     ],
     "allowlist": {
-      "$comment": "Pre-existing violations in files C1a does not own. Each entry names the chunk that clears it. The list may only shrink. webflow-connection.tsx was cleared in C1a and removed in v5 — the rename it covered is done and the entry was dead. agent-access.tsx was cleared in S4 and removed: the two route references were the Tasks button, which now names the Fix queue.",
+      "$comment": "Pre-existing violations in files C1a does not own. Each entry names the chunk that clears it. The list may only shrink. webflow-connection.tsx was cleared in C1a and removed in v5 — the rename it covered is done and the entry was dead. pages/[id]/page.tsx was cleared in S3 and removed: the tabs it named are gone and the native-element dispositions are now the applicability and work_state concepts below. agent-access.tsx was cleared in S4 and removed: the two route references were the Tasks button, which now names the Fix queue.",
       "src/lib/guide.ts": "S9 — the glossary retires; its entries define the retired terms on purpose",
       "src/app/(app)/watchlist/page.tsx": "C2 — Ignore/Suppress become the applicability concept below",
-      "src/app/(app)/pages/[id]/page.tsx": "S3 — same, plus native-element dispositions",
       "src/components/bits.tsx": "F2 — Verifying/Returned belong to the lifecycles F2 deletes",
       "src/components/store.tsx": "S2 — route references to the retired destinations"
     }

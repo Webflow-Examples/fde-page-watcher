@@ -192,11 +192,94 @@ export interface NativeElementEvidence {
   count: number;
 }
 
-export type NativeElementDisposition = "acknowledged" | "suppressed";
-
+/**
+ * How a native-element finding has been set aside, in the two registry concepts
+ * that already covered it.
+ *
+ * There used to be one word for both — `disposition`, with the values
+ * `suppressed` and `acknowledged` — and that word was the bug. The two mean
+ * different things about different questions, which is why no single word ever
+ * fitted them:
+ *
+ *   excluded   applicability. The footprint does not apply to this site, so it
+ *              stops counting. Applicability requires a reason, and the reason
+ *              comes from `applicability.reasons` — there is no fourth.
+ *   dismissed  work_state. The footprint is real and still counts; the reader
+ *              has seen it and chosen not to act. `work_state.dismissed.absorbs`
+ *              fixes that reason at "Intentional", so it is the registry's
+ *              statement and not stored here.
+ *
+ * Both may be set. They answer different questions, so they cannot contradict
+ * each other — exactly as a case's page can be excluded while the case itself
+ * is `todo`. Neither set is not a record: `normalizeNativeElementControls`
+ * drops it.
+ *
+ * `reason` is a plain string HERE and only here. This module imports nothing
+ * (`agent-audit-isolation` enforces that, so a provider module can never reach
+ * it through the state's types), and the registry's reason list lives in
+ * `vocabulary.ts`. `normalizeNativeElementControls` is the one gate: it rejects
+ * a reason the registry does not name, on read and on write, and hands callers
+ * the narrow `ExclusionReason` back.
+ *
+ * Registry: `concepts.applicability.note` and `concepts.work_state.dismissed`.
+ * Do NOT reintroduce a third word that spans the two.
+ */
 export interface NativeElementControl {
-  disposition: NativeElementDisposition;
+  excluded?: { reason: string };
+  dismissed?: boolean;
   updatedAt: string;
+}
+
+/**
+ * One decision somebody took about a remediation, as it is stored.
+ *
+ * Keyed on the remediation and never on a case. A case is a group with no
+ * identity of its own — the merged case takes the id of whichever member came
+ * first, and membership changes whenever evidence does — so a decision keyed on
+ * one would detach from the thing it was about the first time a page joined or
+ * left. `remediationKey` in `issue-case.ts` produces the key.
+ *
+ * Two grains share the log, which is why two fields are optional rather than
+ * two record types being declared. `pageId` is set for `exclude` and `include`,
+ * which are about one page of the remediation, and absent for `accept` and
+ * `dismiss`, which are about the remediation entire. `reason` is set where the
+ * registry requires one. Neither is optional at the door: `caseDecisionFrom`
+ * refuses an entry missing what its decision needs, and the narrow union it
+ * returns has no way to express the wrong combination.
+ *
+ * `reason` is a plain string here for the same reason `NativeElementControl`'s
+ * is: this module imports nothing (`agent-audit-isolation` enforces it), and
+ * the registry's reason lists live in `vocabulary.ts`. `case-decisions.ts` is
+ * the one gate, narrowing on write and on read.
+ */
+export type CaseDecisionKind = "exclude" | "include" | "accept" | "dismiss";
+
+/**
+ * Who decided, whole — the identity and its class together.
+ *
+ * Structurally `Caller` from `caller.ts`, restated here because this module
+ * imports nothing and `agent-audit-isolation` enforces that. It is not a second
+ * vocabulary: `case-decisions.ts` asserts the two are the same type at compile
+ * time, so a change to `Caller` stops this file type-checking rather than
+ * quietly leaving the log describing a caller the app no longer has. F4 uses
+ * the same idiom to tie `Caller["kind"]` to the registry's actor classes.
+ *
+ * Whole, and never the bare class. The log is new storage, so no entry in it
+ * was ever written before the split — nothing here needs, or should reach for,
+ * `callerFromLegacyActor`.
+ */
+export type CaseDecisionCaller =
+  | { kind: "system"; agent: string }
+  | { kind: "person"; userId: string };
+
+export interface CaseDecisionRecord {
+  decision: CaseDecisionKind;
+  remediationKey: string;
+  pageId?: string;
+  reason?: string;
+  /** ISO. Also the entry's place in the log, which is kept in append order. */
+  at: string;
+  by: CaseDecisionCaller;
 }
 
 /** Privacy-safe page-content finding for a known Webflow-native element footprint. */
@@ -788,6 +871,17 @@ export interface AppState {
   projectArchivePageFlags?: Record<string, Flag>;
   pages: WatchPage[];
   recs: Rec[];
+  /**
+   * What people decided about remediations, oldest first.
+   *
+   * Append-only, and separate from `recs` on purpose. The collector rewrites
+   * records nightly and how it merges them is its own business, so a decision
+   * written onto one would be a decision the next run could overwrite. Nothing
+   * in the collector writes this; nothing anywhere edits an entry in place or
+   * prunes one on read. An entry matching nothing today is a decision somebody
+   * made, not a decision that stopped existing.
+   */
+  caseDecisions?: CaseDecisionRecord[];
   /** Workspace-owned HTTPS endpoint for confirmed performance-regression alerts. */
   alertWebhookUrl?: string | null;
   /** Recent scheduled digest claims/deliveries, retained for idempotency and retries. */
