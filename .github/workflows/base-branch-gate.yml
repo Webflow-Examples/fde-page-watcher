@@ -1,0 +1,79 @@
+name: Base branch gate
+
+# Publishes the `base-branch-green` status on open pull requests, which branch
+# protection requires before a merge. It runs no checks of its own -- it reads
+# the result CI already produced for the tip of the branch a PR would merge
+# into, and republishes it where a merge button can see it.
+#
+# Why: main broke four times through pairs of changes that never touched the
+# same lines. Every one of those sessions merged onto a base that was already
+# failing, or onto one whose failure was about to be discovered, and CI on the
+# PR could not say so because the PR was green in isolation. This does not add
+# a check. It gives an existing check's result authority over a merge.
+
+on:
+  pull_request:
+    # `labeled`/`unlabeled` are here because the `repair` label waives the gate,
+    # so adding it has to re-publish the status.
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      base_branch:
+        description: Branch to re-publish the gate for
+        required: false
+        default: main
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+  statuses: write
+
+# Never cancel: a cancelled run here would leave a stale verdict standing.
+concurrency:
+  group: base-gate-${{ github.event.pull_request.number || github.event.workflow_run.head_branch || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: base-branch-green
+    runs-on: ubuntu-latest
+    # On workflow_run, only a post-merge run on the branch itself changes the
+    # verdict. A PR's own CI run says nothing about the branch it targets.
+    if: >-
+      github.event_name != 'workflow_run' || github.event.workflow_run.event == 'push'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # On `pull_request` this publishes for that PR alone. On `workflow_run` it
+      # publishes for every open PR targeting the branch whose CI just finished,
+      # so a PR blocked by a red main clears itself the moment main goes green.
+      #
+      # Note: a PR from a fork gets a read-only token, so the status cannot be
+      # posted and the required check stays absent -- the merge is refused
+      # rather than waved through. Chunk sessions push branches to this repo.
+      - name: Publish base-branch-green
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          case "${{ github.event_name }}" in
+            pull_request)
+              .github/scripts/base-branch-gate.sh \
+                "${{ github.event.pull_request.base.ref }}" \
+                "${{ github.event.pull_request.number }}"
+              ;;
+            workflow_run)
+              .github/scripts/base-branch-gate.sh \
+                "${{ github.event.workflow_run.head_branch }}"
+              ;;
+            *)
+              .github/scripts/base-branch-gate.sh \
+                "${{ inputs.base_branch || 'main' }}"
+              ;;
+          esac

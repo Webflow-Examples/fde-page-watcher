@@ -4,10 +4,12 @@ This repo uses a **branch + pull request** workflow. Don't commit directly to `m
 
 ## Workflow
 
-1. Branch off an up-to-date `main`:
+1. Branch off an up-to-date `main`, and check that it is actually green before
+   you build on it (see AGENTS.md, "Before you build: check your base commit"):
    ```
    git checkout main
    git pull
+   git rev-parse HEAD              # report this sha
    git checkout -b <type>/<short-description>
    ```
    Use a `type/` prefix: `feat/`, `fix/`, `chore/`, `docs/`, `refactor/`.
@@ -28,6 +30,12 @@ This repo uses a **branch + pull request** workflow. Don't commit directly to `m
    Fill in the PR template.
 
 4. Merge after review and green checks. Squash-merge keeps `main` history tidy.
+
+   A PR also carries a `base-branch-green` check, which reports whether `main`
+   itself is passing. While `main` is red the merge is refused; the check
+   re-posts itself when `main`'s CI finishes, so there is nothing to push. If
+   you are fixing `main`, claim it in `REPAIRS.md` and label the PR `repair`,
+   which waives that check.
 
 ## Local setup
 
