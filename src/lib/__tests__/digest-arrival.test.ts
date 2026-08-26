@@ -21,6 +21,7 @@ import {
   type IssueCase,
   type IssueState,
 } from "../issue-case";
+import type { Caller } from "../caller";
 import { recordCheckpointReading } from "../checkpoint-evaluation";
 import { normalizePerformanceThresholds } from "../performanceThresholds";
 import { ISSUE_TRANSITIONS, QUEUES, WORK_STATES, type IssueAction } from "../vocabulary";
@@ -40,6 +41,8 @@ import { pendingPage } from "../mutations";
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const appDir = path.resolve(moduleDir, "../../app/(app)");
 const AT = "2026-08-25T06:00:00.000Z";
+/** F4 records who fired a transition, not merely that a person did. */
+const PERSON: Caller = { kind: "person", userId: "rae@webflow.com" };
 const DATE = "2026-08-25";
 const APP = "https://watch.example.com/page-watch";
 
@@ -129,9 +132,9 @@ describe("the case route", () => {
      */
     const link = digestOf([caseOf()]).sections[0].lines[0].href;
     let issue = caseOf();
-    issue = accept(issue, { actor: "person", at: AT });
-    issue = start(issue, { actor: "person", at: AT });
-    issue = markFixed(issue, { actor: "person", at: AT });
+    issue = accept(issue, { by: PERSON, at: AT });
+    issue = start(issue, { by: PERSON, at: AT });
+    issue = markFixed(issue, { by: PERSON, at: AT });
     issue = recordCheckpointReading(issue, { interval: "7d", outcome: "disagreed", at: AT }).issue;
     expect(issue.state).toBe("reopened");
     expect(issue.id).toBe("PW-2291");
@@ -187,7 +190,7 @@ describe("the context banner", () => {
 
   it("repeats the line the message wrote, because both come from one writer", () => {
     const reopened = recordCheckpointReading(
-      markFixed(caseOf({ state: "in_progress" }), { actor: "person", at: AT }),
+      markFixed(caseOf({ state: "in_progress" }), { by: PERSON, at: AT }),
       { interval: "7d", outcome: "disagreed", at: AT },
     ).issue;
     const digest = digestOf([reopened]);

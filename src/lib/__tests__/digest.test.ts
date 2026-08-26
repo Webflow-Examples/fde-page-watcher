@@ -14,6 +14,7 @@ import { digestLinks, renderDigestMessage } from "../digest-email";
 import { DIGEST_CADENCE_LABEL } from "../digestCadence";
 import { formatImpact } from "../impact-format";
 import { markFixed, scheduleCheckpoints, type IssueCase } from "../issue-case";
+import type { Caller } from "../caller";
 import { recordCheckpointReading } from "../checkpoint-evaluation";
 import { normalizePerformanceThresholds } from "../performanceThresholds";
 import { casePath } from "../paths";
@@ -33,6 +34,8 @@ import { pendingPage } from "../mutations";
  */
 
 const AT = "2026-08-25T06:00:00.000Z";
+/** F4 records who fired a transition, not merely that a person did. */
+const PERSON: Caller = { kind: "person", userId: "rae@webflow.com" };
 const DATE = "2026-08-25";
 const APP = "https://watch.example.com/page-watch";
 const SCHEDULE = { localTime: "00:00", timeZone: "America/Chicago", overridden: true };
@@ -63,13 +66,13 @@ function caseOf(overrides: Partial<IssueCase> = {}): IssueCase {
 
 /** A case the system brought back, produced by the evaluator rather than posed. */
 function cameBackCase(overrides: Partial<IssueCase> = {}): IssueCase {
-  const fixed = markFixed(caseOf({ state: "in_progress", ...overrides }), { actor: "person", at: AT });
+  const fixed = markFixed(caseOf({ state: "in_progress", ...overrides }), { by: PERSON, at: AT });
   return recordCheckpointReading(fixed, { interval: "7d", outcome: "disagreed", at: AT }).issue;
 }
 
 /** A fixed case still waiting: three checkpoints scheduled, nothing read. */
 function heldCase(overrides: Partial<IssueCase> = {}): IssueCase {
-  return markFixed(caseOf({ state: "in_progress", ...overrides }), { actor: "person", at: AT });
+  return markFixed(caseOf({ state: "in_progress", ...overrides }), { by: PERSON, at: AT });
 }
 
 /** A fixed case whose three checks all failed to read — evaluation rule 4. */
@@ -81,7 +84,7 @@ function unreadableCase(overrides: Partial<IssueCase> = {}): IssueCase {
       attempts: 2,
       result: "unavailable" as const,
     })),
-    history: [{ at: AT, from: "in_progress", to: "fixed", actor: "person" }],
+    history: [{ at: AT, from: "in_progress", to: "fixed", by: PERSON }],
     ...overrides,
   });
 }
