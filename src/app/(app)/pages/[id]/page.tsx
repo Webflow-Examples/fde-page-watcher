@@ -8,7 +8,7 @@ import { useIssuesView, useStore } from "@/components/store";
 import { CATEGORIES } from "@/lib/types";
 import type { CategoryKey, CollectionJob, Night, RangeDays, WatchPage } from "@/lib/types";
 import { agentReadinessHistoryPoints } from "@/lib/agentHistory";
-import { effectivePerformanceThresholds } from "@/lib/performanceThresholds";
+import { normalizePerformanceThresholds } from "@/lib/performanceThresholds";
 import {
   historyForStrategy,
   nightHasStrategy,
@@ -798,7 +798,7 @@ function ReadingsSection({
     ...run,
     startsDateGroup: run.dateKey !== runMetadata[index - 1]?.dateKey,
   }));
-  const thresholds = effectivePerformanceThresholds(store.performanceThresholds, page);
+  const thresholds = normalizePerformanceThresholds(store.performanceThresholds);
   const readinessHistory = agentReadinessHistoryPoints(
     agentRangeHistory,
     page.agentIgnores,
@@ -1301,7 +1301,7 @@ export default function PageDetail() {
   const collectionBlocked = page.flag === "paused" || (!!page.runState && page.runState !== "failed");
   const activeJob = store.jobs?.find((job) => job.runId === page.runId);
   const watchedPageHref = /^[a-z][a-z\d+.-]*:\/\//i.test(page.url) ? page.url : `https://${page.url}`;
-  const thresholds = effectivePerformanceThresholds(store.performanceThresholds, page);
+  const thresholds = normalizePerformanceThresholds(store.performanceThresholds);
   // A development-only comparison of the two trend renderings side by side.
   const isStatusPreview = process.env.NODE_ENV === "development" && searchParams.get("statusPreview") === "compare";
   const mobileTrend = isStatusPreview ? "regressing" : pageRangeTrend(page, "mobile", rangeDays, thresholds);

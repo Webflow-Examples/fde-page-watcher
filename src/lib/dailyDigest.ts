@@ -1,8 +1,10 @@
 import { collectionInstant, collectionLocalDateTime, collectionOffsets, normalizeCollectionSchedule } from "./collectionSchedule";
 import { buildDigest, digestSiteOf, type Digest } from "./digest";
-import { DEFAULT_DIGEST_CADENCE } from "./digestCadence";
+import { normalizeDigestCadence } from "./digestCadence";
+import { normalizeDigestRecipients } from "./digestRecipients";
 import { issueCasesFrom } from "./issue-cases";
 import { normalizePerformanceThresholds } from "./performanceThresholds";
+import { settingsMigrated } from "./settings-copy";
 import type { AppState, DailyAlertDigest } from "./types";
 import { isPageActivelyMonitored } from "./watchCapacity";
 import { buildDailyDigestWebhookPayload, postWebhook } from "./webhook";
@@ -30,14 +32,19 @@ export function digestFor(state: AppState, date: string, appUrl: string): Digest
   return buildDigest({
     site: digestSiteOf(state),
     date,
-    // The cadence the digest is actually sent on. S8 makes it a setting and
-    // passes the stored value here; until it does, a persisted field would be a
-    // slot with nothing writing to it, which rule 15 says is not a slot.
-    cadence: DEFAULT_DIGEST_CADENCE,
+    // The cadence the site chose, which S8 made writable. The footer states it
+    // because a reader who knows one arrives after every run knows that no
+    // digest means no run.
+    cadence: normalizeDigestCadence(state.digestCadence),
     cases: issueCasesFrom(state),
     pages: state.pages,
     thresholds: normalizePerformanceThresholds(state.performanceThresholds),
     ...(state.collectionSchedule ? { schedule: state.collectionSchedule } : {}),
+    // One sentence, owed once, to a site whose hand-tuned thresholds were
+    // mapped onto a position. `finishDailyDigest` clears it when the message
+    // that carried it completes, so "once" survives a retry: a send that failed
+    // has not told anybody anything.
+    notice: state.sensitivityNotice ? settingsMigrated(state.sensitivityNotice) : null,
     appUrl,
   });
 }
@@ -149,6 +156,9 @@ async function finishDailyDigest(
       if (delivery?.sent) digest.sentAt = now.toISOString();
       delete digest.lastError;
       delete digest.retryAfterISO;
+      // Told once. Cleared only on a message that actually completed, so a
+      // failed send leaves the sentence owed rather than spent.
+      delete state.sensitivityNotice;
     }
   });
 }
@@ -198,6 +208,7 @@ export async function processDailyDigests(
       buildDailyDigestWebhookPayload(
         digestFor(snapshot, claimed.date, options.appUrl ?? ""),
         claimed.cohortId,
+        normalizeDigestRecipients(snapshot.digestRecipients),
       ),
     );
     await finishDailyDigest(dataStore, claimed, delivery, now);

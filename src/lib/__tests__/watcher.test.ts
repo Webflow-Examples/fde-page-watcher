@@ -10,6 +10,16 @@ const cat = (m: number): CategoryScore => ({ m, lo: m - 1, hi: m + 1 });
 const ns = (s: ScoreByCategory): NightScores => ({ perf: cat(s.perf), a11y: cat(s.a11y), bp: cat(s.bp), seo: cat(s.seo) });
 const strat = (s: ScoreByCategory): StrategyScores => ({ mobile: ns(s), desktop: ns(s) });
 
+/**
+ * Both devices must report before a page may carry a verdict.
+ *
+ * A team setting now, not a page one. These cases used to reach it through
+ * `performanceThresholdOverrides`, which S8 deleted along with the panel that
+ * edited it — the behaviour under test is unchanged, only where the policy is
+ * set.
+ */
+const BOTH_DEVICES = { devicePolicy: "both" } as const;
+
 function page(id: string, baseline: ScoreByCategory, current: ScoreByCategory): WatchPage {
   return {
     id,
@@ -77,33 +87,32 @@ describe("buildWatcher — a category nobody measured", () => {
         scores: strat(scores),
         availableStrategies: ["desktop"] as Strategy[],
       })),
-      performanceThresholdOverrides: { devicePolicy: "both" },
     };
   }
 
   it("does not claim stability for a device that never reported", () => {
-    const w = buildWatcher([desktopOnly("home")], [], "mobile");
+    const w = buildWatcher([desktopOnly("home")], [], "mobile", 30, undefined, BOTH_DEVICES);
     expect(w.winning, "claimed stability over a device with no readings").toBeNull();
   });
 
   it("still claims stability for the device that did report", () => {
     // The withholding must be about the missing reading, not about the page.
-    const w = buildWatcher([desktopOnly("home")], [], "desktop");
+    const w = buildWatcher([desktopOnly("home")], [], "desktop", 30, undefined, BOTH_DEVICES);
     expect(w.winning).toBe("Accessibility and SEO are stable across the board.");
   });
 
   it("withholds the claim for the whole board when one page is unmeasured", () => {
     // "Across the board" means every page on the board. A measured page that
     // held does not cover for an unmeasured neighbour.
-    const measured = { ...page("pricing", good, good), performanceThresholdOverrides: { devicePolicy: "both" as const } };
-    const w = buildWatcher([measured, desktopOnly("home")], [], "mobile");
+    const measured = page("pricing", good, good);
+    const w = buildWatcher([measured, desktopOnly("home")], [], "mobile", 30, undefined, BOTH_DEVICES);
     expect(w.winning).toBeNull();
   });
 
   it("still reports a real drop rather than going quiet", () => {
     // Withholding the good news must not also swallow the bad news.
-    const dropped = { ...page("pricing", good, { ...good, a11y: 40 }), performanceThresholdOverrides: { devicePolicy: "both" as const } };
-    const w = buildWatcher([dropped, desktopOnly("home")], [], "mobile");
+    const dropped = page("pricing", good, { ...good, a11y: 40 });
+    const w = buildWatcher([dropped, desktopOnly("home")], [], "mobile", 30, undefined, BOTH_DEVICES);
     expect(w.changed.some((bullet) => bullet.text.includes("Accessibility"))).toBe(true);
   });
 });
@@ -234,14 +243,13 @@ describe("buildWatcher — the page it falls back to", () => {
       scores: strat({ ...good, perf }),
       availableStrategies: ["desktop"] as Strategy[],
     })),
-    performanceThresholdOverrides: { devicePolicy: "both" as const },
   });
 
   it("recommends nothing when no page produced a reading on this device", () => {
     // Withholding, not failing: the summary is still built, it simply does not
     // name a page no run has read. The old comparator scored this page 100 and
     // recommended something about it.
-    const w = buildWatcher([desktopOnly("home", 40)], [rec("home")], "mobile", 3);
+    const w = buildWatcher([desktopOnly("home", 40)], [rec("home")], "mobile", 3, undefined, BOTH_DEVICES);
     expect(w.topRec).toBeNull();
   });
 
@@ -258,6 +266,8 @@ describe("buildWatcher — the page it falls back to", () => {
       [rec("perfect"), rec("unknown")],
       "mobile",
       3,
+      undefined,
+      BOTH_DEVICES,
     );
     expect(w.topRec?.pageId).toBe("perfect");
   });

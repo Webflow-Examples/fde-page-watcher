@@ -1,5 +1,6 @@
 import type { Digest } from "./digest";
 import { renderDigestMessage } from "./digest-email";
+import type { DigestCadence } from "./digestCadence";
 
 export interface WebhookDelivery {
   sent: boolean;
@@ -37,10 +38,22 @@ export interface DigestWebhookSection {
 
 export interface DailyDigestWebhookPayload {
   event: "page_watch.daily_digest";
-  version: 2;
+  version: 3;
   id: string;
   date: string;
   site: string;
+  /**
+   * How often this arrives, so the receiver can say the same thing the footer
+   * says rather than guess.
+   */
+  cadence: DigestCadence;
+  /**
+   * Who the site named. Page Watch has no mail transport, so the endpoint on
+   * the other end is what turns this into deliveries — an empty list means the
+   * message was built and nobody was named, which is a different thing from a
+   * message that failed to send.
+   */
+  recipients: string[];
   /** The verdict. The same string the message's subject carries. */
   subject: string;
   /** The whole message, as text. */
@@ -76,13 +89,16 @@ export function normalizeAlertWebhookUrl(value: string | null | undefined): stri
 export function buildDailyDigestWebhookPayload(
   digest: Digest,
   cohortId: string,
+  recipients: readonly string[] = [],
 ): DailyDigestWebhookPayload {
   return {
     event: "page_watch.daily_digest",
-    version: 2,
+    version: 3,
     id: cohortId,
     date: digest.date,
     site: digest.site,
+    cadence: digest.cadence,
+    recipients: [...recipients],
     subject: digest.subject,
     text: renderDigestMessage(digest).text,
     sections: digest.sections.map((section) => ({

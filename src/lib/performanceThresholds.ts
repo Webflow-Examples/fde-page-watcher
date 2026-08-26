@@ -1,21 +1,20 @@
-import type { PagePerformanceThresholdOverrides, PerformanceThresholds, WatchPage } from "./types";
+import { DEFAULT_SENSITIVITY, SENSITIVITY_THRESHOLDS } from "./sensitivity";
+import type { PerformanceThresholds } from "./types";
 
-export const DEFAULT_PERFORMANCE_THRESHOLDS: PerformanceThresholds = {
-  lowPerformance: 60,
-  regression: 15,
-  improvement: 5,
-  confirmationRuns: 1,
-  devicePolicy: "either",
-  accessibility: 90,
-  bestPractices: 90,
-  seo: 90,
-  regressionFloor: 95,
-  agentReadiness: 100,
-  newPageGraceRuns: 2,
-  minimumFindingRuns: 1,
-  minimumSavingsMs: 0,
-  minimumSavingsKilobytes: 0,
-};
+/**
+ * The limits a site runs on when it has not said otherwise.
+ *
+ * These are the Normal position's limits, read from `sensitivity.ts` rather
+ * than restated here. A default threshold set and a default sensitivity
+ * position are one fact; two literals would agree today and drift the first
+ * time either was tuned (rule 20).
+ *
+ * Nothing writes a partial set any more. The twelve per-metric fields had a
+ * control until S8 deleted it, and this module is now a normaliser for stored
+ * state rather than a set of independently editable knobs — which is why the
+ * per-page override machinery went with the panel that edited it.
+ */
+export const DEFAULT_PERFORMANCE_THRESHOLDS: PerformanceThresholds = SENSITIVITY_THRESHOLDS[DEFAULT_SENSITIVITY];
 
 export const PERFORMANCE_THRESHOLD_LIMITS = {
   lowPerformance: { min: 1, max: 100 },
@@ -72,38 +71,6 @@ export function normalizePerformanceThresholds(settings?: Partial<PerformanceThr
   };
 }
 
-export function normalizePerformanceThresholdOverrides(
-  settings?: PagePerformanceThresholdOverrides,
-): PagePerformanceThresholdOverrides {
-  if (!settings) return {};
-  const normalized: PagePerformanceThresholdOverrides = {};
-  for (const key of Object.keys(PERFORMANCE_THRESHOLD_LIMITS) as Array<keyof typeof PERFORMANCE_THRESHOLD_LIMITS>) {
-    const value = settings[key];
-    const limits = PERFORMANCE_THRESHOLD_LIMITS[key];
-    if (typeof value === "number" && Number.isFinite(value)) {
-      normalized[key] = Math.max(limits.min, Math.min(limits.max, Math.round(value)));
-    }
-  }
-  if (settings.devicePolicy === "either" || settings.devicePolicy === "both" || settings.devicePolicy === "preferred") {
-    normalized.devicePolicy = settings.devicePolicy;
-  }
-  return normalized;
-}
-
-export function effectivePerformanceThresholds(
-  teamSettings?: Partial<PerformanceThresholds>,
-  pageOrOverrides?: Pick<WatchPage, "performanceThresholdOverrides"> | PagePerformanceThresholdOverrides,
-): PerformanceThresholds {
-  const overrides: PagePerformanceThresholdOverrides | undefined = pageOrOverrides
-    && Object.prototype.hasOwnProperty.call(pageOrOverrides, "performanceThresholdOverrides")
-    ? (pageOrOverrides as Pick<WatchPage, "performanceThresholdOverrides">).performanceThresholdOverrides
-    : pageOrOverrides as PagePerformanceThresholdOverrides | undefined;
-  return normalizePerformanceThresholds({
-    ...normalizePerformanceThresholds(teamSettings),
-    ...normalizePerformanceThresholdOverrides(overrides),
-  });
-}
-
 function fieldIsValid<K extends keyof typeof PERFORMANCE_THRESHOLD_LIMITS>(
   settings: Partial<PerformanceThresholds>,
   key: K,
@@ -118,23 +85,6 @@ export function performanceThresholdsAreValid(settings: Partial<PerformanceThres
     fieldIsValid(settings, key as keyof typeof PERFORMANCE_THRESHOLD_LIMITS)
   )
     && (settings.devicePolicy === "either" || settings.devicePolicy === "both" || settings.devicePolicy === "preferred");
-}
-
-export function performanceThresholdOverridesAreValid(settings: unknown): settings is PagePerformanceThresholdOverrides {
-  if (!settings || typeof settings !== "object" || Array.isArray(settings)) return false;
-  const values = settings as Record<string, unknown>;
-  const supported = new Set<string>([...Object.keys(PERFORMANCE_THRESHOLD_LIMITS), "devicePolicy"]);
-  if (Object.keys(values).some((key) => !supported.has(key))) return false;
-  for (const key of Object.keys(PERFORMANCE_THRESHOLD_LIMITS) as Array<keyof typeof PERFORMANCE_THRESHOLD_LIMITS>) {
-    if (!(key in values)) continue;
-    const value = values[key];
-    const limits = PERFORMANCE_THRESHOLD_LIMITS[key];
-    if (!Number.isInteger(value) || (value as number) < limits.min || (value as number) > limits.max) return false;
-  }
-  return !("devicePolicy" in values)
-    || values.devicePolicy === "either"
-    || values.devicePolicy === "both"
-    || values.devicePolicy === "preferred";
 }
 
 export function recommendationMeetsEvidenceThresholds(

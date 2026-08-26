@@ -3,6 +3,7 @@ import { normalizeCollectionSchedule } from "./collectionSchedule";
 import {
   DIGEST_SECTION_HEADING,
   digestFooter,
+  digestLimit,
   digestLineBack,
   digestLineDecide,
   digestLineHeld,
@@ -113,6 +114,14 @@ export interface DigestInput {
   site: string;
   date: string;
   cadence: DigestCadence;
+  /**
+   * One sentence the footer owes this reader, or nothing.
+   *
+   * The only thing in the message that is not about what the run found. It is
+   * here rather than composed in the template because the template decides
+   * nothing — see `digest-email.ts`.
+   */
+  notice?: string | null;
   cases: readonly IssueCase[];
   pages: readonly WatchPage[];
   thresholds: PerformanceThresholds;
@@ -245,8 +254,9 @@ function diagnosisOf(issue: IssueCase): string {
  */
 function thresholdOf(issue: IssueCase, thresholds: PerformanceThresholds) {
   const reading = formatImpact(issue.impactMs);
-  if (!reading.measured || thresholds.minimumSavingsMs <= 0) return null;
-  return { reading: reading.text, limit: formatImpact(thresholds.minimumSavingsMs).text };
+  const limit = digestLimit(thresholds);
+  if (!reading.measured || limit === null) return null;
+  return { reading: reading.text, limit };
 }
 
 export interface DigestLineContext {
@@ -417,6 +427,7 @@ export function buildDigest(input: DigestInput): Digest {
         `${schedule.localTime} ${schedule.timeZone}`,
         cadence,
         input.site,
+        input.notice,
       ),
       href: absoluteUrl(input.appUrl, DESTINATION_PATH.settings),
     },

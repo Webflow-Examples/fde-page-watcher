@@ -3,8 +3,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createFsStore, type DataStore } from "../store/fsStore";
-import { addPage, advanceTask, pendingPage, setAgentIgnore, setAlertWebhookUrl, setDefaultAgentIgnore, setNativeElementApplicability, setPageFlag, setPageOrder, setPagePerformanceThresholdOverrides, setPageTitle, setPerformanceThresholds } from "../mutations";
-import { DEFAULT_PERFORMANCE_THRESHOLDS } from "../performanceThresholds";
+import { addPage, advanceTask, pendingPage, setAgentIgnore, setAlertWebhookUrl, setDefaultAgentIgnore, setDigestSettings, setNativeElementApplicability, setPageFlag, setPageOrder, setPageTitle, setSensitivity } from "../mutations";
+import { SENSITIVITY_THRESHOLDS } from "../sensitivity";
 import { agentCheckKey } from "../agentScoring";
 import { captureBaseline, insertRecommendations, runNightly, runPage } from "../collector";
 import type { AppState, CategoryScore, NightScores, Rec } from "../types";
@@ -306,39 +306,38 @@ describe("atomic tenant updates", () => {
     expect(afterSettingChange.pages[0].history[0].agentReadiness?.ignoredCheckKeys).toEqual([failingKey]);
   });
 
-  it("persists team-wide performance tolerances", async () => {
+  /**
+   * The position is the setting; the limits are its resolution. Storing one
+   * without the other would leave a screen naming a position over numbers that
+   * disagreed with it, which is the opacity the one-control design exists to
+   * prevent.
+   */
+  it("persists a sensitivity position and the limits it resolves to", async () => {
     const dataStore = await storeWithState();
 
-    const state = await setPerformanceThresholds(
-      {
-        ...DEFAULT_PERFORMANCE_THRESHOLDS,
-        lowPerformance: 72,
-        regression: 5,
-        confirmationRuns: 2,
-        devicePolicy: "both",
-      },
+    const state = await setSensitivity("low", dataStore);
+
+    expect(state.sensitivity).toBe("low");
+    expect(state.performanceThresholds).toEqual(SENSITIVITY_THRESHOLDS.low);
+  });
+
+  it("persists the digest cadence and its recipients together", async () => {
+    const dataStore = await storeWithState();
+
+    const state = await setDigestSettings(
+      { cadence: "weekly", recipients: ["Performance@Example.com", "performance@example.com"] },
       dataStore,
     );
 
-    expect(state.performanceThresholds).toEqual({
-      ...DEFAULT_PERFORMANCE_THRESHOLDS,
-      lowPerformance: 72,
-      regression: 5,
-      confirmationRuns: 2,
-      devicePolicy: "both",
-    });
+    expect(state.digestCadence).toBe("weekly");
+    // De-duplicated case-insensitively: two spellings of one address are one
+    // recipient, and sending twice would be the product not reading its own list.
+    expect(state.digestRecipients).toEqual(["performance@example.com"]);
   });
 
-  it("persists page calibration and applies its evidence gates to new recommendations", async () => {
+  it("applies the resolved evidence gates to new recommendations", async () => {
     const dataStore = await storeWithState();
-    await setPagePerformanceThresholdOverrides("page", {
-      regression: 14,
-      confirmationRuns: 3,
-      devicePolicy: "both",
-      minimumFindingRuns: 3,
-      minimumSavingsMs: 250,
-      minimumSavingsKilobytes: 50,
-    }, dataStore);
+    await setSensitivity("low", dataStore);
 
     // IDs are deliberately unmapped/synthetic (not real Lighthouse audit IDs):
     // this test exercises evidence-threshold gating, decoupled from webflow
@@ -351,10 +350,28 @@ describe("atomic tenant updates", () => {
       { id: "single-run", title: "Single-run finding", savingsMs: 900, observedRuns: 1 },
     ], new Date("2026-08-03T12:00:00.000Z"), { summarize: false });
 
-    const state = await dataStore.getState();
-    expect(state.pages[0].performanceThresholdOverrides).toMatchObject({ regression: 14, confirmationRuns: 3, devicePolicy: "both" });
-    expect(state.recs.map((item) => item.id)).toEqual(expect.arrayContaining(["rec", "repeatable", "structural"]));
-    expect(state.recs.map((item) => item.id)).not.toEqual(expect.arrayContaining(["weak", "single-run"]));
+    const low = await dataStore.getState();
+    expect(low.performanceThresholds).toEqual(SENSITIVITY_THRESHOLDS.low);
+    // At "Only big moves" the limit is a second and a finding must repeat: a
+    // 400 ms saving and a single-run 900 ms saving are both below what this
+    // reader asked to hear about. The structural finding has no measured saving
+    // at all, and rule 18 keeps it out of a gate about the size of one.
+    expect(low.recs.map((item) => item.id).sort()).toEqual(["rec", "structural"]);
+
+    // The same four findings, at the other end of the same control. This is the
+    // assertion that makes the gate traceable to the position rather than to a
+    // number nobody can find: nothing about the findings changed.
+    await setSensitivity("high", dataStore);
+    await insertRecommendations(dataStore, "page", [
+      { id: "weak", title: "Weak finding", savingsMs: 100, savingsBytes: 10_000, observedRuns: 3 },
+      { id: "repeatable", title: "Repeatable finding", savingsMs: 400, observedRuns: 3 },
+      { id: "structural", title: "Structural finding", savingsMs: 0, observedRuns: 3 },
+      { id: "single-run", title: "Single-run finding", savingsMs: 900, observedRuns: 1 },
+    ], new Date("2026-08-04T12:00:00.000Z"), { summarize: false });
+
+    const high = await dataStore.getState();
+    expect(high.recs.map((item) => item.id).sort())
+      .toEqual(["rec", "repeatable", "single-run", "structural", "weak"]);
   });
 
   it("keeps an unmapped audit ID's recommendation across repeated collection cycles instead of pruning it", async () => {
@@ -391,11 +408,9 @@ describe("atomic tenant updates", () => {
       collectFn: async () => collection(80),
       now: () => new Date("2026-08-01T12:00:00.000Z"),
     });
-    await setPagePerformanceThresholdOverrides("page", {
-      regression: 8,
-      confirmationRuns: 1,
-      newPageGraceRuns: 0,
-    }, dataStore);
+    // "Everything" is the position that reports a drop this size on the first
+    // run after a baseline — five points, one confirming run, one run of grace.
+    await setSensitivity("high", dataStore);
 
     await runPage("page", {
       dataStore,
@@ -421,7 +436,7 @@ describe("atomic tenant updates", () => {
     const payload = alertFn.mock.calls[0][1];
     expect(payload).toMatchObject({
       event: "page_watch.daily_digest",
-      version: 2,
+      version: 3,
       id: "nightly:2026-08-02",
       date: "2026-08-02",
       site: "example.com",
