@@ -197,6 +197,19 @@ export interface IssueCase {
   evidence: EvidenceEntry[];
   // 9 history — every transition, append-only
   history: HistoryEntry[];
+  /**
+   * A decision was taken about this remediation and does not apply to it any
+   * more, because the remediation's key changed under it.
+   *
+   * Derived on read from the decisions log, never stored: it is a statement
+   * about the relationship between two things that are already persisted, and
+   * writing it down would make it a third thing that can disagree with them.
+   *
+   * The case reads as undecided while this is true, which is the honest state —
+   * nobody has decided about THIS fix. What it must not do is read as though
+   * nobody ever decided anything, so the case says the fix changed.
+   */
+  strandedDecision?: boolean;
   // work view (D4) — added in place, never a copy
   owner?: string;
   checklist?: { text: string; done: boolean }[];
@@ -401,6 +414,19 @@ export function actionsFor(state: IssueState): IssueAction[] {
 }
 
 /**
+ * Whether the registry lets a caller of this class fire this action.
+ *
+ * The one place the permission set is read, so the guard in `applyAction` and
+ * the affordance in `personActionsFor` cannot come to different conclusions
+ * about the same table. It takes a `kind` and never an identity: F4's whole
+ * point is that permission is decided on the class, and a function that could
+ * be handed a name is one that could be made to answer on the strength of it.
+ */
+function actorPermits(action: IssueAction, by: Pick<Caller, "kind">): boolean {
+  return ISSUE_TRANSITIONS[action].actor.includes(by.kind);
+}
+
+/**
  * The actions a person may fire from a state — the ones that can be a button.
  *
  * Filtered on the actor list rather than on a hand-kept exclusion, so `resolve`
@@ -408,9 +434,14 @@ export function actionsFor(state: IssueState): IssueAction[] {
  * this is what makes that true of the UI rather than merely written down. A
  * transition added with `person` in its actor list appears here without anyone
  * remembering to add it.
+ *
+ * Asked through `actorPermits` with a class rather than by testing the list
+ * against a bare word, so this reads the permission set exactly the way the
+ * runtime guard does — which is what `caller`'s "never compare an identity
+ * against a permission list" rule is protecting.
  */
 export function personActionsFor(state: IssueState): IssueAction[] {
-  return actionsFor(state).filter((action) => ISSUE_TRANSITIONS[action].actor.includes("person"));
+  return actionsFor(state).filter((action) => actorPermits(action, { kind: "person" }));
 }
 
 /**
@@ -529,7 +560,7 @@ export function applyAction(issue: IssueCase, action: IssueAction, options: Tran
       `applyAction: ${action} is not legal from ${issue.state} (legal from ${transition.from.join(", ")}).`,
     );
   }
-  if (!transition.actor.includes(options.by.kind)) {
+  if (!actorPermits(action, options.by)) {
     throw new IssueCaseError(
       `applyAction: ${action} may be fired by ${transition.actor.join(", ")}; the caller offered ${options.by.kind}.`,
     );
@@ -1093,17 +1124,50 @@ export function groupByCause(cases: readonly IssueCase[], options: { at?: string
  * and a customer-fixable one are not the same job even when the words match.
  *
  * A case with no documented steps shares its remediation with nothing and keys
- * on its own id. Collapsing every step-less case into one bucket would put
+ * on its cause. Collapsing every step-less case into one bucket would put
  * unrelated problems behind a single row and claim one fix covered them all,
  * which is the failure grouping exists to prevent rather than to cause.
+ *
+ * That fallback names the CAUSE and never the case id, which is load-bearing
+ * rather than tidy. A case is a group with no identity of its own: the merged
+ * case takes the id of whichever member came first, and that id is a page's
+ * `rec.key`, so it moves the moment membership does. F5 persists decisions
+ * against this key, and a key that moves is a decision that quietly detaches
+ * from the thing it was about — on the commonest path of all, since a record
+ * with no documented remediation is the ordinary case rather than the edge.
+ * The cause does not move. Grouping is unchanged by the swap: `groupByCause`
+ * runs before every caller of this, so causes are already unique and each
+ * fallback bucket still holds exactly one case, exactly as the id did.
  */
-function remediationKey(issue: IssueCase): string {
+export function remediationKey(issue: IssueCase): string {
   const steps = issue.remediation.steps.map((step) => step.trim()).filter(Boolean);
-  if (steps.length === 0) return `case:${issue.id}`;
+  if (steps.length === 0) return `cause:${issue.cause}`;
   // JSON-encoded rather than joined on a separator: a step is free text, so any
   // separator a step could itself contain would let two different remediations
   // produce one key.
   return `steps:${issue.remediation.actionability}:${JSON.stringify(steps)}`;
+}
+
+/**
+ * The same key with the actionability taken out.
+ *
+ * Two remediations whose steps match but whose actionability differs are one
+ * remediation for the single purpose of noticing that a decision was stranded.
+ * The steps are what a person read and agreed to; a reclassification did not
+ * change them, it changed who the registry says owns the work. So the old entry
+ * is recognisably about this remediation, and recognisably not about it any
+ * more — which is exactly the pair of facts the stranded rule needs.
+ *
+ * Takes a key rather than a case, because a stranded entry has no case under
+ * its key any more. A stored string is all that is left to compare.
+ *
+ * Lives here, beside the function whose output it parses, so the format has one
+ * owner. Split across two modules it would be two statements of one encoding,
+ * and the second would be wrong the first time the first one changed.
+ */
+export function remediationIdentity(key: string): string {
+  const match = /^steps:[a-z_]+:([\s\S]*)$/.exec(key);
+  return match ? `steps:${match[1]}` : key;
 }
 
 /**

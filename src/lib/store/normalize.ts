@@ -54,5 +54,10 @@ export function normalizeState(state: AppState): AppState {
   }));
   reconcileTaskMarkers(state);
   state.jobs = state.jobs ?? [];
+  // Defaulted, never filtered. Normalisation is the obvious place to drop the
+  // entries that match nothing, and dropping them is exactly the failure the
+  // log exists to prevent: a decision whose remediation is gone today is still
+  // a decision a person made, and the remediation can come back.
+  state.caseDecisions = state.caseDecisions ?? [];
   return state;
 }

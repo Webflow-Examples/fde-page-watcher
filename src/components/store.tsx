@@ -18,8 +18,9 @@ import {
   type RemediationGroup,
 } from "@/lib/issue-case";
 import { issueCasesFrom, lastRunAtOf } from "@/lib/issue-cases";
+import type { CaseDecision, CaseDecisionRequest } from "@/lib/case-decisions";
 import { partitionByImpact } from "@/lib/impact-format";
-import { APPLICABILITY_LABEL, COUNTED_QUEUES, type ExclusionReason, type Queue } from "@/lib/vocabulary";
+import { APPLICABILITY_LABEL, COUNTED_QUEUES, ISSUE_ACTION_LABEL, type ExclusionReason, type Queue } from "@/lib/vocabulary";
 import { normalizeNativeElementControls } from "@/lib/nativeElements";
 import { localISODate } from "@/lib/ui";
 import { withBasePath } from "@/lib/paths";
@@ -131,6 +132,11 @@ interface StoreValue extends AppState {
   setDefaultAgentIgnore: (scope: AgentIgnoreScope, value: string, ignored: boolean) => void;
   /** Applicability on one native-element finding. `null` includes it again. */
   setNativeElementApplicability: (id: string, findingId: string, reason: ExclusionReason | null) => void;
+  /**
+   * Append one decision about a remediation. Never edits an earlier one —
+   * reversing a decision is another entry saying so.
+   */
+  recordCaseDecision: (decision: CaseDecisionRequest) => void;
   updatePerformanceThresholds: (thresholds: PerformanceThresholds) => void;
   updatePagePerformanceThresholds: (id: string, overrides: PagePerformanceThresholdOverrides) => void;
   updateCollectionSchedule: (schedule: CollectionSchedule) => void;
@@ -684,6 +690,43 @@ export function StoreProvider({
       );
     },
     [mutate],
+  );
+
+  /**
+   * Keep one decision about a remediation.
+   *
+   * Optimistically appended in the same shape the server will store, so the
+   * case re-derives with the decision applied on the next render rather than
+   * waiting for the round trip — and reverts with everything else if the write
+   * fails, because a decision that reports success it did not have is the exact
+   * failure the control was withheld to avoid.
+   *
+   * The local stamp is a prediction. The authoritative state that comes back
+   * carries the server's, which is the one that persists.
+   */
+  const recordCaseDecision = useCallback(
+    (decision: CaseDecisionRequest) => {
+      const cur = dataRef.current;
+      const optimistic: CaseDecision = {
+        ...decision,
+        at: new Date().toISOString(),
+        // The same caller the route will resolve from the verified identity.
+        by: { kind: "person", userId: user.email },
+      };
+      mutate(
+        { ...cur, caseDecisions: [...(cur.caseDecisions ?? []), optimistic] },
+        { url: "/api/decisions", body: decision },
+        {
+          success: decision.decision === "exclude"
+            ? `${APPLICABILITY_LABEL.excluded} — ${decision.reason}`
+            : decision.decision === "include"
+              ? `${APPLICABILITY_LABEL.included} again`
+              : ISSUE_ACTION_LABEL[decision.decision],
+          failure: "Couldn't keep that decision — try again",
+        },
+      );
+    },
+    [mutate, user.email],
   );
 
   const updatePerformanceThresholds = useCallback(
@@ -1261,6 +1304,7 @@ export function StoreProvider({
     setAgentIgnore,
     setDefaultAgentIgnore,
     setNativeElementApplicability,
+    recordCaseDecision,
     updatePerformanceThresholds,
     updatePagePerformanceThresholds,
     updateCollectionSchedule,
@@ -1427,9 +1471,13 @@ export interface IssuesView {
  * preference worth persisting.
  */
 export function useIssuesView(queue: Queue, sort: IssueSort): IssuesView {
-  const { recs, pages, performanceThresholds } = useStore();
+  const { recs, pages, performanceThresholds, caseDecisions } = useStore();
   return useMemo(() => {
-    const cases = issueCasesFrom({ recs, pages });
+    // The decisions log is part of the derivation's input, not a filter applied
+    // after it: what someone decided about a remediation changes which queue
+    // its cases are in, so the counts and the rows have to be read from the
+    // same pass or the badge and the list disagree.
+    const cases = issueCasesFrom({ recs, pages, caseDecisions });
     const lastRunAt = lastRunAtOf(pages);
     const at = lastRunAt ? { at: lastRunAt } : {};
     const { minimumSavingsMs } = normalizePerformanceThresholds(performanceThresholds);
@@ -1446,5 +1494,5 @@ export function useIssuesView(queue: Queue, sort: IssueSort): IssuesView {
       pageTitles: Object.fromEntries(pages.map((page) => [page.id, page.title])),
       lastRunAt,
     };
-  }, [recs, pages, performanceThresholds, queue, sort]);
+  }, [recs, pages, caseDecisions, performanceThresholds, queue, sort]);
 }

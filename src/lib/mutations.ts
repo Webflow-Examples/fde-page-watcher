@@ -15,6 +15,8 @@ import { promoteAgentIssueToTask } from "./agentIssueTasks";
 import type { AgentIssueCase } from "./agentIssueCases";
 import { isKnownNativeElementId, normalizeNativeElementControls } from "./nativeElements";
 import { EXCLUSION_REASONS, type ExclusionReason } from "./vocabulary";
+import { caseDecisionFrom, type CaseDecisionInput } from "./case-decisions";
+import type { Caller } from "./caller";
 import { alertWebhookUrlIsValid } from "./webhook";
 import { COLLECTION_JOB_STALE_AFTER_MS, collectionJobIsStale } from "./collectionRetry";
 
@@ -151,6 +153,36 @@ export function setNativeElementApplicability(
     }
     page.nativeElementControls = controls;
     delete state.watcherNote;
+  }, dataStore);
+}
+
+/**
+ * Append one decision to the log.
+ *
+ * The only writer, and it only ever appends: an entry is never edited and never
+ * removed, so the log is the history the case panel renders rather than a
+ * summary that has to be kept in step with one. Reversing a decision is another
+ * entry saying so, which is also how the panel can show that somebody changed
+ * their mind.
+ *
+ * Nothing here touches `recs`. The collector rewrites those nightly and how it
+ * merges them is not this app's property, so a decision written onto one is a
+ * decision the next run may quietly drop.
+ *
+ * The stamp is the server's. When a decision was taken and who took it are
+ * facts about the request, and a body that could name its own author could name
+ * somebody else — so `by` is resolved from the verified identity by the route
+ * and passed in, never read out of the body.
+ */
+export async function recordCaseDecision(
+  input: CaseDecisionInput,
+  by: Caller,
+  dataStore: DataStore = getStore(),
+  now: Date = new Date(),
+): Promise<AppState> {
+  const decision = caseDecisionFrom(input, { at: now.toISOString(), by });
+  return withState((state) => {
+    state.caseDecisions = [...(state.caseDecisions ?? []), decision];
   }, dataStore);
 }
 
