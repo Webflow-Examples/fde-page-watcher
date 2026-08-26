@@ -130,7 +130,7 @@ export function VisitorExperiencePanel({
             Visitor experience
           </div>
           <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4, lineHeight: 1.45 }}>
-            Chrome UX Report · previous 28 days · updated weekly
+            What real visitors met · previous 28 days · updated weekly (the Chrome UX Report)
           </div>
         </div>
         <div style={{ textAlign: "right" }}>
@@ -165,7 +165,7 @@ export function VisitorExperiencePanel({
                 <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
                   <div>
                     <div style={{ fontSize: 12.5, color: "var(--text-body)", fontWeight: 600 }}>{metric.label}</div>
-                    <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 3 }}>{metric.relationship === "direct" ? "Direct metric comparison" : "Diagnostic proxy · TBT and INP differ"}</div>
+                    <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 3 }}>{metric.relationship === "direct" ? "The same measurement on both sides" : "Two different measurements, compared as the nearest match"}</div>
                   </div>
                   <span title={metric.guidance} style={{ flex: "none", fontSize: 12, fontWeight: 650, color: verdict.text, background: verdict.bg, padding: "3px 6px", borderRadius: 5 }}>{metric.verdictLabel}</span>
                 </div>
@@ -191,8 +191,11 @@ export function VisitorExperiencePanel({
       )}
 
       <div style={{ marginTop: 12, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.45 }}>
-        Lighthouse values are controlled lab medians from the latest retained run in this range. Visitor values are CrUX p75 measurements over a rolling 28-day window; they are not Lighthouse scores.
-        {latest?.scope === "origin" ? " Exact URL data was unavailable, so these measurements cover the entire origin." : ""}
+        The nightly figures are the middle result of a test run on a deliberately slow connection, from the latest
+        kept run in this range (Lighthouse). The visitor figures are the level three quarters of real visitors did
+        better than, over a rolling 28 days (the Chrome UX Report). They are not scores, and they are not comparable
+        to one.
+        {latest?.scope === "origin" ? " Too few people visited this exact page for it to be reported on its own, so these figures cover the whole site." : ""}
         {trendState ? " The trend arrow compares the latest weekly snapshot with the one before it and describes the visitor experience itself, so an up arrow means visitors are better off." : ""}
       </div>
     </section>

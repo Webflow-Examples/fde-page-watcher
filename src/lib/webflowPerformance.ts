@@ -194,14 +194,14 @@ const CATALOG: Record<string, CatalogEntry> = {
   "render-blocking-resources": {
     metric: "LCP",
     culprit: "render-blocking",
-    culpritLabel: "Render-blocking resources",
+    culpritLabel: "Files that delay the first text",
     remediation: "blocked",
     guidance: "Put the styles the first screenful needs directly in the page, and delay or split the rest of your own.",
   },
   "render-blocking-insight": {
     metric: "LCP",
     culprit: "render-blocking",
-    culpritLabel: "Render-blocking resources",
+    culpritLabel: "Files that delay the first text",
     remediation: "blocked",
     guidance: "Put the styles the first screenful needs directly in the page, and delay or split the rest of your own.",
   },

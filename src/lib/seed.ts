@@ -161,7 +161,7 @@ function performanceOffset(seed: Seed, sequence: number): number {
 }
 
 function sampleOpportunity(id: string): LighthouseOpportunity {
-  const title = id === "unused-javascript" ? "Reduce unused JavaScript" : "Properly size images";
+  const title = id === "unused-javascript" ? "Code the page never runs is costing 1.5 seconds" : "Images were bigger than the space they fill";
   return {
     id,
     title,
@@ -463,37 +463,37 @@ export function buildSeedState(now = new Date()): AppState {
     {
       key: "pricing:unused-javascript", pageId: "pricing", pageTitle: "Pricing", url: page("pricing").url,
       id: "unused-javascript", source: "lighthouse", strategies: ["mobile", "desktop"], sourceRunId: page("pricing").history.at(-1)!.runId,
-      title: "Reduce unused JavaScript", category: "Performance", webflow: classifyWebflowPerformance("unused-javascript"),
+      title: "Code the page never runs is costing 1.5 seconds", category: "Performance", webflow: classifyWebflowPerformance("unused-javascript"),
       savings: "1.5 s", estTime: "2 days", status: "task", taskStatus: "in-progress", added: dateKey(isoAt(anchor, -12)), doneDate: null,
-      aiSummary: "Global JavaScript repeatedly blocks the main thread across trusted mobile and desktop samples.",
+      aiSummary: "Site-wide code keeps the browser busy, so the page cannot respond to a tap. Measured on both phone and desktop.",
     },
     {
       key: "designer:uses-responsive-images", pageId: "designer", pageTitle: "Designer", url: page("designer").url,
       id: "uses-responsive-images", source: "lighthouse", strategies: ["mobile"], sourceRunId: page("designer").history.at(-1)!.runId,
-      title: "Properly size images", category: "Performance", webflow: classifyWebflowPerformance("uses-responsive-images"),
+      title: "Images were bigger than the space they fill", category: "Performance", webflow: classifyWebflowPerformance("uses-responsive-images"),
       savings: "0.6 s", estTime: "3 hours", status: "task", taskStatus: "done", added: dateKey(isoAt(anchor, -20)), doneDate: dateKey(isoAt(anchor, -8)),
-      aiSummary: "Responsive candidates now match the rendered image size; follow-up scans are improving.",
+      aiSummary: "The page now sends each image at the size it is shown, and later measurements are improving.",
     },
     {
       key: "hosting:webflow-spline-eager", pageId: "hosting", pageTitle: "Hosting", url: page("hosting").url,
       id: "webflow-spline-eager", source: "native-elements", strategies: ["mobile", "desktop"], sourceRunId: page("hosting").history.at(-1)!.runId,
-      title: "Spline scene loads eagerly", category: "Native elements", webflow: classifyWebflowPerformance("webflow-spline-eager"),
+      title: "A 3D scene starts loading before anyone scrolls to it", category: "Native elements", webflow: classifyWebflowPerformance("webflow-spline-eager"),
       savings: "Observed", estTime: "1 day", status: "inbox", taskStatus: "todo", added: dateKey(isoAt(anchor, -3)), doneDate: null,
-      aiSummary: "The rendered page contains a Spline scene that begins loading before it approaches the viewport.",
+      aiSummary: "The published page starts loading a 3D scene before it comes into view.",
     },
     {
       key: "templates:webflow-video-embed-eager", pageId: "templates", pageTitle: "Templates", url: page("templates").url,
       id: "webflow-video-embed-eager", source: "native-elements", strategies: ["mobile"], sourceRunId: page("templates").history[N - 2].runId,
-      title: "YouTube or Vimeo players load eagerly", category: "Native elements", webflow: classifyWebflowPerformance("webflow-video-embed-eager"),
+      title: "Video players load before anyone plays them", category: "Native elements", webflow: classifyWebflowPerformance("webflow-video-embed-eager"),
       savings: "Observed", estTime: "1 day", status: "ignored", taskStatus: "todo", added: dateKey(isoAt(anchor, -7)), doneDate: null,
     },
     {
       key: "hosting:crux-field-only-inp", pageId: "hosting", pageTitle: "Hosting", url: page("hosting").url,
       id: "crux-field-only-inp", source: "crux-field-only", strategies: ["mobile"],
-      title: "Visitor responsiveness is slower than lab tests", category: "Visitor experience",
+      title: "Real visitors wait longer for a tap to register than our test does", category: "Visitor experience",
       webflow: { ...classifyWebflowPerformance("third-party-summary"), source: "crux-field-only" },
-      savings: "Field p75 620 ms", estTime: "Needs review", status: "inbox", taskStatus: "todo", added: dateKey(isoAt(anchor, -2)), doneDate: null,
-      fieldSignals: { mobile: { metricKey: "responsiveness", metricLabel: "Responsiveness", relationship: "proxy", labLabel: "Lab TBT", labFormatted: "120 ms", fieldLabel: "Visitor INP p75", fieldValue: 620, fieldFormatted: "620 ms", fieldRating: "Poor", scope: "url", collectionStart: dateKey(isoAt(anchor, -29)), collectionEnd: dateKey(isoAt(anchor, -2)), detectedAt: isoAt(anchor, -2) } },
+      savings: "620 ms for real visitors", estTime: "Needs review", status: "inbox", taskStatus: "todo", added: dateKey(isoAt(anchor, -2)), doneDate: null,
+      fieldSignals: { mobile: { metricKey: "responsiveness", metricLabel: "Responsiveness", relationship: "proxy", labLabel: "Nightly test (TBT)", labFormatted: "120 ms", fieldLabel: "Real visitors (INP)", fieldValue: 620, fieldFormatted: "620 ms", fieldRating: "Poor", scope: "url", collectionStart: dateKey(isoAt(anchor, -29)), collectionEnd: dateKey(isoAt(anchor, -2)), detectedAt: isoAt(anchor, -2) } },
       fieldLifecycle: { mobile: { status: "active", firstDetectedAt: isoAt(anchor, -9), lastDetectedAt: isoAt(anchor, -2), lastEvaluatedCollectionEnd: dateKey(isoAt(anchor, -2)), consecutiveGoodWindows: 0 } },
     },
     // Two causes, one fix. These exist so the remediation GROUP renders in the
@@ -508,25 +508,25 @@ export function buildSeedState(now = new Date()): AppState {
     {
       key: "enterprise:render-blocking-resources", pageId: "enterprise", pageTitle: "Enterprise", url: page("enterprise").url,
       id: "render-blocking-resources", source: "lighthouse", strategies: ["mobile"], sourceRunId: page("enterprise").history.at(-1)!.runId,
-      title: "Eliminate render-blocking resources", category: "Performance", webflow: classifyWebflowPerformance("render-blocking-resources"),
+      title: "A stylesheet delays the first text on the page", category: "Performance", webflow: classifyWebflowPerformance("render-blocking-resources"),
       savings: "0.9 s", estTime: "1 day", status: "inbox", taskStatus: "todo", added: dateKey(isoAt(anchor, -4)), doneDate: null,
-      aiSummary: "A stylesheet in the site-wide head delays first paint on the Enterprise page.",
-      agentIssue: sharedHeadFix("enterprise:render-blocking-resources", "Eliminate render-blocking resources", isoAt(anchor, -4)),
+      aiSummary: "A site-wide stylesheet has to finish loading before any text appears on Enterprise.",
+      agentIssue: sharedHeadFix("enterprise:render-blocking-resources", "A stylesheet delays the first text on the page", isoAt(anchor, -4)),
     },
     {
       key: "ai:unused-css-rules", pageId: "ai", pageTitle: "AI", url: page("ai").url,
       id: "unused-css-rules", source: "lighthouse", strategies: ["mobile"], sourceRunId: page("ai").history.at(-1)!.runId,
-      title: "Reduce unused CSS", category: "Performance", webflow: classifyWebflowPerformance("unused-css-rules"),
+      title: "Most of a stylesheet this page loads goes unused", category: "Performance", webflow: classifyWebflowPerformance("unused-css-rules"),
       savings: "0.4 s", estTime: "1 day", status: "inbox", taskStatus: "todo", added: dateKey(isoAt(anchor, -4)), doneDate: null,
       aiSummary: "Most of the same site-wide stylesheet goes unused on this page.",
-      agentIssue: sharedHeadFix("ai:unused-css-rules", "Reduce unused CSS", isoAt(anchor, -4)),
+      agentIssue: sharedHeadFix("ai:unused-css-rules", "Most of a stylesheet this page loads goes unused", isoAt(anchor, -4)),
     },
     {
       key: "pricing:crux-field-only-lcp", pageId: "pricing", pageTitle: "Pricing", url: page("pricing").url,
       id: "crux-field-only-lcp", source: "crux-field-only", strategies: ["mobile"],
-      title: "Visitor main-content load remains elevated", category: "Visitor experience",
+      title: "The main content still takes too long for real visitors", category: "Visitor experience",
       webflow: { ...classifyWebflowPerformance("largest-contentful-paint-element"), source: "crux-field-only" },
-      savings: "Field p75 4.8 s", estTime: "Needs review", status: "task", taskStatus: "done", added: dateKey(isoAt(anchor, -22)), doneDate: dateKey(isoAt(anchor, -5)),
+      savings: "4.8 s for real visitors", estTime: "Needs review", status: "task", taskStatus: "done", added: dateKey(isoAt(anchor, -22)), doneDate: dateKey(isoAt(anchor, -5)),
       fieldLifecycle: { mobile: { status: "verifying", firstDetectedAt: isoAt(anchor, -22), lastDetectedAt: isoAt(anchor, -9), lastEvaluatedCollectionEnd: dateKey(isoAt(anchor, -2)), consecutiveGoodWindows: 1 } },
     },
   ];
@@ -592,12 +592,12 @@ export function buildSeedState(now = new Date()): AppState {
       cruxCompletedAt: isoAt(anchor, 0, 0.2), agentCompletedAt: isoAt(anchor, 0, 0.3), error: "Run exceeded the 30 minute stale limit",
     }],
     followUps: [
-      { id: "demo-followup-sent", pageId: "designer", markerId: "task:designer:uses-responsive-images", markerText: "Completed: Properly size images", markerDate: dateKey(isoAt(anchor, -8)), interval: "2d", dueISO: isoAt(anchor, -6), sent: true, attempts: 1, lastAttemptISO: isoAt(anchor, -6, 1), lastHttpStatus: 200 },
-      { id: "demo-followup-pending", pageId: "designer", markerId: "task:designer:uses-responsive-images", markerText: "Completed: Properly size images", markerDate: dateKey(isoAt(anchor, -8)), interval: "30d", dueISO: isoAt(anchor, 22), sent: false, attempts: 0 },
-      { id: "demo-followup-retry", pageId: "pricing", markerId: "task:pricing:crux-field-only-lcp", markerText: "Completed: Visitor main-content load remains elevated", markerDate: dateKey(isoAt(anchor, -5)), interval: "2d", dueISO: isoAt(anchor, -3), sent: false, attempts: 1, lastAttemptISO: isoAt(anchor, -3, 1), lastHttpStatus: 429, lastError: "rate_limited", retryAfterISO: isoAt(anchor, 2) },
+      { id: "demo-followup-sent", pageId: "designer", markerId: "task:designer:uses-responsive-images", markerText: "Completed: Images were bigger than the space they fill", markerDate: dateKey(isoAt(anchor, -8)), interval: "2d", dueISO: isoAt(anchor, -6), sent: true, attempts: 1, lastAttemptISO: isoAt(anchor, -6, 1), lastHttpStatus: 200 },
+      { id: "demo-followup-pending", pageId: "designer", markerId: "task:designer:uses-responsive-images", markerText: "Completed: Images were bigger than the space they fill", markerDate: dateKey(isoAt(anchor, -8)), interval: "30d", dueISO: isoAt(anchor, 22), sent: false, attempts: 0 },
+      { id: "demo-followup-retry", pageId: "pricing", markerId: "task:pricing:crux-field-only-lcp", markerText: "Completed: The main content still takes too long for real visitors", markerDate: dateKey(isoAt(anchor, -5)), interval: "2d", dueISO: isoAt(anchor, -3), sent: false, attempts: 1, lastAttemptISO: isoAt(anchor, -3, 1), lastHttpStatus: 429, lastError: "rate_limited", retryAfterISO: isoAt(anchor, 2) },
     ],
     watcherNote: {
-      text: "Pricing is the clearest sustained regression, while Designer and Hosting are improving. Two PSI cohorts were excluded as a verified provider incident, and Hosting shows a visitor-only responsiveness risk despite healthy lab blocking time.",
+      text: "Pricing is the clearest sustained regression, while Designer and Hosting are improving. Two nights of readings were left out as a confirmed problem at the testing service, and real visitors to Hosting are waiting longer for a tap to register even though the nightly test finds nothing wrong.",
       generatedAt: isoAt(anchor, 0, 0.5), modelVersion: 2,
     },
   };

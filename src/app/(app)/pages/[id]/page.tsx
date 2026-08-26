@@ -976,10 +976,10 @@ function ReadingsSection({
         }}
       >
         <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 18 }}>
-          Desktop and Mobile are stacked for comparison. Each median line includes its run-to-run range; reference
-          lines show that device&apos;s original benchmark and, when enough scans exist, the previous {rangeDays}-day
-          period median.
-          {excludedHistory.length > 0 && " Shaded bands mark measurements retained for diagnosis but excluded from scores, trends, and recommendations."}
+          Desktop and Mobile are stacked for comparison. Each line is the middle score of a night&apos;s runs, with the
+          spread between those runs around it; the reference lines show that device&apos;s starting point and, once
+          there are enough nights, the middle score of the previous {rangeDays} days.
+          {excludedHistory.length > 0 && " Shaded bands are readings kept for diagnosis but left out of scores, trends and recommendations."}
         </div>
         {historyForStrategy(rangeHistory, "desktop").length < 2 && historyForStrategy(rangeHistory, "mobile").length < 2 ? (
           <div style={{ padding: "42px 16px", textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>

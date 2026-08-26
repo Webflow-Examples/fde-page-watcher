@@ -46,6 +46,12 @@ export function appositive(plain: string, term: string): string {
  *
  * Written lower-case; the checks are case-insensitive. Longest first, so
  * "cumulative layout shift" is recognised before a substring of it could be.
+ *
+ * `robots.txt` and `sitemap.xml` are deliberately NOT here, and the decided
+ * copy is the reason: "Your robots.txt file tells ChatGPT's crawler not to read
+ * this site" opens with the filename and needs no gloss, because the filename
+ * is a thing the reader owns and can go and look at. A term needs introducing
+ * when the reader cannot act on it; a file on their own site is not that.
  */
 export const INDUSTRY_TERMS: readonly string[] = [
   "largest contentful paint",
@@ -61,8 +67,6 @@ export const INDUSTRY_TERMS: readonly string[] = [
   "structured data",
   "meta description",
   "speed index",
-  "robots.txt",
-  "sitemap.xml",
   "schema.org",
   "lighthouse",
   "hreflang",

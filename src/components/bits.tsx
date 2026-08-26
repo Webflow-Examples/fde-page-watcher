@@ -59,21 +59,21 @@ export function FieldRecommendationStatusBadge({ rec }: { rec: Pick<Rec, "source
   if (status === "corroborated") {
     return (
       <span
-        title="The visitor issue is now reproduced or explained by the latest Lighthouse evidence."
+        title="The nightly test now reproduces, or explains, what real visitors were meeting."
         style={{ ...CHIP, color: "var(--confidence-strong)" }}
       >
-        Now reproduced in lab
+        Now reproduced by the nightly test
       </span>
     );
   }
 
   const meta = status === "regressed"
-    ? { state: "reopened" as const, title: "Field issue returned: the visitor-only issue came back after it had cleared or become corroborated." }
+    ? { state: "reopened" as const, title: "The problem real visitors were meeting came back after it had cleared or been confirmed." }
     : status === "active"
-      ? { state: "new" as const, title: "Active field issue: exact-URL visitor evidence is outside the good range and Lighthouse does not reproduce it." }
+      ? { state: "new" as const, title: "Real visitors to this exact page are outside the good range, and the nightly test cannot reproduce it." }
       : status === "verifying"
-        ? { state: "fixed" as const, title: "Verifying recovery: one distinct CrUX window is good; a second is required to confirm resolution." }
-        : { state: "resolved" as const, title: "Field issue resolved: two distinct CrUX windows are within the good range." };
+        ? { state: "fixed" as const, title: "Verifying recovery: one 28-day window of visitor figures is good; a second is needed to confirm it." }
+        : { state: "resolved" as const, title: "Settled: two separate 28-day windows of visitor figures are inside the good range." };
 
   return (
     <span title={meta.title} style={{ display: "inline-flex" }}>
@@ -111,9 +111,9 @@ export function FieldEvidenceChip({ signal }: { signal: RecommendationEvidenceSi
  */
 const PERFORMANCE_ISSUE_CHIP: Record<PerformanceIssueStatus, { state: WorkState; title: string }> = {
   regressed: { state: "reopened", title: "Returned after a confirmed resolution" },
-  resolved: { state: "resolved", title: "Absent from two consecutive diagnostic captures" },
-  verifying: { state: "fixed", title: "Absent once; one more clean capture is required" },
-  active: { state: "new", title: "Present in the latest diagnostic capture" },
+  resolved: { state: "resolved", title: "Gone from the last two nightly tests" },
+  verifying: { state: "fixed", title: "Gone once; one more clean night confirms it" },
+  active: { state: "new", title: "Found in the latest nightly test" },
 };
 
 export function PerformanceIssueStatusBadge({ status }: { status: PerformanceIssueStatus }) {

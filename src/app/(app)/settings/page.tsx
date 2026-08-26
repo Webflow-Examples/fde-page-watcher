@@ -10,7 +10,7 @@ import { ProjectMembers } from "@/components/ProjectMembers";
 import { SegmentedControl } from "@/components/segmented-control";
 import { useStore } from "@/components/store";
 import { WebflowConnection } from "@/components/webflow-connection";
-import { AGENT_CHECK_GROUPS, ALL_AGENT_CHECKS } from "@/lib/agentChecks";
+import { AGENT_CHECK_GROUPS, ALL_AGENT_CHECKS, agentCheckLabel, agentGroupLabel } from "@/lib/agentChecks";
 import { agentCheckKey, normalizeAgentIgnoreSettings } from "@/lib/agentScoring";
 import { digestLimit } from "@/lib/digest-copy";
 import { DIGEST_CADENCES, DIGEST_CADENCE_LABEL, normalizeDigestCadence } from "@/lib/digestCadence";
@@ -303,12 +303,12 @@ function ExcludedGroup({ disabled }: { disabled: boolean }) {
   const excludable = [
     ...AGENT_CHECK_GROUPS
       .filter((group) => !defaults.groups.includes(group.name))
-      .map((group) => ({ key: `group:${group.name}`, label: group.name, scope: "group" as const, value: group.name })),
+      .map((group) => ({ key: `group:${group.name}`, label: agentGroupLabel(group.name), scope: "group" as const, value: group.name })),
     ...ALL_AGENT_CHECKS
       .filter((check) => !defaults.groups.includes(check.group) && !defaults.checks.includes(agentCheckKey(check)))
       .map((check) => ({
         key: `check:${agentCheckKey(check)}`,
-        label: `${check.group} · ${check.name}`,
+        label: `${agentGroupLabel(check.group)} · ${agentCheckLabel(check.name)}`,
         scope: "check" as const,
         value: agentCheckKey(check),
       })),
