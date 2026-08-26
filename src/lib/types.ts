@@ -254,6 +254,24 @@ export interface NativeElementControl {
  */
 export type CaseDecisionKind = "exclude" | "include" | "accept" | "dismiss";
 
+/**
+ * Who decided, whole — the identity and its class together.
+ *
+ * Structurally `Caller` from `caller.ts`, restated here because this module
+ * imports nothing and `agent-audit-isolation` enforces that. It is not a second
+ * vocabulary: `case-decisions.ts` asserts the two are the same type at compile
+ * time, so a change to `Caller` stops this file type-checking rather than
+ * quietly leaving the log describing a caller the app no longer has. F4 uses
+ * the same idiom to tie `Caller["kind"]` to the registry's actor classes.
+ *
+ * Whole, and never the bare class. The log is new storage, so no entry in it
+ * was ever written before the split — nothing here needs, or should reach for,
+ * `callerFromLegacyActor`.
+ */
+export type CaseDecisionCaller =
+  | { kind: "system"; agent: string }
+  | { kind: "person"; userId: string };
+
 export interface CaseDecisionRecord {
   decision: CaseDecisionKind;
   remediationKey: string;
@@ -261,8 +279,7 @@ export interface CaseDecisionRecord {
   reason?: string;
   /** ISO. Also the entry's place in the log, which is kept in append order. */
   at: string;
-  /** The same `actor` word every transition writes today. F4 migrates it. */
-  actor: string;
+  by: CaseDecisionCaller;
 }
 
 /** Privacy-safe page-content finding for a known Webflow-native element footprint. */

@@ -130,7 +130,9 @@ function replay(
   const entry: CaseDecision | null = decisionOf(record);
   if (!entry) return issue;
   const at = entry.at;
-  const actor = entry.actor;
+  // The caller the entry recorded, replayed whole. A replay attributes the
+  // history line to whoever decided, not to whoever is looking at it now.
+  const by = entry.by;
   switch (entry.decision) {
     case "exclude": {
       if (!issue.pageIds.includes(entry.pageId)) return issue;
@@ -138,22 +140,22 @@ function replay(
       // The model refuses to leave a case counting nothing, and so does this.
       if (includedPages(issue).length <= 1) return issue;
       const page = pageLabels[entry.pageId];
-      return excludePage(issue, entry.pageId, entry.reason, { actor, at, ...(page ? { page } : {}) });
+      return excludePage(issue, entry.pageId, entry.reason, { by, at, ...(page ? { page } : {}) });
     }
     case "include": {
       if (applicabilityOf(issue, entry.pageId) !== "excluded") return issue;
       const page = pageLabels[entry.pageId];
-      return includePage(issue, entry.pageId, { actor, at, ...(page ? { page } : {}) });
+      return includePage(issue, entry.pageId, { by, at, ...(page ? { page } : {}) });
     }
     case "accept":
       // A case whose evidence has since moved it past Decide is not re-accepted,
       // and one with no documented steps cannot be accepted at all — both are
       // the registry's rules, asked here rather than restated.
       if (!canApply(issue, "accept") || issue.remediation.steps.length === 0) return issue;
-      return applyAction(issue, "accept", { actor, at });
+      return applyAction(issue, "accept", { by, at });
     case "dismiss":
       if (!canApply(issue, "dismiss")) return issue;
-      return applyAction(issue, "dismiss", { actor, at, reason: entry.reason });
+      return applyAction(issue, "dismiss", { by, at, reason: entry.reason });
   }
 }
 

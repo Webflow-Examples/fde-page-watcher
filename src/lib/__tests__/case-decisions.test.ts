@@ -16,6 +16,7 @@ import {
   type IssueCase,
 } from "../issue-case";
 import { recordCheckpointReading } from "../checkpoint-evaluation";
+import type { Caller } from "../caller";
 import { DECISION_STRANDED, historyExcluded } from "../case-copy";
 import { recordCaseDecision } from "../mutations";
 import { insertRecommendations } from "../collector";
@@ -43,6 +44,9 @@ import type {
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const srcDir = path.resolve(moduleDir, "../..");
 const AT = "2026-08-25T09:00:00.000Z";
+const RAE = "rae@webflow.com";
+/** A whole caller, because the log has no legacy rows for F4 to migrate. */
+const PERSON: Caller = { kind: "person", userId: RAE };
 const ZERO: ScoreByCategory = { perf: 0, a11y: 0, bp: 0, seo: 0 };
 
 function makePage(overrides: Partial<WatchPage> = {}): WatchPage {
@@ -138,7 +142,7 @@ function exclusion(remediation: string, pageId: string, at = AT): CaseDecisionRe
     pageId,
     reason: "Intentional",
     at,
-    actor: "person",
+    by: PERSON,
   };
 }
 
@@ -173,14 +177,14 @@ describe("a decision and a reload", () => {
     const issue = only(issueCasesFrom(threePageState([exclusion(key, "docs")])));
     expect(issue.history.at(-1)?.reason).toBe(historyExcluded("/docs", "Intentional"));
     expect(issue.history.at(-1)?.reason).toBe("/docs excluded — Intentional");
-    expect(issue.history.at(-1)?.actor).toBe("person");
+    expect(issue.history.at(-1)?.by).toEqual(PERSON);
   });
 
   it("reverses with a second entry rather than by editing the first", () => {
     const key = remediationKey(only(issueCasesFrom(threePageState())));
     const log: CaseDecisionRecord[] = [
       exclusion(key, "docs"),
-      { decision: "include", remediationKey: key, pageId: "docs", at: "2026-08-26T09:00:00.000Z", actor: "person" },
+      { decision: "include", remediationKey: key, pageId: "docs", at: "2026-08-26T09:00:00.000Z", by: PERSON },
     ];
     const issue = only(issueCasesFrom(threePageState(log)));
     expect(excludedPageIds(issue)).toEqual([]);
@@ -197,7 +201,7 @@ describe("a decision and a reload", () => {
     const key = remediationKey(only(issueCasesFrom(threePageState())));
     const excludeFirst: CaseDecisionRecord[] = [
       exclusion(key, "docs", "2026-08-25T09:00:00.000Z"),
-      { decision: "include", remediationKey: key, pageId: "docs", at: "2026-08-26T09:00:00.000Z", actor: "person" },
+      { decision: "include", remediationKey: key, pageId: "docs", at: "2026-08-26T09:00:00.000Z", by: PERSON },
     ];
     const includeLast = [...excludeFirst].reverse();
     expect(excludedPageIds(only(issueCasesFrom(threePageState(excludeFirst))))).toEqual([]);
@@ -241,10 +245,10 @@ describe("what a decision is keyed on", () => {
   it("stores no case id, group index or row position on an entry", () => {
     const entry = caseDecisionFrom(
       { decision: "exclude", remediationKey: "cause:x", pageId: "docs", reason: "Intentional" },
-      { at: AT, actor: "person" },
+      { at: AT, by: PERSON },
     );
     expect(Object.keys(entry).sort()).toEqual(
-      ["actor", "at", "decision", "pageId", "reason", "remediationKey"],
+      ["at", "by", "decision", "pageId", "reason", "remediationKey"],
     );
   });
 });
@@ -255,7 +259,7 @@ describe("a remediation that was already accepted", () => {
   const steps = ["Remove the unused bundle.", "Re-publish."];
   const key = `steps:direct:${JSON.stringify(steps)}`;
   const accepted: CaseDecisionRecord[] = [
-    { decision: "accept", remediationKey: key, at: AT, actor: "person" },
+    { decision: "accept", remediationKey: key, at: AT, by: PERSON },
   ];
 
   it("arrives accepted, rather than being re-asked", () => {
@@ -265,7 +269,7 @@ describe("a remediation that was already accepted", () => {
       caseDecisions: accepted,
     }));
     expect(issue.state).toBe("todo");
-    expect(issue.history.at(-1)).toMatchObject({ from: "new", to: "todo", actor: "person" });
+    expect(issue.history.at(-1)).toMatchObject({ from: "new", to: "todo", by: PERSON });
   });
 
   it("carries a new record that joins the same remediation", () => {
@@ -356,7 +360,7 @@ describe("a decision the remediation moved out from under", () => {
 
   it("reads undecided, says the fix changed, and keeps the entry", () => {
     const log: CaseDecisionRecord[] = [
-      { decision: "accept", remediationKey: key, at: AT, actor: "person" },
+      { decision: "accept", remediationKey: key, at: AT, by: PERSON },
     ];
     const issue = only(issueCasesFrom(reclassified(log)));
 
@@ -411,7 +415,7 @@ describe("an excluded page and the checkpoints", () => {
     // Drive the case that came out of storage — not a hand-built one — through
     // to Fixed, so the exclusion W1 reads is the persisted one.
     const fixed = (["accept", "start", "mark_fixed"] as const).reduce<IssueCase>(
-      (issue, action) => applyAction(issue, action, { actor: "person", at: AT }),
+      (issue, action) => applyAction(issue, action, { by: PERSON, at: AT }),
       derived,
     );
 
@@ -502,11 +506,13 @@ describe("the writer", () => {
     const dataStore = await emptyStore();
     const first = await recordCaseDecision(
       { decision: "exclude", remediationKey: "cause:a", pageId: "docs", reason: "Intentional" },
+      PERSON,
       dataStore,
       new Date("2026-08-25T09:00:00.000Z"),
     );
     const second = await recordCaseDecision(
       { decision: "include", remediationKey: "cause:a", pageId: "docs" },
+      PERSON,
       dataStore,
       new Date("2026-08-26T09:00:00.000Z"),
     );
@@ -515,26 +521,31 @@ describe("the writer", () => {
     expect(second.caseDecisions?.[1]).toMatchObject({ decision: "include", at: "2026-08-26T09:00:00.000Z" });
   });
 
-  it("stamps the caller with the same actor word every transition writes today", async () => {
-    // Not a tagged caller: F4 migrates every call site in one change, and a
-    // store that had half-migrated is the one place that sweep could not carry.
+  it("records who decided, whole, and never the bare class", async () => {
+    /**
+     * The log is new storage, so every entry is written after F4's split.
+     * Storing "person" would manufacture exactly the legacy row
+     * `callerFromLegacyActor` exists to cope with, in a table that has none,
+     * and would throw away the identity on the way in.
+     */
     const dataStore = await emptyStore();
     const state = await recordCaseDecision(
       { decision: "accept", remediationKey: "steps:direct:[]" },
+      PERSON,
       dataStore,
     );
-    expect(state.caseDecisions?.[0]?.actor).toBe("person");
+    expect(state.caseDecisions?.[0]?.by).toEqual({ kind: "person", userId: RAE });
   });
 
   it("refuses an entry the registry would not recognise", async () => {
     const dataStore = await emptyStore();
-    await expect(recordCaseDecision({ decision: "snooze", remediationKey: "cause:a" }, dataStore))
+    await expect(recordCaseDecision({ decision: "snooze", remediationKey: "cause:a" }, PERSON, dataStore))
       .rejects.toBeInstanceOf(CaseDecisionError);
-    await expect(recordCaseDecision({ decision: "exclude", remediationKey: "cause:a", pageId: "docs" }, dataStore))
+    await expect(recordCaseDecision({ decision: "exclude", remediationKey: "cause:a", pageId: "docs" }, PERSON, dataStore))
       .rejects.toBeInstanceOf(CaseDecisionError);
-    await expect(recordCaseDecision({ decision: "exclude", remediationKey: "cause:a", reason: "Intentional" }, dataStore))
+    await expect(recordCaseDecision({ decision: "exclude", remediationKey: "cause:a", reason: "Intentional" }, PERSON, dataStore))
       .rejects.toBeInstanceOf(CaseDecisionError);
-    await expect(recordCaseDecision({ decision: "dismiss", remediationKey: "cause:a", reason: "Because" }, dataStore))
+    await expect(recordCaseDecision({ decision: "dismiss", remediationKey: "cause:a", reason: "Because" }, PERSON, dataStore))
       .rejects.toBeInstanceOf(CaseDecisionError);
   });
 
@@ -545,7 +556,7 @@ describe("the writer", () => {
       pageId: "docs",
       reason: "Because I said so",
       at: AT,
-      actor: "person",
+      by: PERSON,
     };
     expect(decisionOf(broken)).toBeNull();
     const log = [broken];

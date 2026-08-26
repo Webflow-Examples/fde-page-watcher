@@ -1,4 +1,5 @@
-import type { CaseDecisionKind, CaseDecisionRecord } from "./types";
+import type { Caller } from "./caller";
+import type { CaseDecisionCaller, CaseDecisionKind, CaseDecisionRecord } from "./types";
 import {
   DISMISS_REASONS,
   EXCLUSION_REASONS,
@@ -43,6 +44,18 @@ import {
 export type { CaseDecisionKind, CaseDecisionRecord };
 
 /**
+ * The compiler's check that the stored caller IS `Caller`.
+ *
+ * `types.ts` imports nothing, so the shape is written out there rather than
+ * imported — which would ordinarily be a second vocabulary waiting to drift.
+ * This makes drift a build failure instead: change `Caller` and this stops
+ * type-checking, in both directions. The same device F4 uses to tie the caller
+ * classes to the registry's.
+ */
+type SameSet<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+export const STORED_CALLER_IS_THE_CALLER: SameSet<CaseDecisionCaller, Caller> = true;
+
+/**
  * The four, derived from the stored union rather than restated beside it.
  *
  * A `Record` over the union, so a decision added to `types.ts` is a missing
@@ -77,15 +90,14 @@ export interface DecisionStamp {
   /** ISO. Also the entry's place in the log, which is kept in append order. */
   at: string;
   /**
-   * Who decided.
+   * Who decided, whole.
    *
-   * The same `actor` field, spelled the same way, as `HistoryEntry.actor` and
-   * every transition F2 and W1 write today. Deliberately NOT a tagged caller
-   * yet: F4 migrates every call site in the app to one in a single change, and
-   * a store that had half-migrated ahead of it is the one place that sweep
-   * could not simply carry along.
+   * A `Caller` rather than the bare class word, because the log is new storage
+   * and every entry in it is written after F4's split. Storing `"person"` here
+   * would be manufacturing exactly the legacy row `callerFromLegacyActor`
+   * exists to cope with, in a table that has no legacy.
    */
-  actor: string;
+  by: Caller;
 }
 
 /** A validated entry: what was decided, plus when and by whom. */
@@ -125,7 +137,7 @@ function isDecisionKind(value: unknown): value is CaseDecisionKind {
  */
 export function decisionOf(record: CaseDecisionRecord): CaseDecision | null {
   try {
-    return caseDecisionFrom(record, { at: record.at, actor: record.actor });
+    return caseDecisionFrom(record, { at: record.at, by: record.by });
   } catch {
     return null;
   }

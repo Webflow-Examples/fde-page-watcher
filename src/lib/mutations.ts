@@ -16,6 +16,7 @@ import type { AgentIssueCase } from "./agentIssueCases";
 import { isKnownNativeElementId, normalizeNativeElementControls } from "./nativeElements";
 import { EXCLUSION_REASONS, type ExclusionReason } from "./vocabulary";
 import { caseDecisionFrom, type CaseDecisionInput } from "./case-decisions";
+import type { Caller } from "./caller";
 import { alertWebhookUrlIsValid } from "./webhook";
 import { COLLECTION_JOB_STALE_AFTER_MS, collectionJobIsStale } from "./collectionRetry";
 
@@ -170,18 +171,16 @@ export function setNativeElementApplicability(
  *
  * The stamp is the server's. When a decision was taken and who took it are
  * facts about the request, and a body that could name its own author could name
- * somebody else.
+ * somebody else — so `by` is resolved from the verified identity by the route
+ * and passed in, never read out of the body.
  */
 export async function recordCaseDecision(
   input: CaseDecisionInput,
+  by: Caller,
   dataStore: DataStore = getStore(),
   now: Date = new Date(),
 ): Promise<AppState> {
-  // The bare word every transition in the app writes today. Deliberately not a
-  // tagged caller: F4 migrates every call site to one in a single change, and a
-  // store that had half-migrated ahead of it is the one place that sweep could
-  // not simply carry along.
-  const decision = caseDecisionFrom(input, { at: now.toISOString(), actor: "person" });
+  const decision = caseDecisionFrom(input, { at: now.toISOString(), by });
   return withState((state) => {
     state.caseDecisions = [...(state.caseDecisions ?? []), decision];
   }, dataStore);

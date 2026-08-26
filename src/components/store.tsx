@@ -707,7 +707,12 @@ export function StoreProvider({
   const recordCaseDecision = useCallback(
     (decision: CaseDecisionRequest) => {
       const cur = dataRef.current;
-      const optimistic: CaseDecision = { ...decision, at: new Date().toISOString(), actor: "person" };
+      const optimistic: CaseDecision = {
+        ...decision,
+        at: new Date().toISOString(),
+        // The same caller the route will resolve from the verified identity.
+        by: { kind: "person", userId: user.email },
+      };
       mutate(
         { ...cur, caseDecisions: [...(cur.caseDecisions ?? []), optimistic] },
         { url: "/api/decisions", body: decision },
@@ -721,7 +726,7 @@ export function StoreProvider({
         },
       );
     },
-    [mutate],
+    [mutate, user.email],
   );
 
   const updatePerformanceThresholds = useCallback(

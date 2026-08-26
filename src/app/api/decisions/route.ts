@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { recordCaseDecision } from "@/lib/mutations";
 import { CaseDecisionError, type CaseDecisionInput } from "@/lib/case-decisions";
 import { projectStore } from "@/lib/projects";
+import { identityFromRequest } from "@/lib/identity";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,7 +22,15 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   const body = (await req.json().catch(() => ({}))) as CaseDecisionInput;
   try {
-    const state = await recordCaseDecision(body, await projectStore(req));
+    // The verified account, not anything the body claims. F4's split is what
+    // makes this worth doing: the log records WHO decided rather than that a
+    // person did, so the case can attribute the line it renders.
+    const identity = await identityFromRequest(req);
+    const state = await recordCaseDecision(
+      body,
+      { kind: "person", userId: identity.email },
+      await projectStore(req),
+    );
     return NextResponse.json({ state });
   } catch (error) {
     // A malformed decision is the caller's fault and says so; anything else is
