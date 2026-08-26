@@ -1,4 +1,5 @@
 import type { Sensitivity } from "./sensitivity";
+import type { EvidenceSource } from "./vocabulary";
 
 /**
  * The words Settings says, in one place.
@@ -53,8 +54,17 @@ export const SETTINGS_SENSITIVITY_LIMIT_LABEL = "Smallest saving a digest line w
 /* ── Digest ─────────────────────────────────────────────────────────────── */
 
 export const SETTINGS_DIGEST_LABEL = "Digest";
+/**
+ * What "per run" means, said where the reader meets the phrase.
+ *
+ * The glossary used to define "nightly run" on a page of its own, which is the
+ * wrong shape for it twice over: a reader who has to leave this screen to learn
+ * what a run is will not, and most of this product's copy is read outside the
+ * app entirely. So the run is explained in the clause that uses it — what it
+ * does, and how often — rather than defined somewhere a link could reach.
+ */
 export const SETTINGS_DIGEST_HELP =
-  "One message per run. Sent even when nothing changed, so silence means the run failed.";
+  "One message per run — overnight, every watched page measured again. Sent even when nothing changed, so silence means the run failed.";
 
 /** Who it goes to. One field, one address per line — there is no other granularity. */
 export const SETTINGS_DIGEST_RECIPIENTS_LABEL = "Recipients";
@@ -76,6 +86,35 @@ export const SETTINGS_EXCLUDED_EMPTY = "Nothing is set aside. Every page and che
 export const SETTINGS_SYSTEMS_LABEL = "Connected systems";
 export const SETTINGS_SYSTEMS_HELP =
   "Each one speaks for itself in the evidence ledger. Readings are never combined.";
+
+/**
+ * What each system contributes, and how often it measures.
+ *
+ * This is the operational half of the retired glossary, moved to the group it
+ * describes. Keyed by `EvidenceSource` rather than written as prose, for two
+ * reasons: the ledger's entries are the registry's, so a system added there
+ * arrives here as a missing key rather than as a row nobody explained; and the
+ * cadence differs per system, so one screen-level claim about "how often" would
+ * be false for whichever system it did not describe. Nightly is true of the
+ * lab test and the agent checks; the visitor figures move once a week.
+ *
+ * Every line puts the plain meaning first and the industry term after it, in
+ * parentheses — the one pattern, applied here as everywhere.
+ */
+export const SETTINGS_SYSTEM_CONTRIBUTES: Record<EvidenceSource, string> = {
+  lighthouse:
+    "Scores the page on a simulated phone and desktop every night, keeping the middle result of several runs so one slow load cannot move the number (Lighthouse, run through PageSpeed Insights).",
+  crux:
+    "Reports what real Chrome visitors met, updated weekly over a rolling 28 days — so it moves more slowly than the nightly score, and disagreeing with it is not a fault in either (the Chrome UX Report).",
+  "native-elements":
+    "Reads the published page for the elements Webflow generated, which is how a finding can tell you whether the fix is yours to make.",
+  "agent-readiness":
+    "Asks this site, one page a night, the questions an AI agent asks before it reads anything.",
+  ora:
+    "Audits the whole site rather than a page, so every watched page on it shares one reading. The only system here you have to switch on.",
+  kitesurf:
+    "Opens the page in a real browser and records what actually rendered, which is how a finding is confirmed on a page that needs scripts to run.",
+};
 
 /* ── Appearance ─────────────────────────────────────────────────────────── */
 

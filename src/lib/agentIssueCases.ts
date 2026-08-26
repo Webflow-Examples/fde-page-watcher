@@ -23,6 +23,7 @@
 
 import type { AgentCheck, AgentIgnoreSettings, KitesurfEvidence } from "./types";
 import { isAgentCheckIgnored } from "./agentScoring";
+import { EVIDENCE_SOURCE_LABEL, type EvidenceSource } from "./vocabulary";
 import type {
   ExternalAgentAuditSnapshot,
   ExternalAgentCheckResult,
@@ -472,8 +473,28 @@ function caseConfidence(
   return { confidence: systems.size > 1 ? "corroborated" : "single-source" };
 }
 
+/**
+ * The name a reader sees for the system that took a reading.
+ *
+ * Read off the registry rather than spelled out again. This used to hold its
+ * own three strings — "Page Watch HTTP", the "Kitesurf" codename, and "Ora" —
+ * which is the rule 20 defect: three names for systems the evidence ledger
+ * already names, agreeing until the day one of them was reworded. Registry v10
+ * renamed one of the three, and this is the mapping that makes the rename
+ * arrive here instead of leaving a fourth spelling behind.
+ *
+ * The keys differ from the ledger's by one: this type's `page-watch` is the
+ * ledger's `agent-readiness` slot, which the registry notes carries "only Page
+ * Watch's reading".
+ */
+const EVIDENCE_SOURCE_OF: Record<AgentEvidenceSystem, EvidenceSource> = {
+  "page-watch": "agent-readiness",
+  kitesurf: "kitesurf",
+  ora: "ora",
+};
+
 export function systemLabel(system: AgentEvidenceSystem): string {
-  return system === "page-watch" ? "Page Watch HTTP" : system === "kitesurf" ? "Kitesurf" : "Ora";
+  return EVIDENCE_SOURCE_LABEL[EVIDENCE_SOURCE_OF[system]];
 }
 
 export interface AssembleAgentIssueCasesInput {
