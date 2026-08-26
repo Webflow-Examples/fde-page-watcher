@@ -34,8 +34,6 @@ import { pendingPage } from "../mutations";
  */
 
 const AT = "2026-08-25T06:00:00.000Z";
-/** F4 records who fired a transition, not merely that a person did. */
-const PERSON: Caller = { kind: "person", userId: "rae@webflow.com" };
 const DATE = "2026-08-25";
 const APP = "https://watch.example.com/page-watch";
 const SCHEDULE = { localTime: "00:00", timeZone: "America/Chicago", overridden: true };
