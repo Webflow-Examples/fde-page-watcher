@@ -53,10 +53,14 @@ one commit.
 
 ## Open
 
+_Nothing open._
+
+## Landed
+
 ### Conflict markers committed into `DECISIONS.md`
 
-- **Claimed by:** _unclaimed_
-- **Seen at:** `6f0076d` (`main`)
+- **Claimed by:** `fix/decisions-conflict-markers` / #91 — `d00940c`
+- **Seen at:** `6f0076d`, still present at `70bfbb3` (`main`)
 - **Introduced by:** `aeeca8b`, "Merge main (S8, PERSON fix) into S4", landed via
   PR #88
 - **Symptom:** `DECISIONS.md` lines 3–13 are a literal unresolved merge
@@ -68,10 +72,9 @@ one commit.
   `296106d`) still says "five previously-undefined product questions" and
   "a one-line edit". The file now has six numbered decisions, and decision 6 is
   not a one-line edit, so the un-counted wording is the one that is true.
-- **Whoever takes it:** this is one paragraph and its owner is whoever owns
-  `DECISIONS.md` prose. Claim it here first, then fix it in its own commit.
-
-## Landed
+- **Fix:** kept the un-counted wording, deleted the stale side and the three
+  marker lines. Nothing else in the file was touched, and no decision's content
+  changed — only the intro paragraph that the merge left doubled.
 
 ### F4's field rename left S7's callers and fixtures behind
 

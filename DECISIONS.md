@@ -1,16 +1,9 @@
 # Product decisions pending sign-off
 
-<<<<<<< HEAD
 The implementation resolved product questions that were previously undefined.
 They are reasonable defaults, but they should be confirmed (or changed) by
 product rather than remaining implicit in the code. Each notes where it lives so
 a change is a small, located edit.
-=======
-The implementation resolved five previously-undefined product questions. They
-are reasonable defaults, but they should be confirmed (or changed) by product
-rather than remaining implicit in the code. Each notes where it lives so a
-change is a one-line edit.
->>>>>>> origin/main
 
 ## 1. Status is driven by mobile Performance only
 
