@@ -78,8 +78,12 @@ describe("watchlist tier groups", () => {
 
   it("says what Paused costs, and says it once", () => {
     expect(WATCHLIST_PAUSED_NOTE).toBe(
-      "A paused page keeps its history and its consent record, and loses its priority and its place in the order.",
+      "A paused page keeps its history. It loses its priority and its place in the order until it is watched again.",
     );
+    // The note names only what this screen shows. Consent is project-level and
+    // origin-scoped and is not on the watchlist, so the note must not claim a
+    // paused page keeps a consent record a reader cannot see.
+    expect(WATCHLIST_PAUSED_NOTE).not.toContain("consent");
     // The note is authored in one module and rendered from it, not retyped in
     // the screen — registry rule 20.
     expect(source(WATCHLIST_SOURCE)).not.toContain("A paused page keeps its history");

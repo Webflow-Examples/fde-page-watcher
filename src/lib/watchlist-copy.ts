@@ -36,10 +36,18 @@ export function watchlistGroupLabel(tier: Flag, count: number): string {
 /**
  * What Paused costs, said once under the group it applies to.
  *
- * Both halves are the existing behaviour: `changePageFlagOrder` moves a page to
- * the end of its new tier, so pausing does lose its place in the order, and
- * `watchCapacity` does not count a paused page as active, so it holds no slot
- * and no priority while it is there.
+ * Both halves are the existing behaviour. `watchCapacity` does not count a
+ * paused page as active, so it holds no slot and no priority while it is there;
+ * and the Paused group has no drag handles at all, so a page in it has no place
+ * in the order to hold — which is what "until it is watched again" is doing.
+ *
+ * That clause says the loss lasts while it is paused, not that resuming undoes
+ * it: `changePageFlagOrder` moves a page to the END of the tier it joins, so a
+ * resumed page gets a place in the order again, never the one it had.
+ *
+ * An earlier draft said "keeps its history and its consent record". Consent is
+ * project-level and origin-scoped, and it is not on this screen — so that half
+ * named something a reader could not see. It is gone rather than reworded.
  */
 export const WATCHLIST_PAUSED_NOTE =
-  "A paused page keeps its history and its consent record, and loses its priority and its place in the order.";
+  "A paused page keeps its history. It loses its priority and its place in the order until it is watched again.";
