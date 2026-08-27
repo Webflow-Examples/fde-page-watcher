@@ -87,10 +87,20 @@ interface RegistryConcept {
   banned_as_label: string[];
 }
 
+interface AllowlistEntry {
+  owner: string;
+  added: number;
+  reason: string;
+}
+
 interface Registry {
   version: number;
   concepts: Record<string, RegistryConcept>;
-  banned_global: { terms: string[]; allowlist: Record<string, string> };
+  banned_global: {
+    terms: string[];
+    allowlist: Record<string, AllowlistEntry | string>;
+  };
+  rules: string[];
 }
 
 const registryPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../vocabulary.json");
@@ -446,9 +456,9 @@ describe("applicability", () => {
 
 describe("banned vocabulary", () => {
   /**
-   * The allowlist may only shrink. This is the recorded set as of C1a; a chunk
-   * that cleans a file removes its entry, and this test fails if anything new
-   * is ever added instead of fixed.
+   * The allowlist may only shrink (rule 25). This is the recorded set as of C1a;
+   * a chunk that cleans a file removes its entry, and this test fails if
+   * anything new is ever added instead of fixed.
    */
   const ALLOWLIST_BASELINE = new Set([
     "src/lib/guide.ts",
@@ -459,11 +469,26 @@ describe("banned vocabulary", () => {
     "src/components/agent-access.tsx",
   ]);
 
+  /** Rule 25: a chunk branch cannot lower the registry by merging. */
+  const VERSION_FLOOR = 11;
+
   const allowlistedFiles = () =>
     Object.keys(registry.banned_global.allowlist).filter((key) => !key.startsWith("$"));
 
+  const allowlistEntry = (file: string): AllowlistEntry => {
+    const entry = registry.banned_global.allowlist[file];
+    if (!entry || typeof entry === "string") {
+      throw new Error(`${file} allowlist entry must be { owner, added, reason }`);
+    }
+    return entry;
+  };
+
   it("enforces exactly the fifteen globally banned terms", () => {
     expect(registry.banned_global.terms).toHaveLength(15);
+  });
+
+  it("never lowers the registry version (rule 25)", () => {
+    expect(registry.version).toBeGreaterThanOrEqual(VERSION_FLOOR);
   });
 
   it("never grows the allowlist — a new violation must be fixed, not excused", () => {
@@ -471,9 +496,32 @@ describe("banned vocabulary", () => {
     expect(added, `these were added to the allowlist rather than fixed: ${added.join(", ")}`).toEqual([]);
   });
 
-  it("gives every allowlisted file the chunk that clears it", () => {
+  it("gives every allowlisted file an owner, added version, and reason (rule 24)", () => {
     for (const file of allowlistedFiles()) {
-      expect(registry.banned_global.allowlist[file], `${file} has no owning chunk`).toMatch(/\S/);
+      const entry = allowlistEntry(file);
+      expect(entry.owner, `${file} has no owning chunk`).toMatch(/\S/);
+      expect(entry.reason, `${file} has no reason`).toMatch(/\S/);
+      expect(Number.isInteger(entry.added), `${file} added must be an integer`).toBe(true);
+    }
+  });
+
+  it("expires allowlist entries more than one version behind current (rule 24)", () => {
+    const stale = allowlistedFiles().filter((file) => allowlistEntry(file).added < registry.version - 1);
+    expect(
+      stale,
+      `these allowlist entries are more than one version behind v${registry.version}: ${stale.join(", ")}`,
+    ).toEqual([]);
+  });
+
+  it("only exempts files that still contain a banned term (rule 24)", () => {
+    const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
+    const escape = (term: string) => term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    for (const file of allowlistedFiles()) {
+      const text = readFileSync(path.join(root, file), "utf8");
+      const hits = registry.banned_global.terms.filter((term) =>
+        new RegExp(`\\b${escape(term)}\\b`).test(text),
+      );
+      expect(hits, `${file} is allowlisted but contains no banned term`).not.toEqual([]);
     }
   });
 
@@ -483,6 +531,14 @@ describe("banned vocabulary", () => {
     for (const ordinary of ["All", "Open", "Active", "Done", "Error", "Score"]) {
       expect(registry.banned_global.terms).not.toContain(ordinary);
     }
+  });
+
+  it("carries rules 22–25 from the v11 review rulings", () => {
+    expect(registry.rules).toHaveLength(25);
+    expect(registry.rules[21]).toContain("states the sha each claim was verified at");
+    expect(registry.rules[22]).toContain("generated when the document is written");
+    expect(registry.rules[23]).toContain("checked in both directions");
+    expect(registry.rules[24]).toContain("cannot lower the registry");
   });
 });
 

@@ -23,7 +23,7 @@ import {
 import { issueCasesFrom, lastRunAtOf } from "@/lib/issue-cases";
 import type { CaseDecision, CaseDecisionRequest } from "@/lib/case-decisions";
 import { partitionByImpact } from "@/lib/impact-format";
-import { APPLICABILITY_LABEL, COUNTED_QUEUES, ISSUE_ACTION_LABEL, QUEUE_LABEL, type ExclusionReason, type Queue } from "@/lib/vocabulary";
+import { APPLICABILITY_LABEL, COUNTED_QUEUES, ISSUE_ACTION_LABEL, type ExclusionReason, type Queue } from "@/lib/vocabulary";
 import { normalizeNativeElementControls } from "@/lib/nativeElements";
 import { localISODate } from "@/lib/ui";
 import { withBasePath } from "@/lib/paths";
@@ -31,7 +31,6 @@ import { defaultNewPageFlag, flagCapacityError } from "@/lib/watchCapacity";
 import { applyWatchlistPageOrder, changePageFlagOrder } from "@/lib/watchlistOrder";
 import { isTaskMarker } from "@/lib/taskMarkers";
 import { pageTrend } from "@/lib/scoring";
-import { normalizeState } from "@/lib/store/normalize";
 import type { Project } from "@/lib/projects";
 import { LAST_PROJECT_KEY } from "@/lib/projectSelection";
 import { APPEARANCE_STORAGE_KEY, isAppearance, resolveSurface, type Appearance } from "./appearance";
@@ -155,7 +154,6 @@ interface StoreValue extends AppState {
   setVisitorExperienceVisible: (visible: boolean) => void;
   setExternalAgentAuditEnabled: (enabled: boolean) => void;
   refreshExternalAgentAudit: (pageId: string) => void;
-  addAgentIssueTask: (pageId: string, caseKey: string) => void;
   externalAgentAuditRefreshing: boolean;
   removePage: (id: string) => void;
   ignoreRec: (key: string) => void;
@@ -876,33 +874,6 @@ export function StoreProvider({
     [flash, pathFor],
   );
 
-  const addAgentIssueTask = useCallback(
-    (pageId: string, caseKey: string) => {
-      // No optimistic apply: the server re-assembles the case from stored
-      // evidence, so the authoritative task is whatever it returns.
-      void (async () => {
-        try {
-          const response = await fetch(pathFor(`/api/pages/${encodeURIComponent(pageId)}/agent-issues`), {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ caseKey }),
-            cache: "no-store",
-          });
-          const body = (await response.json().catch(() => null)) as { state?: AppState } | null;
-          if (!response.ok || !body?.state) {
-            flash(`Couldn't add this to ${QUEUE_LABEL.fix} — try again`);
-            return;
-          }
-          apply(normalizeState(body.state));
-          flash(`Added to ${QUEUE_LABEL.fix} with its verification target`);
-        } catch {
-          flash(`Couldn't add this to ${QUEUE_LABEL.fix} — try again`);
-        }
-      })();
-    },
-    [apply, flash, pathFor],
-  );
-
   const setExternalAgentAuditEnabled = useCallback(
     (enabled: boolean) => {
       const cur = dataRef.current;
@@ -960,7 +931,7 @@ export function StoreProvider({
       mutate(
         { ...cur, recs: cur.recs.map((r) => (r.key === key ? { ...r, status: "ignored" } : r)) },
         { url: `/api/recs`, body: { key, action: "ignore" } },
-        { success: "Ignored — cleared from Inbox, still listed on the page", failure: "Couldn't ignore — try again" },
+        { success: "Cleared from Decide — still listed on the page", failure: "Couldn't clear this — try again" },
       );
     },
     [mutate],
@@ -1213,7 +1184,6 @@ export function StoreProvider({
     updateCollectionSchedule,
     setExternalAgentAuditEnabled,
     refreshExternalAgentAudit,
-    addAgentIssueTask,
     externalAgentAuditRefreshing,
     updateAlertWebhookUrl,
     setVisitorExperienceVisible,
