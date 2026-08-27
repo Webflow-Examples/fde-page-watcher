@@ -1,0 +1,15 @@
+
+> fde-page-watcher@0.1.0 dev
+> next dev
+
+⚠ Port 3000 is in use by process 57918, using available port 3001 instead.
+▲ Next.js 16.2.10 (Turbopack)
+- Local:         http://localhost:3001
+- Network:       http://192.168.86.32:3001
+✓ Ready in 524ms
+
+ GET / 307 in 1385ms (next.js: 1204ms, application-code: 181ms)
+ GET / 307 in 33ms (next.js: 1576µs, application-code: 31ms)
+ GET / 307 in 26ms (next.js: 1354µs, application-code: 25ms)
+ GET /issues 200 in 446ms (next.js: 19ms, application-code: 427ms)
+[?25h
