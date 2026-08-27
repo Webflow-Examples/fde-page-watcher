@@ -4,6 +4,9 @@ import { useState } from "react";
 import Link from "next/link";
 import type { AgentIssueCase, AgentIssueSource, AgentIssueStatus } from "@/lib/agentIssueCases";
 import { systemLabel } from "@/lib/agentIssueCases";
+import { readingPredatesWithdrawal } from "@/lib/agentConsent";
+import { SETTINGS_CONSENT_STALE_READING } from "@/lib/settings-copy";
+import type { ExternalAgentConsentEntry } from "@/lib/types";
 import {
   agentAgreement,
   AGENT_ACCESS_SOURCES,
@@ -163,12 +166,19 @@ function ReadingRow({
   reading,
   locale,
   highlight,
+  consent,
 }: {
   reading: AgentReading;
   locale?: string;
   highlight?: boolean;
+  consent?: AgentAccessConsent;
 }) {
   const excluded = reading.applicability === "excluded";
+  // Only Ora's row. Kitesurf is not gated by this consent, and a clause about a
+  // permission that never governed a reading would be a claim about it that is
+  // simply untrue.
+  const stale = reading.source === "ora"
+    && readingPredatesWithdrawal(consent?.history, consent?.on === true, reading.observedAt);
   return (
     <div
       role="row"
@@ -197,6 +207,16 @@ function ReadingRow({
         {excluded && (
           <div style={{ marginTop: 2 }}>{agentExcluded(reading.reason)}</div>
         )}
+        {/* A reading taken while Ora was connected, on a project that has since
+            disconnected. It is a real reading and it stays exactly as legible as
+            the others — not greyed, not removed, not reordered. All the clause
+            does is say the permission behind it is gone, so a reader is not left
+            wondering why a source that is off has a row at all. The string is
+            imported rather than written here: Settings says it too, and two
+            renderers of one sentence is what rule 20 forbids. */}
+        {stale && (
+          <div style={{ marginTop: 2 }}>{SETTINGS_CONSENT_STALE_READING}</div>
+        )}
       </div>
       <div role="cell" style={{ display: "flex", alignItems: "baseline", gap: 10, whiteSpace: "nowrap", fontSize: 12 }}>
         <span style={{ fontWeight: 600 }}>{AGENT_RESULT_LABEL[reading.result]}</span>
@@ -217,15 +237,31 @@ function ReadingRow({
  * getting in or being understood; one who reads on gets the single next step
  * and then, underneath, every reading it was drawn from — unmerged.
  */
+/**
+ * What the ledger needs to know about consent, and nothing more.
+ *
+ * The live boolean and the record behind it. Both, because "is this reading
+ * stale" cannot be answered from the boolean alone: a project that connected,
+ * disconnected and connected again has readings from two permitted stretches,
+ * and only the history says which side of the current withdrawal each one
+ * falls on.
+ */
+export interface AgentAccessConsent {
+  on: boolean;
+  history: readonly ExternalAgentConsentEntry[];
+}
+
 export function AgentAccessPanel({
   access,
   caseHref,
   locale,
+  consent,
 }: {
   access: AgentAccess;
   /** Resolves a family key to `/issues/{id}`. Absent while no case exists yet. */
   caseHref?: (key: string) => string | undefined;
   locale?: string;
+  consent?: AgentAccessConsent;
 }) {
   const agreement = agentAgreement(access);
   const href = access.primary ? caseHref?.(access.primary.key) : undefined;
@@ -265,7 +301,7 @@ export function AgentAccessPanel({
       {disagreement && (
         <div role="table" aria-label="Conflicting readings" style={{ marginTop: 10, border: "1px solid var(--border-hairline)", borderRadius: 9, padding: "0 12px" }}>
           {disagreement.map((reading) => (
-            <ReadingRow key={`conflict-${reading.source}`} reading={reading} locale={locale} />
+            <ReadingRow key={`conflict-${reading.source}`} reading={reading} locale={locale} consent={consent} />
           ))}
         </div>
       )}
@@ -305,6 +341,7 @@ export function AgentAccessPanel({
             reading={reading}
             locale={locale}
             highlight={conflicting.has(reading.source)}
+            consent={consent}
           />
         ))}
         <p style={{ margin: "10px 0 0", fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>

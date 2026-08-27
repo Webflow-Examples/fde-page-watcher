@@ -9,6 +9,7 @@ import { normalizeWatchCapacity } from "../watchCapacity";
 import { sortWatchlistPages } from "../watchlistOrder";
 import { reconcileTaskMarkers } from "../taskMarkers";
 import { normalizeNativeElementControls } from "../nativeElements";
+import { normalizeExternalAgentConsentHistory } from "../agentConsent";
 import { normalizeAlertWebhookUrl } from "../webhook";
 import { normalizeDigestRecipients } from "../digestRecipients";
 
@@ -61,6 +62,10 @@ export function normalizeState(state: AppState): AppState {
   // Consent defaults closed: anything other than an explicit true means no
   // external provider request is permitted for this project.
   state.externalAgentAuditEnabled = state.externalAgentAuditEnabled === true;
+  // The record behind that boolean. Read whole and never pruned: an entry is
+  // dropped only when it is structurally not an entry at all.
+  state.externalAgentAuditConsentHistory =
+    normalizeExternalAgentConsentHistory(state.externalAgentAuditConsentHistory);
   state.agentIgnoreDefaults = normalizeAgentIgnoreSettings(state.agentIgnoreDefaults);
   normalizeSensitivitySettings(state);
   state.digestCadence = normalizeDigestCadence(state.digestCadence);

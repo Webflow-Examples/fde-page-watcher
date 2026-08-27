@@ -72,6 +72,43 @@ one commit.
   the absence of a caller is a missing surface, not proof the concept is gone.
   Whoever takes this should decide which it is rather than assuming.
 
+### The retention doc-comment in `mutations.ts` sits above the wrong function
+
+- **Found by:** C3, on `chunk-c3`, at base `95d77a9`.
+- **Not claimed, and deliberately not fixed here.** Moving a comment is a
+  one-line change, and a one-line change in somebody else's function is still a
+  change C3 did not come to write. R3 keeps it out of the feature diff.
+- **Symptom:** the comment reading "Withdrawing consent stops future requests;
+  evidence already stored is retained" sits immediately above a SECOND comment
+  and then `addAgentIssueTask`, which has nothing to do with consent.
+  `setExternalAgentAuditEnabled`, which the claim is about, is declared after
+  both and now carries a doc-comment of its own about the history it writes.
+- **The behaviour claim is true** — withdrawal stops future requests and stored
+  evidence is retained, and C3 asserts both. Only its placement is wrong, so
+  this is a comment move and not a behaviour change.
+- **Care needed:** the fix is to move the retention sentence onto
+  `setExternalAgentAuditEnabled` and merge it with the doc-comment C3 added
+  there, not to copy it — two statements of one retention rule is the drift that
+  put it in the wrong place to begin with.
+
+### The Ora note runs two sentences together on screen
+
+- **Found by:** C3, on `chunk-c3`, while merging `origin/main` (`07834fa`).
+- **Not claimed, and deliberately not fixed here.** It is a one-character change
+  in a line C3 also edits, which is exactly the shape R3 warns about: a shared
+  defect buried in a feature diff cannot be reviewed or reverted on its own.
+- **Symptom:** in `settings/page.tsx`, `{SETTINGS_SYSTEM_CONTRIBUTES.ora}` is
+  followed by ` Switching it on sends...` on the same line, and JSX drops that
+  leading space. The rendered note reads
+  "...you have to switch on.Switching it on sends...", with the DOM showing
+  `switch on.<!-- -->Switching`. Introduced by S9 (#93); no check reads rendered
+  copy, so CI is green on it.
+- **Scope:** the only `{expr} Text` pair in that file, and the file uses `{" "}`
+  nowhere, so this is a one-off rather than a pattern.
+- **Fix:** `{SETTINGS_SYSTEM_CONTRIBUTES.ora}{" "}` — or move the following word
+  onto its own line, which is what makes JSX keep the gap. Worth a look at S9's
+  other screens for the same pair before closing it.
+
 ## Landed
 
 ### Conflict markers committed into `DECISIONS.md`

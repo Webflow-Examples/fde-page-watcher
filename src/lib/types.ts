@@ -268,9 +268,32 @@ export type CaseDecisionKind = "exclude" | "include" | "accept" | "dismiss";
  * was ever written before the split — nothing here needs, or should reach for,
  * `callerFromLegacyActor`.
  */
-export type CaseDecisionCaller =
+export type StoredCaller =
   | { kind: "system"; agent: string }
   | { kind: "person"; userId: string };
+
+/**
+ * The decision log's caller. An alias, not a copy: the consent history stores
+ * the same thing, and two spellings of one shape in one file would be the drift
+ * rule 20 names with none of the justification `AgentIssueCheckResult` has —
+ * that one is duplicated because its other half lives in a module this file may
+ * not import, and both halves of this one are right here.
+ */
+export type CaseDecisionCaller = StoredCaller;
+
+/**
+ * One recorded change of project consent for external agent audits.
+ *
+ * `enabled` is the value it changed TO, so an entry answers "what was decided"
+ * rather than "what changed", and a reader replaying the list never has to
+ * infer a state from a gap.
+ */
+export interface ExternalAgentConsentEntry {
+  enabled: boolean;
+  /** ISO. Also the entry's place in the history, which is kept in append order. */
+  at: string;
+  by: StoredCaller;
+}
 
 export interface CaseDecisionRecord {
   decision: CaseDecisionKind;
@@ -883,6 +906,21 @@ export interface AppState {
    * is false.
    */
   externalAgentAuditEnabled?: boolean;
+  /**
+   * Every change to that consent, in the order they were made.
+   *
+   * The boolean above is the live answer; this is the record of how it got
+   * there, and the two are written together or not at all. Append-only, like
+   * `caseDecisions` and for the same reason: withdrawing consent is a decision
+   * somebody made, and a log that dropped the grant preceding it would leave
+   * the project unable to answer what was permitted when a stored reading was
+   * taken — which is the question a withdrawal makes somebody ask.
+   *
+   * Absent means no change was ever recorded, which is not the same as consent
+   * having been off all along by anyone's decision. The screen says so in as
+   * many words rather than rendering an empty list.
+   */
+  externalAgentAuditConsentHistory?: ExternalAgentConsentEntry[];
   agentIgnoreDefaults?: AgentIgnoreSettings;
   /**
    * The one sensitivity control's position, as a plain string.

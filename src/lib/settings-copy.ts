@@ -128,6 +128,78 @@ export const SETTINGS_SYSTEM_CONTRIBUTES: Record<EvidenceSource, string> = {
     "Opens the page in a real browser and records what actually rendered, which is how a finding is confirmed on a page that needs scripts to run.",
 };
 
+/* ── Consent, on the Ora row of Connected systems ───────────────────────── */
+
+/**
+ * The retention half of the Ora disclosure.
+ *
+ * DRAFT, PENDING LEGAL REVIEW. It is rendered, because a reader deciding today
+ * needs it more than the review needs to finish first, and it states a
+ * consequence about third-party publication rather than a fact about this app —
+ * so it is not reworded here. It has one home for that reason: a sentence under
+ * review that is inline in a screen is a sentence nobody can find when the
+ * review lands.
+ *
+ * It appends to the shipped Ora note rather than replacing any of it. S9
+ * rewrote that note in plain language and it survives here word for word; what
+ * it still did not say is what turning the switch back off does and does not
+ * undo, which is the question a withdrawal makes somebody ask.
+ */
+export const SETTINGS_CONSENT_RETENTION =
+  "Turning this off stops new scans but does not remove what has already been published.";
+
+/**
+ * The heading over the history.
+ *
+ * "Consent history", not "Connection history": the entries name the action
+ * somebody took and so use the control's words, but the heading names the
+ * RECORD, and `types.ts` is explicit that the boolean is a consent record and
+ * not a presentation flag. It is also the only place the word consent appears
+ * on screen.
+ */
+export const SETTINGS_CONSENT_HISTORY_LABEL = "Consent history";
+
+/** One change, in the control's own words. `name` is a caller's display name. */
+export function settingsConsentGranted(name: string): string {
+  return `Connected by ${name}`;
+}
+
+export function settingsConsentWithdrawn(name: string): string {
+  return `Disconnected by ${name}`;
+}
+
+/**
+ * The answer to "was this ever on?", which an empty list does not give.
+ *
+ * Rule 15's shape: nothing recorded is a real answer and the screen says it,
+ * rather than leaving a reader to infer it from a gap.
+ */
+export const SETTINGS_CONSENT_NEVER = "Ora has never been connected for this project.";
+
+/**
+ * The other empty state: connected, but from before there was a record of it.
+ *
+ * Rule 18. An absent record is not nothing to report — it is a project whose
+ * consent plainly was granted and whose grant has no date, and saying so is the
+ * only honest answer. Suppressing the block would treat the absence as a
+ * smaller fact than it is, and `consent.never` would be a flat lie about a
+ * project that is connected right now.
+ */
+export const SETTINGS_CONSENT_UNRECORDED =
+  "Ora was connected before this project kept a consent record, so there is no date for it.";
+
+/**
+ * What S4's ledger adds to a reading that predates the current withdrawal.
+ *
+ * Imported by the ledger row rather than restated there: one string, one home,
+ * two renderers being the thing rule 20 forbids. It names Ora rather than the
+ * permission in the abstract because it renders beside an Ora row, and it does
+ * not repeat that the scan was public — that is disclosed at the control, and
+ * this clause only has to say the permission behind the reading is gone.
+ */
+export const SETTINGS_CONSENT_STALE_READING =
+  "collected while Ora was connected, which it no longer is";
+
 /* ── Appearance ─────────────────────────────────────────────────────────── */
 
 export const SETTINGS_APPEARANCE_LABEL = "Appearance";

@@ -11,6 +11,7 @@ import { SegmentedControl } from "@/components/segmented-control";
 import { useStore } from "@/components/store";
 import { WebflowConnection } from "@/components/webflow-connection";
 import { AGENT_CHECK_GROUPS, ALL_AGENT_CHECKS, agentCheckLabel, agentGroupLabel } from "@/lib/agentChecks";
+import { consentCallerName, consentWasEverGranted } from "@/lib/agentConsent";
 import { agentCheckKey, normalizeAgentIgnoreSettings } from "@/lib/agentScoring";
 import { digestLimit } from "@/lib/digest-copy";
 import { DIGEST_CADENCES, DIGEST_CADENCE_LABEL, normalizeDigestCadence } from "@/lib/digestCadence";
@@ -43,10 +44,18 @@ import {
   SETTINGS_SENSITIVITY_LIMIT_LABEL,
   SETTINGS_SYSTEMS_HELP,
   SETTINGS_SYSTEMS_LABEL,
+  SETTINGS_CONSENT_HISTORY_LABEL,
+  SETTINGS_CONSENT_NEVER,
+  SETTINGS_CONSENT_RETENTION,
+  SETTINGS_CONSENT_UNRECORDED,
   SETTINGS_SYSTEM_CONTRIBUTES,
+  settingsConsentGranted,
+  settingsConsentWithdrawn,
   settingsSubtitle,
 } from "@/lib/settings-copy";
 import { excludedFromResults, type ExcludedRow } from "@/lib/settings-exclusions";
+import type { ExternalAgentConsentEntry } from "@/lib/types";
+import { formatDate } from "@/lib/watch-copy";
 import { alertWebhookUrlIsValid } from "@/lib/webhook";
 import {
   DESTINATION_LABEL,
@@ -431,14 +440,67 @@ function ExcludedGroup({ disabled }: { disabled: boolean }) {
  * control that ordered these would be a blend with a nicer name, and the group
  * says so in its own help line.
  */
+/**
+ * Every change to Ora consent, oldest first, and never anything else.
+ *
+ * The list IS the history rather than a summary derived from one (F5's rule),
+ * so nothing here folds, counts or collapses entries — a project that connected
+ * and disconnected four times has eight lines, because that is what happened.
+ *
+ * The three states are distinct on purpose, and none of them is a blank. Entries,
+ * so they render. No entries and never connected, which is a real answer and
+ * gets said in as many words. And no entries while connected — a project that
+ * turned Ora on before this record existed — which is not nothing to report:
+ * it is a grant with no date, and rule 18 says an absent measurement is not a
+ * small one. Two empty states, two different lines, because "never connected"
+ * would be a flat lie about a project that is connected right now.
+ */
+function ConsentHistory({
+  entries,
+  on,
+}: {
+  entries: readonly ExternalAgentConsentEntry[];
+  on: boolean;
+}) {
+  const everGranted = consentWasEverGranted(entries, on);
+  return (
+    <div className="settings-consent">
+      <h4 className="settings-consent__label">{SETTINGS_CONSENT_HISTORY_LABEL}</h4>
+      {entries.length === 0 ? (
+        <p className="settings-consent__none">
+          {everGranted ? SETTINGS_CONSENT_UNRECORDED : SETTINGS_CONSENT_NEVER}
+        </p>
+      ) : (
+        <ul className="settings-consent__list">
+          {entries.map((entry, index) => (
+            <li className="settings-consent__entry" key={`${entry.at}:${index}`}>
+              <span>
+                {entry.enabled
+                  ? settingsConsentGranted(consentCallerName(entry.by))
+                  : settingsConsentWithdrawn(consentCallerName(entry.by))}
+              </span>
+              {/* Absolute, never "3 days ago": a consent record is evidence
+                  about a moment, and a relative date stops being true. */}
+              <span>{formatDate(entry.at)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function ConnectedSystemsGroup({ disabled }: { disabled: boolean }) {
   const {
     pathFor,
     alertWebhookUrl,
     updateAlertWebhookUrl,
     externalAgentAuditEnabled,
+    externalAgentAuditConsentHistory,
     setExternalAgentAuditEnabled,
   } = useStore();
+  const consentOn = externalAgentAuditEnabled === true;
+  const consentHistory = externalAgentAuditConsentHistory ?? [];
   const stored = alertWebhookUrl ?? "";
   const [webhookDraft, setWebhookDraft] = useState(stored);
   const [syncedFrom, setSyncedFrom] = useState(stored);
@@ -492,24 +554,45 @@ function ConnectedSystemsGroup({ disabled }: { disabled: boolean }) {
         </dl>
       </div>
 
-      <div className="settings-system">
-        <div style={{ minWidth: 0 }}>
-          <h3 className="settings-system__name">{EVIDENCE_SOURCE_LABEL.ora}</h3>
-          <p className="settings-system__note">
-            {SETTINGS_SYSTEM_CONTRIBUTES.ora} Switching it on sends the live web address of each watched page to
-            Ora, whose scans are public: the result enters Ora&apos;s directory and anyone can read it. Webflow
-            staging addresses are never sent.
-          </p>
+      {/*
+        The Ora row IS the consent control, and it stays exactly where it is.
+        What it gains is the retention sentence — the half of the disclosure it
+        did not say — and the record of who changed it, beneath. The disclosure
+        reads ABOVE the control because it is what somebody needs before
+        deciding, not an explanation of what they just did.
+
+        Stacked, because the card now holds two things: the row, and the record
+        beneath it. Without this the card's own flex would lay the history out
+        BESIDE the control as a third column. `--stacked` is S8's existing
+        modifier and `.settings-consent__row` reproduces the original row inside
+        it, so the Ora row itself looks exactly as it did.
+      */}
+      <div className="settings-system settings-system--stacked">
+        <div className="settings-consent__row">
+          <div style={{ minWidth: 0 }}>
+            <h3 className="settings-system__name">{EVIDENCE_SOURCE_LABEL.ora}</h3>
+            <p className="settings-system__note">
+              {SETTINGS_SYSTEM_CONTRIBUTES.ora} Switching it on sends the live web address of each watched page to
+              Ora, whose scans are public: the result enters Ora&apos;s directory and anyone can read it. Webflow
+              staging addresses are never sent.{" "}
+              {/* Draft, pending legal review. Rendered rather than withheld: a
+                  reader deciding today needs it more than the review needs to
+                  land first. Not reworded here — it states a consequence about
+                  third-party publication. */}
+              {SETTINGS_CONSENT_RETENTION}
+            </p>
+          </div>
+          <SegmentedControl
+            ariaLabel="Ora"
+            value={externalAgentAuditEnabled ? "connected" : "off"}
+            options={[
+              { value: "connected", label: "Connected", disabled },
+              { value: "off", label: "Not connected", disabled },
+            ]}
+            onChange={(next) => setExternalAgentAuditEnabled(next === "connected")}
+          />
         </div>
-        <SegmentedControl
-          ariaLabel="Ora"
-          value={externalAgentAuditEnabled ? "connected" : "off"}
-          options={[
-            { value: "connected", label: "Connected", disabled },
-            { value: "off", label: "Not connected", disabled },
-          ]}
-          onChange={(next) => setExternalAgentAuditEnabled(next === "connected")}
-        />
+        <ConsentHistory entries={consentHistory} on={consentOn} />
       </div>
 
       <div className="settings-system settings-system--stacked">
