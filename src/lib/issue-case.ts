@@ -441,6 +441,19 @@ export function actionsFor(state: IssueState): IssueAction[] {
 }
 
 /**
+ * Whether the registry lets a caller of this class fire this action.
+ *
+ * The one place the permission set is read, so the guard in `applyAction` and
+ * the affordance in `personActionsFor` cannot come to different conclusions
+ * about the same table. It takes a `kind` and never an identity: F4's whole
+ * point is that permission is decided on the class, and a function that could
+ * be handed a name is one that could be made to answer on the strength of it.
+ */
+function actorPermits(action: IssueAction, by: Pick<Caller, "kind">): boolean {
+  return ISSUE_TRANSITIONS[action].actor.includes(by.kind);
+}
+
+/**
  * The actions a person may fire from a state — the ones that can be a button.
  *
  * Filtered on the actor list rather than on a hand-kept exclusion, so `resolve`
@@ -448,9 +461,14 @@ export function actionsFor(state: IssueState): IssueAction[] {
  * this is what makes that true of the UI rather than merely written down. A
  * transition added with `person` in its actor list appears here without anyone
  * remembering to add it.
+ *
+ * Asked through `actorPermits` with a class rather than by testing the list
+ * against a bare word, so this reads the permission set exactly the way the
+ * runtime guard does — which is what `caller`'s "never compare an identity
+ * against a permission list" rule is protecting.
  */
 export function personActionsFor(state: IssueState): IssueAction[] {
-  return actionsFor(state).filter((action) => ISSUE_TRANSITIONS[action].actor.includes("person"));
+  return actionsFor(state).filter((action) => actorPermits(action, { kind: "person" }));
 }
 
 /**
@@ -577,7 +595,7 @@ export function applyAction(issue: IssueCase, action: IssueAction, options: Tran
       `applyAction: ${action} is not legal from ${issue.state} (legal from ${transition.from.join(", ")}).`,
     );
   }
-  if (!transition.actor.includes(options.by.kind)) {
+  if (!actorPermits(action, options.by)) {
     throw new IssueCaseError(
       `applyAction: ${action} may be fired by ${transition.actor.join(", ")}; the caller offered ${options.by.kind}.`,
     );
