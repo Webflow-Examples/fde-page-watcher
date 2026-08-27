@@ -20,6 +20,7 @@ import type {
 } from "./agentAudit";
 import { latestExternalAgentSnapshot } from "./agentAudit";
 import { isAuditableOraTarget, normalizeOraTarget } from "./ora";
+import type { AgentResult } from "./vocabulary";
 
 /** An audit is stale for monitoring purposes once it passes a day old. */
 export const EXTERNAL_AGENT_FRESH_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -97,24 +98,62 @@ export function externalAgentStatusLabel(status: ExternalAgentAuditAvailability)
   }
 }
 
-/** Copy for one check result. Each state stays visibly distinct. */
-export function externalAgentResultLabel(result: ExternalAgentCheckResult): string {
+/**
+ * The registry words a provider reading can land on.
+ *
+ * `ignored` is the one `agent_result` value no external reading ever carries:
+ * it records a decision this app took, not something a provider measured. The
+ * boundary therefore maps onto five of the six, and the sixth stays unreachable
+ * from here by construction rather than by convention.
+ */
+export type ExternalAgentReading = Exclude<AgentResult, "ignored">;
+
+/**
+ * The one place a provider's word becomes the registry's.
+ *
+ * Total and lossless. Ora distinguishes a check it could not determine
+ * (`unavailable`) from one it decided does not apply (`not-applicable`), which
+ * is exactly the distinction `agent_result` draws — so neither is ever
+ * manufactured from the other. Rule 18: an absent reading is not a claim about
+ * scope, and mapping "could not determine" onto `not_applicable` would invent a
+ * claim nobody made.
+ *
+ * The switch is exhaustive with no `default`, so widening the provider union
+ * without deciding where the new word lands is a compile error rather than a
+ * silent fall through to `unavailable`.
+ */
+export function agentResultFromExternal(result: ExternalAgentCheckResult): ExternalAgentReading {
   switch (result) {
     case "pass":
-      return "Passing";
+      return "passed";
     case "partial":
-      return "Partial";
+      return "partial";
     case "failed":
-      return "Failing";
+      return "failed";
     case "not-applicable":
-      return "Not applicable";
-    default:
-      return "Not determined";
+      return "not_applicable";
+    case "unavailable":
+      return "unavailable";
   }
 }
 
+/**
+ * One provider finding, in the app's vocabulary.
+ *
+ * Identical to the stored shape but for the result, which has crossed the
+ * boundary. Nothing downstream of `orderedExternalFindings` sees a provider
+ * word, so nothing downstream needs to know the reading came from an audit.
+ */
+export type AgentAuditFinding = Omit<ExternalAgentFinding, "result"> & {
+  result: ExternalAgentReading;
+};
+
+function asAgentAuditFinding(finding: ExternalAgentFinding): AgentAuditFinding {
+  return { ...finding, result: agentResultFromExternal(finding.result) };
+}
+
 /** Whether a result reflects the site at all, or only the provider's reach. */
-export function externalAgentResultIsDetermined(result: ExternalAgentCheckResult): boolean {
+export function externalAgentResultIsDetermined(result: ExternalAgentReading): boolean {
   return result !== "unavailable";
 }
 
@@ -125,29 +164,32 @@ export function externalAgentResultIsDetermined(result: ExternalAgentCheckResult
  */
 export function orderedExternalFindings(
   snapshot: ExternalAgentAuditSnapshot,
-): ExternalAgentFinding[] {
-  const byId = new Map<string, ExternalAgentFinding[]>();
-  for (const finding of snapshot.findings) {
+): AgentAuditFinding[] {
+  // Crossed once, up front. Every array below holds these same objects, so the
+  // identity `taken` relies on survives the boundary.
+  const readings = snapshot.findings.map(asAgentAuditFinding);
+  const byId = new Map<string, AgentAuditFinding[]>();
+  for (const finding of readings) {
     const bucket = byId.get(finding.providerCheckId);
     if (bucket) bucket.push(finding);
     else byId.set(finding.providerCheckId, [finding]);
   }
-  const ordered: ExternalAgentFinding[] = [];
-  const taken = new Set<ExternalAgentFinding>();
+  const ordered: AgentAuditFinding[] = [];
+  const taken = new Set<AgentAuditFinding>();
   for (const id of snapshot.essentials?.issues ?? []) {
     for (const finding of byId.get(id) ?? []) {
       ordered.push(finding);
       taken.add(finding);
     }
   }
-  const rank: Record<ExternalAgentCheckResult, number> = {
+  const rank: Record<ExternalAgentReading, number> = {
     failed: 0,
     partial: 1,
     unavailable: 2,
-    pass: 3,
-    "not-applicable": 4,
+    passed: 3,
+    not_applicable: 4,
   };
-  const remaining = snapshot.findings.filter((finding) => !taken.has(finding));
+  const remaining = readings.filter((finding) => !taken.has(finding));
   // Stable partition by result only; within a result the provider's order holds.
   for (const group of [0, 1, 2, 3, 4]) {
     for (const finding of remaining) {
@@ -157,29 +199,23 @@ export function orderedExternalFindings(
   return ordered;
 }
 
-export interface ExternalAgentCounts {
-  failed: number;
-  partial: number;
-  pass: number;
-  notApplicable: number;
-  unavailable: number;
-}
+/**
+ * How many checks landed on each result, keyed by the registry's own words.
+ *
+ * A count per result and no total: the five are not a scale, and summing them
+ * would invent one.
+ */
+export type ExternalAgentCounts = Record<ExternalAgentReading, number>;
 
 export function externalAgentCounts(snapshot: ExternalAgentAuditSnapshot): ExternalAgentCounts {
   const counts: ExternalAgentCounts = {
     failed: 0,
     partial: 0,
-    pass: 0,
-    notApplicable: 0,
+    passed: 0,
+    not_applicable: 0,
     unavailable: 0,
   };
-  for (const finding of snapshot.findings) {
-    if (finding.result === "failed") counts.failed += 1;
-    else if (finding.result === "partial") counts.partial += 1;
-    else if (finding.result === "pass") counts.pass += 1;
-    else if (finding.result === "not-applicable") counts.notApplicable += 1;
-    else counts.unavailable += 1;
-  }
+  for (const finding of snapshot.findings) counts[agentResultFromExternal(finding.result)] += 1;
   return counts;
 }
 

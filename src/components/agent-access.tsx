@@ -1,15 +1,39 @@
 "use client";
 
 import { useState } from "react";
-import type {
-  AgentAccessSummary,
-  AgentAccessVerdict,
-  AgentIssueCase,
-  AgentIssueSource,
-  AgentIssueStatus,
-} from "@/lib/agentIssueCases";
-import { agentVerdictLabel, systemLabel } from "@/lib/agentIssueCases";
-import { Magnitude } from "@/components/magnitude";
+import Link from "next/link";
+import type { AgentIssueCase, AgentIssueSource, AgentIssueStatus } from "@/lib/agentIssueCases";
+import { systemLabel } from "@/lib/agentIssueCases";
+import { readingPredatesWithdrawal } from "@/lib/agentConsent";
+import { SETTINGS_CONSENT_STALE_READING } from "@/lib/settings-copy";
+import type { ExternalAgentConsentEntry } from "@/lib/types";
+import {
+  agentAgreement,
+  AGENT_ACCESS_SOURCES,
+  AGENT_RESULT_FOR_STATUS,
+  type AgentAccess,
+  type AgentReading,
+} from "@/lib/agent-access";
+import {
+  agentExcluded,
+  agentReadingsAgree,
+  agentReadingsConflict,
+  agentReadingsCount,
+  AGENT_CAUSE,
+  AGENT_LAST_CHECKED,
+  AGENT_NEXT_ACTION,
+  AGENT_READINGS_LABEL,
+  AGENT_TITLE,
+  AGENT_UNKNOWN,
+} from "@/lib/agent-copy";
+import {
+  AGENT_RESULT_LABEL,
+  AGENT_VERDICT_LABEL,
+  EVIDENCE_SOURCE_LABEL,
+  QUEUE_LABEL,
+  type AgentVerdict,
+} from "@/lib/vocabulary";
+import { formatDate } from "@/lib/watch-copy";
 import { StatusChip } from "@/components/status-chip";
 
 /**
@@ -20,19 +44,22 @@ import { StatusChip } from "@/components/status-chip";
 type HealthBand = "good" | "warn" | "poor" | "none";
 
 /**
- * Can agents use this site right now? That is a health question, so the verdict
- * gets a health band. `unknown` is not a warning — it is the absence of a
- * verdict, which is what `none` means.
+ * Can agents use this origin right now? That is a health question, so the
+ * verdict gets a health band. `unknown` is not a warning — it is the absence of
+ * a verdict, which is what `none` means.
+ *
+ * A `Record` over the registry's union rather than a ternary chain, so a
+ * verdict added to `agent_verdict` arrives here as a missing key.
  */
-function verdictTone(verdict: AgentAccessVerdict): HealthBand {
-  if (verdict === "ready") return "good";
-  if (verdict === "blocked") return "poor";
-  if (verdict === "needs-attention") return "warn";
-  return "none";
-}
+const VERDICT_BAND: Record<AgentVerdict, HealthBand> = {
+  ready: "good",
+  needs_work: "warn",
+  blocked: "poor",
+  unknown: "none",
+};
 
 /**
- * Same question, one issue at a time.
+ * Same question, one check at a time.
  *
  * `ignored` is deliberately not accepted here. A dismissed check is a work
  * state — somebody chose to exclude it — and R11 keeps work states out of the
@@ -93,14 +120,248 @@ function HealthChip({
   );
 }
 
-/** Every state reads differently, so partial can never look like pass or fail. */
+/**
+ * The verdict word and the date it was last checked, in one component.
+ *
+ * They are one component precisely so they cannot be separated. A verdict with
+ * no date is a claim with no evidence behind it, and the way to stop that
+ * happening is to make the date an argument of the thing that paints the word
+ * rather than a line somebody remembers to add underneath. `formatDate` says
+ * "date unknown" when there is nothing to show, so the slot is never empty and
+ * never filled with a plausible substitute.
+ */
+function VerdictLine({
+  verdict,
+  lastChecked,
+  locale,
+  fontSize = 12,
+}: {
+  verdict: AgentVerdict;
+  lastChecked: string | undefined;
+  locale?: string;
+  fontSize?: number;
+}) {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+      <HealthChip band={VERDICT_BAND[verdict]} label={AGENT_VERDICT_LABEL[verdict]} fontSize={fontSize} fontWeight={700} />
+      <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+        {AGENT_LAST_CHECKED} {formatDate(lastChecked, locale)}
+      </span>
+    </span>
+  );
+}
+
+/* ── The readings table ─────────────────────────────────────────────────── */
+
+/**
+ * One row per source. Five rows, and no sixth.
+ *
+ * There is deliberately no total row and no average: two sources reading the
+ * same origin differently is the thing this table exists to make visible, and a
+ * summary line at the bottom would resolve that disagreement before the reader
+ * saw it. The agreement sentence underneath counts rows instead, which is a
+ * figure the table itself can be checked against.
+ */
+function ReadingRow({
+  reading,
+  locale,
+  highlight,
+  consent,
+}: {
+  reading: AgentReading;
+  locale?: string;
+  highlight?: boolean;
+  consent?: AgentAccessConsent;
+}) {
+  const excluded = reading.applicability === "excluded";
+  // Only Ora's row. Kitesurf is not gated by this consent, and a clause about a
+  // permission that never governed a reading would be a claim about it that is
+  // simply untrue.
+  const stale = reading.source === "ora"
+    && readingPredatesWithdrawal(consent?.history, consent?.on === true, reading.observedAt);
+  return (
+    <div
+      role="row"
+      data-source={reading.source}
+      data-applicability={reading.applicability}
+      style={{
+        display: "grid",
+        gridTemplateColumns: "minmax(120px, 1fr) minmax(0, 2.2fr) auto",
+        gap: 12,
+        alignItems: "baseline",
+        padding: "9px 0",
+        borderTop: "1px solid var(--border-hairline)",
+        // Excluded is greyed, never hidden. The reading it last took stays
+        // legible; only its weight in the conclusion is gone.
+        color: excluded ? "var(--text-disabled-app)" : "var(--text-muted)",
+        ...(highlight ? { background: "var(--surface-raised)" } : {}),
+      }}
+    >
+      <div role="cell" style={{ fontWeight: 600, color: excluded ? "inherit" : "var(--text-body)" }}>
+        {EVIDENCE_SOURCE_LABEL[reading.source]}
+      </div>
+      <div role="cell" style={{ minWidth: 0, lineHeight: 1.5, fontSize: 12 }}>
+        {/* The source's own words, or an explicit nothing. Rule 18: an absent
+            reading says so rather than borrowing a sentence. */}
+        {reading.words ?? "—"}
+        {excluded && (
+          <div style={{ marginTop: 2 }}>{agentExcluded(reading.reason)}</div>
+        )}
+        {/* A reading taken while Ora was connected, on a project that has since
+            disconnected. It is a real reading and it stays exactly as legible as
+            the others — not greyed, not removed, not reordered. All the clause
+            does is say the permission behind it is gone, so a reader is not left
+            wondering why a source that is off has a row at all. The string is
+            imported rather than written here: Settings says it too, and two
+            renderers of one sentence is what rule 20 forbids. */}
+        {stale && (
+          <div style={{ marginTop: 2 }}>{SETTINGS_CONSENT_STALE_READING}</div>
+        )}
+      </div>
+      <div role="cell" style={{ display: "flex", alignItems: "baseline", gap: 10, whiteSpace: "nowrap", fontSize: 12 }}>
+        <span style={{ fontWeight: 600 }}>{AGENT_RESULT_LABEL[reading.result]}</span>
+        {/* Each source keeps its own date. Never the run's, never the newest. */}
+        <span>{formatDate(reading.observedAt, locale)}</span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Agent access, top to bottom: the verdict word, one paragraph naming which
+ * half is at fault, the next action with a link to the case, then every
+ * reading.
+ *
+ * The order is the point. A reader who stops after the first line has the
+ * conclusion; one who stops after the second knows whether the problem is
+ * getting in or being understood; one who reads on gets the single next step
+ * and then, underneath, every reading it was drawn from — unmerged.
+ */
+/**
+ * What the ledger needs to know about consent, and nothing more.
+ *
+ * The live boolean and the record behind it. Both, because "is this reading
+ * stale" cannot be answered from the boolean alone: a project that connected,
+ * disconnected and connected again has readings from two permitted stretches,
+ * and only the history says which side of the current withdrawal each one
+ * falls on.
+ */
+export interface AgentAccessConsent {
+  on: boolean;
+  history: readonly ExternalAgentConsentEntry[];
+}
+
+export function AgentAccessPanel({
+  access,
+  caseHref,
+  locale,
+  consent,
+}: {
+  access: AgentAccess;
+  /** Resolves a family key to `/issues/{id}`. Absent while no case exists yet. */
+  caseHref?: (key: string) => string | undefined;
+  locale?: string;
+  consent?: AgentAccessConsent;
+}) {
+  const agreement = agentAgreement(access);
+  const href = access.primary ? caseHref?.(access.primary.key) : undefined;
+  const disagreement = access.verdict === "unknown" && access.cause === "disagree"
+    ? access.disagreement
+    : null;
+  const conflicting = new Set(disagreement?.map((reading) => reading.source));
+
+  return (
+    <section
+      aria-labelledby="agent-access-heading"
+      style={{ background: "var(--surface-card)", border: "1px solid var(--border-hairline)", borderRadius: 13, padding: "17px 20px", marginBottom: 16 }}
+    >
+      <h2 id="agent-access-heading" style={{ margin: "0 0 10px", fontSize: 14.5, fontWeight: 600 }}>
+        {AGENT_TITLE}
+      </h2>
+
+      {/* 1. The verdict word, and the date it rests on. Inseparable by design. */}
+      <VerdictLine verdict={access.verdict} lastChecked={access.lastChecked} locale={locale} fontSize={13} />
+
+      {/* 2. One paragraph. For a failing verdict it names the half at fault; for
+             Unknown it names which of the two causes applies. Never both, and
+             the type makes never-neither a compile-time fact.
+
+             Ready has no paragraph rather than an empty one: there is nothing
+             at fault and nothing withheld, and the agreement line under the
+             table already says what the verdict rests on. */}
+      {access.verdict !== "ready" && (
+        <p style={{ margin: "10px 0 0", fontSize: 12.5, lineHeight: 1.55, color: "var(--text-muted)", maxWidth: "72ch" }}>
+          {access.verdict === "unknown" ? AGENT_UNKNOWN[access.cause] : AGENT_CAUSE[access.fault]}
+          {access.primary && ` ${access.primary.title}.`}
+        </p>
+      )}
+
+      {/* 2a. The two readings that contradict each other, adjacent, so the
+              reader can see the disagreement rather than take it on trust. */}
+      {disagreement && (
+        <div role="table" aria-label="Conflicting readings" style={{ marginTop: 10, border: "1px solid var(--border-hairline)", borderRadius: 9, padding: "0 12px" }}>
+          {disagreement.map((reading) => (
+            <ReadingRow key={`conflict-${reading.source}`} reading={reading} locale={locale} consent={consent} />
+          ))}
+        </div>
+      )}
+
+      {/* 3. The next action, and the case it belongs to. One case, named — not
+             a list of every cause that contributed. */}
+      {access.primary && (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)" }}>{AGENT_NEXT_ACTION}</div>
+          <div style={{ fontSize: 12.5, marginTop: 2, lineHeight: 1.5 }}>
+            {access.primary.nextAction}
+            {href && (
+              <>
+                {" "}
+                <Link href={href} style={{ color: "var(--action-primary-ink)", fontWeight: 600 }}>
+                  Open the case
+                </Link>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 4. Every reading. */}
+      <div role="table" aria-labelledby="agent-readings-heading" style={{ marginTop: 16 }}>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
+          <h3 id="agent-readings-heading" style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>
+            {AGENT_READINGS_LABEL}
+          </h3>
+          <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+            {agentReadingsCount(AGENT_ACCESS_SOURCES.length)}
+          </span>
+        </div>
+        {access.readings.map((reading) => (
+          <ReadingRow
+            key={reading.source}
+            reading={reading}
+            locale={locale}
+            highlight={conflicting.has(reading.source)}
+            consent={consent}
+          />
+        ))}
+        <p style={{ margin: "10px 0 0", fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
+          {disagreement
+            ? agentReadingsConflict(
+              EVIDENCE_SOURCE_LABEL[disagreement[0].source],
+              EVIDENCE_SOURCE_LABEL[disagreement[1].source],
+            )
+            : agentReadingsAgree(agreement.count, agreement.result, access.verdict)}
+        </p>
+      </div>
+    </section>
+  );
+}
+
+/* ── The case list underneath ───────────────────────────────────────────── */
+
+/** Every state reads differently, in the registry's own words. */
 export function agentStatusLabel(status: AgentIssueStatus): string {
-  return status === "pass" ? "Passing"
-    : status === "failed" ? "Failing"
-      : status === "partial" ? "Partial"
-        : status === "not-applicable" ? "Not applicable"
-          : status === "ignored" ? "Ignored"
-            : "Not determined";
+  return AGENT_RESULT_LABEL[AGENT_RESULT_FOR_STATUS[status]];
 }
 
 type ConfidenceStrength = "strong" | "weak";
@@ -141,93 +402,24 @@ function SourceRow({ source }: { source: AgentIssueSource }) {
       <span style={{ color: "var(--text-muted)", minWidth: 108 }}>{systemLabel(source.system)}</span>
       <span style={{ flex: 1, minWidth: 0 }}>
         {source.label} · {agentStatusLabel(source.result)}
-        <span style={{ color: "var(--text-muted)" }}> · {source.scope === "origin" ? "origin-wide" : "this page"}</span>
+        <span style={{ color: "var(--text-muted)" }}> · {source.scope === "origin" ? "the whole site" : "this page"}</span>
       </span>
     </li>
-  );
-}
-
-/**
- * Verdict-first summary. Deliberately leads with a conclusion rather than a
- * score: the reading order is verdict, then the single highest-priority issue,
- * then the next action, with per-source numbers kept underneath.
- */
-export function AgentAccessVerdictCard({
-  summary,
-  freshness,
-}: {
-  summary: AgentAccessSummary;
-  freshness?: string;
-}) {
-  return (
-    <section
-      aria-labelledby="agent-access-verdict-heading"
-      style={{ background: "var(--surface-card)", border: "1px solid var(--border-hairline)", borderRadius: 13, padding: "17px 20px", marginBottom: 16 }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        <HealthChip band={verdictTone(summary.verdict)} label={agentVerdictLabel(summary.verdict)} fontWeight={700} />
-        <h2 id="agent-access-verdict-heading" style={{ margin: 0, fontSize: 14.5, fontWeight: 600 }}>
-          {summary.headline}
-        </h2>
-      </div>
-
-      {summary.primary && (
-        <div style={{ marginTop: 12 }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)" }}>Primary issue</div>
-          <div style={{ fontSize: 13, marginTop: 2 }}>{summary.primary.title}</div>
-          <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 3, lineHeight: 1.5 }}>
-            {summary.primary.consequence}
-          </div>
-        </div>
-      )}
-
-      {summary.nextAction && (
-        <div style={{ marginTop: 12 }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)" }}>Next action</div>
-          <div style={{ fontSize: 12.5, marginTop: 2, lineHeight: 1.5 }}>{summary.nextAction}</div>
-        </div>
-      )}
-
-      {/*
-        These three counts used to repeat the verdict badge ten lines above in
-        red, amber, and grey — a second, quieter opinion about the same facts.
-        They are quantities, so they answer "how much" with weight (R3) and the
-        verdict keeps the only hue on the card.
-      */}
-      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: 14, marginTop: 12, fontSize: 12 }}>
-        {summary.blockers > 0 && (
-          <Magnitude
-            value={summary.blockers}
-            unit={`essential blocker${summary.blockers === 1 ? "" : "s"}`}
-            fontSize={12}
-          />
-        )}
-        {summary.improvements > 0 && (
-          <Magnitude
-            value={summary.improvements}
-            unit={`recommended improvement${summary.improvements === 1 ? "" : "s"}`}
-            fontSize={12}
-          />
-        )}
-        {summary.undetermined > 0 && (
-          <Magnitude value={summary.undetermined} unit="not determined" fontSize={12} />
-        )}
-        {freshness && <span style={{ color: "var(--text-muted)" }}>{freshness}</span>}
-      </div>
-    </section>
   );
 }
 
 function IssueRow({
   issue,
   canManage,
-  onAddToTasks,
-  taskState,
+  onTrack,
+  tracked,
+  href,
 }: {
   issue: AgentIssueCase;
   canManage: boolean;
-  onAddToTasks?: (issue: AgentIssueCase) => void;
-  taskState?: "none" | "tracked";
+  onTrack?: (issue: AgentIssueCase) => void;
+  tracked?: boolean;
+  href?: string;
 }) {
   const [open, setOpen] = useState(false);
   const confidence = confidenceReading(issue);
@@ -245,7 +437,7 @@ function IssueRow({
         <StatusBadge status={issue.status} />
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 4, fontSize: 12, color: "var(--text-muted)" }}>
-        <span>{issue.scope === "origin" ? "Origin-wide" : "This page"}</span>
+        <span>{issue.scope === "origin" ? "The whole site" : "This page"}</span>
         <span style={{ color: `var(--confidence-${confidence.strength})` }}>{confidence.label}</span>
         {/*
           A tier is a classification of the check, not a verdict on the page:
@@ -294,27 +486,33 @@ function IssueRow({
             </div>
           </details>
 
-          {onAddToTasks && canManage && (
+          {/*
+            Once a finding is tracked it is a case, so the row links to it
+            instead of offering to file it twice. Before that it offers the one
+            queue the registry has for work somebody has said yes to.
+          */}
+          {tracked && href && (
+            <Link href={href} style={{ display: "inline-block", marginTop: 12, fontSize: 12, fontWeight: 600, color: "var(--action-primary-ink)" }}>
+              Open the case
+            </Link>
+          )}
+          {!tracked && onTrack && canManage && (
             <button
               type="button"
-              onClick={() => onAddToTasks(issue)}
-              disabled={taskState === "tracked"}
+              onClick={() => onTrack(issue)}
               style={{
                 marginTop: 12,
                 border: "1px solid var(--border-strong)",
                 background: "transparent",
-                // The label already swaps to "Already in Tasks"; the ink only
-                // has to stop looking clickable, which is what the disabled
-                // token is for.
-                color: taskState === "tracked" ? "var(--text-disabled-app)" : "var(--text-muted)",
+                color: "var(--text-muted)",
                 fontSize: 12,
                 fontWeight: 600,
                 padding: "7px 11px",
                 borderRadius: 7,
-                cursor: taskState === "tracked" ? "default" : "pointer",
+                cursor: "pointer",
               }}
             >
-              {taskState === "tracked" ? "Already in Tasks" : "Add remediation to Tasks"}
+              {`Add to the ${QUEUE_LABEL.fix} queue`}
             </button>
           )}
         </div>
@@ -327,17 +525,33 @@ function IssueRow({
 export function AgentIssueCaseList({
   cases,
   canManage,
-  onAddToTasks,
+  onTrack,
   trackedKeys,
+  caseHref,
 }: {
   cases: AgentIssueCase[];
   canManage: boolean;
-  onAddToTasks?: (issue: AgentIssueCase) => void;
+  onTrack?: (issue: AgentIssueCase) => void;
   trackedKeys?: Set<string>;
+  caseHref?: (key: string) => string | undefined;
 }) {
   const [showResolved, setShowResolved] = useState(false);
   const open = cases.filter((issue) => issue.status === "failed" || issue.status === "partial");
   const rest = cases.filter((issue) => issue.status !== "failed" && issue.status !== "partial");
+  const rowFor = (issue: AgentIssueCase) => {
+    const tracked = trackedKeys?.has(issue.key) ?? false;
+    const href = caseHref?.(issue.key);
+    return (
+      <IssueRow
+        key={issue.key}
+        issue={issue}
+        canManage={canManage}
+        onTrack={onTrack}
+        tracked={tracked}
+        {...(href ? { href } : {})}
+      />
+    );
+  };
 
   return (
     <section
@@ -357,17 +571,7 @@ export function AgentIssueCaseList({
           No open agent-access issues in the current evidence.
         </div>
       )}
-      <ul style={{ margin: 0, padding: 0 }}>
-        {open.map((issue) => (
-          <IssueRow
-            key={issue.key}
-            issue={issue}
-            canManage={canManage}
-            onAddToTasks={onAddToTasks}
-            taskState={trackedKeys?.has(issue.key) ? "tracked" : "none"}
-          />
-        ))}
-      </ul>
+      <ul style={{ margin: 0, padding: 0 }}>{open.map(rowFor)}</ul>
 
       {rest.length > 0 && (
         <>
@@ -378,35 +582,31 @@ export function AgentIssueCaseList({
             style={{ border: "none", background: "none", color: "var(--action-primary-ink)", fontSize: 12, fontWeight: 600, padding: 0, marginTop: 12, cursor: "pointer" }}
           >
             {showResolved
-              ? "Hide passing, ignored, and not-applicable issues"
-              : `Show ${rest.length} passing, ignored, and not-applicable issue${rest.length === 1 ? "" : "s"}`}
+              ? "Hide the issues that are passing, excluded, or not applicable"
+              : `Show ${rest.length} passing, excluded, or not-applicable issue${rest.length === 1 ? "" : "s"}`}
           </button>
-          {showResolved && (
-            <ul style={{ margin: "6px 0 0", padding: 0 }}>
-              {rest.map((issue) => (
-                <IssueRow
-                  key={issue.key}
-                  issue={issue}
-                  canManage={canManage}
-                  onAddToTasks={onAddToTasks}
-                  taskState={trackedKeys?.has(issue.key) ? "tracked" : "none"}
-                />
-              ))}
-            </ul>
-          )}
+          {showResolved && <ul style={{ margin: "6px 0 0", padding: 0 }}>{rest.map(rowFor)}</ul>}
         </>
       )}
     </section>
   );
 }
 
-/** Compact verdict chip for the dashboard. Never shows a provider score. */
-export function AgentAccessChip({ verdict }: { verdict: AgentAccessVerdict }) {
-  return (
-    <HealthChip
-      band={verdictTone(verdict)}
-      label={`Agents: ${agentVerdictLabel(verdict)}`}
-      title={`Agent access: ${agentVerdictLabel(verdict)}`}
-    />
-  );
+/**
+ * Compact verdict for the pages overview.
+ *
+ * Takes the date for the same reason the panel does: this is the same verdict,
+ * and a verdict is never rendered without the date it was last checked. Never a
+ * provider score.
+ */
+export function AgentAccessChip({
+  verdict,
+  lastChecked,
+  locale,
+}: {
+  verdict: AgentVerdict;
+  lastChecked: string | undefined;
+  locale?: string;
+}) {
+  return <VerdictLine verdict={verdict} lastChecked={lastChecked} locale={locale} />;
 }

@@ -23,6 +23,7 @@
 
 import type { AgentCheck, AgentIgnoreSettings, KitesurfEvidence } from "./types";
 import { isAgentCheckIgnored } from "./agentScoring";
+import { EVIDENCE_SOURCE_LABEL, type EvidenceSource } from "./vocabulary";
 import type {
   ExternalAgentAuditSnapshot,
   ExternalAgentCheckResult,
@@ -58,6 +59,24 @@ export type AgentIssueConfidence =
 
 export type AgentEvidenceSystem = "page-watch" | "kitesurf" | "ora";
 
+/**
+ * Which half of agent access a problem sits in.
+ *
+ * Two halves, in this order, because the first is the precondition for the
+ * second: an agent must reach the origin before anything it reads there can
+ * matter. `reach` covers admission and discovery — the origin refuses the
+ * agent, or never tells it where to go. `comprehension` covers everything
+ * after the response arrives: the agent got in and could not parse, or could
+ * not act on, what it was given.
+ *
+ * This is NOT a second verdict. It never renders as a state, a chip or a
+ * count; it selects which of two sentences the verdict's subline says. A
+ * second verdict splitting reach from comprehension was considered and
+ * deferred, and adding one needs an amendment to `agent_verdict` in
+ * `vocabulary.json` rather than a new union here.
+ */
+export type AgentHalf = "reach" | "comprehension";
+
 export interface AgentIssueSource {
   system: AgentEvidenceSystem;
   /** Display label for the individual reading, e.g. the check name. */
@@ -77,6 +96,8 @@ export interface AgentIssueCase {
   /** Why this matters to an agent, in plain language. */
   consequence: string;
   scope: AgentIssueScope;
+  /** Which half of agent access is at fault when this case is failing. */
+  half: AgentHalf;
   status: AgentIssueStatus;
   tier: ExternalAgentTier;
   confidence: AgentIssueConfidence;
@@ -92,6 +113,11 @@ export interface AgentIssueCase {
 }
 
 interface IssueFamily {
+  /**
+   * Required, so a family added without deciding which half it belongs to is a
+   * compile error rather than a case that renders a verdict with no subline.
+   */
+  half: AgentHalf;
   title: string;
   consequence: string;
   scope: AgentIssueScope;
@@ -109,9 +135,19 @@ interface IssueFamily {
  * A family may be evidenced by Page Watch alone, Ora alone, or both. Only clear
  * semantic equivalents are grouped; a provider check with no confident local
  * counterpart keeps its own family rather than being folded into a neighbour.
+ *
+ * Every family declares its `half`. The line between the two is admission and
+ * discovery on one side, and what the agent can do with the response on the
+ * other: robots policy, bot management, sitemaps, link headers, DNS discovery,
+ * rate limits, OAuth discovery, Web Bot Auth and MCP discovery all decide
+ * whether the agent gets in and finds the door, so they are `reach`. Markdown,
+ * no-JS content, error shapes, OpenAPI, scopes, auth docs, MCP resources,
+ * WebMCP, agent cards, skills indexes and payment protocols are all read or
+ * used after a response arrives, so they are `comprehension`.
  */
 export const AGENT_ISSUE_FAMILIES: Readonly<Record<string, IssueFamily>> = {
   "agent-discoverability:robots": {
+    half: "reach",
     title: "Agent crawler policy is unclear",
     consequence: "Agents read robots.txt before anything else. An unclear or hostile policy stops well-behaved agents from reading the site at all.",
     scope: "origin",
@@ -120,11 +156,12 @@ export const AGENT_ISSUE_FAMILIES: Readonly<Record<string, IssueFamily>> = {
       "State an explicit Allow or Disallow for each; silence is read as ambiguity.",
       "Keep the policy consistent with any Content Signals or bot-management rules already in force.",
     ],
-    successCriteria: "robots.txt resolves and states an explicit policy for AI user agents.",
+    successCriteria: "Your robots.txt file loads and states, for each AI crawler, whether it may read the site.",
     localChecks: ["robots.txt", "AI bot rules", "Content Signals"],
     oraChecks: ["robots-ai-policy-quality", "robots-agent-user-policy"],
   },
   "agent-access:reachability": {
+    half: "reach",
     title: "Agents are blocked before they reach the page",
     consequence: "Bot management or edge rules reject agent traffic, so no other signal on the site can be read.",
     scope: "origin",
@@ -136,6 +173,7 @@ export const AGENT_ISSUE_FAMILIES: Readonly<Record<string, IssueFamily>> = {
     oraChecks: ["bot-detection", "agent-crawler-reachability"],
   },
   "agent-discoverability:sitemap": {
+    half: "reach",
     title: "Agents cannot enumerate the site",
     consequence: "Without a reachable sitemap an agent has to guess which URLs exist, so it finds less of the site and re-crawls more often.",
     scope: "origin",
@@ -148,7 +186,8 @@ export const AGENT_ISSUE_FAMILIES: Readonly<Record<string, IssueFamily>> = {
     oraChecks: ["sitemap", "sitemap-lastmod"],
   },
   "agent-discoverability:link-headers": {
-    title: "Related resources are not discoverable from HTTP",
+    half: "reach",
+    title: "Agents must load the whole page to find related documents (no Link headers)",
     consequence: "Link headers let an agent find alternates and related documents without parsing the page. Without them it has to render first.",
     scope: "origin",
     remediation: ["Emit RFC 8288 Link headers for alternates and related agent resources."],
@@ -157,7 +196,8 @@ export const AGENT_ISSUE_FAMILIES: Readonly<Record<string, IssueFamily>> = {
     oraChecks: ["link-headers-discovery"],
   },
   "agent-discoverability:dns": {
-    title: "No DNS-level agent discovery record",
+    half: "reach",
+    title: "Nothing in the domain records points agents anywhere (no DNS-AID record)",
     consequence: "DNS-AID lets an agent find the site's agent entry points before making a single HTTP request.",
     scope: "origin",
     remediation: ["Publish a DNS for AI Discovery record pointing at the agent resources you expose."],
@@ -165,7 +205,8 @@ export const AGENT_ISSUE_FAMILIES: Readonly<Record<string, IssueFamily>> = {
     localChecks: ["DNS for AI Discovery (DNS-AID)"],
   },
   "agent-content:markdown": {
-    title: "Agents cannot get a clean text version of the page",
+    half: "comprehension",
+    title: "Agents cannot get a plain-text version of the page",
     consequence: "Agents parse Markdown far more reliably than rendered HTML. Without negotiation they burn context on markup, or misread the page.",
     scope: "origin",
     remediation: [
@@ -177,7 +218,8 @@ export const AGENT_ISSUE_FAMILIES: Readonly<Record<string, IssueFamily>> = {
     oraChecks: ["markdown-negotiation", "markdown-negotiation-vary"],
   },
   "agent-content:no-js": {
-    title: "The page has no content without JavaScript",
+    half: "comprehension",
+    title: "The page is empty until scripts run",
     consequence: "Most agents do not execute JavaScript. If the primary content only appears after hydration, they see an empty page.",
     scope: "origin",
     remediation: [
@@ -188,6 +230,7 @@ export const AGENT_ISSUE_FAMILIES: Readonly<Record<string, IssueFamily>> = {
     oraChecks: ["content-no-js"],
   },
   "agent-http:recovery": {
+    half: "comprehension",
     title: "Missing pages do not return a real error",
     consequence: "A soft 404 teaches an agent that a wrong URL is a valid page, so it keeps following and citing broken links.",
     scope: "origin",
@@ -199,7 +242,8 @@ export const AGENT_ISSUE_FAMILIES: Readonly<Record<string, IssueFamily>> = {
     oraChecks: ["agent-friendly-404"],
   },
   "agent-api:openapi": {
-    title: "Agents cannot reliably discover machine-readable API documentation",
+    half: "comprehension",
+    title: "Agents cannot find documentation for your interfaces (no API catalogue)",
     consequence: "Without a published contract an agent has to infer endpoints and parameters from prose, which it will get wrong.",
     scope: "origin",
     remediation: [
@@ -211,7 +255,8 @@ export const AGENT_ISSUE_FAMILIES: Readonly<Record<string, IssueFamily>> = {
     oraChecks: ["openapi-spec", "api-catalog-rfc9727", "public-api-docs"],
   },
   "agent-api:errors": {
-    title: "API errors are not machine-readable",
+    half: "comprehension",
+    title: "When a request fails, agents get a message they cannot read (unstructured API errors)",
     consequence: "An agent that cannot tell a rate limit from a validation failure retries the wrong thing, or gives up on a recoverable error.",
     scope: "origin",
     remediation: [
@@ -222,6 +267,7 @@ export const AGENT_ISSUE_FAMILIES: Readonly<Record<string, IssueFamily>> = {
     oraChecks: ["json-error-responses", "api-error-model"],
   },
   "agent-api:rate-limits": {
+    half: "reach",
     title: "Rate limits are invisible to agents",
     consequence: "Without rate-limit headers an agent cannot pace itself, so it either backs off far too hard or keeps hitting the limit.",
     scope: "origin",
@@ -230,6 +276,7 @@ export const AGENT_ISSUE_FAMILIES: Readonly<Record<string, IssueFamily>> = {
     oraChecks: ["rate-limit-headers"],
   },
   "agent-auth:oauth": {
+    half: "reach",
     title: "Agents cannot discover how to authenticate",
     consequence: "Without discoverable OAuth metadata an agent cannot begin an authorization flow on its own.",
     scope: "origin",
@@ -242,6 +289,7 @@ export const AGENT_ISSUE_FAMILIES: Readonly<Record<string, IssueFamily>> = {
     oraChecks: ["oauth-support", "oauth-protected-resource"],
   },
   "agent-auth:scopes": {
+    half: "comprehension",
     title: "Permissions are not scoped for agents",
     consequence: "Without documented scopes an agent must request more access than the task needs, which users are right to refuse.",
     scope: "origin",
@@ -250,6 +298,7 @@ export const AGENT_ISSUE_FAMILIES: Readonly<Record<string, IssueFamily>> = {
     oraChecks: ["scoped-permissions"],
   },
   "agent-auth:docs": {
+    half: "comprehension",
     title: "Authentication is not documented for agents",
     consequence: "An agent that cannot read how to authenticate will not attempt the flow at all.",
     scope: "origin",
@@ -259,6 +308,7 @@ export const AGENT_ISSUE_FAMILIES: Readonly<Record<string, IssueFamily>> = {
     oraChecks: ["auth-md-exists", "auth-md-structure"],
   },
   "agent-auth:bot-auth": {
+    half: "reach",
     title: "Verified agent traffic cannot be distinguished",
     consequence: "Without Web Bot Auth the site cannot tell a verified agent from an impostor, so it has to treat both the same way.",
     scope: "origin",
@@ -268,7 +318,8 @@ export const AGENT_ISSUE_FAMILIES: Readonly<Record<string, IssueFamily>> = {
     oraChecks: ["web-bot-auth-directory"],
   },
   "agent-mcp:discovery": {
-    title: "No MCP server is discoverable",
+    half: "reach",
+    title: "Agents cannot find any tools this site offers them (no MCP server)",
     consequence: "MCP is how an agent takes action rather than only reading. Without a discoverable server the site is read-only to agents.",
     scope: "origin",
     remediation: [
@@ -280,7 +331,8 @@ export const AGENT_ISSUE_FAMILIES: Readonly<Record<string, IssueFamily>> = {
     oraChecks: ["mcp-server", "mcp-well-known-discovery", "mcp-server-card"],
   },
   "agent-mcp:resources": {
-    title: "MCP resources are missing or poorly described",
+    half: "comprehension",
+    title: "The tools the site offers agents are unnamed or unexplained (MCP resources)",
     consequence: "An agent chooses tools by their descriptions. Thin or missing resource metadata makes it pick the wrong one.",
     scope: "origin",
     remediation: [
@@ -291,6 +343,7 @@ export const AGENT_ISSUE_FAMILIES: Readonly<Record<string, IssueFamily>> = {
     oraChecks: ["mcp-resource-listing", "mcp-resource-quality"],
   },
   "agent-mcp:webmcp": {
+    half: "comprehension",
     title: "The page exposes no in-page agent interface",
     consequence: "WebMCP lets an agent act on the page it is already reading instead of finding a separate API.",
     scope: "origin",
@@ -300,6 +353,7 @@ export const AGENT_ISSUE_FAMILIES: Readonly<Record<string, IssueFamily>> = {
     oraChecks: ["webmcp"],
   },
   "agent-a2a:card": {
+    half: "comprehension",
     title: "No agent card is published",
     consequence: "An A2A agent card is how other agents learn what this product's agent can do.",
     scope: "origin",
@@ -309,6 +363,7 @@ export const AGENT_ISSUE_FAMILIES: Readonly<Record<string, IssueFamily>> = {
     oraChecks: ["a2a-agent-card"],
   },
   "agent-skills:index": {
+    half: "comprehension",
     title: "No agent skills index is published",
     consequence: "A skills index tells an agent which packaged capabilities exist instead of making it infer them.",
     scope: "origin",
@@ -318,6 +373,7 @@ export const AGENT_ISSUE_FAMILIES: Readonly<Record<string, IssueFamily>> = {
     oraChecks: ["agent-skills-index-v2"],
   },
   "agent-commerce:protocols": {
+    half: "comprehension",
     title: "Agents cannot transact",
     consequence: "Without a supported payment protocol an agent can research a purchase but has to hand the last step back to a human.",
     scope: "origin",
@@ -417,8 +473,28 @@ function caseConfidence(
   return { confidence: systems.size > 1 ? "corroborated" : "single-source" };
 }
 
+/**
+ * The name a reader sees for the system that took a reading.
+ *
+ * Read off the registry rather than spelled out again. This used to hold its
+ * own three strings — "Page Watch HTTP", the "Kitesurf" codename, and "Ora" —
+ * which is the rule 20 defect: three names for systems the evidence ledger
+ * already names, agreeing until the day one of them was reworded. Registry v10
+ * renamed one of the three, and this is the mapping that makes the rename
+ * arrive here instead of leaving a fourth spelling behind.
+ *
+ * The keys differ from the ledger's by one: this type's `page-watch` is the
+ * ledger's `agent-readiness` slot, which the registry notes carries "only Page
+ * Watch's reading".
+ */
+const EVIDENCE_SOURCE_OF: Record<AgentEvidenceSystem, EvidenceSource> = {
+  "page-watch": "agent-readiness",
+  kitesurf: "kitesurf",
+  ora: "ora",
+};
+
 export function systemLabel(system: AgentEvidenceSystem): string {
-  return system === "page-watch" ? "Page Watch HTTP" : system === "kitesurf" ? "Kitesurf" : "Ora";
+  return EVIDENCE_SOURCE_LABEL[EVIDENCE_SOURCE_OF[system]];
 }
 
 export interface AssembleAgentIssueCasesInput {
@@ -471,6 +547,29 @@ export function assembleAgentIssueCases(
     });
   }
 
+  // Kitesurf fetches the published page with a non-Chromium client, which is
+  // the same question `agent-access:reachability` asks: does this origin serve
+  // a normal response to something that is not a browser? Until S4 this input
+  // was accepted and never read, so the kitesurf slot in the ledger had no
+  // producer on the agent surface and its row could only ever say Unavailable
+  // — registry rule 15, and the reason a probe that saw a 403 could not
+  // contradict a Page Watch check that saw a 200.
+  if (input.kitesurf) {
+    const probe = input.kitesurf;
+    const answered = probe.httpStatus !== undefined && probe.httpStatus >= 200 && probe.httpStatus < 400;
+    add("agent-access:reachability", {
+      system: "kitesurf",
+      label: "Rendered page probe",
+      result: probe.status !== "available" || probe.httpStatus === undefined
+        ? "unavailable"
+        : answered ? "pass" : "failed",
+      scope: "page",
+      observedAt: probe.capturedAt,
+      // The probe's own reading, in its own terms. Never restated as a verdict.
+      ...(probe.httpStatus === undefined ? {} : { detail: `HTTP ${probe.httpStatus}` }),
+    });
+  }
+
   const providerOnly: ExternalAgentFinding[] = [];
   for (const finding of snapshot?.findings ?? []) {
     const family = familyForOraCheck(finding.providerCheckId);
@@ -510,6 +609,7 @@ export function assembleAgentIssueCases(
       title: family.title,
       consequence: family.consequence,
       scope: family.scope,
+      half: family.half,
       status,
       tier: tierFor(key),
       confidence,
@@ -530,6 +630,11 @@ export function assembleAgentIssueCases(
       title: finding.name,
       consequence: "Reported by Ora only. Page Watch has no independent check for this, so treat it as a single provider reading.",
       scope: "origin",
+      // Comprehension, and not a guess: this reading exists only because the
+      // provider reached the origin and evaluated something there. A check the
+      // provider could run is by definition not a check the agent was refused,
+      // so whatever it found wrong is on the far side of the response.
+      half: "comprehension",
       status,
       tier: finding.tier,
       confidence: status === "not-applicable" || status === "unavailable"
@@ -574,87 +679,25 @@ export function essentialAgentBlockers(cases: AgentIssueCase[]): AgentIssueCase[
   return cases.filter((item) => item.status === "failed" && item.tier === "essential");
 }
 
-export type AgentAccessVerdict = "ready" | "needs-attention" | "blocked" | "unknown";
-
-export interface AgentAccessSummary {
-  verdict: AgentAccessVerdict;
-  headline: string;
-  /** The single highest-priority case, when there is one. */
-  primary: AgentIssueCase | null;
-  nextAction: string | null;
-  blockers: number;
-  improvements: number;
-  /** Cases where no system could determine a result. */
-  undetermined: number;
+/**
+ * Cases whose determined sources do not agree with each other.
+ *
+ * `caseConfidence` has already worked this out per case and recorded it; this
+ * is the one place that reads it back, so "the sources disagree" is asked as a
+ * question about the ledger rather than recomputed from the readings a second
+ * time and allowed to drift from the sentence shown beside them.
+ */
+export function disputedAgentIssueCases(cases: readonly AgentIssueCase[]): AgentIssueCase[] {
+  return cases.filter((item) => item.confidence === "conflicting");
 }
 
 /**
- * Produce the product verdict. Deliberately not a score: it answers "can agents
- * use this site" rather than "what percentage passed", and it never mixes the
- * provider's numbers with Page Watch's.
+ * Cases where at least one system actually determined a result.
+ *
+ * Not the same as "cases": a family every system reported Unavailable on has a
+ * row and no reading, and registry rule 18 says an absent measurement is not a
+ * small one.
  */
-export function agentAccessSummary(cases: AgentIssueCase[]): AgentAccessSummary {
-  const determined = cases.filter((item) =>
-    item.status === "failed" || item.status === "partial" || item.status === "pass");
-  const blockers = essentialAgentBlockers(cases);
-  const actionable = actionableAgentIssueCases(cases);
-  const undetermined = cases.filter((item) => item.status === "unavailable").length;
-
-  if (determined.length === 0) {
-    return {
-      verdict: "unknown",
-      headline: cases.length === 0
-        ? "No agent-access evidence yet"
-        : "Agent access could not be determined",
-      primary: null,
-      nextAction: cases.length === 0
-        ? "Run a collection, or refresh the external audit, to gather evidence."
-        : "No source could determine a result. Retry once the next scan completes.",
-      blockers: 0,
-      improvements: 0,
-      undetermined,
-    };
-  }
-
-  const primary = blockers[0] ?? actionable[0] ?? null;
-  const improvements = actionable.length - blockers.length;
-
-  if (blockers.length > 0) {
-    return {
-      verdict: "blocked",
-      headline: `${blockers.length} essential blocker${blockers.length === 1 ? "" : "s"}`,
-      primary,
-      nextAction: primary?.remediation[0] ?? null,
-      blockers: blockers.length,
-      improvements,
-      undetermined,
-    };
-  }
-  if (actionable.length > 0) {
-    return {
-      verdict: "needs-attention",
-      headline: `${actionable.length} issue${actionable.length === 1 ? "" : "s"} to address`,
-      primary,
-      nextAction: primary?.remediation[0] ?? null,
-      blockers: 0,
-      improvements,
-      undetermined,
-    };
-  }
-  return {
-    verdict: "ready",
-    headline: "No agent-access issues detected",
-    primary: null,
-    nextAction: null,
-    blockers: 0,
-    improvements: 0,
-    undetermined,
-  };
-}
-
-export function agentVerdictLabel(verdict: AgentAccessVerdict): string {
-  return verdict === "ready" ? "Ready"
-    : verdict === "needs-attention" ? "Needs attention"
-      : verdict === "blocked" ? "Blocked"
-        : "Unknown";
+export function determinedAgentIssueCases(cases: readonly AgentIssueCase[]): AgentIssueCase[] {
+  return cases.filter((item) => item.confidence !== "insufficient");
 }

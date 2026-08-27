@@ -10,18 +10,32 @@ import { median } from "./scoring";
 
 type UnknownRecord = Record<string, unknown>;
 
+/**
+ * What each finding is called, in words rather than in the upstream key.
+ *
+ * The keys are Lighthouse audit ids and stay keys — they are how a reading is
+ * matched to the report it came from. None of them is a name for the problem,
+ * which is why none of them reaches a reader: "uses-optimized-images" sends
+ * somebody who searches for it to Google's documentation instead of to their
+ * own page.
+ *
+ * A title is short because it labels a row, so where an industry term is worth
+ * keeping the appositive lands in the sentence beside it rather than here. Two
+ * of these carry the term anyway, because the plain phrase alone would not tell
+ * a reader which measurement moved.
+ */
 const TITLES: Record<string, string> = {
-  "dom-size": "DOM structure",
-  "unused-css-rules": "Unused CSS",
-  "unused-javascript": "Unused JavaScript",
-  "unminified-javascript": "Unminified JavaScript",
-  "legacy-javascript": "Legacy JavaScript",
-  "third-party-summary": "Third-party JavaScript",
-  "render-blocking-resources": "Render-blocking resources",
-  "render-blocking-insight": "Render-blocking resources",
-  "uses-responsive-images": "Oversized images",
-  "uses-optimized-images": "Image encoding waste",
-  "largest-contentful-paint-element": "Largest Contentful Paint element",
+  "dom-size": "Deeply nested elements",
+  "unused-css-rules": "Style rules the page never uses",
+  "unused-javascript": "Code the page never runs",
+  "unminified-javascript": "Code shipped larger than it needs to be",
+  "legacy-javascript": "Code written for browsers nobody uses",
+  "third-party-summary": "Code from other companies",
+  "render-blocking-resources": "Files that delay the first text",
+  "render-blocking-insight": "Files that delay the first text",
+  "uses-responsive-images": "Images bigger than they are shown",
+  "uses-optimized-images": "Images heavier than they need to be",
+  "largest-contentful-paint-element": "The main thing a visitor waits for (largest contentful paint element)",
 };
 
 /**
@@ -95,10 +109,12 @@ function domEvidence(details: UnknownRecord): CulpritEvidenceFact[] {
     if (value !== undefined) stats.set(item.statistic.toLowerCase(), value);
   }
   const matching = (pattern: RegExp) => [...stats.entries()].find(([key]) => pattern.test(key))?.[1];
+  // The patterns still match Lighthouse's own statistic names, which say "DOM";
+  // the LABELS are what a reader sees, and they say what the number counts.
   return compactFacts([
-    fact("nodes", "DOM nodes", matching(/total dom|dom elements|elements/), "count"),
-    fact("depth", "Maximum depth", matching(/maximum dom depth|max.*depth/), "count"),
-    fact("width", "Maximum children", matching(/maximum child|max.*child/), "count"),
+    fact("nodes", "Elements on the page", matching(/total dom|dom elements|elements/), "count"),
+    fact("depth", "Deepest nesting", matching(/maximum dom depth|max.*depth/), "count"),
+    fact("width", "Most children in one element", matching(/maximum child|max.*child/), "count"),
   ]);
 }
 
@@ -108,26 +124,26 @@ function bytesEvidence(details: UnknownRecord, items: UnknownRecord[]): CulpritE
   const totalBytes = items.reduce((sum, item) => sum + (number(item.totalBytes ?? item.transferSize) ?? 0), 0);
   const wastedPercent = totalBytes > 0 ? wastedBytes / totalBytes * 100 : undefined;
   return compactFacts([
-    fact("wastedBytes", "Potential savings", wastedBytes, "bytes"),
-    fact("totalBytes", "Inspected bytes", totalBytes || undefined, "bytes"),
-    fact("wastedPercent", "Unused", wastedPercent, "percent"),
+    fact("wastedBytes", "Could be saved", wastedBytes, "bytes"),
+    fact("totalBytes", "Looked at", totalBytes || undefined, "bytes"),
+    fact("wastedPercent", "Never used", wastedPercent, "percent"),
   ]);
 }
 
 function thirdPartyEvidence(items: UnknownRecord[]): CulpritEvidenceFact[] {
   return compactFacts([
-    fact("transferBytes", "Transfer size", items.reduce((sum, item) => sum + (number(item.transferSize) ?? 0), 0), "bytes"),
-    fact("mainThreadMs", "Main-thread time", items.reduce((sum, item) => sum + (number(item.mainThreadTime) ?? 0), 0), "milliseconds"),
-    fact("blockingMs", "Blocking time", items.reduce((sum, item) => sum + (number(item.blockingTime) ?? 0), 0), "milliseconds"),
-    fact("sources", "Third-party sources", new Set(items.map((item) => safeHost(item.url)).filter(Boolean)).size, "count"),
+    fact("transferBytes", "Downloaded", items.reduce((sum, item) => sum + (number(item.transferSize) ?? 0), 0), "bytes"),
+    fact("mainThreadMs", "Time the browser spent running it", items.reduce((sum, item) => sum + (number(item.mainThreadTime) ?? 0), 0), "milliseconds"),
+    fact("blockingMs", "Time the page could not respond", items.reduce((sum, item) => sum + (number(item.blockingTime) ?? 0), 0), "milliseconds"),
+    fact("sources", "Other companies involved", new Set(items.map((item) => safeHost(item.url)).filter(Boolean)).size, "count"),
   ]).filter((item) => item.value > 0);
 }
 
 function renderBlockingEvidence(details: UnknownRecord, items: UnknownRecord[]): CulpritEvidenceFact[] {
   return compactFacts([
-    fact("resources", "Blocking resources", items.filter((item) => typeof item.url === "string").length, "count"),
-    fact("delayMs", "Potential delay", number(details.overallSavingsMs) ?? items.reduce((sum, item) => sum + (number(item.wastedMs) ?? 0), 0), "milliseconds"),
-    fact("transferBytes", "Transfer size", items.reduce((sum, item) => sum + (number(item.totalBytes ?? item.transferSize) ?? 0), 0), "bytes"),
+    fact("resources", "Files text waits on", items.filter((item) => typeof item.url === "string").length, "count"),
+    fact("delayMs", "How long text waits", number(details.overallSavingsMs) ?? items.reduce((sum, item) => sum + (number(item.wastedMs) ?? 0), 0), "milliseconds"),
+    fact("transferBytes", "Downloaded", items.reduce((sum, item) => sum + (number(item.totalBytes ?? item.transferSize) ?? 0), 0), "bytes"),
   ]).filter((item) => item.value > 0);
 }
 
@@ -157,7 +173,7 @@ function extractOne(raw: unknown): CulpritEvidence[] {
     else if (auditId === "unused-css-rules" || auditId === "unused-javascript" || auditId === "unminified-javascript" || auditId === "legacy-javascript" || auditId === "uses-responsive-images" || auditId === "uses-optimized-images") {
       facts = bytesEvidence(details, items);
       sources = sourcesFor(items);
-      const resourceLabel = auditId.startsWith("uses-") ? "Affected images" : auditId.includes("javascript") ? "Affected scripts" : "Affected stylesheets";
+      const resourceLabel = auditId.startsWith("uses-") ? "Images affected" : auditId.includes("javascript") ? "Script files affected" : "Style files affected";
       facts.unshift({ key: "resources", label: resourceLabel, value: items.filter((item) => typeof item.url === "string").length, unit: "count" });
     } else if (auditId === "third-party-summary") {
       facts = thirdPartyEvidence(items);
@@ -177,8 +193,8 @@ function extractOne(raw: unknown): CulpritEvidence[] {
           height: number(rect?.height),
         };
         facts = compactFacts([
-          fact("width", "Rendered width", lcpElement.width, "pixels"),
-          fact("height", "Rendered height", lcpElement.height, "pixels"),
+          fact("width", "Width on screen", lcpElement.width, "pixels"),
+          fact("height", "Height on screen", lcpElement.height, "pixels"),
         ]);
       }
     }

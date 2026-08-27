@@ -10,7 +10,7 @@ import type {
   WebflowRemediationLevel,
 } from "./types";
 import type { PerformanceIssueCapture, PerformanceIssueStatus } from "./performanceIssues";
-import { EXCLUSION_REASONS, type Applicability, type ExclusionReason } from "./vocabulary";
+import { EXCLUSION_REASONS, UNLABELLED_EXCLUSION_REASON, type Applicability, type ExclusionReason } from "./vocabulary";
 import { classifyWebflowPerformance, culpritGroupLabel } from "./webflowPerformance";
 
 interface DetectionDefinition {
@@ -137,24 +137,33 @@ interface RetiredNativeElementControl {
 /**
  * The reason a retired `suppressed` record carries forward.
  *
- * Not a reason invented on the reader's behalf: it is the definition of the
- * state the old button put the finding into. `APPLICABILITY_MEANS.excluded` is
- * "Deliberately not counted, because it does not apply to this site", and the
- * retired control offered exactly that one meaning, unlabelled, with nowhere to
- * record anything narrower. Migrating it to the reason that restates the state
- * keeps the exclusion the reader asked for; dropping the record instead would
- * quietly put the finding back in the count.
+ * The argument for this particular reason lives on `UNLABELLED_EXCLUSION_REASON`
+ * in `vocabulary.ts`, which the agent-check defaults read too. It was stated
+ * here first and moved in S8 rather than copied — two spellings of one
+ * migration rule is the drift rule 20 names.
  */
-const RETIRED_SUPPRESSED_REASON: ExclusionReason = "Not applicable to this site";
+const RETIRED_SUPPRESSED_REASON: ExclusionReason = UNLABELLED_EXCLUSION_REASON;
 
 /**
- * The gate between a stored string and the registry's reason list.
+ * The one gate between a stored string and this record's decided reason.
  *
- * `types.ts` cannot import the registry, so the stored field is a string and
- * this is where it becomes one of the three decided reasons or nothing at all.
+ * `types.ts` cannot import the registry, so the stored field is a plain string
+ * and whichever module owns the record narrows it. This module owns
+ * `NativeElementControl.excluded`, so this is that narrowing — and it is the
+ * only one for this record, in either direction. The route that accepts a
+ * reason and the mutation that stores one both call it rather than repeating
+ * the membership test, because three spellings of one rule is exactly the drift
+ * rule 20 names.
+ *
+ * Returns `null` for "not a reason this registry blesses", which is the same
+ * answer as "no reason recorded": applicability requires a reason, and a reason
+ * nobody decided is the absence of one. It never signals "the record is gone" —
+ * that is the caller's question, not this one's.
  */
-function isExclusionReason(value: string | undefined): value is ExclusionReason {
-  return value !== undefined && (EXCLUSION_REASONS as readonly string[]).includes(value);
+export function narrowNativeElementExclusionReason(value: unknown): ExclusionReason | null {
+  return typeof value === "string" && (EXCLUSION_REASONS as readonly string[]).includes(value)
+    ? value as ExclusionReason
+    : null;
 }
 
 function controlFrom(raw: NativeElementControl | undefined): NativeElementControl | null {
@@ -171,8 +180,8 @@ function controlFrom(raw: NativeElementControl | undefined): NativeElementContro
   // An exclusion whose reason is not one the registry blesses is not an
   // exclusion — applicability requires a reason, and a reason nobody decided is
   // the absence of one.
-  const reason = raw.excluded?.reason;
-  const excluded = isExclusionReason(reason) ? { excluded: { reason } } : null;
+  const reason = narrowNativeElementExclusionReason(raw.excluded?.reason);
+  const excluded = reason ? { excluded: { reason } } : null;
   const dismissed = raw.dismissed === true ? { dismissed: true } : null;
   if (!excluded && !dismissed) return null;
   return { ...excluded, ...dismissed, updatedAt };
@@ -207,7 +216,7 @@ export function nativeElementExclusionReason(
   id: string,
 ): ExclusionReason | undefined {
   const reason = normalizeNativeElementControls(controls)[id]?.excluded?.reason;
-  return isExclusionReason(reason) ? reason : undefined;
+  return narrowNativeElementExclusionReason(reason) ?? undefined;
 }
 
 /** Whether the reader has seen this finding and chosen not to act on it. */

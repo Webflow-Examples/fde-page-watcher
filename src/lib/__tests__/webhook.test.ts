@@ -7,8 +7,8 @@ import {
 import { buildDigest, type Digest } from "../digest";
 import { renderDigestMessage } from "../digest-email";
 import { markFixed, type IssueCase } from "../issue-case";
-import { recordCheckpointReading } from "../checkpoint-evaluation";
 import type { Caller } from "../caller";
+import { recordCheckpointReading } from "../checkpoint-evaluation";
 import { normalizePerformanceThresholds } from "../performanceThresholds";
 import { pendingPage } from "../mutations";
 
@@ -19,7 +19,10 @@ afterEach(() => {
 
 const AT = "2026-08-04T06:00:00.000Z";
 
-/** The person who marked the case fixed before the checkpoint disagreed. */
+/**
+ * Whoever marked the fix. The payload is the digest message and the digest is
+ * about cases, so this only ever satisfies the transition guard.
+ */
 const PERSON: Caller = { kind: "person", userId: "rae@webflow.com" };
 
 function caseOf(overrides: Partial<IssueCase> = {}): IssueCase {
@@ -81,15 +84,20 @@ describe("alert webhook", () => {
         at: AT,
       }).issue,
     ]);
-    const payload = buildDailyDigestWebhookPayload(digest, "nightly:2026-08-04");
+    const payload = buildDailyDigestWebhookPayload(digest, "nightly:2026-08-04", ["ops@example.com"]);
 
     expect(payload).toMatchObject({
       event: "page_watch.daily_digest",
-      version: 2,
+      // 3 since S8: the payload carries the cadence and the recipients the site
+      // named, because Page Watch has no mail transport and the endpoint on the
+      // other end is what turns a message into deliveries.
+      version: 3,
       id: "nightly:2026-08-04",
       date: "2026-08-04",
       site: "example.com",
       subject: digest.subject,
+      cadence: digest.cadence,
+      recipients: ["ops@example.com"],
     });
     expect(payload.text).toBe(renderDigestMessage(digest).text);
     expect(payload.sections.map((section) => section.kind)).toEqual(
@@ -104,6 +112,10 @@ describe("alert webhook", () => {
     const payload = buildDailyDigestWebhookPayload(digestOf(), "nightly:2026-08-04");
     expect(payload.subject).toBe("example.com · nothing needs you");
     expect(payload.sections).toEqual([]);
+    // Nobody named is an empty list, never an absent field. An absent field
+    // would read to the receiver as "unknown", and unknown is where a message
+    // gets sent to a default nobody chose.
+    expect(payload.recipients).toEqual([]);
   });
 
   it("does not attempt delivery without a configured URL", async () => {

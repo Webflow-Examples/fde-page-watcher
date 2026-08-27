@@ -209,7 +209,10 @@ export const EVIDENCE_SOURCE_LABEL: Record<EvidenceSource, string> = {
   "native-elements": "Native elements",
   "agent-readiness": "Agent readiness checks",
   ora: "Ora",
-  kitesurf: "Kitesurf",
+  // Registry v10: the codename was the only name a reader ever saw for this
+  // system, and a codename explains nothing. The KEY is unchanged — a data key
+  // is not copy — so no stored reading has to be migrated.
+  kitesurf: "Rendered page",
 };
 
 /* ── Actionability — what the customer can do about a case ──────────────── */
@@ -368,6 +371,23 @@ export const APPLICABILITY_TRANSITIONS: Record<ApplicabilityAction, Applicabilit
 /** Excluding requires one of these reasons. */
 export const EXCLUSION_REASONS = ["Not applicable to this site", "Intentional", "Accepted risk"] as const;
 export type ExclusionReason = (typeof EXCLUSION_REASONS)[number];
+
+/**
+ * The reason an exclusion carries when it was made by a control that never
+ * asked for one.
+ *
+ * Not a reason invented on the reader's behalf. `APPLICABILITY_MEANS.excluded`
+ * is "Deliberately not counted, because it does not apply to this site", and
+ * every retired on/off exclusion control offered exactly that one meaning,
+ * unlabelled, with nowhere to record anything narrower. Migrating such a record
+ * to the reason that restates its own definition keeps the exclusion the reader
+ * asked for; dropping it instead would quietly put the thing back in the count.
+ *
+ * Two mechanisms need this and so it is stated once here rather than beside
+ * either of them: the retired native-element `suppressed` disposition, and the
+ * agent-check exclusion defaults, whose conversion to a chosen reason is C2's.
+ */
+export const UNLABELLED_EXCLUSION_REASON: ExclusionReason = "Not applicable to this site";
 
 /* ── Helpers ────────────────────────────────────────────────────────────── */
 

@@ -1,4 +1,4 @@
-import { effectivePerformanceThresholds, normalizePerformanceThresholds } from "./performanceThresholds";
+import { normalizePerformanceThresholds } from "./performanceThresholds";
 import { mediansOf, nightHasStrategy, pageTrend } from "./scoring";
 import type {
   AppState,
@@ -165,7 +165,7 @@ export function evaluateCohortAnomaly(
         mobile: mediansOf(previous.scores.mobile),
         desktop: mediansOf(previous.scores.desktop),
       };
-      page.status = pageTrend(page, "mobile", effectivePerformanceThresholds(thresholds, page));
+      page.status = pageTrend(page, "mobile", normalizePerformanceThresholds(thresholds));
     }
     const existing = state.measurementIncident;
     const confirmationAttempts =

@@ -21,8 +21,8 @@ import {
   type IssueCase,
   type IssueState,
 } from "../issue-case";
-import { recordCheckpointReading } from "../checkpoint-evaluation";
 import type { Caller } from "../caller";
+import { recordCheckpointReading } from "../checkpoint-evaluation";
 import { normalizePerformanceThresholds } from "../performanceThresholds";
 import { ISSUE_TRANSITIONS, QUEUES, WORK_STATES, type IssueAction } from "../vocabulary";
 import { pendingPage } from "../mutations";
@@ -44,7 +44,13 @@ const AT = "2026-08-25T06:00:00.000Z";
 const DATE = "2026-08-25";
 const APP = "https://watch.example.com/page-watch";
 
-/** The person walking the case through its lifecycle below. */
+/**
+ * Whoever walked the case down the lifecycle below.
+ *
+ * The address is the case's id and nothing else, so who moved it is exactly the
+ * kind of fact the link is not allowed to carry. This exists to satisfy the
+ * transition guard and is never asserted on.
+ */
 const PERSON: Caller = { kind: "person", userId: "rae@webflow.com" };
 
 function caseOf(overrides: Partial<IssueCase> = {}): IssueCase {

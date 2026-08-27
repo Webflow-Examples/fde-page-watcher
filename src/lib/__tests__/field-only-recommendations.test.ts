@@ -5,6 +5,7 @@ import {
   isFieldRecommendationActionable,
   reconcileFieldOnlyRecommendationsInState,
 } from "../fieldOnlyRecommendations";
+import { COMPARABLE_METRICS } from "../labFieldComparison";
 import type { CruxPageEvidence, CruxSnapshot } from "../crux";
 import type { AppState, Night, Strategy, WatchPage } from "../types";
 
@@ -95,7 +96,10 @@ describe("field-only recommendations", () => {
       fieldSignals: {
         mobile: {
           metricKey: "lcp",
-          fieldLabel: "Visitor LCP p75",
+          // Named by the comparison that produced it, not spelled again here
+          // (rule 21) — this asserts the signal carried the LCP row's own
+          // visitor label through, which is the behaviour under test.
+          fieldLabel: COMPARABLE_METRICS.find((metric) => metric.key === "lcp")!.fieldLabel,
           fieldFormatted: "4.5 s",
           fieldRating: "Poor",
           scope: "url",

@@ -93,7 +93,7 @@ export function lighthouseRuntimeError(value: unknown): string | null {
   const runtimeError = response?.lighthouseResult?.runtimeError;
   if (!runtimeError) return null;
   const detail = [runtimeError.code, runtimeError.message].filter(Boolean).join(": ");
-  return detail || "Lighthouse runtime error";
+  return detail || "The nightly test could not finish (Lighthouse runtime error)";
 }
 
 /** Validate all four requested Lighthouse category scores. */

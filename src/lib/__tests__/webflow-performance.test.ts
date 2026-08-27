@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  CULPRIT_GROUP_LABELS,
   classifyWebflowPerformance,
   classificationForPage,
   culpritGroupLabel,
@@ -46,7 +47,10 @@ describe("Webflow performance taxonomy", () => {
       culprit: "image-delivery",
       remediation: "available",
     });
-    expect(culpritGroupLabel({ id: "r4", title: "Properly size images" })).toBe("Image delivery");
+    // Asserts that the label resolves through the culprit this title maps to,
+    // not that it reads any particular way (rule 21).
+    expect(culpritGroupLabel({ id: "r4", title: "Properly size images" }))
+      .toBe(CULPRIT_GROUP_LABELS["image-delivery"]);
   });
 
   it("uses remediation-aware impact, effort, and triage labels", () => {

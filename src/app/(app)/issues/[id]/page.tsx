@@ -4,7 +4,8 @@ import { useCallback, useMemo } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useIssuesView, useStore } from "@/components/store";
-import { DESTINATION_LABEL, DESTINATION_PATH } from "@/lib/vocabulary";
+import { DESTINATION_LABEL, DESTINATION_PATH, type ExclusionReason } from "@/lib/vocabulary";
+import { remediationKey } from "@/lib/issue-case";
 import { CaseDetail } from "@/components/case-detail";
 import { DigestBanner } from "@/components/digest-banner";
 import { DIGEST_DATE_PARAM, DIGEST_LINE_PARAM, digestLineFor, parseDigestArrival } from "@/lib/digest";
@@ -24,25 +25,25 @@ import { casePath } from "@/lib/paths";
  * is a query parameter rather than a path segment. `digest-arrival` holds both
  * halves of that.
  *
- * The per-page exclude control is NOT wired here, and that is deliberate rather
- * than unfinished. A case is derived from the collector's records
- * (`issueCasesFrom`), so there is nowhere yet to keep an exclusion: the control
- * would accept the reader's decision, show it applied, and lose it on the next
- * reload. An exception you can state is the entire reason the per-page design
- * was chosen over all-or-nothing accept, and an exception that forgets itself is
- * worse than not offering one.
+ * The per-page exclude control is wired here, and what it writes is a decision
+ * about the REMEDIATION rather than about this case. The distinction is the
+ * whole of F5: a case is derived from the collector's records on every read, so
+ * it has no identity to hang a decision on — its id belongs to whichever member
+ * came first, and that moves as evidence does. `remediationKey` is stable
+ * across that, which is why an exclusion survives a run that rewrote every
+ * record the case is made of.
  *
- * F5 adds the persistence and passes the two handlers in. Nothing else has to
- * change: `excludePage` and `includePage` take and return whole cases, the
- * table already renders an exclusion it is given — struck through, with its
- * reason — and the checkpoint evaluator already measures counted pages only.
+ * Nothing is held locally. The handlers append to the decisions log and the
+ * case re-derives with the decision applied, so what is on screen after the
+ * click is the same derivation as what is on screen after a reload — there is
+ * no second copy of the answer that could disagree with the stored one.
  */
 export default function CasePage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const searchParams = useSearchParams();
   const id = decodeURIComponent(String(params?.id ?? ""));
-  const { pages, pathFor, performanceThresholds } = useStore();
+  const { pages, pathFor, performanceThresholds, recordCaseDecision } = useStore();
   const view = useIssuesView("show_all", "impact");
 
   const issue = useMemo(() => view.cases.find((item) => item.id === id), [view.cases, id]);
@@ -92,6 +93,32 @@ export default function CasePage() {
     router.replace(pathFor(`${casePath(id)}${query ? `?${query}` : ""}`));
   }, [id, pathFor, router, searchParams]);
 
+  /**
+   * Stop counting one page of this remediation, with the reason the registry
+   * requires. Its opposite is below; neither edits an earlier entry, because a
+   * change of mind is something that happened and the panel shows it as one.
+   */
+  const excludePageFromCase = useCallback(
+    (pageId: string, reason: ExclusionReason) => {
+      if (!issue) return;
+      recordCaseDecision({
+        decision: "exclude",
+        remediationKey: remediationKey(issue),
+        pageId,
+        reason,
+      });
+    },
+    [issue, recordCaseDecision],
+  );
+
+  const includePageInCase = useCallback(
+    (pageId: string) => {
+      if (!issue) return;
+      recordCaseDecision({ decision: "include", remediationKey: remediationKey(issue), pageId });
+    },
+    [issue, recordCaseDecision],
+  );
+
   if (!issue) {
     return (
       <div style={{ padding: "40px" }}>
@@ -111,7 +138,6 @@ export default function CasePage() {
     );
   }
 
-  // No onExclude/onInclude until F5. See the note above.
   return (
     <>
       {arrival && arrivalLine ? (
@@ -119,7 +145,13 @@ export default function CasePage() {
           <DigestBanner date={arrival.date} line={arrivalLine} onDismiss={dismissArrival} />
         </div>
       ) : null}
-      <CaseDetail issue={issue} pageTitles={pageTitles} pagePaths={pagePaths} />
+      <CaseDetail
+        issue={issue}
+        pageTitles={pageTitles}
+        pagePaths={pagePaths}
+        onExclude={excludePageFromCase}
+        onInclude={includePageInCase}
+      />
     </>
   );
 }

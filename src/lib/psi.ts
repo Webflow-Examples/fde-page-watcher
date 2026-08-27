@@ -47,10 +47,10 @@ function mockCollect(url: string, strategy: Strategy, n: number): CollectResult 
     run: index + 1,
     warnings: [],
     findings: [
-      { id: "unused-javascript", title: "Reduce unused JavaScript", category: "Performance", savingsMs: 1800, savingsBytes: 0, actionable: true },
-      { id: "modern-image-formats", title: "Serve images in next-gen formats", category: "Performance", savingsMs: 1200, savingsBytes: 0, actionable: true },
-      { id: "render-blocking-resources", title: "Eliminate render-blocking resources", category: "Performance", savingsMs: 600, savingsBytes: 0, actionable: true },
-      { id: "dom-size", title: "Avoid an excessive DOM size", category: "Performance", score: 0, scoreDisplayMode: "binary", savingsMs: 0, savingsBytes: 0, actionable: true },
+      { id: "unused-javascript", title: "Code the page never runs is costing 1.8 seconds", category: "Performance", savingsMs: 1800, savingsBytes: 0, actionable: true },
+      { id: "modern-image-formats", title: "Images could be sent in a lighter format", category: "Performance", savingsMs: 1200, savingsBytes: 0, actionable: true },
+      { id: "render-blocking-resources", title: "A stylesheet delays the first text on the page", category: "Performance", savingsMs: 600, savingsBytes: 0, actionable: true },
+      { id: "dom-size", title: "The page nests elements too deeply", category: "Performance", score: 0, scoreDisplayMode: "binary", savingsMs: 0, savingsBytes: 0, actionable: true },
     ],
   }));
   const aggregated = aggregateLighthouseRunEvidence(runEvidence, n);

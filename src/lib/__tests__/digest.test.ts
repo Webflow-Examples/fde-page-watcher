@@ -14,8 +14,8 @@ import { digestLinks, renderDigestMessage } from "../digest-email";
 import { DIGEST_CADENCE_LABEL } from "../digestCadence";
 import { formatImpact } from "../impact-format";
 import { markFixed, scheduleCheckpoints, type IssueCase } from "../issue-case";
-import { recordCheckpointReading } from "../checkpoint-evaluation";
 import type { Caller } from "../caller";
+import { recordCheckpointReading } from "../checkpoint-evaluation";
 import { normalizePerformanceThresholds } from "../performanceThresholds";
 import { casePath } from "../paths";
 import { DESTINATION_PATH } from "../vocabulary";
@@ -37,9 +37,6 @@ const AT = "2026-08-25T06:00:00.000Z";
 const DATE = "2026-08-25";
 const APP = "https://watch.example.com/page-watch";
 const SCHEDULE = { localTime: "00:00", timeZone: "America/Chicago", overridden: true };
-
-/** The person who shipped the fixes these digests report on. */
-const PERSON: Caller = { kind: "person", userId: "rae@webflow.com" };
 
 function caseOf(overrides: Partial<IssueCase> = {}): IssueCase {
   return {
@@ -64,6 +61,12 @@ function caseOf(overrides: Partial<IssueCase> = {}): IssueCase {
     ...overrides,
   };
 }
+
+/**
+ * Whoever marked the fix. The digest never renders them — it is about cases, not
+ * about who moved them — so this exists only to satisfy the transition guard.
+ */
+const PERSON: Caller = { kind: "person", userId: "rae@webflow.com" };
 
 /** A case the system brought back, produced by the evaluator rather than posed. */
 function cameBackCase(overrides: Partial<IssueCase> = {}): IssueCase {
@@ -285,8 +288,14 @@ describe("a reading nobody took", () => {
   });
 
   it("withholds it again when there is no limit the reader set", () => {
-    // At 0 the gate is off, so there is nothing to attribute to anyone.
-    const digest = digestOf({ cases: [cameBackCase()] });
+    // At 0 the gate is off, so there is nothing to attribute to anyone. No
+    // sensitivity position resolves to 0 — that is precisely why they do not,
+    // since a position with no limit has nothing to show under the control —
+    // but the digest must still be honest about a stored set that has one.
+    const digest = digestOf({
+      cases: [cameBackCase()],
+      thresholds: normalizePerformanceThresholds({ minimumSavingsMs: 0 }),
+    });
     expect(linesIn(digest, "came_back")[0].text).toBe("The Unused JavaScript on Home is back.");
   });
 

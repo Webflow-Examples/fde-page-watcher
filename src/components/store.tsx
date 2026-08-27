@@ -2,13 +2,16 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_RANGE_DAYS } from "@/lib/types";
-import type { AgentIgnoreOverrideMode, AgentIgnoreScope, AppState, CategoryKey, CollectionSchedule, Flag, PagePerformanceThresholdOverrides, PerformanceThresholds, RangeDays, ScoreByCategory, Strategy } from "@/lib/types";
+import type { AgentIgnoreOverrideMode, AgentIgnoreScope, AppState, CategoryKey, CollectionSchedule, Flag, RangeDays, ScoreByCategory, Strategy } from "@/lib/types";
 
 import type { CruxPageEvidence } from "@/lib/crux";
 import type { ExternalAgentOriginAudit } from "@/lib/agentAudit";
 import { updateAgentIgnoreOverride, updateAgentIgnoreSettings } from "@/lib/agentScoring";
 import { collectionRequestMessage, collectionSettlementMessage, hasActiveCollections, startCollectionPolling, type CollectionRequestResult } from "@/lib/collectionPolling";
-import { effectivePerformanceThresholds, normalizePerformanceThresholdOverrides, normalizePerformanceThresholds } from "@/lib/performanceThresholds";
+import { normalizePerformanceThresholds } from "@/lib/performanceThresholds";
+import { thresholdsFor, type Sensitivity } from "@/lib/sensitivity";
+import type { DigestCadence } from "@/lib/digestCadence";
+import { normalizeDigestRecipients } from "@/lib/digestRecipients";
 import {
   byWorstMeasured,
   casesInQueue,
@@ -18,8 +21,9 @@ import {
   type RemediationGroup,
 } from "@/lib/issue-case";
 import { issueCasesFrom, lastRunAtOf } from "@/lib/issue-cases";
+import type { CaseDecision, CaseDecisionRequest } from "@/lib/case-decisions";
 import { partitionByImpact } from "@/lib/impact-format";
-import { APPLICABILITY_LABEL, COUNTED_QUEUES, type ExclusionReason, type Queue } from "@/lib/vocabulary";
+import { APPLICABILITY_LABEL, COUNTED_QUEUES, ISSUE_ACTION_LABEL, QUEUE_LABEL, type ExclusionReason, type Queue } from "@/lib/vocabulary";
 import { normalizeNativeElementControls } from "@/lib/nativeElements";
 import { localISODate } from "@/lib/ui";
 import { withBasePath } from "@/lib/paths";
@@ -128,11 +132,24 @@ interface StoreValue extends AppState {
   reorderPages: (pageIds: string[]) => void;
   renamePage: (id: string, title: string) => void;
   setAgentIgnore: (id: string, scope: AgentIgnoreScope, value: string, mode: AgentIgnoreOverrideMode) => void;
-  setDefaultAgentIgnore: (scope: AgentIgnoreScope, value: string, ignored: boolean) => void;
+  /** Applicability on a check or a category, for the whole site. A reason to exclude; none to include. */
+  setDefaultAgentIgnore: (scope: AgentIgnoreScope, value: string, ignored: boolean, reason?: ExclusionReason) => void;
   /** Applicability on one native-element finding. `null` includes it again. */
   setNativeElementApplicability: (id: string, findingId: string, reason: ExclusionReason | null) => void;
-  updatePerformanceThresholds: (thresholds: PerformanceThresholds) => void;
-  updatePagePerformanceThresholds: (id: string, overrides: PagePerformanceThresholdOverrides) => void;
+  /**
+   * Append one decision about a remediation. Never edits an earlier one —
+   * reversing a decision is another entry saying so.
+   */
+  recordCaseDecision: (decision: CaseDecisionRequest) => void;
+  /**
+   * The one control over what this site considers worth reporting.
+   *
+   * There is no per-page variant and no per-metric variant. S3 deleted the page
+   * calibration panel; S8 deleted the twelve fields, and neither has a new home
+   * here or anywhere else.
+   */
+  setSensitivity: (sensitivity: Sensitivity) => void;
+  updateDigestSettings: (cadence: DigestCadence, recipients: readonly string[]) => void;
   updateCollectionSchedule: (schedule: CollectionSchedule) => void;
   updateAlertWebhookUrl: (url: string) => void;
   setVisitorExperienceVisible: (visible: boolean) => void;
@@ -630,16 +647,21 @@ export function StoreProvider({
   );
 
   const setDefaultAgentIgnore = useCallback(
-    (scope: AgentIgnoreScope, value: string, ignored: boolean) => {
+    (scope: AgentIgnoreScope, value: string, ignored: boolean, reason?: ExclusionReason) => {
       const cur = dataRef.current;
       mutate(
         {
           ...cur,
-          agentIgnoreDefaults: updateAgentIgnoreSettings(cur.agentIgnoreDefaults, scope, value, ignored),
+          agentIgnoreDefaults: updateAgentIgnoreSettings(cur.agentIgnoreDefaults, scope, value, ignored, reason),
         },
-        { url: "/api/settings/agent-ignores", body: { scope, value, ignored } },
+        { url: "/api/settings/agent-ignores", body: { scope, value, ignored, reason } },
         {
-          success: `${scope === "group" ? "Category" : "Check"} ${ignored ? "ignored" : "restored"} by default`,
+          // The registry's words for the move, not this file's. Same two
+          // sentences the native-element control reports, because it is the
+          // same concept on a different object.
+          success: ignored
+            ? reason ? `${APPLICABILITY_LABEL.excluded} — ${reason}` : APPLICABILITY_LABEL.excluded
+            : `${APPLICABILITY_LABEL.included} again`,
           failure: `Couldn't update the default ${scope} — try again`,
         },
       );
@@ -682,44 +704,81 @@ export function StoreProvider({
     [mutate],
   );
 
-  const updatePerformanceThresholds = useCallback(
-    (thresholds: PerformanceThresholds) => {
+  /**
+   * Keep one decision about a remediation.
+   *
+   * Optimistically appended in the same shape the server will store, so the
+   * case re-derives with the decision applied on the next render rather than
+   * waiting for the round trip — and reverts with everything else if the write
+   * fails, because a decision that reports success it did not have is the exact
+   * failure the control was withheld to avoid.
+   *
+   * The local stamp is a prediction. The authoritative state that comes back
+   * carries the server's, which is the one that persists.
+   */
+  const recordCaseDecision = useCallback(
+    (decision: CaseDecisionRequest) => {
       const cur = dataRef.current;
-      const next = normalizePerformanceThresholds(thresholds);
+      const optimistic: CaseDecision = {
+        ...decision,
+        at: new Date().toISOString(),
+        // The same caller the route will resolve from the verified identity.
+        by: { kind: "person", userId: user.email },
+      };
+      mutate(
+        { ...cur, caseDecisions: [...(cur.caseDecisions ?? []), optimistic] },
+        { url: "/api/decisions", body: decision },
+        {
+          success: decision.decision === "exclude"
+            ? `${APPLICABILITY_LABEL.excluded} — ${decision.reason}`
+            : decision.decision === "include"
+              ? `${APPLICABILITY_LABEL.included} again`
+              : ISSUE_ACTION_LABEL[decision.decision],
+          failure: "Couldn't keep that decision — try again",
+        },
+      );
+    },
+    [mutate, user.email],
+  );
+
+  const setSensitivity = useCallback(
+    (sensitivity: Sensitivity) => {
+      const cur = dataRef.current;
+      // Optimistically resolved here exactly as the server resolves it, so the
+      // limits shown under the control never briefly disagree with the position
+      // above it. `thresholdsFor` is the single owner of that resolution.
+      const thresholds = thresholdsFor(sensitivity);
       mutate(
         {
           ...cur,
-          performanceThresholds: next,
+          sensitivity,
+          performanceThresholds: thresholds,
+          sensitivityNotice: undefined,
           watcherNote: undefined,
+          pages: cur.pages.map((page) => ({
+            ...page,
+            status: pageTrend(page, "mobile", thresholds),
+          })),
         },
-        { url: "/api/settings/performance-thresholds", body: next },
+        { url: "/api/settings/sensitivity", body: { sensitivity } },
         {
-          success: "Performance tolerances updated",
-          failure: "Couldn't update the performance tolerances — try again",
+          success: "Sensitivity updated — it applies from the next nightly run",
+          failure: "Couldn't update the sensitivity — try again",
         },
       );
     },
     [mutate],
   );
 
-  const updatePagePerformanceThresholds = useCallback(
-    (id: string, overrides: PagePerformanceThresholdOverrides) => {
+  const updateDigestSettings = useCallback(
+    (cadence: DigestCadence, recipients: readonly string[]) => {
       const cur = dataRef.current;
-      const normalized = normalizePerformanceThresholdOverrides(overrides);
       mutate(
+        { ...cur, digestCadence: cadence, digestRecipients: normalizeDigestRecipients([...recipients]) },
+        { url: "/api/settings/digest", body: { cadence, recipients } },
         {
-          ...cur,
-          watcherNote: undefined,
-          pages: cur.pages.map((page) => page.id === id ? {
-            ...page,
-            performanceThresholdOverrides: normalized,
-            status: pageTrend(page, "mobile", effectivePerformanceThresholds(cur.performanceThresholds, normalized)),
-          } : page),
-        },
-        { url: `/api/pages/${id}/performance-thresholds`, body: normalized },
-        {
-          success: Object.keys(normalized).length ? "Page calibration saved" : "Page calibration reset to team defaults",
-          failure: "Couldn't update the page calibration — try again",
+          success: "Digest updated",
+          failure: "Couldn't update the digest — check the addresses and try again",
         },
       );
     },
@@ -831,13 +890,13 @@ export function StoreProvider({
           });
           const body = (await response.json().catch(() => null)) as { state?: AppState } | null;
           if (!response.ok || !body?.state) {
-            flash("Couldn't add this to Tasks — try again");
+            flash(`Couldn't add this to ${QUEUE_LABEL.fix} — try again`);
             return;
           }
           apply(normalizeState(body.state));
-          flash("Added to Tasks with its verification target");
+          flash(`Added to ${QUEUE_LABEL.fix} with its verification target`);
         } catch {
-          flash("Couldn't add this to Tasks — try again");
+          flash(`Couldn't add this to ${QUEUE_LABEL.fix} — try again`);
         }
       })();
     },
@@ -1148,8 +1207,9 @@ export function StoreProvider({
     setAgentIgnore,
     setDefaultAgentIgnore,
     setNativeElementApplicability,
-    updatePerformanceThresholds,
-    updatePagePerformanceThresholds,
+    recordCaseDecision,
+    setSensitivity,
+    updateDigestSettings,
     updateCollectionSchedule,
     setExternalAgentAuditEnabled,
     refreshExternalAgentAudit,
@@ -1310,9 +1370,13 @@ export interface IssuesView {
  * preference worth persisting.
  */
 export function useIssuesView(queue: Queue, sort: IssueSort): IssuesView {
-  const { recs, pages, performanceThresholds } = useStore();
+  const { recs, pages, performanceThresholds, caseDecisions } = useStore();
   return useMemo(() => {
-    const cases = issueCasesFrom({ recs, pages });
+    // The decisions log is part of the derivation's input, not a filter applied
+    // after it: what someone decided about a remediation changes which queue
+    // its cases are in, so the counts and the rows have to be read from the
+    // same pass or the badge and the list disagree.
+    const cases = issueCasesFrom({ recs, pages, caseDecisions });
     const lastRunAt = lastRunAtOf(pages);
     const at = lastRunAt ? { at: lastRunAt } : {};
     const { minimumSavingsMs } = normalizePerformanceThresholds(performanceThresholds);
@@ -1329,5 +1393,5 @@ export function useIssuesView(queue: Queue, sort: IssueSort): IssuesView {
       pageTitles: Object.fromEntries(pages.map((page) => [page.id, page.title])),
       lastRunAt,
     };
-  }, [recs, pages, performanceThresholds, queue, sort]);
+  }, [recs, pages, caseDecisions, performanceThresholds, queue, sort]);
 }

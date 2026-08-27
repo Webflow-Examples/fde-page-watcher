@@ -6,6 +6,7 @@ import type {
   WebflowRemediationLevel,
 } from "./types";
 import type { Tone } from "./vocabulary";
+import { appositive } from "./plain-language";
 
 type CatalogEntry = Pick<
   WebflowPerformanceClassification,
@@ -34,205 +35,245 @@ const METRIC_WEIGHTS: Record<WebflowPerformanceMetric, 0 | 25 | 30> = {
   other: 0,
 };
 
-const CULPRIT_GROUP_LABELS: Record<WebflowPerformanceCulprit, string> = {
-  "global-javascript": "Global JavaScript",
-  "main-thread-work": "Main-thread work",
-  "third-party-code": "Third-party code",
-  "dom-complexity": "DOM complexity",
-  "lcp-element": "LCP element",
-  "global-css": "Global CSS",
-  "image-delivery": "Image delivery",
-  "render-blocking": "Render-blocking resources",
-  "custom-javascript": "Custom JavaScript",
-  "layout-stability": "Layout stability",
-  "background-video": "Background Video",
-  "video-embeds": "Video embeds",
-  "interactive-media": "Lottie and Spline",
-  other: "Other Lighthouse findings",
+/**
+ * What each measurement is about, in words, with the standard name after it.
+ *
+ * The keys are the industry acronyms and stay so — they are the axis a finding
+ * is classified on, and they match what every other tool reports. What changes
+ * is the reading order: a chip used to say "TBT · 30%", which leads with three
+ * letters a reader cannot act on and buries the only part they can. Now the
+ * plain word comes first and the acronym follows it, which is the one pattern.
+ *
+ * The acronym rather than the spelled-out term, and only here, because a chip
+ * is a few characters wide. The spelled-out appositive — "total blocking time"
+ * — is introduced once on each screen that shows these, in the prose beside the
+ * chips rather than inside them.
+ */
+export const METRIC_PLAIN: Record<WebflowPerformanceMetric, string> = {
+  TBT: "Responsiveness",
+  LCP: "Main content",
+  CLS: "Content jumping",
+  // Never displayed: `metricDisplay` is only reached for a classified metric,
+  // and every caller already hides the chip when the metric is `other`.
+  other: "",
+};
+
+/** "Responsiveness (TBT)". Plain meaning first, standard name after it. */
+export function metricDisplay(metric: WebflowPerformanceMetric): string {
+  return metric === "other" ? "" : appositive(METRIC_PLAIN[metric], metric);
+}
+
+/**
+ * The name each culprit group carries on screen.
+ *
+ * Exported so a test can assert that a rollup resolved the right culprit
+ * without restating the words. Rule 21: an assertion holding its own copy of
+ * "Site-wide code" proves the two spellings agree, never that the grouping is
+ * right, and it fails on a rewording that broke nothing.
+ *
+ * Short by necessity — these label chips and group headings — so where a
+ * measurement needs introducing, the appositive goes in the sentence beside the
+ * chip rather than inside it.
+ */
+export const CULPRIT_GROUP_LABELS: Record<WebflowPerformanceCulprit, string> = {
+  "global-javascript": "Site-wide code",
+  "main-thread-work": "Work the browser must finish first",
+  "third-party-code": "Code from other companies",
+  "dom-complexity": "Deeply nested elements",
+  "lcp-element": "The main thing visitors wait for",
+  "global-css": "Site-wide style rules",
+  "image-delivery": "How images are sent",
+  "render-blocking": "Files that delay the first text",
+  "custom-javascript": "Your own code",
+  "layout-stability": "Content that moves while loading",
+  "background-video": "Background video",
+  "video-embeds": "Video players",
+  "interactive-media": "Animations and 3D scenes",
+  other: "Everything else the nightly test found",
 };
 
 const CATALOG: Record<string, CatalogEntry> = {
   "bootup-time": {
     metric: "TBT",
     culprit: "global-javascript",
-    culpritLabel: "JavaScript execution",
+    culpritLabel: "Code running at startup",
     remediation: "blocked",
-    guidance: "Reduce or defer JavaScript that runs during startup, prioritizing code you control and scripts that are not required on this page.",
+    guidance: "Cut back or delay the code that runs as the page starts, beginning with your own and with anything this page does not need.",
   },
   "mainthread-work-breakdown": {
     metric: "TBT",
     culprit: "main-thread-work",
-    culpritLabel: "Main-thread work",
+    culpritLabel: "Work the browser must finish first",
     remediation: "blocked",
-    guidance: "Inspect the longest main-thread tasks and address the scripts, styles, or page structures responsible for them.",
+    guidance: "Find the longest jobs the browser had to finish before it could respond, and deal with the scripts, styles or page structure behind them.",
   },
   "third-party-summary": {
     metric: "TBT",
     culprit: "third-party-code",
-    culpritLabel: "Third-party code",
+    culpritLabel: "Code from other companies",
     remediation: "partial",
-    guidance: "Remove, defer, or conditionally load nonessential third-party tags and embeds.",
+    guidance: "Remove the tags and embeds you do not need, or load them later, or only on the pages that use them.",
   },
   "third-party-facades": {
     metric: "TBT",
     culprit: "third-party-code",
-    culpritLabel: "Third-party embeds",
+    culpritLabel: "Embeds from other companies",
     remediation: "partial",
-    guidance: "Replace eager embeds with poster-image facades or load-on-interaction behavior where possible.",
+    guidance: "Show a still image in place of the embed and load the real thing when somebody clicks it.",
   },
   "dom-size": {
     metric: "TBT",
     culprit: "dom-complexity",
-    culpritLabel: "DOM complexity",
+    culpritLabel: "Deeply nested elements",
     remediation: "partial",
-    guidance: "Reduce unnecessary nesting and page length, or defer below-the-fold sections where the site implementation allows it.",
+    guidance: "Flatten nesting you do not need and shorten the page, or load the sections below the first screenful later.",
   },
   "largest-contentful-paint-element": {
     metric: "LCP",
     culprit: "lcp-element",
-    culpritLabel: "LCP element",
+    culpritLabel: "The main thing visitors wait for",
     remediation: "partial",
-    guidance: "Identify the largest above-the-fold element and simplify, resize, preload, or replace the asset where appropriate.",
+    guidance: "Find the biggest thing visible without scrolling, then simplify it, resize it, load it sooner, or replace it.",
   },
   "lcp-discovery-insight": {
     metric: "LCP",
     culprit: "lcp-element",
-    culpritLabel: "LCP discovery",
+    culpritLabel: "The main image found late",
     remediation: "partial",
-    guidance: "Keep the primary hero resource discoverable early and avoid lazy-loading the above-the-fold LCP asset.",
+    guidance: "Make sure the browser can find the main image straight away, and do not set anything visible without scrolling to load late.",
   },
   "prioritize-lcp-image": {
     metric: "LCP",
     culprit: "lcp-element",
-    culpritLabel: "LCP image priority",
+    culpritLabel: "The main image loaded last",
     remediation: "partial",
-    guidance: "Prioritize the hero image and avoid loading it indirectly through scripts or late-applied styles.",
+    guidance: "Load the main image first, and do not reach it through a script or a style that arrives late.",
   },
   "lcp-lazy-loaded": {
     metric: "LCP",
     culprit: "lcp-element",
-    culpritLabel: "LCP lazy loading",
+    culpritLabel: "The main image set to load late",
     remediation: "partial",
-    guidance: "Do not lazy-load the above-the-fold image that Lighthouse identifies as the LCP element.",
+    guidance: "Do not set the main image to load late when it is visible without scrolling.",
   },
   "unused-css-rules": {
     metric: "LCP",
     culprit: "global-css",
-    culpritLabel: "Unused global CSS",
+    culpritLabel: "Style rules the site never uses",
     remediation: "blocked",
-    guidance: "Remove unused classes and stylesheet rules you control, and avoid loading page-specific styles on pages that do not need them.",
+    guidance: "Delete the classes and style rules nothing uses, and stop sending one page’s styles to pages that do not need them.",
   },
   "uses-responsive-images": {
     metric: "LCP",
     culprit: "image-delivery",
-    culpritLabel: "Image sizing",
+    culpritLabel: "Images bigger than they are shown",
     remediation: "available",
-    guidance: "Resize the source asset and provide responsive image candidates appropriate for the rendered size.",
+    guidance: "Resize the original, and offer it at several sizes so a browser can take the one it needs.",
   },
   "uses-optimized-images": {
     metric: "LCP",
     culprit: "image-delivery",
-    culpritLabel: "Image optimization",
+    culpritLabel: "Images heavier than they need to be",
     remediation: "available",
-    guidance: "Compress oversized source assets and use an efficient image format for the required quality.",
+    guidance: "Compress the originals, and save them in a format that holds the quality you need at a smaller size.",
   },
   "modern-image-formats": {
     metric: "LCP",
     culprit: "image-delivery",
-    culpritLabel: "Image format",
+    culpritLabel: "Images in an older format",
     remediation: "available",
-    guidance: "Convert suitable assets to WebP and keep source dimensions close to their rendered size.",
+    guidance: "Save the images that suit it in a newer format (WebP), and keep the original close to the size it is shown at.",
   },
   "image-delivery-insight": {
     metric: "LCP",
     culprit: "image-delivery",
-    culpritLabel: "Image delivery",
+    culpritLabel: "How images are sent",
     remediation: "available",
-    guidance: "Resize and compress the flagged assets, then use the most efficient format supported by the site.",
+    guidance: "Resize and compress the images named here, then save them in the smallest format the site supports.",
   },
   "render-blocking-resources": {
     metric: "LCP",
     culprit: "render-blocking",
-    culpritLabel: "Render-blocking resources",
+    culpritLabel: "Files that delay the first text",
     remediation: "blocked",
-    guidance: "Inline critical styles where appropriate and defer or split noncritical stylesheets that you control.",
+    guidance: "Put the styles the first screenful needs directly in the page, and delay or split the rest of your own.",
   },
   "render-blocking-insight": {
     metric: "LCP",
     culprit: "render-blocking",
-    culpritLabel: "Render-blocking resources",
+    culpritLabel: "Files that delay the first text",
     remediation: "blocked",
-    guidance: "Inline critical styles where appropriate and defer or split noncritical stylesheets that you control.",
+    guidance: "Put the styles the first screenful needs directly in the page, and delay or split the rest of your own.",
   },
   "unminified-javascript": {
     metric: "LCP",
     culprit: "custom-javascript",
-    culpritLabel: "Unminified custom JavaScript",
+    culpritLabel: "Your own code shipped unshrunk",
     remediation: "partial",
-    guidance: "Minify custom JavaScript before publishing it and remove development-only code from production bundles.",
+    guidance: "Shrink your own code before publishing it, and keep the parts you only use while building out of the live site.",
   },
   "legacy-javascript": {
     metric: "LCP",
     culprit: "global-javascript",
-    culpritLabel: "Legacy JavaScript",
+    culpritLabel: "Code written for browsers nobody uses",
     remediation: "blocked",
-    guidance: "Serve modern JavaScript to current browsers and remove unnecessary legacy transforms or polyfills from code you control.",
+    guidance: "Send current browsers the modern version of your code, and drop the extra code added for browsers nobody uses.",
   },
   "unused-javascript": {
     metric: "LCP",
     culprit: "global-javascript",
-    culpritLabel: "Unused global JavaScript",
+    culpritLabel: "Code the site never runs",
     remediation: "blocked",
-    guidance: "Remove optional scripts, split bundles by page, or conditionally load code only where it is needed.",
+    guidance: "Drop the optional scripts, split the code up by page, or load each part only where it is used.",
   },
   "unsized-images": {
     metric: "CLS",
     culprit: "layout-stability",
-    culpritLabel: "Missing image dimensions",
+    culpritLabel: "Images with no space reserved",
     remediation: "available",
-    guidance: "Set explicit image dimensions or use a consistent image reset so space is reserved before assets load.",
+    guidance: "Give every image a width and height so the space it needs is held open before it arrives.",
   },
   "webflow-background-video": {
     metric: "LCP",
     culprit: "background-video",
-    culpritLabel: "Background Video",
+    culpritLabel: "Background video",
     remediation: "partial",
-    guidance: "Use a poster or static hero where possible, or load background video only when it approaches the viewport.",
+    guidance: "Use a still image instead where you can, or load the background video only as it comes into view.",
   },
   "webflow-video-embed-eager": {
     metric: "TBT",
     culprit: "video-embeds",
-    culpritLabel: "Eager video embeds",
+    culpritLabel: "Video players loading too early",
     remediation: "partial",
-    guidance: "Replace eager YouTube or Vimeo players with poster-image facades that load the player on click or near the viewport.",
+    guidance: "Show a still image in place of the YouTube or Vimeo player, and load the player when somebody clicks or as it comes into view.",
   },
   "webflow-video-embed-duplicate": {
     metric: "TBT",
     culprit: "video-embeds",
-    culpritLabel: "Repeated video player runtime",
+    culpritLabel: "The same video player loaded twice",
     remediation: "partial",
-    guidance: "Use one shared player bootstrap and replace repeated eager embeds with poster-image facades that load on interaction.",
+    guidance: "Load one player for the whole page, and show a still image for the rest until somebody clicks.",
   },
   "webflow-lottie-eager": {
     metric: "TBT",
     culprit: "interactive-media",
-    culpritLabel: "Eager Lottie",
+    culpritLabel: "Animations loading too early",
     remediation: "partial",
-    guidance: "Reduce animation payloads and use custom viewport-based loading when the Lottie element is below the fold.",
+    guidance: "Make the animation files smaller, and load them only as they come into view when they start below the first screenful.",
   },
   "webflow-spline-eager": {
     metric: "TBT",
     culprit: "interactive-media",
-    culpritLabel: "Eager Spline",
+    culpritLabel: "3D scenes loading too early",
     remediation: "partial",
-    guidance: "Use a static fallback where possible or load the Spline scene only when it approaches the viewport.",
+    guidance: "Show a still image instead where you can, or load the 3D scene only as it comes into view.",
   },
   "webflow-image-unresponsive": {
     metric: "LCP",
     culprit: "image-delivery",
-    culpritLabel: "Unresponsive raster image",
+    culpritLabel: "One image size sent to every screen",
     remediation: "available",
-    guidance: "Resize the source asset and provide responsive image candidates so browsers do not fetch the full original unnecessarily.",
+    guidance: "Resize the original, and offer several sizes so a browser does not download the full one for no reason.",
   },
 };
 
@@ -255,9 +296,9 @@ const TITLE_ALIASES: Record<string, string> = {
 const UNKNOWN: CatalogEntry = {
   metric: "other",
   culprit: "other",
-  culpritLabel: "Other Lighthouse finding",
+  culpritLabel: "Something else the nightly test found",
   remediation: "unknown",
-  guidance: "Review the Lighthouse evidence and identify a concrete change before assigning this finding as a task.",
+  guidance: "Read the evidence and settle on one concrete change before anybody takes this on.",
 };
 
 function normalizedTitle(value: string): string {

@@ -1,6 +1,6 @@
 {
-  "$comment": "Page Watch vocabulary registry. Source of truth for user-facing status words. Decided in Chunk F1. CHANGELOG: v4 closed three gaps C1a surfaced. v5 closed the gaps the F1/F2/F3/C1 build report surfaced — Resolved had no legal entry, checkpoints had no vocabulary or evaluation rule, and two measuring systems shared one evidence slot. v6 added rules 18 and 19 from S1. v7 added rules 20 and 21 from R1, and extended rule 18 with the withhold-versus-fail distinction after a wrong ruling on F3. v8 added concepts.action.actor_note. v9 is v8's content with tightened prose on rules 18, 20 and 21 and this changelog — renumbered because a registry that changes its content without changing its number is the drift it exists to prevent, and two files numbered 8 already differed.",
-  "version": 9,
+  "$comment": "Page Watch vocabulary registry. Source of truth for user-facing status words. Decided in Chunk F1. CHANGELOG: v4 closed three gaps C1a surfaced. v5 closed the gaps the F1/F2/F3/C1 build report surfaced — Resolved had no legal entry, checkpoints had no vocabulary or evaluation rule, and two measuring systems shared one evidence slot. v6 added rules 18 and 19 from S1. v7 added rules 20 and 21 from R1, and extended rule 18 with the withhold-versus-fail distinction after a wrong ruling on F3. v8 added concepts.action.actor_note. v9 is v8's content with tightened prose on rules 18, 20 and 21 and this changelog — renumbered because a registry that changes its content without changing its number is the drift it exists to prevent, and two files numbered 8 already differed. v10 renames evidence_source.kitesurf's label from the codename Kitesurf to Rendered page, from S9: a name only the team could read was the one name that system had on screen, and S9's rule is that no term may appear as jargon alone. The key is unchanged — a data key is not copy.",
+  "version": 10,
   "decided": "2026-08-24",
   "concepts": {
     "work_state": {
@@ -286,7 +286,8 @@
         },
         {
           "key": "kitesurf",
-          "label": "Kitesurf"
+          "label": "Rendered page",
+          "means": "The published page opened in a real browser, recorded as it actually rendered. v10 renames the label: the key stays, because a data key is not copy, but the codename was the only name a reader ever saw for this system and a codename explains nothing."
         }
       ],
       "banned_as_label": [
@@ -609,13 +610,10 @@
       "Watching outcomes"
     ],
     "allowlist": {
-      "$comment": "Pre-existing violations in files C1a does not own. Each entry names the chunk that clears it. The list may only shrink. webflow-connection.tsx was cleared in C1a and removed in v5 — the rename it covered is done and the entry was dead. pages/[id]/page.tsx was cleared in S3 and removed: the tabs it named are gone and the native-element dispositions are now the applicability and work_state concepts below.",
-      "src/lib/guide.ts": "S9 — the glossary retires; its entries define the retired terms on purpose",
-      "src/app/(app)/watchlist/page.tsx": "C2 — Ignore/Suppress become the applicability concept below",
+      "$comment": "Pre-existing violations in files C1a does not own. Each entry names the chunk that clears it. The list may only shrink. webflow-connection.tsx was cleared in C1a and removed in v5 — the rename it covered is done and the entry was dead. pages/[id]/page.tsx was cleared in S3 and removed: the tabs it named are gone and the native-element dispositions are now the applicability and work_state concepts below. watchlist/page.tsx was cleared in S8 and removed: the settings mode that carried the Ignore/Suppress copy moved to /settings and became the applicability concept below, and the watchlist itself never used those words. agent-access.tsx was cleared in S4 and removed: the two route references were the Tasks button, which now names the Fix queue. guide.ts was cleared in S9 and removed: the glossary is deleted, and the retired-term definitions it carried went with the file rather than moving anywhere.",
       "src/components/bits.tsx": "F2 — Verifying/Returned belong to the lifecycles F2 deletes",
-      "src/components/store.tsx": "S2 — route references to the retired destinations",
-      "src/components/agent-access.tsx": "S4 — route references"
+      "src/components/store.tsx": "S2 — route references to the retired destinations"
     }
   },
-  "revised": "2026-08-25"
+  "revised": "2026-08-26"
 }

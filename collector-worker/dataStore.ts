@@ -2,7 +2,7 @@ import { buildInitialState, buildSeedCruxEvidence, DEMO_DATA_VERSION } from "../
 import { captureAgentReadiness } from "../src/lib/agentScoring";
 import { resolveMarkerIndex } from "../src/lib/followups";
 import { mediansOf, pageTrend } from "../src/lib/scoring";
-import { effectivePerformanceThresholds } from "../src/lib/performanceThresholds";
+import { normalizePerformanceThresholds } from "../src/lib/performanceThresholds";
 import { normalizeState } from "../src/lib/store/normalize";
 import { TENANT, type AppState, type ChangeMarker, type Night } from "../src/lib/types";
 import {
@@ -217,7 +217,7 @@ export class FdeDataStore {
         desktop: mediansOf(night.scores.desktop),
       };
       page.agent = agent ?? [];
-      page.status = pageTrend(page, "mobile", effectivePerformanceThresholds(draft.performanceThresholds, page));
+      page.status = pageTrend(page, "mobile", normalizePerformanceThresholds(draft.performanceThresholds));
       page.runState = undefined;
       page.lastRunAt = night.iso ?? new Date().toISOString();
       page.lastCollectionStatus = "trusted";

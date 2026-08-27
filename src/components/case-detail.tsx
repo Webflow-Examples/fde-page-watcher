@@ -33,6 +33,7 @@ import {
 import {
   EFFORT_LABEL_TEXT,
   IMPACT_LABEL,
+  DECISION_STRANDED,
   NO_ACTION_REASON,
   acceptLabel,
   evidenceAgreement,
@@ -316,11 +317,11 @@ export function CaseDetail({
         title={issue.diagnosis}
         explanation={issue.successCriteria}
         actions={
-          /* Registry rule 17: where there is nothing to accept, the case says
-             why in a sentence. A disabled Accept is the thing this replaces —
-             it tells the reader they lack permission, which is not what is
-             true; there is simply nothing documented to commit to. */
           <>
+            {/* Registry rule 17: where there is nothing to accept, the case says
+                why in a sentence. A disabled Accept is the thing this replaces —
+                it tells the reader they lack permission, which is not what is
+                true; there is simply nothing documented to commit to. */}
             {noAction ? (
               <p
                 style={{
@@ -336,6 +337,25 @@ export function CaseDetail({
             ) : (
               <ObjectDetailHeaderActions actions={actions} />
             )}
+            {/* A decision was taken about this remediation and no longer applies
+                to it, because a reclassification changed the remediation's key
+                under it. The case is undecided and the buttons above are the
+                real question; this says why the reader is being asked a
+                question they remember answering, so it reads as the fix having
+                moved rather than as their decision having been lost. */}
+            {issue.strandedDecision ? (
+              <p
+                style={{
+                  margin: 0,
+                  maxWidth: "34ch",
+                  fontSize: 12.5,
+                  lineHeight: 1.55,
+                  color: "var(--text-muted)",
+                }}
+              >
+                {DECISION_STRANDED}
+              </p>
+            ) : null}
             {/* Below the transitions, because copying is not one. Start and
                 Mark fixed change what is true about the work; this takes a
                 copy of what is already true and changes nothing. */}

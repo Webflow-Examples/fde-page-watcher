@@ -22,13 +22,35 @@ export function agentCheckKey(check: Pick<AgentCheck, "group" | "name">): string
   return `${check.group}${CHECK_KEY_SEPARATOR}${check.name}`;
 }
 
+/**
+ * How a reason is keyed to the thing it explains.
+ *
+ * Scoped, because a category and a check may share a name and their exclusions
+ * are different decisions. One function so the writer and the reader cannot
+ * disagree about the shape of the key (rule 20).
+ */
+export function agentExclusionKey(scope: AgentIgnoreScope, value: string): string {
+  return `${scope}${CHECK_KEY_SEPARATOR}${value}`;
+}
+
 export function normalizeAgentIgnoreSettings(settings?: AgentIgnoreSettings): AgentIgnoreSettings {
   const checks = Array.isArray(settings?.checks) ? settings.checks : [];
   const groups = Array.isArray(settings?.groups) ? settings.groups : [];
-  return {
+  const normalized: AgentIgnoreSettings = {
     checks: [...new Set(checks.filter((value) => typeof value === "string" && value.length > 0))].sort(),
     groups: [...new Set(groups.filter((value) => typeof value === "string" && value.length > 0))].sort(),
   };
+  // A reason for something that is not excluded is not a reason. Keeping one
+  // would let an Include followed by an Exclude silently reinstate a reason
+  // nobody chose the second time.
+  const excluded = new Set([
+    ...normalized.groups.map((value) => agentExclusionKey("group", value)),
+    ...normalized.checks.map((value) => agentExclusionKey("check", value)),
+  ]);
+  const reasons = Object.entries(settings?.reasons ?? {})
+    .filter(([key, reason]) => excluded.has(key) && typeof reason === "string" && reason.length > 0);
+  if (reasons.length > 0) normalized.reasons = Object.fromEntries(reasons.sort());
+  return normalized;
 }
 
 export function updateAgentIgnoreSettings(
@@ -36,13 +58,22 @@ export function updateAgentIgnoreSettings(
   scope: AgentIgnoreScope,
   value: string,
   ignored: boolean,
+  /**
+   * Why it does not apply. Required by the registry to exclude, and meaningless
+   * to include — `normalizeAgentIgnoreSettings` drops the record either way
+   * when the thing is counted again.
+   */
+  reason?: string,
 ): AgentIgnoreSettings {
   const normalized = normalizeAgentIgnoreSettings(settings);
   const key = scope === "group" ? "groups" : "checks";
   const values = new Set(normalized[key]);
   if (ignored) values.add(value);
   else values.delete(value);
-  return { ...normalized, [key]: [...values].sort() };
+  const reasons = { ...normalized.reasons };
+  if (ignored && reason) reasons[agentExclusionKey(scope, value)] = reason;
+  else delete reasons[agentExclusionKey(scope, value)];
+  return normalizeAgentIgnoreSettings({ ...normalized, [key]: [...values].sort(), reasons });
 }
 
 export function agentIgnoreOverrideMode(

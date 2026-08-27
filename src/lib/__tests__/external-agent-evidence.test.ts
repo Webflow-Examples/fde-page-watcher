@@ -1,3 +1,6 @@
+import { readFileSync, readdirSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type {
   ExternalAgentAuditSnapshot,
@@ -7,8 +10,8 @@ import type {
 import {
   EXTERNAL_AGENT_FRESH_WINDOW_MS,
   externalAgentCounts,
+  agentResultFromExternal,
   externalAgentResultIsDetermined,
-  externalAgentResultLabel,
   externalAgentSourceReading,
   externalAgentStatusLabel,
   externalAuditAgeLabel,
@@ -17,6 +20,7 @@ import {
   orderedExternalFindings,
   pageSupportsExternalAudit,
 } from "../externalAgentEvidence";
+import { AGENT_RESULTS } from "../vocabulary";
 
 const NOW = Date.parse("2026-08-24T06:00:00.000Z");
 
@@ -142,7 +146,7 @@ describe("freshness", () => {
   });
 });
 
-describe("provider status and result copy", () => {
+describe("provider status, and the one result vocabulary", () => {
   it("describes the provider, never the site", () => {
     // A quota or transport problem must not read as a failing check.
     expect(externalAgentStatusLabel("rate-limited"))
@@ -155,17 +159,37 @@ describe("provider status and result copy", () => {
     expect(externalAgentStatusLabel("error")).toBe("Request rejected");
   });
 
-  it("keeps every result state visibly distinct", () => {
-    const labels = (["pass", "partial", "failed", "not-applicable", "unavailable"] as const)
-      .map(externalAgentResultLabel);
-    expect(labels).toEqual(["Passing", "Partial", "Failing", "Not applicable", "Not determined"]);
-    // No two states share copy, so partial can never read as pass or fail.
-    expect(new Set(labels).size).toBe(labels.length);
+  it("maps every provider result onto the registry's own word", () => {
+    const provider = ["pass", "partial", "failed", "not-applicable", "unavailable"] as const;
+    const mapped = provider.map(agentResultFromExternal);
+    expect(mapped).toEqual(["passed", "partial", "failed", "not_applicable", "unavailable"]);
+    // Total and injective: no two provider states collapse onto one registry
+    // word, so partial can never read as passed or failed.
+    expect(new Set(mapped).size).toBe(provider.length);
+    // And every word it produces is one the registry actually defines.
+    for (const result of mapped) expect([...AGENT_RESULTS]).toContain(result);
+  });
+
+  it("never turns a non-answer into a claim about scope", () => {
+    // Rule 18, and the reason this mapping is safe to make at all: Ora reports
+    // "could not determine" and "does not apply" as two different states, so
+    // they stay two different states. Collapsing the first onto `not_applicable`
+    // would manufacture a claim about scope that nobody made.
+    expect(agentResultFromExternal("unavailable")).toBe("unavailable");
+    expect(agentResultFromExternal("unavailable")).not.toBe("not_applicable");
+    expect(agentResultFromExternal("not-applicable")).toBe("not_applicable");
+  });
+
+  it("leaves `ignored` unreachable from the boundary", () => {
+    // The one registry word no provider reading carries: it records a decision
+    // this app took, not something Ora measured.
+    const provider = ["pass", "partial", "failed", "not-applicable", "unavailable"] as const;
+    expect(provider.map(agentResultFromExternal)).not.toContain("ignored");
   });
 
   it("separates a real determination from a provider non-answer", () => {
     expect(externalAgentResultIsDetermined("partial")).toBe(true);
-    expect(externalAgentResultIsDetermined("not-applicable")).toBe(true);
+    expect(externalAgentResultIsDetermined("not_applicable")).toBe(true);
     expect(externalAgentResultIsDetermined("unavailable")).toBe(false);
   });
 });
@@ -210,15 +234,15 @@ describe("finding order", () => {
   it("works with no essentials block at all", () => {
     const value = snapshot({ essentials: undefined });
     expect(orderedExternalFindings(value).map((item) => item.result))
-      .toEqual(["failed", "failed", "partial", "unavailable", "pass", "not-applicable"]);
+      .toEqual(["failed", "failed", "partial", "unavailable", "passed", "not_applicable"]);
   });
 
   it("counts each result state separately", () => {
     expect(externalAgentCounts(snapshot())).toEqual({
       failed: 2,
       partial: 1,
-      pass: 1,
-      notApplicable: 1,
+      passed: 1,
+      not_applicable: 1,
       unavailable: 1,
     });
   });
@@ -296,5 +320,72 @@ describe("source card reading", () => {
 
   it("returns null when no audit exists", () => {
     expect(externalAgentSourceReading(null, NOW)).toBeNull();
+  });
+});
+
+/* ── One vocabulary, asserted against the tree ───────────────────────────── */
+
+const SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+
+function sourceFiles(): string[] {
+  const found: string[] = [];
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name !== "__tests__") walk(full);
+        continue;
+      }
+      if (/\.tsx?$/.test(entry.name)) found.push(full);
+    }
+  };
+  walk(SRC);
+  return found;
+}
+
+describe("one result vocabulary", () => {
+  it("renders no retired result word anywhere under src/", () => {
+    // The three `externalAgentResultLabel` used to produce. None is a registry
+    // word, so nothing may put any of them in front of a reader for a result.
+    //
+    // Matched as a WHOLE string literal, which is the shape a label has. The
+    // bare words are ordinary English and appear in prose that is about
+    // something else — a tooltip explaining that passing every accessibility
+    // check guarantees nothing, a comment on why a parameter is passed in — and
+    // a sweep that failed on those would be a sweep nobody could keep green.
+    const retired = /["'](?:Passing|Failing|Not determined)["']/;
+    const files = sourceFiles();
+    expect(files.length).toBeGreaterThan(50);
+    for (const file of files) {
+      expect(readFileSync(file, "utf8"), `${path.relative(SRC, file)} still labels a result with a retired word`)
+        .not.toMatch(retired);
+    }
+  });
+
+  it("keeps no second label function standing", () => {
+    // Option 19a was to translate at the render site and leave the old function
+    // in place, which fixes what a reader sees rather than what the code says.
+    // The function is gone; this is what keeps it gone.
+    for (const file of sourceFiles()) {
+      expect(readFileSync(file, "utf8"), `${path.relative(SRC, file)} still names it`)
+        .not.toContain("externalAgentResultLabel");
+    }
+  });
+
+  it("paints a provider result with the registry's own label", () => {
+    const panel = readFileSync(path.join(SRC, "components", "agent-audit.tsx"), "utf8");
+    expect(panel).toContain("AGENT_RESULT_LABEL[result]");
+    // And reaches the registry directly rather than through a provider-shaped
+    // helper, so there is no seam for a second vocabulary to reappear in.
+    expect(panel).toContain('from "@/lib/vocabulary"');
+  });
+
+  it("crosses the boundary in exactly one place", () => {
+    const crossing = sourceFiles()
+      .filter((file) => readFileSync(file, "utf8").includes("agentResultFromExternal("))
+      .map((file) => path.relative(SRC, file));
+    // Declared and applied in the adapter module, and nowhere else: by the time
+    // a finding reaches a screen it is already an `agent_result`.
+    expect(crossing).toEqual([path.join("lib", "externalAgentEvidence.ts")]);
   });
 });

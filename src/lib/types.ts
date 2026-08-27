@@ -230,6 +230,81 @@ export interface NativeElementControl {
   updatedAt: string;
 }
 
+/**
+ * One decision somebody took about a remediation, as it is stored.
+ *
+ * Keyed on the remediation and never on a case. A case is a group with no
+ * identity of its own — the merged case takes the id of whichever member came
+ * first, and membership changes whenever evidence does — so a decision keyed on
+ * one would detach from the thing it was about the first time a page joined or
+ * left. `remediationKey` in `issue-case.ts` produces the key.
+ *
+ * Two grains share the log, which is why two fields are optional rather than
+ * two record types being declared. `pageId` is set for `exclude` and `include`,
+ * which are about one page of the remediation, and absent for `accept` and
+ * `dismiss`, which are about the remediation entire. `reason` is set where the
+ * registry requires one. Neither is optional at the door: `caseDecisionFrom`
+ * refuses an entry missing what its decision needs, and the narrow union it
+ * returns has no way to express the wrong combination.
+ *
+ * `reason` is a plain string here for the same reason `NativeElementControl`'s
+ * is: this module imports nothing (`agent-audit-isolation` enforces it), and
+ * the registry's reason lists live in `vocabulary.ts`. `case-decisions.ts` is
+ * the one gate, narrowing on write and on read.
+ */
+export type CaseDecisionKind = "exclude" | "include" | "accept" | "dismiss";
+
+/**
+ * Who decided, whole — the identity and its class together.
+ *
+ * Structurally `Caller` from `caller.ts`, restated here because this module
+ * imports nothing and `agent-audit-isolation` enforces that. It is not a second
+ * vocabulary: `case-decisions.ts` asserts the two are the same type at compile
+ * time, so a change to `Caller` stops this file type-checking rather than
+ * quietly leaving the log describing a caller the app no longer has. F4 uses
+ * the same idiom to tie `Caller["kind"]` to the registry's actor classes.
+ *
+ * Whole, and never the bare class. The log is new storage, so no entry in it
+ * was ever written before the split — nothing here needs, or should reach for,
+ * `callerFromLegacyActor`.
+ */
+export type StoredCaller =
+  | { kind: "system"; agent: string }
+  | { kind: "person"; userId: string };
+
+/**
+ * The decision log's caller. An alias, not a copy: the consent history stores
+ * the same thing, and two spellings of one shape in one file would be the drift
+ * rule 20 names with none of the justification `AgentIssueCheckResult` has —
+ * that one is duplicated because its other half lives in a module this file may
+ * not import, and both halves of this one are right here.
+ */
+export type CaseDecisionCaller = StoredCaller;
+
+/**
+ * One recorded change of project consent for external agent audits.
+ *
+ * `enabled` is the value it changed TO, so an entry answers "what was decided"
+ * rather than "what changed", and a reader replaying the list never has to
+ * infer a state from a gap.
+ */
+export interface ExternalAgentConsentEntry {
+  enabled: boolean;
+  /** ISO. Also the entry's place in the history, which is kept in append order. */
+  at: string;
+  by: StoredCaller;
+}
+
+export interface CaseDecisionRecord {
+  decision: CaseDecisionKind;
+  remediationKey: string;
+  pageId?: string;
+  reason?: string;
+  /** ISO. Also the entry's place in the log, which is kept in append order. */
+  at: string;
+  by: CaseDecisionCaller;
+}
+
 /** Privacy-safe page-content finding for a known Webflow-native element footprint. */
 export interface NativeElementFinding {
   id: string;
@@ -425,6 +500,18 @@ export type AgentIgnoreOverrideMode = "inherit" | "ignore" | "restore";
 export interface AgentIgnoreSettings {
   checks: string[];
   groups: string[];
+  /**
+   * Why each excluded check or category does not apply, keyed by
+   * `agentExclusionKey`.
+   *
+   * Optional because the control that wrote these never asked. A record with no
+   * reason predates the question and reads as `UNLABELLED_EXCLUSION_REASON`,
+   * which is the definition of the state the old toggle put it in rather than a
+   * reason invented on the reader's behalf. Stored as a string for the same
+   * reason `NativeElementControl.excluded.reason` is: this module is the
+   * persisted shape and cannot import the registry.
+   */
+  reasons?: Record<string, string>;
 }
 
 export type DevicePolicy = "either" | "both" | "preferred";
@@ -459,8 +546,6 @@ export interface PerformanceThresholds {
   minimumSavingsKilobytes: number;
 }
 
-/** Optional page-specific values layered over the team monitoring defaults. */
-export type PagePerformanceThresholdOverrides = Partial<PerformanceThresholds>;
 
 /** Legacy per-page event-delivery state retained for persisted-state compatibility. */
 export interface PerformanceAlertState {
@@ -518,8 +603,7 @@ export interface WatchPage {
   agent: AgentCheck[]; // latest agent-readiness scan (per-check)
   agentIgnores?: AgentIgnoreSettings; // page-specific ignores, applied after global defaults
   agentIgnoreRestores?: AgentIgnoreSettings; // page-specific restores of globally ignored checks/categories
-  /** Sparse page-specific calibration; omitted values inherit team defaults. */
-  performanceThresholdOverrides?: PagePerformanceThresholdOverrides;
+
   /** Legacy event-alert state; daily digests use AppState.alertDigests. */
   performanceAlertState?: PerformanceAlertState;
   /** Page-scoped triage controls keyed by stable native-element finding id. */
@@ -797,6 +881,17 @@ export interface AppState {
   projectArchivePageFlags?: Record<string, Flag>;
   pages: WatchPage[];
   recs: Rec[];
+  /**
+   * What people decided about remediations, oldest first.
+   *
+   * Append-only, and separate from `recs` on purpose. The collector rewrites
+   * records nightly and how it merges them is its own business, so a decision
+   * written onto one would be a decision the next run could overwrite. Nothing
+   * in the collector writes this; nothing anywhere edits an entry in place or
+   * prunes one on read. An entry matching nothing today is a decision somebody
+   * made, not a decision that stopped existing.
+   */
+  caseDecisions?: CaseDecisionRecord[];
   /** Workspace-owned HTTPS endpoint for confirmed performance-regression alerts. */
   alertWebhookUrl?: string | null;
   /** Recent scheduled digest claims/deliveries, retained for idempotency and retries. */
@@ -811,8 +906,49 @@ export interface AppState {
    * is false.
    */
   externalAgentAuditEnabled?: boolean;
+  /**
+   * Every change to that consent, in the order they were made.
+   *
+   * The boolean above is the live answer; this is the record of how it got
+   * there, and the two are written together or not at all. Append-only, like
+   * `caseDecisions` and for the same reason: withdrawing consent is a decision
+   * somebody made, and a log that dropped the grant preceding it would leave
+   * the project unable to answer what was permitted when a stored reading was
+   * taken — which is the question a withdrawal makes somebody ask.
+   *
+   * Absent means no change was ever recorded, which is not the same as consent
+   * having been off all along by anyone's decision. The screen says so in as
+   * many words rather than rendering an empty list.
+   */
+  externalAgentAuditConsentHistory?: ExternalAgentConsentEntry[];
   agentIgnoreDefaults?: AgentIgnoreSettings;
+  /**
+   * The one sensitivity control's position, as a plain string.
+   *
+   * Narrowed to a decided position by `normalizeSensitivity` on read, the same
+   * way an exclusion reason is narrowed by `normalizeNativeElementControls`:
+   * this module is the persisted shape and cannot import the concept modules
+   * that own the value lists.
+   */
+  sensitivity?: string;
+  /**
+   * The limits `sensitivity` resolves to, kept resolved rather than derived at
+   * every read.
+   *
+   * It is not a second setting. `normalizeState` rewrites it from the position
+   * on every read, so a stored set that disagrees with the position loses —
+   * which is what makes the position, not this, the thing a reader edits.
+   */
   performanceThresholds?: PerformanceThresholds;
+  /**
+   * A position that hand-tuned thresholds were mapped to, still owed its one
+   * sentence. Cleared by the digest that carries it.
+   */
+  sensitivityNotice?: string;
+  /** How often the digest is sent. Narrowed by `normalizeDigestCadence`. */
+  digestCadence?: string;
+  /** Who the digest is for. Empty means nobody has been named yet. */
+  digestRecipients?: string[];
   collectionSchedule?: CollectionSchedule;
   measurementIncident?: MeasurementIncident;
   jobs?: CollectionJob[];

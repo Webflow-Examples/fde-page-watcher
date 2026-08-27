@@ -160,7 +160,7 @@ describe("external agent audit isolation", () => {
     // component moved, the isolation rule did not.
     const overview = source("src/app/(app)/pages/pages-content.tsx");
     // The verdict is a Page Watch conclusion and belongs here.
-    expect(overview).toContain("agentAccessSummary");
+    expect(overview).toContain("agentAccess");
     // Provider numbers stay on the page's own evidence surface.
     for (const forbidden of [
       "essentialsScore",

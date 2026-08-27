@@ -1,20 +1,28 @@
 import { randomUUID } from "node:crypto";
 import { isKnownAgentIgnoreTarget } from "./agentChecks";
 import { updateAgentIgnoreOverride, updateAgentIgnoreSettings } from "./agentScoring";
-import { effectivePerformanceThresholds, normalizePerformanceThresholdOverrides, normalizePerformanceThresholds, performanceThresholdOverridesAreValid, performanceThresholdsAreValid } from "./performanceThresholds";
+import { normalizePerformanceThresholds } from "./performanceThresholds";
+import { isSensitivity, thresholdsFor, type Sensitivity } from "./sensitivity";
+import { isDigestCadence, type DigestCadence } from "./digestCadence";
+import { normalizeDigestRecipients } from "./digestRecipients";
 import { collectionScheduleIsValid, ensureCollectionOffsets } from "./collectionSchedule";
 import { pageTrend } from "./scoring";
 import { getStore } from "./store";
 import type { DataStore } from "./store";
 import { shortDate } from "./ui";
-import type { AgentIgnoreOverrideMode, AgentIgnoreScope, AppState, CollectionSchedule, Flag, PagePerformanceThresholdOverrides, PerformanceThresholds, RecStatus, ScoreByCategory, TaskStatus, WatchPage } from "./types";
+import type { AgentIgnoreOverrideMode, AgentIgnoreScope, AppState, CollectionSchedule, Flag, RecStatus, ScoreByCategory, TaskStatus, WatchPage } from "./types";
 import { defaultNewPageFlag, flagCapacityError } from "./watchCapacity";
 import { applyWatchlistPageOrder, changePageFlagOrder, sortWatchlistPages } from "./watchlistOrder";
 import { removeTaskMarker } from "./taskMarkers";
 import { promoteAgentIssueToTask } from "./agentIssueTasks";
+import { appendConsentEntry } from "./agentConsent";
 import type { AgentIssueCase } from "./agentIssueCases";
 import { isKnownNativeElementId, normalizeNativeElementControls } from "./nativeElements";
-import { EXCLUSION_REASONS, type ExclusionReason } from "./vocabulary";
+import { narrowNativeElementExclusionReason } from "./nativeElements";
+import { narrowAgentCheckExclusionReason } from "./settings-exclusions";
+import { type ExclusionReason } from "./vocabulary";
+import { caseDecisionFrom, type CaseDecisionInput } from "./case-decisions";
+import type { Caller } from "./caller";
 import { alertWebhookUrlIsValid } from "./webhook";
 import { COLLECTION_JOB_STALE_AFTER_MS, collectionJobIsStale } from "./collectionRetry";
 
@@ -90,17 +98,30 @@ export function setAgentIgnore(
   }, dataStore);
 }
 
+/**
+ * Set a check or a category aside for this site, or count it again.
+ *
+ * The reason is required to exclude, because applicability requires one — the
+ * control that used to write this never asked, and S8's Excluded list does. An
+ * unlabelled exclusion is still accepted so an older client is not broken by a
+ * 500; it reads as `UNLABELLED_EXCLUSION_REASON` on the way out, which is what
+ * that record has always meant.
+ */
 export function setDefaultAgentIgnore(
   scope: AgentIgnoreScope,
   value: string,
   ignored: boolean,
   dataStore: DataStore = getStore(),
+  reason?: ExclusionReason,
 ): Promise<AppState> {
   return withState((state) => {
     if (!isKnownAgentIgnoreTarget(scope, value)) {
       throw new Error(`setDefaultAgentIgnore: ${scope} does not exist`);
     }
-    state.agentIgnoreDefaults = updateAgentIgnoreSettings(state.agentIgnoreDefaults, scope, value, ignored);
+    if (reason !== undefined && narrowAgentCheckExclusionReason(reason) === null) {
+      throw new Error(`setDefaultAgentIgnore: "${reason}" is not an exclusion reason`);
+    }
+    state.agentIgnoreDefaults = updateAgentIgnoreSettings(state.agentIgnoreDefaults, scope, value, ignored, reason);
   }, dataStore);
 }
 
@@ -130,7 +151,7 @@ export function setNativeElementApplicability(
     if (!isKnownNativeElementId(findingId)) {
       throw new Error(`setNativeElementApplicability: finding ${findingId} does not exist`);
     }
-    if (reason !== null && !(EXCLUSION_REASONS as readonly string[]).includes(reason)) {
+    if (reason !== null && narrowNativeElementExclusionReason(reason) === null) {
       throw new Error(`setNativeElementApplicability: "${reason}" is not an exclusion reason`);
     }
     // Normalised first, so a retired record is migrated rather than half-edited.
@@ -154,36 +175,84 @@ export function setNativeElementApplicability(
   }, dataStore);
 }
 
-export function setPerformanceThresholds(
-  thresholds: PerformanceThresholds,
+/**
+ * Append one decision to the log.
+ *
+ * The only writer, and it only ever appends: an entry is never edited and never
+ * removed, so the log is the history the case panel renders rather than a
+ * summary that has to be kept in step with one. Reversing a decision is another
+ * entry saying so, which is also how the panel can show that somebody changed
+ * their mind.
+ *
+ * Nothing here touches `recs`. The collector rewrites those nightly and how it
+ * merges them is not this app's property, so a decision written onto one is a
+ * decision the next run may quietly drop.
+ *
+ * The stamp is the server's. When a decision was taken and who took it are
+ * facts about the request, and a body that could name its own author could name
+ * somebody else — so `by` is resolved from the verified identity by the route
+ * and passed in, never read out of the body.
+ */
+export async function recordCaseDecision(
+  input: CaseDecisionInput,
+  by: Caller,
+  dataStore: DataStore = getStore(),
+  now: Date = new Date(),
+): Promise<AppState> {
+  const decision = caseDecisionFrom(input, { at: now.toISOString(), by });
+  return withState((state) => {
+    state.caseDecisions = [...(state.caseDecisions ?? []), decision];
+  }, dataStore);
+}
+
+/**
+ * Move the one sensitivity control, and resolve the limits behind it.
+ *
+ * Both halves in one mutation, because they are one fact. The position is what
+ * the reader chose; the limits are what it means; storing the first without
+ * rewriting the second would leave a screen saying "Normal" over yesterday's
+ * numbers, which is precisely the opacity option 10b was chosen to avoid.
+ *
+ * A malformed position fails loudly rather than falling back to Normal. Rule 18
+ * draws that line: an absent value is withheld, but a value that should have
+ * been one of three and is not is a shape that should have been impossible, and
+ * quietly resetting a reader's sensitivity to the default is a worse outcome
+ * than a 400.
+ */
+export function setSensitivity(
+  sensitivity: Sensitivity,
   dataStore: DataStore = getStore(),
 ): Promise<AppState> {
-  if (!performanceThresholdsAreValid(thresholds)) {
-    throw new Error("setPerformanceThresholds: values are outside the supported range");
+  if (!isSensitivity(sensitivity)) {
+    throw new Error(`setSensitivity: "${sensitivity}" is not a sensitivity position`);
   }
   return withState((state) => {
-    state.performanceThresholds = normalizePerformanceThresholds(thresholds);
+    state.sensitivity = sensitivity;
+    state.performanceThresholds = thresholdsFor(sensitivity);
+    // A reader who has just set this by hand has been told everything the
+    // migration notice would have said, so it is no longer owed.
+    delete state.sensitivityNotice;
     for (const page of state.pages) {
-      page.status = pageTrend(page, "mobile", effectivePerformanceThresholds(state.performanceThresholds, page));
+      page.status = pageTrend(page, "mobile", normalizePerformanceThresholds(state.performanceThresholds));
     }
     delete state.watcherNote;
   }, dataStore);
 }
 
-export function setPagePerformanceThresholdOverrides(
-  id: string,
-  overrides: PagePerformanceThresholdOverrides,
+/**
+ * How often the digest arrives and who it goes to. One site, one answer to
+ * each — there is no other granularity, by decision.
+ */
+export function setDigestSettings(
+  settings: { cadence: DigestCadence; recipients: readonly string[] },
   dataStore: DataStore = getStore(),
 ): Promise<AppState> {
-  if (!performanceThresholdOverridesAreValid(overrides)) {
-    throw new Error("setPagePerformanceThresholdOverrides: values are outside the supported range");
+  if (!isDigestCadence(settings.cadence)) {
+    throw new Error(`setDigestSettings: "${settings.cadence}" is not a digest cadence`);
   }
   return withState((state) => {
-    const page = state.pages.find((item) => item.id === id);
-    if (!page) throw new Error(`setPagePerformanceThresholdOverrides: page ${id} not found`);
-    page.performanceThresholdOverrides = normalizePerformanceThresholdOverrides(overrides);
-    page.status = pageTrend(page, "mobile", effectivePerformanceThresholds(state.performanceThresholds, page));
-    delete state.watcherNote;
+    state.digestCadence = settings.cadence;
+    state.digestRecipients = normalizeDigestRecipients([...settings.recipients]);
   }, dataStore);
 }
 
@@ -232,12 +301,34 @@ export function addAgentIssueTask(
   }, dataStore);
 }
 
+/**
+ * Change the project's consent, and record who changed it.
+ *
+ * The boolean is the live answer the gate reads; the history is the record of
+ * how it got there. They are written in one `withState` and there is no path
+ * that writes either alone — a flipped boolean with no entry would leave the
+ * project unable to say who permitted a scan, and an entry with no flip would
+ * describe a decision that never took effect.
+ *
+ * A call that does not change the value appends nothing. An entry says what was
+ * decided, and re-selecting the position a project is already in is not a
+ * decision; recording one would put a change in the history that never happened.
+ */
 export function setExternalAgentAuditEnabled(
   enabled: boolean,
+  by: Caller,
   dataStore: DataStore = getStore(),
+  now: Date = new Date(),
 ): Promise<AppState> {
   return withState((state) => {
+    if (state.externalAgentAuditEnabled === enabled) return;
     state.externalAgentAuditEnabled = enabled;
+    state.externalAgentAuditConsentHistory = appendConsentEntry(
+      state.externalAgentAuditConsentHistory,
+      enabled,
+      by,
+      now.toISOString(),
+    );
   }, dataStore);
 }
 

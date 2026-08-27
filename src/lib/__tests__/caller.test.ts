@@ -120,20 +120,73 @@ describe("attribution", () => {
   });
 });
 
-/* ── The guard is on the class, and only on the class ───────────────────── */
+/* ── The guard is on the class, and only on the class ─────────────────── */
+
+/**
+ * Every comparison against a permission set in a file, with the argument it was
+ * handed.
+ *
+ * This is a text scan, so it reads comments as well as code and cannot tell the
+ * difference. Nothing in this file may spell the pattern out in prose — doing so
+ * makes the guard report itself, which is a failure that looks exactly like a
+ * real one and wastes the next reader's afternoon.
+ */
+const COMPARISON = /\.actor\b\s*\.\s*includes\(([^)]*)\)/g;
+
+/**
+ * Whether one such comparison is testing something that is not a class.
+ *
+ * `transition.actor` is a PERMISSION SET — a list of classes. Two things may
+ * legitimately be tested against it, and they are both classes:
+ *
+ *   - a caller's `kind`, which is the runtime check `applyAction` performs;
+ *   - a class named outright, which is how a caller asks a question ABOUT the
+ *     permission set rather than about a caller. `personActionsFor` does this:
+ *     "which actions may a person fire" is precisely what a permission set is
+ *     for, and the answer drives which buttons exist.
+ *
+ * What is forbidden is comparing an IDENTITY against it — a user id, an agent
+ * name, any string naming who rather than which class. That guard answers for
+ * the strings it lists and has to guess for the rest, so an unlisted caller
+ * either gets in or is locked out for having a new name, and a caller that picks
+ * a listed name gets in on the strength of the name alone. F4 exists because
+ * `actor` conflated the two; a check that cannot tell them apart either is the
+ * same defect one level up.
+ *
+ * The permitted literals are read off the registry rather than written here, so
+ * a third class added to `vocabulary.json` is permitted the moment it is
+ * declared, and an agent name — `"checkpoint"`, `"grouping"`, `"migration"` —
+ * is never one of them.
+ *
+ * A class held in a variable is still flagged. That is deliberate: it is rare,
+ * it is indistinguishable from an identity by reading, and the two call sites in
+ * this codebase both have a better form available. Erring tight on a check like
+ * this costs an author one line of justification; erring loose costs the guard.
+ */
+function comparesANonClass(argument: string): boolean {
+  const text = argument.trim();
+  if (/\.kind\b/.test(text)) return false;
+  return !REGISTRY_CLASSES.some((className) => text === `"${className}"` || text === `'${className}'`);
+}
 
 describe("no identity string is ever compared against a permission list", () => {
+  it("knows an identity from a class", () => {
+    // The guard was narrowed in R2, so what it still catches is asserted rather
+    // than assumed. A check that was loosened without this is a check nobody can
+    // tell from a deleted one.
+    expect(comparesANonClass("options.by.kind")).toBe(false);
+    expect(comparesANonClass("by.kind")).toBe(false);
+    for (const className of REGISTRY_CLASSES) {
+      expect(comparesANonClass(`"${className}"`), `${className} is a class the registry declares`).toBe(false);
+    }
+    // Identities, every one of which the old field could hold and none of which
+    // is a class.
+    for (const identity of ['"checkpoint"', '"grouping"', '"migration"', '"rae@webflow.com"', "rec.owner", "userId", "entry.by.userId"]) {
+      expect(comparesANonClass(identity), `${identity} is an identity, not a class`).toBe(true);
+    }
+  });
+
   it("is true of every file under src/", () => {
-    /**
-     * The shape this chunk exists to prevent: a guard that asks whether an
-     * identity string is in a list of permitted names. It answers for the
-     * strings it lists and has to guess for the rest, so an unlisted caller
-     * either gets in or is locked out for having a new name — and a caller that
-     * picks a listed name gets in on the strength of the name alone.
-     *
-     * `transition.actor` may only ever be tested against a caller's `kind`.
-     * This reads every source file and checks that.
-     */
     const files: string[] = [];
     const walk = (dir: string) => {
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -147,8 +200,8 @@ describe("no identity string is ever compared against a permission list", () => 
     const offenders: string[] = [];
     for (const file of files) {
       const source = readFileSync(file, "utf8");
-      for (const match of source.matchAll(/\.actor\b\s*\.\s*includes\(([^)]*)\)/g)) {
-        if (!/\.kind\b/.test(match[1])) offenders.push(`${path.relative(srcDir, file)}: ${match[0]}`);
+      for (const match of source.matchAll(COMPARISON)) {
+        if (comparesANonClass(match[1])) offenders.push(`${path.relative(srcDir, file)}: ${match[0]}`);
       }
     }
     expect(offenders).toEqual([]);

@@ -11,14 +11,14 @@ import {
 } from "../digestCadence";
 
 /**
- * The cadence the footer states, and the setting it is not.
+ * The cadence the footer states, and the shape of the setting behind it.
  *
- * S7 states the cadence; S8 makes it changeable. The tests that matter here are
- * therefore about what has NOT been built: no writable field, no route, no
- * control — because a persisted setting nothing writes to is what rule 15 calls
- * not a slot at all. And when S8 does land it, it must land as one switch: no
- * per-page, per-metric or per-severity variant, each of which would let a reader
- * silence the line that mattered and keep a subject claiming nothing needed them.
+ * S7 stated the cadence and deliberately did not store it: a persisted field
+ * nothing writes to is what rule 15 calls not a slot at all. S8 built the
+ * writer, so the assertion flips — what is checked now is that the setting
+ * landed as ONE switch. No per-page, per-metric or per-severity variant, each
+ * of which would let a reader silence the line that mattered while the subject
+ * went on claiming nothing needed them.
  */
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
@@ -44,19 +44,23 @@ describe("the digest cadence", () => {
     expect(isDigestCadence("hourly")).toBe(false);
   });
 
-  it("is stated, not stored — the setting is S8's", () => {
+  it("is stored, and by exactly one route", () => {
     /**
-     * Rule 15: an evidence slot with no producer is not a slot, and an empty one
-     * reads to the user as a reading that found nothing. So there is no
-     * `AppState.digestCadence`, no mutation and no route until something writes
-     * to them. `digestFor` passes the default, and S8 changes that one line.
+     * The slot has a producer now, which is what rule 15 was waiting for. One
+     * route writes it, and it writes the recipients in the same call because
+     * they are the same setting: how often, and to whom.
+     *
+     * The route is named `digest` rather than `digest-cadence`, and that is the
+     * assertion worth keeping: a route per field is how one setting becomes
+     * three.
      */
-    expect(code("../types.ts")).not.toContain("digestCadence");
-    expect(code("../mutations.ts")).not.toContain("DigestCadence");
+    expect(code("../types.ts")).toContain("digestCadence");
+    expect(code("../mutations.ts")).toContain("DigestCadence");
     const routes = readdirSync(path.resolve(moduleDir, "../../app/api/settings"), { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name);
-    expect(routes).not.toContain("digest-cadence");
+    expect(routes).toContain("digest");
+    expect(routes.filter((name) => name.startsWith("digest-"))).toEqual([]);
   });
 
   it("is not tuned per page, per metric or per severity anywhere", () => {
