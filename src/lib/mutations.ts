@@ -15,6 +15,7 @@ import { defaultNewPageFlag, flagCapacityError } from "./watchCapacity";
 import { applyWatchlistPageOrder, changePageFlagOrder, sortWatchlistPages } from "./watchlistOrder";
 import { removeTaskMarker } from "./taskMarkers";
 import { promoteAgentIssueToTask } from "./agentIssueTasks";
+import { appendConsentEntry } from "./agentConsent";
 import type { AgentIssueCase } from "./agentIssueCases";
 import { isKnownNativeElementId, normalizeNativeElementControls } from "./nativeElements";
 import { EXCLUSION_REASONS, type ExclusionReason } from "./vocabulary";
@@ -298,12 +299,34 @@ export function addAgentIssueTask(
   }, dataStore);
 }
 
+/**
+ * Change the project's consent, and record who changed it.
+ *
+ * The boolean is the live answer the gate reads; the history is the record of
+ * how it got there. They are written in one `withState` and there is no path
+ * that writes either alone — a flipped boolean with no entry would leave the
+ * project unable to say who permitted a scan, and an entry with no flip would
+ * describe a decision that never took effect.
+ *
+ * A call that does not change the value appends nothing. An entry says what was
+ * decided, and re-selecting the position a project is already in is not a
+ * decision; recording one would put a change in the history that never happened.
+ */
 export function setExternalAgentAuditEnabled(
   enabled: boolean,
+  by: Caller,
   dataStore: DataStore = getStore(),
+  now: Date = new Date(),
 ): Promise<AppState> {
   return withState((state) => {
+    if (state.externalAgentAuditEnabled === enabled) return;
     state.externalAgentAuditEnabled = enabled;
+    state.externalAgentAuditConsentHistory = appendConsentEntry(
+      state.externalAgentAuditConsentHistory,
+      enabled,
+      by,
+      now.toISOString(),
+    );
   }, dataStore);
 }
 

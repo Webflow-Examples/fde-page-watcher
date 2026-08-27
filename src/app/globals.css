@@ -1042,6 +1042,56 @@ button:disabled {
   line-height: 1.5;
 }
 
+/* ── Consent, on the Ora row ───────────────────────────────────────────── */
+
+/*
+  The Ora row's original layout, unchanged, now that the card also holds the
+  history beneath it. The row keeps its shape; only the card grew.
+*/
+.settings-consent__row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.settings-consent {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-hairline);
+}
+
+.settings-consent__label {
+  margin: 0;
+  color: var(--text-body);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.settings-consent__list {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.settings-consent__entry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+  padding: 3px 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.settings-consent__none {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 /* ── Excluded from results ─────────────────────────────────────────────── */
 
 .excluded-list {
@@ -2557,6 +2607,11 @@ textarea:focus-visible,
   }
 
   .settings-system {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .settings-consent__row {
     flex-direction: column;
     align-items: stretch;
   }

@@ -964,7 +964,14 @@ function ReadingsSection({
         />
       }
     >
-      <AgentAccessPanel access={access} caseHref={hrefForCase} />
+      <AgentAccessPanel
+        access={access}
+        caseHref={hrefForCase}
+        consent={{
+          on: store.externalAgentAuditEnabled === true,
+          history: store.externalAgentAuditConsentHistory ?? [],
+        }}
+      />
       <div
         style={{
           background: "var(--surface-card)",
