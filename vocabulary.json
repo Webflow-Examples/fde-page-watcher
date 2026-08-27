@@ -1,6 +1,6 @@
 {
-  "$comment": "Page Watch vocabulary registry. Source of truth for user-facing status words. Decided in Chunk F1. CHANGELOG: v4 closed three gaps C1a surfaced. v5 closed the gaps the F1/F2/F3/C1 build report surfaced — Resolved had no legal entry, checkpoints had no vocabulary or evaluation rule, and two measuring systems shared one evidence slot. v6 added rules 18 and 19 from S1. v7 added rules 20 and 21 from R1, and extended rule 18 with the withhold-versus-fail distinction after a wrong ruling on F3. v8 added concepts.action.actor_note. v9 is v8's content with tightened prose on rules 18, 20 and 21 and this changelog — renumbered because a registry that changes its content without changing its number is the drift it exists to prevent, and two files numbered 8 already differed. v10 renames evidence_source.kitesurf's label from the codename Kitesurf to Rendered page, from S9: a name only the team could read was the one name that system had on screen, and S9's rule is that no term may appear as jargon alone. The key is unchanged — a data key is not copy.",
-  "version": 10,
+  "$comment": "Page Watch vocabulary registry. Source of truth for user-facing status words. Decided in Chunk F1. CHANGELOG: v4 closed three gaps C1a surfaced. v5 closed the gaps the F1/F2/F3/C1 build report surfaced — Resolved had no legal entry, checkpoints had no vocabulary or evaluation rule, and two measuring systems shared one evidence slot. v6 added rules 18 and 19 from S1. v7 (90b84ba2e4ad3b37069776273aa3f6b22f5f43fc) added rules 20 and 21 from R1. v8 (7570e0fb6fd7ddcd87fc260d2bec7aba950af7bc) amended rule 18 with the withhold-versus-fail distinction after a wrong ruling on F3. v9 (9eeec84009c2f7d2633f2578155d0483ebb70035) added concepts.action.actor_note, and is v8's content with tightened prose on rules 18, 20 and 21 and this changelog — renumbered because a registry that changes its content without changing its number is the drift it exists to prevent, and two files numbered 8 already differed. v10 renames evidence_source.kitesurf's label from the codename Kitesurf to Rendered page, from S9: a name only the team could read was the one name that system had on screen, and S9's rule is that no term may appear as jargon alone. The key is unchanged — a data key is not copy. v11 adds rules 22–25 from the review rulings: a document states the sha each claim was verified at (22), a figure a command can produce is generated or left out (23), every allowlist entry is checked both ways and expires after one registry bump (24), and a chunk branch cannot lower the registry version or grow the allowlist (25). Allowlist entries become { owner, added, reason } objects so rule 24 has a clock that lives in the file.",
+  "version": 11,
   "decided": "2026-08-24",
   "concepts": {
     "work_state": {
@@ -296,8 +296,7 @@
         "Blended",
         "Consensus",
         "Overall"
-      ]
-      ,
+      ],
       "note": "v5 gives Ora its own slot. One slot for two systems meant confidenceFrom counted them as a single voice, so a disagreement between Page Watch and Ora could never surface — the exact failure the ledger was built to catch. is-agentic is removed: it had no producer, and an empty slot reads to the user as a reading that found nothing (rule 15)."
     },
     "trend": {
@@ -585,10 +584,14 @@
     "An evidence slot with no producer is not a slot. Define it when something writes to it: an empty slot reads to the user as a reading that found nothing.",
     "A transition the system fires still writes history in the words the user reads. 'Resolved — the 30-day check agreed', never 'auto_resolved'.",
     "When a case offers no action, it says why in one sentence. An action-less card with no explanation reads as a broken product, not as an honest one.",
-    "An absent measurement is not a small measurement. A finding with no reading is never folded, filtered or ranked as though its value were zero — it sorts last within its group and its row says 'not measured', never 0. Same principle as checkpoint.unavailable: no reading is neither good news nor bad. The response to absence is to WITHHOLD the claim, not to fail \u2014 a conclusion that depends on a reading nobody took is simply not stated, while a broken invariant, a shape that should have been impossible, fails loudly and names what was malformed. Confusing the two trades a false claim for a crashed screen. And withholding good news must never swallow bad news: a claim withheld for want of data still reports every drop it did measure.",
+    "An absent measurement is not a small measurement. A finding with no reading is never folded, filtered or ranked as though its value were zero — it sorts last within its group and its row says 'not measured', never 0. Same principle as checkpoint.unavailable: no reading is neither good news nor bad. The response to absence is to WITHHOLD the claim, not to fail — a conclusion that depends on a reading nobody took is simply not stated, while a broken invariant, a shape that should have been impossible, fails loudly and names what was malformed. Confusing the two trades a false claim for a crashed screen. And withholding good news must never swallow bad news: a claim withheld for want of data still reports every drop it did measure.",
     "A number shown for a group is the same statistic as the number shown for one member: the worst observed reading, never a sum. Adding measurements across findings invents a figure no run produced, and a group total that cannot be reconciled with the rows beneath it is worse than no total.",
-    "A fact stated twice is a defect waiting, so state it once. Where a second statement is genuinely unavoidable \u2014 a pre-paint script that cannot import, a type that must not reach a provider module \u2014 the second copy carries a test that executes or type-checks the two against each other. A comment asking the next editor to keep them in step is not a mechanism; every drift found in R1 had exactly such a comment and nothing else.",
-    "A test asserts the decision, not the code. Asserting a literal that vocabulary.json also names is asserting a mirror against a mirror: it proves two copies agree, never that either is right. Assert against the registry, or against the other half of the decision, so the test fails the moment the halves disagree."
+    "A fact stated twice is a defect waiting, so state it once. Where a second statement is genuinely unavoidable — a pre-paint script that cannot import, a type that must not reach a provider module — the second copy carries a test that executes or type-checks the two against each other. A comment asking the next editor to keep them in step is not a mechanism; every drift found in R1 had exactly such a comment and nothing else.",
+    "A test asserts the decision, not the code. Asserting a literal that vocabulary.json also names is asserting a mirror against a mirror: it proves two copies agree, never that either is right. Assert against the registry, or against the other half of the decision, so the test fails the moment the halves disagree.",
+    "Shipped, deleted and merged describe main. A document assembled from session reports states the sha each claim was verified at, or marks the claim unverified. A claim about a branch names the branch. A reader who cannot tell which tree a sentence describes cannot check it, and a document that cannot be checked is a claim of good faith rather than a record.",
+    "Any figure a command can produce — chunks merged, allowlist entries, glossary terms, sites repaired — is either generated when the document is written, with the command shown, or left out. Rule 20 says state a fact once; a transcribed count states it a second time in the one place nothing can check.",
+    "Every allowlist entry is checked in both directions. The file must still contain a banned term — an exemption covering a clean file is deleted. And the entry must name a chunk whose work is outstanding: when the named chunk has merged, the entry fails the check rather than waiting for a reader to notice. The list may only shrink was never enough, because entries outlive the chunks that owed them.",
+    "vocabulary.json on a chunk branch is a read-only copy; landing takes main's. A check rejects any state where the version has decreased or the allowlist has gained an entry, so a stale branch cannot lower the registry by merging."
   ],
   "banned_global": {
     "$comment": "Hard-gated: these must not appear in user-facing copy anywhere in src/. This is the list the eslint rule enforces. A concept's banned_as_label list is narrower — it means 'not a valid label for THIS concept', not 'never write this word'.",
@@ -610,10 +613,18 @@
       "Watching outcomes"
     ],
     "allowlist": {
-      "$comment": "Pre-existing violations in files C1a does not own. Each entry names the chunk that clears it. The list may only shrink. webflow-connection.tsx was cleared in C1a and removed in v5 — the rename it covered is done and the entry was dead. pages/[id]/page.tsx was cleared in S3 and removed: the tabs it named are gone and the native-element dispositions are now the applicability and work_state concepts below. watchlist/page.tsx was cleared in S8 and removed: the settings mode that carried the Ignore/Suppress copy moved to /settings and became the applicability concept below, and the watchlist itself never used those words. agent-access.tsx was cleared in S4 and removed: the two route references were the Tasks button, which now names the Fix queue. guide.ts was cleared in S9 and removed: the glossary is deleted, and the retired-term definitions it carried went with the file rather than moving anywhere.",
-      "src/components/bits.tsx": "F2 — Verifying/Returned belong to the lifecycles F2 deletes",
-      "src/components/store.tsx": "S2 — route references to the retired destinations"
+      "$comment": "Pre-existing violations in files C1a does not own. Each entry is { owner, added, reason }: owner names the chunk that clears it, added is the registry version the entry was recorded at (rule 24 — expires when more than one version behind current), reason says why the exemption exists. The list may only shrink. webflow-connection.tsx was cleared in C1a and removed in v5 — the rename it covered is done and the entry was dead. pages/[id]/page.tsx was cleared in S3 and removed: the tabs it named are gone and the native-element dispositions are now the applicability and work_state concepts below. watchlist/page.tsx was cleared in S8 and removed: the settings mode that carried the Ignore/Suppress copy moved to /settings and became the applicability concept below, and the watchlist itself never used those words. agent-access.tsx was cleared in S4 and removed: the two route references were the Tasks button, which now names the Fix queue. guide.ts was cleared in S9 and removed: the glossary is deleted, and the retired-term definitions it carried went with the file rather than moving anywhere. The object shape and the one-bump expiry arrive in v11; bits.tsx and store.tsx carry added: 10 so the inaugural check does not fail debts that predate the clock.",
+      "src/components/bits.tsx": {
+        "owner": "F2",
+        "added": 10,
+        "reason": "Verifying/Returned belong to the lifecycles F2 deletes"
+      },
+      "src/components/store.tsx": {
+        "owner": "S2",
+        "added": 10,
+        "reason": "route references to the retired destinations"
+      }
     }
   },
-  "revised": "2026-08-26"
+  "revised": "2026-08-27"
 }
