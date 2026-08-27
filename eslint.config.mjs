@@ -17,17 +17,22 @@ const eslintConfig = defineConfig([
     plugins: { vocabulary },
     rules: { "vocabulary/no-banned-vocabulary": "error" },
   },
-  {
-    // Files with copy that predates the vocabulary decision. The list lives in
-    // vocabulary.json under banned_global.allowlist, where each entry names the
-    // chunk that clears it — this just consumes it, so there is one place to
-    // look and no second list to keep in sync.
-    //
-    // It may only shrink; `vocabulary.test.ts` asserts that. A new file with
-    // retired vocabulary in it fails the rule, which is the point.
-    files: ALLOWLISTED_FILES.map(escapeGlob),
-    rules: { "vocabulary/no-banned-vocabulary": "off" },
-  },
+  // Files with copy that predates the vocabulary decision. The list lives in
+  // vocabulary.json under banned_global.allowlist, where each entry names the
+  // chunk that clears it — this just consumes it, so there is one place to
+  // look and no second list to keep in sync.
+  //
+  // It may only shrink; `vocabulary.test.ts` asserts that. A new file with
+  // retired vocabulary in it fails the rule, which is the point. When the list
+  // is empty the block is omitted: ESLint rejects `files: []`.
+  ...(ALLOWLISTED_FILES.length > 0
+    ? [
+        {
+          files: ALLOWLISTED_FILES.map(escapeGlob),
+          rules: { "vocabulary/no-banned-vocabulary": "off" },
+        },
+      ]
+    : []),
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:

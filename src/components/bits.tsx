@@ -72,7 +72,7 @@ export function FieldRecommendationStatusBadge({ rec }: { rec: Pick<Rec, "source
     : status === "active"
       ? { state: "new" as const, title: "Real visitors to this exact page are outside the good range, and the nightly test cannot reproduce it." }
       : status === "verifying"
-        ? { state: "fixed" as const, title: "Verifying recovery: one 28-day window of visitor figures is good; a second is needed to confirm it." }
+        ? { state: "fixed" as const, title: "Gone once; one more clean window confirms it." }
         : { state: "resolved" as const, title: "Settled: two separate 28-day windows of visitor figures are inside the good range." };
 
   return (
@@ -110,7 +110,7 @@ export function FieldEvidenceChip({ signal }: { signal: RecommendationEvidenceSi
  * is the one chip and nothing else.
  */
 const PERFORMANCE_ISSUE_CHIP: Record<PerformanceIssueStatus, { state: WorkState; title: string }> = {
-  regressed: { state: "reopened", title: "Returned after a confirmed resolution" },
+  regressed: { state: "reopened", title: "Came back after a confirmed resolution" },
   resolved: { state: "resolved", title: "Gone from the last two nightly tests" },
   verifying: { state: "fixed", title: "Gone once; one more clean night confirms it" },
   active: { state: "new", title: "Found in the latest nightly test" },

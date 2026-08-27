@@ -261,8 +261,8 @@ describe("the glossary retired with its definitions", () => {
     const retired = ["Verifying", "Acknowledged", "Suppressed", "Action Center"];
     const definitions = ALL_SOURCE.flatMap(({ file, text }) => {
       // A definition, not a mention: the retired word followed by prose saying
-      // what it means. `bits.tsx` still RENDERS "Verifying recovery", which is
-      // F2's allowlist entry to clear, and is not a definition of the word.
+      // what it means. Banned words that still appear in titles or toasts are
+      // allowlist debts to clear, and are not definitions of the word.
       const stripped = text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
       return retired
         .filter((term) => new RegExp(`(shortDefinition|appMeaning|term)\\s*:\\s*"[^"]*${term}`).test(stripped))

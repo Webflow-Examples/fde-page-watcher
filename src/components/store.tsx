@@ -960,7 +960,7 @@ export function StoreProvider({
       mutate(
         { ...cur, recs: cur.recs.map((r) => (r.key === key ? { ...r, status: "ignored" } : r)) },
         { url: `/api/recs`, body: { key, action: "ignore" } },
-        { success: "Ignored — cleared from Inbox, still listed on the page", failure: "Couldn't ignore — try again" },
+        { success: "Cleared from Decide — still listed on the page", failure: "Couldn't clear this — try again" },
       );
     },
     [mutate],
