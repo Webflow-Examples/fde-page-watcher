@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "systems": [
+    {
+      "id": "brand-system:be2406ed-53b5-4e69-b825-1421880d4be5",
+      "name": "DESIGN",
+      "source": "markdown-upload",
+      "format": "markdown",
+      "document": "systems/brand-system-be2406ed-53b5-4e69-b825-1421880d4be5/DESIGN.md",
+      "createdAt": "2026-08-26T02:33:00.054Z"
+    }
+  ]
+}
