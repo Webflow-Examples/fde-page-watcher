@@ -1,11 +1,16 @@
-# Product decisions pending sign-off
+# Product decisions
 
 The implementation resolved product questions that were previously undefined.
 They are reasonable defaults, but they should be confirmed (or changed) by
 product rather than remaining implicit in the code. Each notes where it lives so
 a change is a small, located edit.
 
+Each carries its own status line, because they no longer share one: most are
+still awaiting sign-off, and one has been decided.
+
 ## 1. Status is driven by mobile Performance only
+
+**Status:** pending sign-off.
 
 Page status is classified from the **Performance** category on the **mobile**
 strategy. Accessibility, SEO, Best Practices, and desktop scores are shown and
@@ -20,6 +25,8 @@ the code again.
 
 ## 2. Drop threshold is 8 points
 
+**Status:** pending sign-off.
+
 A category is considered to have a real drop (vs. noise) when it falls **8 or
 more points** below baseline. Used for degraded classification, drop alerts, and
 the "dropped on X" Watcher bullets.
@@ -27,6 +34,8 @@ the "dropped on X" Watcher bullets.
 - Where: `DROP_THRESHOLD = 8` in `src/lib/scoring.ts`.
 
 ## 3. Noise band is `max(4, 2 × mean night-to-night movement)`
+
+**Status:** pending sign-off.
 
 "Improving" vs "Stable" (see `statusMeta(...)` in `src/lib/scoring.ts` for the
 current status vocabulary) uses a per-page, per-category noise band: twice the
@@ -37,6 +46,8 @@ flat history still tolerates normal PSI jitter.
 
 ## 4. Collection starts at the workspace's saved local time
 
+**Status:** pending sign-off.
+
 The first watched page initializes the workspace to **midnight in that user's
 browser timezone**. The Settings screen can override both time and IANA
 timezone. Active pages receive stable offsets after the chosen start so the
@@ -46,6 +57,8 @@ workspace does not burst every page or PSI sample simultaneously.
   collector's 15-minute due-page cron.
 
 ## 5. Sensitivity is one control with three positions (option 10b)
+
+**Status:** pending sign-off.
 
 What a site considers worth reporting is **one setting**, not twelve. The three
 positions are Only big moves / Normal / Everything, and each resolves to a
@@ -77,7 +90,7 @@ is settled, and should not be reopened without a decision:
 
 ## 6. A per-page ignore is an override, not an exclusion (option 6b)
 
-**Decided by F6. This one is settled, not pending.**
+**Status:** decided by F6, reading B. Settled, not pending.
 
 S8 settled the shape: exclusions are **one list and several records** —
 `CaseDecisionRecord` for a case's pages, `AgentIgnoreSettings.reasons` for agent
