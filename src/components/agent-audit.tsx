@@ -1,15 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { latestExternalAgentSnapshot, type ExternalAgentFinding, type ExternalAgentOriginAudit } from "@/lib/agentAudit";
+import { latestExternalAgentSnapshot, type ExternalAgentOriginAudit } from "@/lib/agentAudit";
 import {
-  externalAgentResultLabel,
   externalAgentSourceReading,
   externalAgentStatusLabel,
   orderedExternalFindings,
   pageSupportsExternalAudit,
+  type AgentAuditFinding,
+  type ExternalAgentReading,
 } from "@/lib/externalAgentEvidence";
-import type { ExternalAgentCheckResult } from "@/lib/agentAudit";
+import { AGENT_RESULT_LABEL } from "@/lib/vocabulary";
 import { Magnitude } from "@/components/magnitude";
 
 /**
@@ -21,18 +22,18 @@ type HealthBand = "good" | "warn" | "poor" | "none";
 
 /**
  * Is this check in good shape right now? That is a health question, so a
- * provider result gets a health band.
+ * result gets a health band.
  *
- * `not-applicable` and `unavailable` are deliberately `none`, not `warn`.
+ * `not_applicable` and `unavailable` are deliberately `none`, not `warn`.
  * Neither says anything is wrong — one says the check does not apply and the
- * other says the provider could not reach an answer. Both are the absence of a
- * verdict, which is what `none` means, and neither may look like a pass.
+ * other says no reading could be taken. Both are the absence of a verdict,
+ * which is what `none` means, and neither may look like a pass.
  *
- * These five values are the provider's, not ours: they are not F1 work states,
- * so this badge is not a `<StatusChip>`.
+ * These are `agent_result` values, not F1 work states, so this badge is still
+ * not a `<StatusChip>`.
  */
-function resultTone(result: ExternalAgentCheckResult): HealthBand {
-  if (result === "pass") return "good";
+function resultTone(result: ExternalAgentReading): HealthBand {
+  if (result === "passed") return "good";
   if (result === "failed") return "poor";
   if (result === "partial") return "warn";
   return "none";
@@ -41,7 +42,7 @@ function resultTone(result: ExternalAgentCheckResult): HealthBand {
 /** A result carries meaning, so it never renders below 12px. */
 const RESULT_BADGE_FONT_SIZE = 12;
 
-function ResultBadge({ result }: { result: ExternalAgentCheckResult }) {
+function ResultBadge({ result }: { result: ExternalAgentReading }) {
   const band = resultTone(result);
   return (
     <span
@@ -59,19 +60,19 @@ function ResultBadge({ result }: { result: ExternalAgentCheckResult }) {
         whiteSpace: "nowrap",
       }}
     >
-      {externalAgentResultLabel(result)}
+      {AGENT_RESULT_LABEL[result]}
     </span>
   );
 }
 
-function tierLabel(finding: ExternalAgentFinding): string | null {
+function tierLabel(finding: AgentAuditFinding): string | null {
   if (finding.tier === "essential") return "Essential";
   if (finding.tier === "recommended") return "Recommended";
   if (finding.tier === "emerging") return "Forward-looking";
   return null;
 }
 
-function FindingRow({ finding }: { finding: ExternalAgentFinding }) {
+function FindingRow({ finding }: { finding: AgentAuditFinding }) {
   const tier = tierLabel(finding);
   return (
     <li style={{ listStyle: "none", padding: "10px 0", borderTop: "1px solid var(--border-hairline)" }}>
@@ -89,12 +90,12 @@ function FindingRow({ finding }: { finding: ExternalAgentFinding }) {
         <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 5, lineHeight: 1.5 }}>{finding.details}</div>
       )}
       {/* Provider evidence, not a Page Watch guarantee of impact. */}
-      {finding.result === "not-applicable" && finding.applicability && (
+      {finding.result === "not_applicable" && finding.applicability && (
         <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 5, lineHeight: 1.5 }}>
           Provider marked this not applicable: {finding.applicability}
         </div>
       )}
-      {finding.recommendation && finding.result !== "pass" && finding.result !== "not-applicable" && (
+      {finding.recommendation && finding.result !== "passed" && finding.result !== "not_applicable" && (
         <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 5, lineHeight: 1.5 }}>
           {/* Label and body were two greys that now resolve to the same token,
               so the label leans on weight instead of a second ink. */}
@@ -246,11 +247,11 @@ export function ExternalAgentAuditPanel({
                   color: "var(--text-muted)",
                 }}
               >
-                <Magnitude value={reading.counts.failed} unit="failing" fontSize={12} />
+                <Magnitude value={reading.counts.failed} unit="failed" fontSize={12} />
                 <Magnitude value={reading.counts.partial} unit="partial" fontSize={12} />
-                <Magnitude value={reading.counts.pass} unit="passing" fontSize={12} />
-                <Magnitude value={reading.counts.notApplicable} unit="not applicable" fontSize={12} />
-                <Magnitude value={reading.counts.unavailable} unit="not determined" fontSize={12} />
+                <Magnitude value={reading.counts.passed} unit="passed" fontSize={12} />
+                <Magnitude value={reading.counts.not_applicable} unit="not applicable" fontSize={12} />
+                <Magnitude value={reading.counts.unavailable} unit="unavailable" fontSize={12} />
               </div>
             )}
           </div>

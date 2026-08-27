@@ -34,6 +34,7 @@ import type {
   Strategy,
   TaskStatus,
 } from "./types";
+import { narrowCasePageExclusionReason } from "./case-decisions";
 import {
   APPLICABILITY_TRANSITIONS,
   COUNTED_QUEUES,
@@ -1366,7 +1367,7 @@ export function excludePage(
   if (!APPLICABILITY_TRANSITIONS.exclude.from.includes(current)) {
     throw new IssueCaseError(`excludePage: ${pageId} is already ${current} on ${issue.id}.`);
   }
-  if (!(EXCLUSION_REASONS as readonly string[]).includes(reason)) {
+  if (narrowCasePageExclusionReason(reason) === null) {
     throw new IssueCaseError(
       `excludePage: reason must be one of ${EXCLUSION_REASONS.join(", ")}.`,
     );

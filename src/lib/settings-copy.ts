@@ -78,6 +78,18 @@ export const SETTINGS_EXCLUDED_LABEL = "Excluded from results";
 export const SETTINGS_EXCLUDED_HELP =
   "Pages and checks that do not apply to this site. Each keeps its last reading and its reason.";
 
+/**
+ * Where a set-aside check applies: every page of the site, always.
+ *
+ * The one string F6 added to this list, and the reason is that the rows either
+ * side of it are scoped — a native-element finding to its page, a case page to
+ * its case — so a check row naming no scope read as though it were scoped to
+ * something the reader had not been told. Excluding a check has only ever been
+ * a site-wide decision; this is the row saying so rather than the reader having
+ * to know it.
+ */
+export const SETTINGS_EXCLUDED_SITE_SCOPE = "Every page";
+
 /** Nothing set aside is good news, and rule 15 says an empty list must say so. */
 export const SETTINGS_EXCLUDED_EMPTY = "Nothing is set aside. Every page and check counts toward this site's results.";
 
