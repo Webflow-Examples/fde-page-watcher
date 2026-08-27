@@ -417,11 +417,19 @@ describe("S5 — marking fixed hands off to the checkpoints", () => {
 });
 
 describe("S5 — what the fix queue replaces", () => {
-  it("leaves no route or component named task", () => {
+  it("leaves no task UI — only the retired redirect may keep the name", () => {
+    // S10 restored /tasks as a redirect so old links stop 404ing. That file is
+    // allowed; anything else named task would be a second destination.
     const named = sourceFiles()
       .map((file) => path.relative(srcDir, file).replace(/\\/g, "/"))
-      .filter((file) => /(^|\/)tasks?(\/|\.|-)/i.test(file));
+      .filter((file) => /(^|\/)tasks?(\/|\.|-)/i.test(file))
+      .filter((file) => file !== "app/(app)/tasks/page.tsx");
     expect(named).toEqual([]);
+    const redirect = readFileSync(path.join(srcDir, "app/(app)/tasks/page.tsx"), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    expect(redirect).toContain("DESTINATION_PATH.issues");
+    expect(redirect).toContain("redirect(");
   });
 
   it("leaves no add-to-tasks affordance", () => {

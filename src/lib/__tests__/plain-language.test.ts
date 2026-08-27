@@ -271,15 +271,21 @@ describe("the glossary retired with its definitions", () => {
     expect(definitions).toEqual([]);
   });
 
-  it("sends /guide to the issues list, like every other retired route", () => {
-    const route = ALL_SOURCE.find(({ file }) => file.endsWith(path.join("guide", "page.tsx")));
-    expect(route, "the /guide route must still exist, or old links 404").toBeDefined();
-    // Comments stripped: the route explains at length why it no longer aims at
-    // a Settings anchor, and a check that tripped over its own justification
-    // would only teach the next editor to delete the paragraph.
-    const code = route!.text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-    // Asserts the destination it resolves, not a literal path (rule 21).
-    expect(code).toContain("DESTINATION_PATH.issues");
-    expect(code).not.toContain("#reference");
+  it("sends every retired route to the issues list", () => {
+    // /dashboard, /inbox, /tasks, /guide — four redirects, and the fourth is the
+    // one that went missing before. Asserting them together means a deleted
+    // route fails this test rather than a 404 in production.
+    const retired = ["dashboard", "inbox", "tasks", "guide"];
+    for (const name of retired) {
+      const route = ALL_SOURCE.find(({ file }) => file.endsWith(path.join(name, "page.tsx")));
+      expect(route, `the /${name} route must still exist, or old links 404`).toBeDefined();
+      // Comments stripped: each route explains why it still exists, and a check
+      // that tripped over its own justification would only teach the next editor
+      // to delete the paragraph.
+      const code = route!.text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+      // Asserts the destination it resolves, not a literal path (rule 21).
+      expect(code, `/${name} must redirect via DESTINATION_PATH.issues`).toContain("DESTINATION_PATH.issues");
+      expect(code, `/${name} must not aim at a Settings anchor`).not.toContain("#reference");
+    }
   });
 });
