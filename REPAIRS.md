@@ -53,7 +53,32 @@ one commit.
 
 ## Open
 
-_Nothing open._
+### The retention doc-comment in `mutations.ts` sits above the wrong function
+
+- **Found by:** C3, on `chunk-c3`, at base `95d77a9`.
+- **Not claimed, and deliberately not fixed here.** Moving a comment is a
+  one-line change, and a one-line change in somebody else's function is still a
+  change C3 did not come to write. R3 keeps it out of the feature diff.
+- **Symptom:** the comment reading "Withdrawing consent stops future requests;
+  evidence already stored is retained" sits immediately above a SECOND comment
+  and then `addAgentIssueTask`, which has nothing to do with consent.
+  `setExternalAgentAuditEnabled`, which the claim is about, is declared after
+  both and now carries a doc-comment of its own about the history it writes.
+- **The behaviour claim is true** — withdrawal stops future requests and stored
+  evidence is retained, and C3 asserts both. Only its placement is wrong, so
+  this is a comment move and not a behaviour change.
+- **Care needed:** the fix is to move the retention sentence onto
+  `setExternalAgentAuditEnabled` and merge it with the doc-comment C3 added
+  there, not to copy it — two statements of one retention rule is the drift that
+  put it in the wrong place to begin with.
+
+### C3's other reported leftover is not one
+
+C3's brief reports `addAgentIssueTask` as "a leftover producer with no
+consumer". It is not, at `95d77a9`: `src/app/api/pages/[id]/agent-issues/route.ts`
+calls it, `src/components/store.tsx` exposes it on the store, and
+`promoteAgentIssueToTask` writes into `state.recs`, which is very much alive.
+Recorded here so the next session does not spend the search a second time.
 
 ## Landed
 
