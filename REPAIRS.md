@@ -72,14 +72,6 @@ one commit.
   there, not to copy it — two statements of one retention rule is the drift that
   put it in the wrong place to begin with.
 
-### C3's other reported leftover is not one
-
-C3's brief reports `addAgentIssueTask` as "a leftover producer with no
-consumer". It is not, at `95d77a9`: `src/app/api/pages/[id]/agent-issues/route.ts`
-calls it, `src/components/store.tsx` exposes it on the store, and
-`promoteAgentIssueToTask` writes into `state.recs`, which is very much alive.
-Recorded here so the next session does not spend the search a second time.
-
 ## Landed
 
 ### Conflict markers committed into `DECISIONS.md`

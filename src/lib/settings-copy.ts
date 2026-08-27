@@ -126,6 +126,18 @@ export function settingsConsentWithdrawn(name: string): string {
 export const SETTINGS_CONSENT_NEVER = "Ora has never been connected for this project.";
 
 /**
+ * The other empty state: connected, but from before there was a record of it.
+ *
+ * Rule 18. An absent record is not nothing to report — it is a project whose
+ * consent plainly was granted and whose grant has no date, and saying so is the
+ * only honest answer. Suppressing the block would treat the absence as a
+ * smaller fact than it is, and `consent.never` would be a flat lie about a
+ * project that is connected right now.
+ */
+export const SETTINGS_CONSENT_UNRECORDED =
+  "Ora was connected before this project kept a consent record, so there is no date for it.";
+
+/**
  * What S4's ledger adds to a reading that predates the current withdrawal.
  *
  * Imported by the ledger row rather than restated there: one string, one home,

@@ -13,6 +13,7 @@ import {
   normalizeExternalAgentConsentHistory,
   readingPredatesWithdrawal,
 } from "../agentConsent";
+import { SETTINGS_CONSENT_NEVER, SETTINGS_CONSENT_UNRECORDED } from "../settings-copy";
 import type { AppState, ExternalAgentConsentEntry } from "../types";
 import type { Caller } from "../caller";
 
@@ -223,6 +224,7 @@ describe("one string, one home", () => {
     for (const constant of [
       "SETTINGS_CONSENT_HISTORY_LABEL",
       "SETTINGS_CONSENT_NEVER",
+      "SETTINGS_CONSENT_UNRECORDED",
       "SETTINGS_CONSENT_RETENTION",
       "settingsConsentGranted",
       "settingsConsentWithdrawn",
@@ -231,6 +233,32 @@ describe("one string, one home", () => {
     }
     expect(page, "the never line is written into the screen")
       .not.toContain("has never been connected for this project");
+  });
+
+  it("gives both empty states a line, and suppresses neither", () => {
+    // Rule 18: an absent record is not nothing to report. A project connected
+    // before the record existed has a grant with no date, and says so; it does
+    // not fall through to "never connected", and the block is never hidden.
+    const page = readFileSync(path.join(SRC, "app", "(app)", "settings", "page.tsx"), "utf8");
+    expect(page).toContain("everGranted ? SETTINGS_CONSENT_UNRECORDED : SETTINGS_CONSENT_NEVER");
+    expect(page, "the history block is suppressed for a state that has something to say")
+      .not.toMatch(/entries\.length === 0 && everGranted\) return null/);
+    // The two lines are different sentences, so neither can stand in for the other.
+    expect(SETTINGS_CONSENT_UNRECORDED).not.toBe(SETTINGS_CONSENT_NEVER);
+  });
+
+  it("stacks the Ora card, so the history sits under the control and not beside it", () => {
+    // Found by looking at it, not by a test: `.settings-system` is a flex ROW,
+    // so a card with two children lays the history out as a third column next
+    // to the toggle. `--stacked` is S8's own modifier and
+    // `.settings-consent__row` reproduces the original row inside it, so the Ora
+    // row looks unchanged and the record lands beneath it.
+    const page = readFileSync(path.join(SRC, "app", "(app)", "settings", "page.tsx"), "utf8");
+    const card = page.indexOf('<div className="settings-consent__row">');
+    expect(card).toBeGreaterThan(-1);
+    const opensCard = page.lastIndexOf("<div className=\"settings-system", card);
+    expect(page.slice(opensCard, card), "the Ora card is not stacked")
+      .toContain("settings-system--stacked");
   });
 
   it("writes the consent boolean from exactly one place", () => {

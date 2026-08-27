@@ -32,6 +32,7 @@ import {
   SETTINGS_CONSENT_HISTORY_LABEL,
   SETTINGS_CONSENT_NEVER,
   SETTINGS_CONSENT_RETENTION,
+  SETTINGS_CONSENT_UNRECORDED,
   SETTINGS_DIGEST_HELP,
   SETTINGS_DIGEST_LABEL,
   SETTINGS_DIGEST_RECIPIENTS_EMPTY,
@@ -433,13 +434,13 @@ function ExcludedGroup({ disabled }: { disabled: boolean }) {
  * so nothing here folds, counts or collapses entries — a project that connected
  * and disconnected four times has eight lines, because that is what happened.
  *
- * The three states are distinct on purpose. Entries, so they render. No entries
- * and never connected, which is a real answer and gets said in as many words
- * rather than shown as an empty list. And no entries while connected — a
- * project that turned Ora on before this record existed — where the honest
- * thing is to show nothing at all: the control above already says Connected,
- * and "has never been connected" would be a false statement about a project
- * that plainly has been.
+ * The three states are distinct on purpose, and none of them is a blank. Entries,
+ * so they render. No entries and never connected, which is a real answer and
+ * gets said in as many words. And no entries while connected — a project that
+ * turned Ora on before this record existed — which is not nothing to report:
+ * it is a grant with no date, and rule 18 says an absent measurement is not a
+ * small one. Two empty states, two different lines, because "never connected"
+ * would be a flat lie about a project that is connected right now.
  */
 function ConsentHistory({
   entries,
@@ -449,12 +450,13 @@ function ConsentHistory({
   on: boolean;
 }) {
   const everGranted = consentWasEverGranted(entries, on);
-  if (entries.length === 0 && everGranted) return null;
   return (
     <div className="settings-consent">
       <h4 className="settings-consent__label">{SETTINGS_CONSENT_HISTORY_LABEL}</h4>
       {entries.length === 0 ? (
-        <p className="settings-consent__none">{SETTINGS_CONSENT_NEVER}</p>
+        <p className="settings-consent__none">
+          {everGranted ? SETTINGS_CONSENT_UNRECORDED : SETTINGS_CONSENT_NEVER}
+        </p>
       ) : (
         <ul className="settings-consent__list">
           {entries.map((entry, index) => (
@@ -515,7 +517,14 @@ function ConnectedSystemsGroup({ disabled }: { disabled: boolean }) {
         reads ABOVE the control because it is what somebody needs before
         deciding, not an explanation of what they just did.
       */}
-      <div className="settings-system">
+      {/*
+        Stacked, because the card now holds two things: the row, and the record
+        beneath it. Without this the card's own flex would lay the history out
+        BESIDE the control as a third column. `--stacked` is S8's existing
+        modifier and `.settings-consent__row` reproduces the original row inside
+        it, so the Ora row itself looks exactly as it did.
+      */}
+      <div className="settings-system settings-system--stacked">
         <div className="settings-consent__row">
           <div style={{ minWidth: 0 }}>
             <h3 className="settings-system__name">Ora</h3>
