@@ -209,7 +209,10 @@ export const EVIDENCE_SOURCE_LABEL: Record<EvidenceSource, string> = {
   "native-elements": "Native elements",
   "agent-readiness": "Agent readiness checks",
   ora: "Ora",
-  kitesurf: "Kitesurf",
+  // Registry v10: the codename was the only name a reader ever saw for this
+  // system, and a codename explains nothing. The KEY is unchanged — a data key
+  // is not copy — so no stored reading has to be migrated.
+  kitesurf: "Rendered page",
 };
 
 /* ── Actionability — what the customer can do about a case ──────────────── */

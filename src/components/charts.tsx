@@ -273,7 +273,7 @@ export function HistoryChart({
                 // 1.8:1 as 12px type on the band it sits on.
                 style={{ fill: "var(--text-muted)" }}
               >
-                PSI anomaly · excluded
+                Odd reading · left out
               </text>
             </g>
           );
@@ -379,7 +379,7 @@ export function HistoryChart({
           }}
         >
           <div style={{ fontSize: 12, fontWeight: 650, color: hoveredAnomaly ? "var(--text-muted)" : "var(--text-body)" }}>
-            {hoveredAnomaly ? "PSI anomaly · excluded" : HISTORY_CATEGORY_LABELS[catKey]}
+            {hoveredAnomaly ? "Odd reading · left out" : HISTORY_CATEGORY_LABELS[catKey]}
           </div>
           <div style={{ marginTop: 2, fontSize: 12, color: "var(--text-muted)" }}>{formatHistoryTooltipDate(hoveredNight.date, hoveredNight.iso)}</div>
           <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginTop: 9 }}>

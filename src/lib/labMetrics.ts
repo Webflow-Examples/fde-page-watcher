@@ -15,7 +15,7 @@ export const LAB_METRICS: ReadonlyArray<{
   { key: "medianFirstContentfulPaint", label: "First content", short: "FCP", good: 1_800, poor: 3_000 },
   { key: "medianSpeedIndex", label: "Visual progress", short: "Speed Index", good: 3_400, poor: 5_800 },
   { key: "medianLargestContentfulPaint", label: "Main content", short: "LCP", good: 2_500, poor: 4_000 },
-  { key: "medianTotalBlockingTime", label: "Main-thread blocking", short: "TBT", good: 200, poor: 600 },
+  { key: "medianTotalBlockingTime", label: "Unable to respond", short: "TBT", good: 200, poor: 600 },
   { key: "medianCumulativeLayoutShift", label: "Layout stability", short: "CLS", good: 0.1, poor: 0.25 },
 ];
 

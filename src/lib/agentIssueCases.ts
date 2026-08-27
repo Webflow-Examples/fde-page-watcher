@@ -23,6 +23,7 @@
 
 import type { AgentCheck, AgentIgnoreSettings, KitesurfEvidence } from "./types";
 import { isAgentCheckIgnored } from "./agentScoring";
+import { EVIDENCE_SOURCE_LABEL, type EvidenceSource } from "./vocabulary";
 import type {
   ExternalAgentAuditSnapshot,
   ExternalAgentCheckResult,
@@ -155,7 +156,7 @@ export const AGENT_ISSUE_FAMILIES: Readonly<Record<string, IssueFamily>> = {
       "State an explicit Allow or Disallow for each; silence is read as ambiguity.",
       "Keep the policy consistent with any Content Signals or bot-management rules already in force.",
     ],
-    successCriteria: "robots.txt resolves and states an explicit policy for AI user agents.",
+    successCriteria: "Your robots.txt file loads and states, for each AI crawler, whether it may read the site.",
     localChecks: ["robots.txt", "AI bot rules", "Content Signals"],
     oraChecks: ["robots-ai-policy-quality", "robots-agent-user-policy"],
   },
@@ -186,7 +187,7 @@ export const AGENT_ISSUE_FAMILIES: Readonly<Record<string, IssueFamily>> = {
   },
   "agent-discoverability:link-headers": {
     half: "reach",
-    title: "Related resources are not discoverable from HTTP",
+    title: "Agents must load the whole page to find related documents (no Link headers)",
     consequence: "Link headers let an agent find alternates and related documents without parsing the page. Without them it has to render first.",
     scope: "origin",
     remediation: ["Emit RFC 8288 Link headers for alternates and related agent resources."],
@@ -196,7 +197,7 @@ export const AGENT_ISSUE_FAMILIES: Readonly<Record<string, IssueFamily>> = {
   },
   "agent-discoverability:dns": {
     half: "reach",
-    title: "No DNS-level agent discovery record",
+    title: "Nothing in the domain records points agents anywhere (no DNS-AID record)",
     consequence: "DNS-AID lets an agent find the site's agent entry points before making a single HTTP request.",
     scope: "origin",
     remediation: ["Publish a DNS for AI Discovery record pointing at the agent resources you expose."],
@@ -205,7 +206,7 @@ export const AGENT_ISSUE_FAMILIES: Readonly<Record<string, IssueFamily>> = {
   },
   "agent-content:markdown": {
     half: "comprehension",
-    title: "Agents cannot get a clean text version of the page",
+    title: "Agents cannot get a plain-text version of the page",
     consequence: "Agents parse Markdown far more reliably than rendered HTML. Without negotiation they burn context on markup, or misread the page.",
     scope: "origin",
     remediation: [
@@ -218,7 +219,7 @@ export const AGENT_ISSUE_FAMILIES: Readonly<Record<string, IssueFamily>> = {
   },
   "agent-content:no-js": {
     half: "comprehension",
-    title: "The page has no content without JavaScript",
+    title: "The page is empty until scripts run",
     consequence: "Most agents do not execute JavaScript. If the primary content only appears after hydration, they see an empty page.",
     scope: "origin",
     remediation: [
@@ -242,7 +243,7 @@ export const AGENT_ISSUE_FAMILIES: Readonly<Record<string, IssueFamily>> = {
   },
   "agent-api:openapi": {
     half: "comprehension",
-    title: "Agents cannot reliably discover machine-readable API documentation",
+    title: "Agents cannot find documentation for your interfaces (no API catalogue)",
     consequence: "Without a published contract an agent has to infer endpoints and parameters from prose, which it will get wrong.",
     scope: "origin",
     remediation: [
@@ -255,7 +256,7 @@ export const AGENT_ISSUE_FAMILIES: Readonly<Record<string, IssueFamily>> = {
   },
   "agent-api:errors": {
     half: "comprehension",
-    title: "API errors are not machine-readable",
+    title: "When a request fails, agents get a message they cannot read (unstructured API errors)",
     consequence: "An agent that cannot tell a rate limit from a validation failure retries the wrong thing, or gives up on a recoverable error.",
     scope: "origin",
     remediation: [
@@ -318,7 +319,7 @@ export const AGENT_ISSUE_FAMILIES: Readonly<Record<string, IssueFamily>> = {
   },
   "agent-mcp:discovery": {
     half: "reach",
-    title: "No MCP server is discoverable",
+    title: "Agents cannot find any tools this site offers them (no MCP server)",
     consequence: "MCP is how an agent takes action rather than only reading. Without a discoverable server the site is read-only to agents.",
     scope: "origin",
     remediation: [
@@ -331,7 +332,7 @@ export const AGENT_ISSUE_FAMILIES: Readonly<Record<string, IssueFamily>> = {
   },
   "agent-mcp:resources": {
     half: "comprehension",
-    title: "MCP resources are missing or poorly described",
+    title: "The tools the site offers agents are unnamed or unexplained (MCP resources)",
     consequence: "An agent chooses tools by their descriptions. Thin or missing resource metadata makes it pick the wrong one.",
     scope: "origin",
     remediation: [
@@ -472,8 +473,28 @@ function caseConfidence(
   return { confidence: systems.size > 1 ? "corroborated" : "single-source" };
 }
 
+/**
+ * The name a reader sees for the system that took a reading.
+ *
+ * Read off the registry rather than spelled out again. This used to hold its
+ * own three strings — "Page Watch HTTP", the "Kitesurf" codename, and "Ora" —
+ * which is the rule 20 defect: three names for systems the evidence ledger
+ * already names, agreeing until the day one of them was reworded. Registry v10
+ * renamed one of the three, and this is the mapping that makes the rename
+ * arrive here instead of leaving a fourth spelling behind.
+ *
+ * The keys differ from the ledger's by one: this type's `page-watch` is the
+ * ledger's `agent-readiness` slot, which the registry notes carries "only Page
+ * Watch's reading".
+ */
+const EVIDENCE_SOURCE_OF: Record<AgentEvidenceSystem, EvidenceSource> = {
+  "page-watch": "agent-readiness",
+  kitesurf: "kitesurf",
+  ora: "ora",
+};
+
 export function systemLabel(system: AgentEvidenceSystem): string {
-  return system === "page-watch" ? "Page Watch HTTP" : system === "kitesurf" ? "Kitesurf" : "Ora";
+  return EVIDENCE_SOURCE_LABEL[EVIDENCE_SOURCE_OF[system]];
 }
 
 export interface AssembleAgentIssueCasesInput {
