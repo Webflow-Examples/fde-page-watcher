@@ -37,6 +37,7 @@ import {
   SETTINGS_EXCLUDED_EMPTY,
   SETTINGS_EXCLUDED_HELP,
   SETTINGS_EXCLUDED_LABEL,
+  SETTINGS_EXCLUDED_SITE_SCOPE,
   SETTINGS_SENSITIVITY_HELP,
   SETTINGS_SENSITIVITY_LABEL,
   SETTINGS_SENSITIVITY_LIMIT_LABEL,
@@ -255,6 +256,15 @@ function ExcludedRowView({ row, onInclude }: { row: ExcludedRow; onInclude?: () 
       <div className="excluded-row__body">
         <span className="excluded-row__title">{row.title}</span>
         {row.scope ? <span className="excluded-row__scope">{row.scope}</span> : null}
+        {/*
+          A check is set aside for the whole site, and the row has to say so.
+          The rows either side of this one are scoped to a page or to a case, so
+          a check row that named no scope read as though it were scoped too —
+          and the decision it records is the one thing here that never is.
+        */}
+        {row.kind === "check"
+          ? <span className="excluded-row__scope">{SETTINGS_EXCLUDED_SITE_SCOPE}</span>
+          : null}
         <span className="excluded-row__reason">{row.reason}</span>
       </div>
       <span className={`excluded-row__reading${row.measured ? "" : " is-unmeasured"}`}>{row.reading}</span>

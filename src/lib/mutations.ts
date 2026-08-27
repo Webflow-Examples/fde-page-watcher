@@ -17,7 +17,9 @@ import { removeTaskMarker } from "./taskMarkers";
 import { promoteAgentIssueToTask } from "./agentIssueTasks";
 import type { AgentIssueCase } from "./agentIssueCases";
 import { isKnownNativeElementId, normalizeNativeElementControls } from "./nativeElements";
-import { EXCLUSION_REASONS, type ExclusionReason } from "./vocabulary";
+import { narrowNativeElementExclusionReason } from "./nativeElements";
+import { narrowAgentCheckExclusionReason } from "./settings-exclusions";
+import { type ExclusionReason } from "./vocabulary";
 import { caseDecisionFrom, type CaseDecisionInput } from "./case-decisions";
 import type { Caller } from "./caller";
 import { alertWebhookUrlIsValid } from "./webhook";
@@ -115,7 +117,7 @@ export function setDefaultAgentIgnore(
     if (!isKnownAgentIgnoreTarget(scope, value)) {
       throw new Error(`setDefaultAgentIgnore: ${scope} does not exist`);
     }
-    if (reason !== undefined && !(EXCLUSION_REASONS as readonly string[]).includes(reason)) {
+    if (reason !== undefined && narrowAgentCheckExclusionReason(reason) === null) {
       throw new Error(`setDefaultAgentIgnore: "${reason}" is not an exclusion reason`);
     }
     state.agentIgnoreDefaults = updateAgentIgnoreSettings(state.agentIgnoreDefaults, scope, value, ignored, reason);
@@ -148,7 +150,7 @@ export function setNativeElementApplicability(
     if (!isKnownNativeElementId(findingId)) {
       throw new Error(`setNativeElementApplicability: finding ${findingId} does not exist`);
     }
-    if (reason !== null && !(EXCLUSION_REASONS as readonly string[]).includes(reason)) {
+    if (reason !== null && narrowNativeElementExclusionReason(reason) === null) {
       throw new Error(`setNativeElementApplicability: "${reason}" is not an exclusion reason`);
     }
     // Normalised first, so a retired record is migrated rather than half-edited.

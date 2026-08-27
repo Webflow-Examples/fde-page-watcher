@@ -113,15 +113,34 @@ function worstAgentResult(pages: readonly WatchPage[], matches: (check: AgentChe
  * bless is treated the same way, on `normalizeNativeElementControls`' grounds:
  * a reason nobody decided is the absence of one.
  */
+/**
+ * The one gate between a stored string and this record's decided reason.
+ *
+ * `types.ts` cannot import the registry, so the stored field is a plain string
+ * and whichever module owns the record narrows it. This module owns
+ * `AgentIgnoreSettings.reasons`, so this is that narrowing — and it is the only
+ * one for this record, in either direction. Writers and readers both call it rather than repeating the
+ * membership test, because several spellings of one rule is the drift rule 20
+ * names.
+ *
+ * Returns `null` for "not a reason this registry blesses", which is the same
+ * answer as "no reason recorded": applicability requires a reason, and a reason
+ * nobody decided is the absence of one. It never signals "the record is gone" —
+ * that is the caller's question, not this one's.
+ */
+export function narrowAgentCheckExclusionReason(value: unknown): ExclusionReason | null {
+  return typeof value === "string" && (EXCLUSION_REASONS as readonly string[]).includes(value)
+    ? value as ExclusionReason
+    : null;
+}
+
 function reasonFor(
   defaults: ReturnType<typeof normalizeAgentIgnoreSettings>,
   scope: "check" | "group",
   value: string,
 ): ExclusionReason {
   const stored = defaults.reasons?.[agentExclusionKey(scope, value)];
-  return (EXCLUSION_REASONS as readonly string[]).includes(stored ?? "")
-    ? stored as ExclusionReason
-    : UNLABELLED_EXCLUSION_REASON;
+  return narrowAgentCheckExclusionReason(stored) ?? UNLABELLED_EXCLUSION_REASON;
 }
 
 function agentRows(state: AppState): ExcludedRow[] {
