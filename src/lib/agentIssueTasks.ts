@@ -1,17 +1,13 @@
 /**
- * Turning agent issue cases into tasks, and closing the loop after a fix.
+ * Turning agent issue cases into recommendations, and closing the loop after a
+ * fix. Essential blockers still enter automatically via
+ * `reconcileAgentIssueRecsInState`; there is no separate "promote to task"
+ * path — an agent finding is already a case (`agentIssueCases`), and decisions
+ * live in the append-only case store.
  *
- * Two entry points into Tasks, deliberately different:
- *   - Essential blockers enter the Inbox automatically, because a failing
- *     essential check means agents cannot use the site and that should not wait
- *     for someone to notice it on a tab.
- *   - Everything else is promoted only when a user asks. Auto-filing every
- *     provider finding would bury the Inbox, which is the overload problem the
- *     UX audit already identifies.
- *
- * A task keeps the provider check ids and success criteria that were true when
- * it was created, so a later verification re-runs exactly the right checks even
- * if the issue has since been re-assembled from newer evidence.
+ * A recommendation keeps the provider check ids and success criteria that were
+ * true when it was created, so a later verification re-runs exactly the right
+ * checks even if the issue has since been re-assembled from newer evidence.
  */
 
 import { costBand } from "./cost";
@@ -91,33 +87,6 @@ export function agentIssueRec(
     aiSummary: `${issue.consequence} ${knowledge}`,
     agentIssue: evidenceFor(issue, origin, now),
   };
-}
-
-/** Promote any issue case to a task on explicit request. */
-export function promoteAgentIssueToTask(
-  state: AppState,
-  pageId: string,
-  issue: AgentIssueCase,
-  now: Date,
-  origin?: string,
-): Rec {
-  const page = state.pages.find((item) => item.id === pageId);
-  if (!page) throw new Error(`promoteAgentIssueToTask: page ${pageId} not found`);
-  const candidate = agentIssueRec(page, issue, now, origin);
-  const existing = state.recs.find((item) => item.key === candidate.key);
-  if (existing) {
-    // Refresh the evidence but never reopen work the user already triaged.
-    existing.agentIssue = {
-      ...candidate.agentIssue!,
-      ...(existing.agentIssue?.verification
-        ? { verification: existing.agentIssue.verification }
-        : {}),
-    };
-    if (existing.status === "inbox") existing.status = "task";
-    return existing;
-  }
-  state.recs.push({ ...candidate, status: "task" });
-  return state.recs[state.recs.length - 1];
 }
 
 export interface AgentIssueReconciliation {

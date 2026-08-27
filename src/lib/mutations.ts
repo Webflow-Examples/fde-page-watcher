@@ -14,9 +14,7 @@ import type { AgentIgnoreOverrideMode, AgentIgnoreScope, AppState, CollectionSch
 import { defaultNewPageFlag, flagCapacityError } from "./watchCapacity";
 import { applyWatchlistPageOrder, changePageFlagOrder, sortWatchlistPages } from "./watchlistOrder";
 import { removeTaskMarker } from "./taskMarkers";
-import { promoteAgentIssueToTask } from "./agentIssueTasks";
 import { appendConsentEntry } from "./agentConsent";
-import type { AgentIssueCase } from "./agentIssueCases";
 import { isKnownNativeElementId, normalizeNativeElementControls } from "./nativeElements";
 import { narrowNativeElementExclusionReason } from "./nativeElements";
 import { narrowAgentCheckExclusionReason } from "./settings-exclusions";
@@ -286,24 +284,7 @@ export function setVisitorExperienceVisible(
  * retained, since it is a historical reading rather than a live permission.
  */
 /**
- * Promote one agent-access issue case into a task, retaining the provider check
- * ids and success criteria so the fix can be verified later.
- */
-export function addAgentIssueTask(
-  pageId: string,
-  issue: AgentIssueCase,
-  origin?: string,
-  dataStore: DataStore = getStore(),
-  now: Date = new Date(),
-): Promise<AppState> {
-  return withState((state) => {
-    promoteAgentIssueToTask(state, pageId, issue, now, origin);
-  }, dataStore);
-}
-
-/**
- * Change the project's consent, and record who changed it.
- *
+ * Change the project's consent, and record who changed it. *
  * The boolean is the live answer the gate reads; the history is the record of
  * how it got there. They are written in one `withState` and there is no path
  * that writes either alone — a flipped boolean with no entry would leave the
