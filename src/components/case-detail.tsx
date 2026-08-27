@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { attributionOf } from "@/lib/caller";
 import {
   RESOLVING_INTERVAL,
@@ -10,8 +10,10 @@ import {
   primaryActionFor,
   type IssueCase,
 } from "@/lib/issue-case";
-import { runOf } from "@/lib/checkpoint-evaluation";
-import { formatImpact } from "@/lib/impact-format";
+import { fixedAtOf, runOf } from "@/lib/checkpoint-evaluation";
+import { formatCaseImpact } from "@/lib/impact-format";
+import { ticketMarkdown } from "@/lib/fix-ticket";
+import { FIX_NOTES_PLACEHOLDER } from "@/lib/fix-copy";
 import {
   CONFIDENCE_LABEL,
   DESTINATION_LABEL,
@@ -19,6 +21,7 @@ import {
   EVIDENCE_SOURCE_LABEL,
   ISSUE_ACTION_LABEL,
   WORK_STATE_LABEL,
+  queueHoldsState,
   type ExclusionReason,
   type IssueAction,
 } from "@/lib/vocabulary";
@@ -41,6 +44,7 @@ import { ObjectDetailHeader } from "@/components/object-detail-header";
 import { StatusChip } from "@/components/status-chip";
 import { CasePages } from "@/components/case-pages";
 import { CheckpointTrack } from "@/components/checkpoint-track";
+import { CopyTicketButton } from "@/components/copy-ticket-button";
 import { daysOf, formatDate } from "@/lib/watch-copy";
 
 /**
@@ -52,9 +56,10 @@ import { daysOf, formatDate } from "@/lib/watch-copy";
  *   2 impact/effort  what it costs and what it takes — the decision inputs
  *   3 taxonomy       category, severity, confidence
  *   4 affected pages which pages, and which of them count
- *   5 evidence       who measured it, never averaged
- *   6 checkpoints    only once there is something to check
- *   7 history        what happened, oldest last
+ *   5 notes          free text, for whoever picks this up
+ *   6 evidence       who measured it, never averaged
+ *   7 checkpoints    only once there is something to check
+ *   8 history        what happened, oldest last
  *
  * Taxonomy never comes first. A row of chips above the diagnosis asks the
  * reader to classify a problem they have not been told about yet — the
@@ -78,6 +83,22 @@ export interface CaseDetailProps {
   onAction?: (action: IssueAction, issue: IssueCase) => void;
   onExclude?: (pageId: string, reason: ExclusionReason) => void;
   onInclude?: (pageId: string) => void;
+  /**
+   * Persist the case's notes.
+   *
+   * Withheld the same way `onExclude` is, and for the same reason: a notes box
+   * that accepts what you type, shows it, and loses it on reload is worse than
+   * no notes box. The section renders read-only when there is a note and no
+   * handler, and not at all when there is neither.
+   */
+  onNotesChange?: (notes: string) => void;
+  /**
+   * The deployment's public URL, for the link in a copied ticket.
+   *
+   * Absent yields the root-relative `/issues/{id}`, which is wrong in a ticket
+   * visibly rather than silently. See `absoluteUrl`.
+   */
+  appUrl?: string;
   now?: Date;
   locale?: string;
 }
@@ -90,6 +111,96 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       </h2>
       {children}
     </section>
+  );
+}
+
+/**
+ * Free text, for whoever picks this up.
+ *
+ * No schema, no required fields, no length limit and nothing derived from what
+ * is written here. That is the point of it: the other eight sections of a case
+ * are shapes the app imposed on a finding, and every one of them is occasionally
+ * the wrong shape for the thing somebody needs to say. This is where that goes.
+ *
+ * Three states, and the middle one is the one worth explaining. With a handler
+ * it is editable. With a note and no handler it is shown but not editable — a
+ * box that takes what you type and loses it on reload is worse than a box that
+ * does not take it, and hiding a note that exists because nothing can save a new
+ * one would be hiding evidence. With neither it is not rendered at all.
+ *
+ * Committed on blur rather than on every keystroke. A case is derived from
+ * stored records, so a write is a round trip; per-keystroke saving would put one
+ * in flight per character and reorder them under any latency at all.
+ */
+function CaseNotes({
+  notes,
+  onNotesChange,
+}: {
+  notes?: string;
+  onNotesChange?: (notes: string) => void;
+}) {
+  const [draft, setDraft] = useState(notes ?? "");
+  const [seen, setSeen] = useState(notes);
+
+  // A case re-derived by a later run brings its own note, and the draft follows
+  // it so an edit made elsewhere is not overwritten by a stale buffer.
+  //
+  // Adjusted during render rather than in an effect. An effect would paint the
+  // old note first and correct it on the next pass, which is a visible flash of
+  // the wrong text; React re-runs this component before committing anything, so
+  // the reader only ever sees the new one.
+  if (notes !== seen) {
+    setSeen(notes);
+    setDraft(notes ?? "");
+  }
+
+  if (!onNotesChange) {
+    if (!notes) return null;
+    return (
+      <Section title="Notes">
+        <p
+          style={{
+            margin: 0,
+            maxWidth: "72ch",
+            fontSize: 12.5,
+            lineHeight: 1.6,
+            color: "var(--text-body)",
+            // Whatever they typed, laid out the way they typed it.
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          {notes}
+        </p>
+      </Section>
+    );
+  }
+
+  return (
+    <Section title="Notes">
+      <textarea
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={() => {
+          if (draft !== (notes ?? "")) onNotesChange(draft);
+        }}
+        placeholder={FIX_NOTES_PLACEHOLDER}
+        rows={3}
+        style={{
+          display: "block",
+          width: "100%",
+          maxWidth: "72ch",
+          padding: "9px 11px",
+          borderRadius: 8,
+          border: "1px solid var(--border-strong)",
+          background: "var(--surface-card)",
+          color: "var(--text-body)",
+          font: "inherit",
+          fontSize: 12.5,
+          lineHeight: 1.6,
+          resize: "vertical",
+        }}
+      />
+    </Section>
   );
 }
 
@@ -121,24 +232,24 @@ export function CaseDetail({
   onAction,
   onExclude,
   onInclude,
+  onNotesChange,
+  appUrl,
   now,
   locale,
 }: CaseDetailProps) {
   const included = includedPages(issue);
   const run = useMemo(() => runOf(issue), [issue]);
-  const fixedAt = useMemo(
-    () => [...issue.history].reverse().find((entry) => entry.to === "fixed")?.at,
-    [issue.history],
-  );
+  const fixedAt = useMemo(() => fixedAtOf(issue), [issue]);
 
   // Impact is the worst reading on a page this case counts — the same statistic
   // as the group header above it and the row beside it, never a sum (rule 19).
   // Adding four pages' savings would invent a figure no run produced.
-  const worst = useMemo(() => {
-    const readings = included.map((pageId) => impactByPage?.[pageId] ?? 0);
-    return readings.length ? Math.max(...readings, 0) : issue.impactMs;
-  }, [included, impactByPage, issue.impactMs]);
-  const impact = formatImpact(worst || issue.impactMs);
+  //
+  // The derivation moved into `formatCaseImpact` in S5, when "Copy as ticket"
+  // became a reader of the same figure that renders off screen. The brief asks
+  // for the ticket's string to be byte-identical to this one, and the only way
+  // to promise that is for there to be one string rather than two that agree.
+  const impact = formatCaseImpact(issue, impactByPage);
 
   /**
    * The state's own legal moves, in the order the header offers them.
@@ -180,6 +291,22 @@ export function CaseDetail({
 
   const sources = issue.evidence.length;
   const conflicting = issue.confidence === "unclear" && sources >= 2;
+
+  /**
+   * The ticket, offered on the two states the Fix queue holds.
+   *
+   * Asked of the registry rather than written as `todo || in_progress`, so a
+   * state that joins the fix queue gets the button without anyone remembering.
+   * It is not offered from Decide, where the case has not been committed to and
+   * a ticket would be a plan for work nobody has agreed to do, nor from Watch,
+   * where the work is done and what is outstanding is evidence rather than
+   * effort.
+   */
+  const inFixQueue = queueHoldsState("fix", issue.state);
+  const ticket = useMemo(
+    () => (inFixQueue ? ticketMarkdown(issue, { pageTitles, impactByPage, appUrl }) : ""),
+    [appUrl, impactByPage, inFixQueue, issue, pageTitles],
+  );
 
   return (
     <div style={{ minWidth: 0, paddingBottom: 48 }}>
@@ -229,6 +356,10 @@ export function CaseDetail({
                 {DECISION_STRANDED}
               </p>
             ) : null}
+            {/* Below the transitions, because copying is not one. Start and
+                Mark fixed change what is true about the work; this takes a
+                copy of what is already true and changes nothing. */}
+            {inFixQueue ? <CopyTicketButton ticket={ticket} /> : null}
           </>
         }
         metadata={
@@ -253,6 +384,8 @@ export function CaseDetail({
             onInclude={onInclude}
           />
         </div>
+
+        <CaseNotes notes={issue.notes} onNotesChange={onNotesChange} />
 
         <Section title="Evidence">
           <p style={{ margin: "0 0 10px", fontSize: 12.5, color: "var(--text-muted)", maxWidth: "72ch" }}>

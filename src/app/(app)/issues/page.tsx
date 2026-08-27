@@ -31,6 +31,7 @@ import {
 } from "@/components/issue-empty";
 import { SelectMenu } from "@/components/select-menu";
 import { WatchQueue } from "@/components/watch-queue";
+import { FixQueue } from "@/components/fix-queue";
 import { WATCH_EMPTY } from "@/lib/watch-copy";
 
 /**
@@ -155,11 +156,21 @@ export default function IssuesPage() {
     return <EverythingResolved caseCount={view.cases.length} showAllHref={linkTo({ queue: "show_all" })} />;
   }
 
-  // Watch is not grouped by remediation and not sorted by impact: it is a run
-  // of fixes waiting on evidence, ordered by what is heard from next. It reads
-  // the queue's cases directly rather than the folded groups.
+  /**
+   * Two of the four queues draw themselves, and both for the same reason.
+   *
+   * Decide and Show all are lists of undecided things, so they are grouped by
+   * remediation, folded at the savings gate and sorted however the reader asks —
+   * every one of those is a way of deciding. Fix and Watch hold things that have
+   * already been decided, and neither question left has a sort control as its
+   * answer: Fix asks which to do next, Watch asks what is heard from when. Both
+   * read the queue's cases directly rather than the folded groups, because a
+   * fold is a triage affordance and there is no triage left to do.
+   */
+  const isFix = queue === "fix";
   const isWatch = queue === "watch";
-  const hasRows = isWatch ? view.inQueue.length > 0 : view.groups.length > 0 || view.tail.length > 0;
+  const ownQueue = isFix || isWatch;
+  const hasRows = ownQueue ? view.inQueue.length > 0 : view.groups.length > 0 || view.tail.length > 0;
 
   return (
     <div style={{ minWidth: 0 }}>
@@ -167,9 +178,11 @@ export default function IssuesPage() {
 
       <QueueTabs activeQueue={queue} counts={view.counts} hrefFor={(next) => linkTo({ queue: next })} />
 
+      {hasRows && isFix ? <FixQueue cases={view.inQueue} basePath={basePath} /> : null}
+
       {hasRows && isWatch ? <WatchQueue cases={view.inQueue} /> : null}
 
-      {hasRows && !isWatch ? (
+      {hasRows && !ownQueue ? (
         <>
           <div
             style={{

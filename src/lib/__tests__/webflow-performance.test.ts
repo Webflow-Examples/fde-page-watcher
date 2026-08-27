@@ -8,7 +8,6 @@ import {
   formatDiagnosticImpact,
   isDocumentedWebflowAudit,
   recommendationIsCustomerActionable,
-  triageActionLabel,
 } from "../webflowPerformance";
 
 describe("Webflow performance taxonomy", () => {
@@ -58,9 +57,6 @@ describe("Webflow performance taxonomy", () => {
     expect(formatDiagnosticImpact({ savingsMs: 0, savingsBytes: 0 })).toBe("Detected");
     expect(formatDiagnosticImpact({ savingsMs: 0, savingsBytes: 65_536 })).toBe("64 KB");
     expect(effortLabel({ id: "unused-css-rules", estTime: "2 days" })).toBe("2 days");
-    expect(triageActionLabel({ id: "unused-css-rules" })).toBe("Add workaround to tasks");
-    expect(triageActionLabel({ id: "dom-size" })).toBe("Add workaround to tasks");
-    expect(triageActionLabel({ id: "uses-responsive-images" })).toBe("Add to tasks");
   });
 
   it("keeps platform ownership separate from neutral customer guidance", () => {

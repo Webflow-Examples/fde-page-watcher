@@ -29,7 +29,7 @@ import { localISODate } from "@/lib/ui";
 import { withBasePath } from "@/lib/paths";
 import { defaultNewPageFlag, flagCapacityError } from "@/lib/watchCapacity";
 import { applyWatchlistPageOrder, changePageFlagOrder } from "@/lib/watchlistOrder";
-import { isTaskMarker, removeTaskMarker, taskMarkerText } from "@/lib/taskMarkers";
+import { isTaskMarker } from "@/lib/taskMarkers";
 import { pageTrend } from "@/lib/scoring";
 import { normalizeState } from "@/lib/store/normalize";
 import type { Project } from "@/lib/projects";
@@ -156,13 +156,9 @@ interface StoreValue extends AppState {
   setExternalAgentAuditEnabled: (enabled: boolean) => void;
   refreshExternalAgentAudit: (pageId: string) => void;
   addAgentIssueTask: (pageId: string, caseKey: string) => void;
-  verifyAgentIssueTask: (recKey: string) => void;
   externalAgentAuditRefreshing: boolean;
   removePage: (id: string) => void;
-  saveTask: (key: string) => void;
-  triageRec: (key: string) => void;
   ignoreRec: (key: string) => void;
-  advanceTask: (key: string, to: "todo" | "in-progress" | "done") => void;
   submitAdd: () => void;
   submitMarker: () => void;
   deleteMarker: () => void;
@@ -880,49 +876,6 @@ export function StoreProvider({
     [flash, pathFor],
   );
 
-  const verifyAgentIssueTask = useCallback(
-    (recKey: string) => {
-      void (async () => {
-        try {
-          const response = await fetch(pathFor("/api/agent-audits/verify"), {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ recKey }),
-            cache: "no-store",
-          });
-          const body = (await response.json().catch(() => null)) as {
-            status?: string;
-            refusedReason?: string;
-            code?: string;
-          } | null;
-          if (!response.ok && !body?.status) {
-            // A provider that cannot answer leaves the task verifying. Say so
-            // plainly rather than implying the fix failed.
-            flash(
-              body?.refusedReason === "not-consented"
-                ? "Enable external agent audits to verify this fix automatically"
-                : body?.code === "ORA_SCAN_DISABLED"
-                  ? "External verification is turned off for this deployment"
-                  : "Couldn't reach the provider — this fix stays unverified",
-            );
-            return;
-          }
-          flash(
-            body?.status === "resolved" ? "Provider re-check passed — issue resolved"
-              : body?.status === "returned" ? "Provider re-check still failing — issue returned to open work"
-                : "Provider could not confirm yet — still verifying",
-          );
-          const state = await fetch(pathFor("/api/state"), { cache: "no-store" });
-          const payload = (await state.json().catch(() => null)) as { state?: AppState } | null;
-          if (payload?.state) apply(normalizeState(payload.state));
-        } catch {
-          flash("Couldn't reach the provider — this fix stays unverified");
-        }
-      })();
-    },
-    [apply, flash, pathFor],
-  );
-
   const addAgentIssueTask = useCallback(
     (pageId: string, caseKey: string) => {
       // No optimistic apply: the server re-assembles the case from stored
@@ -1001,25 +954,6 @@ export function StoreProvider({
     [mutate],
   );
 
-  const saveTask = useCallback(
-    (key: string) => {
-      const cur = dataRef.current;
-      mutate(
-        { ...cur, recs: cur.recs.map((r) => (r.key === key ? { ...r, status: "task", taskStatus: "todo" } : r)) },
-        { url: `/api/recs`, body: { key, action: "save" } },
-        { success: "Saved to Tasks — track it on the Tasks board", failure: "Couldn't save to Tasks — try again" },
-      );
-    },
-    [mutate],
-  );
-
-  const triageRec = useCallback(
-    (key: string) => {
-      saveTask(key);
-    },
-    [saveTask],
-  );
-
   const ignoreRec = useCallback(
     (key: string) => {
       const cur = dataRef.current;
@@ -1030,53 +964,6 @@ export function StoreProvider({
       );
     },
     [mutate],
-  );
-
-  const advanceTask = useCallback(
-    (key: string, to: "todo" | "in-progress" | "done") => {
-      const cur = dataRef.current;
-      const rec = cur.recs.find((r) => r.key === key);
-      if (!rec) return;
-      // Idempotent: re-dropping an already-done card onto Done must not log a
-      // second change marker or a duplicate set of follow-ups (audit).
-      if (to === rec.taskStatus) return;
-      const date = localISODate();
-      if (to === "done") {
-        const text = taskMarkerText(rec.title);
-        // Completing a task logs a change marker + schedules follow-ups, so it
-        // goes through the marker route (sequential storage, REQ-043/044).
-        mutate(
-          {
-            ...cur,
-            recs: cur.recs.map((r) => (r.key === key ? { ...r, taskStatus: "done", doneDate: date } : r)),
-            pages: cur.pages.map((p) =>
-              p.id === rec.pageId ? { ...p, markers: [...(p.markers || []), { id: crypto.randomUUID(), i: p.history.length - 1, date, text, source: "task", recKey: key }] } : p,
-            ),
-          },
-          { url: `/api/pages/${rec.pageId}/markers`, body: { text, date, recKey: key, taskStatus: "done" } },
-          { success: `Task completed — change marker logged on ${rec.pageTitle}`, failure: "Couldn't complete the task — try again" },
-        );
-        // Marker-triggered verification. The existing change marker and the
-        // 2/7/30-day follow-ups above are untouched; this only adds the
-        // provider re-check of the ids this task recorded.
-        if (rec.source === "agent-readiness" && (rec.agentIssue?.verificationCheckIds.length ?? 0) > 0) {
-          verifyAgentIssueTask(key);
-        }
-      } else {
-        const optimistic = structuredClone(cur);
-        const optimisticRec = optimistic.recs.find((item) => item.key === key);
-        if (!optimisticRec) return;
-        optimisticRec.taskStatus = to;
-        optimisticRec.doneDate = null;
-        removeTaskMarker(optimistic, optimisticRec);
-        mutate(
-          optimistic,
-          { url: `/api/recs`, body: { key, action: "advance", to } },
-          { success: to === "in-progress" ? "Task moved to In progress" : "Task moved back to To do", failure: "Couldn't move the task — try again" },
-        );
-      }
-    },
-    [mutate, verifyAgentIssueTask],
   );
 
   const setForm = useCallback((f: Partial<AddForm>) => setFormState((prev) => ({ ...prev, ...f })), []);
@@ -1327,15 +1214,11 @@ export function StoreProvider({
     setExternalAgentAuditEnabled,
     refreshExternalAgentAudit,
     addAgentIssueTask,
-    verifyAgentIssueTask,
     externalAgentAuditRefreshing,
     updateAlertWebhookUrl,
     setVisitorExperienceVisible,
     removePage,
-    saveTask,
-    triageRec,
     ignoreRec,
-    advanceTask,
     submitAdd,
     submitMarker,
     deleteMarker,

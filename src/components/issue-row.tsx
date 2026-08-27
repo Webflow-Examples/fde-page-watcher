@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
-import type { Effort, IssueCase } from "@/lib/issue-case";
-import { formatGroupImpact, formatImpact } from "@/lib/impact-format";
+import type { IssueCase } from "@/lib/issue-case";
+import { EFFORT_LABEL, formatGroupImpact, formatImpact } from "@/lib/impact-format";
 import { scopeLineOf } from "@/lib/scope-line";
 import { CONFIDENCE_LABEL } from "@/lib/vocabulary";
 import { caseHref } from "@/lib/paths";
@@ -51,22 +51,13 @@ export const ISSUE_ROW_NEST_INDENT = 18;
  * a second renderer of the same figure, and the scope phrase moved to
  * `lib/scope-line.ts` when the digest became a second writer of that. Both are
  * re-exported here so the list's existing importers keep one name for each.
+ *
+ * `EFFORT_LABEL` followed impact into `impact-format.ts` in S5, when "Copy as
+ * ticket" became a third reader that is not a component. Same re-export, same
+ * reason: the list's importers keep one name for it.
  */
-export { formatGroupImpact, formatImpact };
+export { EFFORT_LABEL, formatGroupImpact, formatImpact };
 export { scopeLineOf };
-
-/**
- * Effort is a band on the case, not a registry concept, so its words live here
- * beside impact.
- */
-export const EFFORT_LABEL: Record<Effort, string> = {
-  minutes: "Minutes",
-  hours: "Hours",
-  days: "Days",
-  // Not a dash. The stored estimate said "Needs review", which is the absence of
-  // a band, and rule 18's reasoning applies to any missing reading: say so.
-  unknown: "No estimate",
-};
 
 /** One line, ellipsed. Applied to every free-text cell in the list. */
 export const TRUNCATE_CELL: CSSProperties = {
