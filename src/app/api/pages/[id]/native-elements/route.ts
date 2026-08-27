@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { setNativeElementApplicability } from "@/lib/mutations";
+import { narrowNativeElementExclusionReason } from "@/lib/nativeElements";
 import { EXCLUSION_REASONS, type ExclusionReason } from "@/lib/vocabulary";
 import { projectStore } from "@/lib/projects";
 
@@ -25,7 +26,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const findingId = body.findingId?.trim();
   if (!findingId) return NextResponse.json({ error: "findingId is required" }, { status: 400 });
   const reason = body.reason ?? null;
-  if (reason !== null && !(EXCLUSION_REASONS as readonly string[]).includes(reason)) {
+  if (reason !== null && narrowNativeElementExclusionReason(reason) === null) {
     return NextResponse.json(
       { error: `reason must be null or one of: ${EXCLUSION_REASONS.join(", ")}` },
       { status: 400 },

@@ -144,6 +144,27 @@ export function decisionOf(record: CaseDecisionRecord): CaseDecision | null {
 }
 
 /**
+ * The one gate between a stored string and this record's decided reason.
+ *
+ * `types.ts` cannot import the registry, so the stored field is a plain string
+ * and whichever module owns the record narrows it. This module owns the
+ * exclusion reason on `CaseDecisionRecord`, so this is that narrowing — and it
+ * is the only one for this record, in either direction. Writers and readers both call it rather than repeating the
+ * membership test, because several spellings of one rule is the drift rule 20
+ * names.
+ *
+ * Returns `null` for "not a reason this registry blesses", which is the same
+ * answer as "no reason recorded": applicability requires a reason, and a reason
+ * nobody decided is the absence of one. It never signals "the record is gone" —
+ * that is the caller's question, not this one's.
+ */
+export function narrowCasePageExclusionReason(value: unknown): ExclusionReason | null {
+  return typeof value === "string" && (EXCLUSION_REASONS as readonly string[]).includes(value)
+    ? value as ExclusionReason
+    : null;
+}
+
+/**
  * Build an entry, or refuse to.
  *
  * The one door into the log, so the properties above hold for an untyped caller
@@ -167,10 +188,11 @@ export function caseDecisionFrom(input: CaseDecisionInput, stamp: DecisionStamp)
     }
     const page = pageId.trim();
     if (decision === "include") return { decision, remediationKey: key, pageId: page, ...stamp };
-    if (!(EXCLUSION_REASONS as readonly string[]).includes(reason as string)) {
+    const excluded = narrowCasePageExclusionReason(reason);
+    if (!excluded) {
       throw new CaseDecisionError(`reason must be one of: ${EXCLUSION_REASONS.join(", ")}`);
     }
-    return { decision, remediationKey: key, pageId: page, reason: reason as ExclusionReason, ...stamp };
+    return { decision, remediationKey: key, pageId: page, reason: excluded, ...stamp };
   }
 
   if (decision === "accept") return { decision, remediationKey: key, ...stamp };

@@ -53,7 +53,24 @@ one commit.
 
 ## Open
 
-_Nothing open._
+### The per-page agent-ignore route has no caller in the app
+
+- **Found by:** F6, on `chunk-f6`, at base `95d77a9`.
+- **Not claimed, and deliberately not fixed here.** F6 came to write a result
+  vocabulary and a narrowing collapse; deleting a route is neither, and R3 says
+  a repair does not ride along in a feature diff. Recorded so the next session
+  finds it already seen rather than rediscovering it.
+- **Symptom:** `POST /api/pages/[id]/agent-ignores` and the `setAgentIgnore`
+  method `src/components/store.tsx` exposes are both reachable, typed and
+  tested, and no component calls either. The per-page override can only be
+  exercised over HTTP.
+- **What it is NOT:** dead storage. `page.agentIgnores` and
+  `page.agentIgnoreRestores` are read by the seed, `normalizeState`, scoring,
+  the watcher and the collector, so the route is the only unreferenced part.
+- **Before anyone deletes it:** read DECISIONS.md 6, which F6 closed. A per-page
+  ignore is a decided product concept — an override of a site-wide setting — and
+  the absence of a caller is a missing surface, not proof the concept is gone.
+  Whoever takes this should decide which it is rather than assuming.
 
 ## Landed
 
