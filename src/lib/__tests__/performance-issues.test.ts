@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { performanceIssueCounts, performanceIssuesForPage, siteCulpritRollups } from "../performanceIssues";
+import { CULPRIT_GROUP_LABELS } from "../webflowPerformance";
 import type { AggregatedLighthouseFinding, Night, WatchPage } from "../types";
 
 const score = { m: 80, lo: 78, hi: 82 };
@@ -116,7 +117,9 @@ describe("performance issue lifecycle", () => {
     expect(rollups).toEqual([
       expect.objectContaining({
         culprit: "global-javascript",
-        label: "Global JavaScript",
+        // From the taxonomy's own map, so this asserts the rollup picked the
+        // right culprit rather than restating its words (rule 21).
+        label: CULPRIT_GROUP_LABELS["global-javascript"],
         issueCount: 2,
         pageCount: 2,
         remediationCounts: expect.objectContaining({ blocked: 2 }),

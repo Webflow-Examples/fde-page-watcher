@@ -36,7 +36,7 @@ export function latestSuccessfulRunAt(pages: WatchPage[]): string | null {
 }
 
 export function formatSuccessfulRunAt(iso: string | null): string {
-  if (!iso) return "No successful PSI run yet";
+  if (!iso) return "No successful measurement yet";
   return new Date(iso).toLocaleString(undefined, {
     month: "short",
     day: "numeric",

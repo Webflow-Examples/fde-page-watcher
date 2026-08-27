@@ -27,6 +27,7 @@ import {
   CONFIDENCE_LABEL,
   DESTINATION_LABEL,
   DESTINATION_PATH,
+  EVIDENCE_SOURCE_LABEL,
   applicabilityActionLabel,
   type ExclusionReason,
 } from "@/lib/vocabulary";
@@ -260,22 +261,22 @@ function CollectionState({ page, job }: { page: WatchPage; job?: CollectionJob }
   const failed = page.runState === "failed";
   const retained = job?.completedStrategies ?? [];
   const retainedTests = [
-    ...retained.map((strategy) => `${strategy[0].toUpperCase()}${strategy.slice(1)} PSI`),
-    ...(job?.cruxCompletedAt ? ["CrUX"] : []),
-    ...(job?.agentCompletedAt ? ["Agent readiness"] : []),
+    ...retained.map((strategy) => `${strategy[0].toUpperCase()}${strategy.slice(1)} score`),
+    ...(job?.cruxCompletedAt ? ["Visitor figures"] : []),
+    ...(job?.agentCompletedAt ? ["Agent checks"] : []),
   ];
   const retryingTests = [
     ...(["mobile", "desktop"] as const)
       .filter((strategy) => !retained.includes(strategy))
-      .map((strategy) => `${strategy[0].toUpperCase()}${strategy.slice(1)} PSI`),
-    ...(!job?.cruxCompletedAt ? ["CrUX"] : []),
-    ...(!job?.agentCompletedAt ? ["Agent readiness"] : []),
+      .map((strategy) => `${strategy[0].toUpperCase()}${strategy.slice(1)} score`),
+    ...(!job?.cruxCompletedAt ? ["Visitor figures"] : []),
+    ...(!job?.agentCompletedAt ? ["Agent checks"] : []),
   ];
   const waitDetail = retainedTests.length > 0
     ? `${retainedTests.join(" and ")} retained. `
       + `Retrying ${retryingTests.join(" and ")}`
       + `${job?.nextRetryAt ? ` around ${formatSuccessfulRunAt(job.nextRetryAt)}` : " in the next evidence cycle"}.`
-    : `No independent test has completed yet. Retrying Mobile PSI, Desktop PSI, CrUX, and Agent readiness`
+    : `No test has finished yet. Retrying the mobile score, the desktop score, the visitor figures, and the agent checks`
       + `${job?.nextRetryAt ? ` around ${formatSuccessfulRunAt(job.nextRetryAt)}` : " in the next evidence cycle"}.`;
   const providerDetail = (["mobile", "desktop"] as const).flatMap((strategy) => {
     const error = job?.strategyErrors?.[strategy];
@@ -283,8 +284,8 @@ function CollectionState({ page, job }: { page: WatchPage; job?: CollectionJob }
   }).join(" · ");
   const latestDetail = [
     providerDetail,
-    job?.cruxError ? `CrUX: ${job.cruxError}` : "",
-    job?.agentError ? `Agent: ${job.agentError}` : "",
+    job?.cruxError ? `Visitor figures: ${job.cruxError}` : "",
+    job?.agentError ? `Agent checks: ${job.agentError}` : "",
   ].filter(Boolean).join(" · ");
   const title = page.runState === "queued"
     ? "Collection queued"
@@ -890,7 +891,7 @@ function ReadingsSection({
   function fallbackReport(d: Night): string {
     if (!nightHasStrategy(d, strategy)) {
       return JSON.stringify({
-        note: `No ${strategy} PSI measurement completed for this collection. Other independent results are retained.`,
+        note: `No ${strategy} score was measured this time. The other readings were kept.`,
         date: d.date,
         strategy,
         agentChecksRecorded: d.agent?.length ?? 0,
@@ -900,7 +901,7 @@ function ReadingsSection({
     }
     return JSON.stringify(
       {
-        note: "No raw PSI payload is stored for this night (seed / imported data). Showing the stored medians and ranges only.",
+        note: "The full reply from the test was not stored for this night, so only the saved scores and their spread are shown.",
         date: d.date,
         strategy,
         samples: d.samples ?? d.sampleSize ?? null,
@@ -982,10 +983,10 @@ function ReadingsSection({
         }}
       >
         <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 18 }}>
-          Desktop and Mobile are stacked for comparison. Each median line includes its run-to-run range; reference
-          lines show that device&apos;s original benchmark and, when enough scans exist, the previous {rangeDays}-day
-          period median.
-          {excludedHistory.length > 0 && " Shaded bands mark measurements retained for diagnosis but excluded from scores, trends, and recommendations."}
+          Desktop and Mobile are stacked for comparison. Each line is the middle score of a night&apos;s runs, with the
+          spread between those runs around it; the reference lines show that device&apos;s starting point and, once
+          there are enough nights, the middle score of the previous {rangeDays} days.
+          {excludedHistory.length > 0 && " Shaded bands are readings kept for diagnosis but left out of scores, trends and recommendations."}
         </div>
         {historyForStrategy(rangeHistory, "desktop").length < 2 && historyForStrategy(rangeHistory, "mobile").length < 2 ? (
           <div style={{ padding: "42px 16px", textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>
@@ -1086,10 +1087,17 @@ function ReadingsSection({
         className="table-scroll"
         style={{ background: "var(--surface-card)", border: "1px solid var(--border-hairline)", borderRadius: 11 }}
       >
+        {/*
+          The caption is where every measurement below it is introduced in
+          words. The column headings are acronyms because a column is four
+          characters wide, and that is only honest if the reader has met the
+          words first — so they are met here, once, and the headings are the
+          second mention. Nothing below relies on a hover to be understood.
+        */}
         <div style={{ padding: "13px 22px", borderBottom: "1px solid var(--border-hairline)", fontSize: 12, color: "var(--text-muted)" }}>
-          Every recorded collection · <span style={{ color: "var(--text-body)", textTransform: "capitalize", fontWeight: 600 }}>{strategy}</span> primary · Lighthouse median with range below
-          {showVisitorColumns && " · CrUX p75 with weekly change below"}
-          {excludedHistory.length > 0 && " · PSI anomaly rows are observed measurements excluded from scoring"}
+          Every measurement ever taken · <span style={{ color: "var(--text-body)", textTransform: "capitalize", fontWeight: 600 }}>{strategy}</span> first · the middle score of each night&apos;s runs, with the spread beneath it
+          {showVisitorColumns && " · then what real visitors met, at the level three quarters of them did better than (p75): when the main content appeared (LCP), how long the page took to answer a tap (INP), how much it jumped about (CLS), and how long the server took to reply (TTFB), each with its change on the week"}
+          {excludedHistory.length > 0 && " · rows marked as odd readings were measured and then left out of the scoring"}
           {` · Dates in ${collectionSchedule.timeZone}`}
         </div>
         <div
@@ -1109,9 +1117,12 @@ function ReadingsSection({
         >
           <div>Night</div>
           <div>Marker</div>
+          {/* Four columns, four score names. "A11y" was a numeronym nobody
+              outside the trade reads; the others are the score names
+              themselves, abbreviated to fit the column. */}
           <div style={{ textAlign: "center" }}>Perf</div>
-          <div style={{ textAlign: "center" }}>A11y</div>
-          <div style={{ textAlign: "center" }}>BP</div>
+          <div style={{ textAlign: "center" }}>Access</div>
+          <div style={{ textAlign: "center" }}>Practices</div>
           <div style={{ textAlign: "center" }}>SEO</div>
           {showVisitorColumns && VISITOR_METRICS.map((metric) => (
             <div
@@ -1135,16 +1146,16 @@ function ReadingsSection({
             ? visitorEvidence!.snapshots[visitorSnapshotIndex - 1]
             : null;
           const completedTests = [
-            nightHasStrategy(d, "mobile") ? "M PSI" : null,
-            nightHasStrategy(d, "desktop") ? "D PSI" : null,
-            visitorSnapshot ? "CrUX" : null,
-            Array.isArray(d.agent) ? "Agent" : null,
-            d.kitesurf?.status === "available" ? "Kitesurf" : null,
+            nightHasStrategy(d, "mobile") ? "Mobile" : null,
+            nightHasStrategy(d, "desktop") ? "Desktop" : null,
+            visitorSnapshot ? "Visitors" : null,
+            Array.isArray(d.agent) ? "Agent checks" : null,
+            d.kitesurf?.status === "available" ? EVIDENCE_SOURCE_LABEL.kitesurf : null,
           ].filter((label): label is string => label !== null);
           const cell = (k: CategoryKey) => {
             if (!nightHasStrategy(d, strategy)) {
               return (
-                <div aria-label={`No ${strategy} PSI measurement`} style={{ textAlign: "center", color: "var(--health-none-text)" }}>
+                <div aria-label={`No ${strategy} score measured`} style={{ textAlign: "center", color: "var(--health-none-text)" }}>
                   —
                 </div>
               );
@@ -1153,7 +1164,7 @@ function ReadingsSection({
             const categoryLabel = CATEGORIES.find((category) => category.key === k)?.label ?? k;
             return (
               <div
-                aria-label={`${categoryLabel} ${excludedAnomaly ? "observed" : "median"} ${score.m}, range ${score.lo} to ${score.hi}${excludedAnomaly ? ", excluded PSI anomaly" : ""}`}
+                aria-label={`${categoryLabel} ${excludedAnomaly ? "observed" : "median"} ${score.m}, range ${score.lo} to ${score.hi}${excludedAnomaly ? ", an odd reading left out of the scoring" : ""}`}
                 style={{ textAlign: "center" }}
               >
                 <div style={{ fontSize: 14, lineHeight: 1.1, fontWeight: 650, color: scoreMetaVars(score.m).fg }}>{score.m}</div>
@@ -1181,8 +1192,8 @@ function ReadingsSection({
             const label = VISITOR_METRICS.find((metric) => metric.key === key)?.label ?? key;
             return (
               <div
-                aria-label={`${label} ${formatVisitorMetric(key, value)}, ${movement === "—" ? "no prior CrUX snapshot" : movement}`}
-                title={visitorSnapshot ? `Rolling window ending ${visitorSnapshot.collectionEnd} · ${rating ?? "Unavailable"}` : "No CrUX window available for this night"}
+                aria-label={`${label} ${formatVisitorMetric(key, value)}, ${movement === "—" ? "no earlier reading to compare" : movement}`}
+                title={visitorSnapshot ? `28 days ending ${visitorSnapshot.collectionEnd} · ${rating ?? "Unavailable"}` : "No visitor figures cover this night"}
                 style={{ textAlign: "center", borderLeft: key === "lcpP75Ms" ? "1px solid var(--border-hairline)" : undefined }}
               >
                 <div style={{ fontSize: 13, lineHeight: 1.1, fontWeight: 650, color: valueColor }}>
@@ -1233,10 +1244,10 @@ function ReadingsSection({
                   {startsDateGroup && timeLabel ? `${timeLabel} · ${runLabel}` : runLabel}
                 </div>
                 <div
-                  title={`Completed independently: ${completedTests.join(", ") || "none"}`}
+                  title={`Measured separately: ${completedTests.join(", ") || "nothing"}`}
                   style={{ marginTop: 4, color: "var(--text-muted)", fontSize: 12, lineHeight: 1.3 }}
                 >
-                  {completedTests.join(" · ") || "No completed test"}
+                  {completedTests.join(" · ") || "Nothing measured"}
                 </div>
               </div>
               <div style={{ fontSize: 12, display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 5 }}>
@@ -1245,7 +1256,7 @@ function ReadingsSection({
                     title="Retained for diagnosis; not used in status, trend, or recommendations"
                     style={{ color: "var(--text-muted)", fontWeight: 600 }}
                   >
-                    ◆ PSI anomaly · excluded
+                    ◆ Odd reading · left out
                   </span>
                 )}
                 {!excludedAnomaly && markers.length === 0 ? (

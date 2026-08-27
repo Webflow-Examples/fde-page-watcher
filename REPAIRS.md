@@ -72,6 +72,24 @@ one commit.
   there, not to copy it — two statements of one retention rule is the drift that
   put it in the wrong place to begin with.
 
+### The Ora note runs two sentences together on screen
+
+- **Found by:** C3, on `chunk-c3`, while merging `origin/main` (`07834fa`).
+- **Not claimed, and deliberately not fixed here.** It is a one-character change
+  in a line C3 also edits, which is exactly the shape R3 warns about: a shared
+  defect buried in a feature diff cannot be reviewed or reverted on its own.
+- **Symptom:** in `settings/page.tsx`, `{SETTINGS_SYSTEM_CONTRIBUTES.ora}` is
+  followed by ` Switching it on sends...` on the same line, and JSX drops that
+  leading space. The rendered note reads
+  "...you have to switch on.Switching it on sends...", with the DOM showing
+  `switch on.<!-- -->Switching`. Introduced by S9 (#93); no check reads rendered
+  copy, so CI is green on it.
+- **Scope:** the only `{expr} Text` pair in that file, and the file uses `{" "}`
+  nowhere, so this is a one-off rather than a pattern.
+- **Fix:** `{SETTINGS_SYSTEM_CONTRIBUTES.ora}{" "}` — or move the following word
+  onto its own line, which is what makes JSX keep the gap. Worth a look at S9's
+  other screens for the same pair before closing it.
+
 ## Landed
 
 ### Conflict markers committed into `DECISIONS.md`

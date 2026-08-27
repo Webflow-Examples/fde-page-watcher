@@ -50,7 +50,7 @@ import { normalizeCollectionSchedule } from "@/lib/collectionSchedule";
 import { evidenceForPage, visitorExperienceTrend } from "@/lib/visitorExperience";
 import { performanceIssueCounts, siteCulpritRollups, sitePerformanceIssues } from "@/lib/performanceIssues";
 import type { PerformanceIssueStatus } from "@/lib/performanceIssues";
-import { customerActionabilityFor, recommendationIsCustomerActionable, remediationTone, triageActionLabel, webflowClassificationFor } from "@/lib/webflowPerformance";
+import { customerActionabilityFor, metricDisplay, recommendationIsCustomerActionable, remediationTone, triageActionLabel, webflowClassificationFor } from "@/lib/webflowPerformance";
 import { siteNativeElementRollups } from "@/lib/nativeElements";
 import { compareLabAndField } from "@/lib/labFieldComparison";
 import { fieldPriorityRankForRec, recommendationEvidenceSignal } from "@/lib/fieldPrioritization";
@@ -550,7 +550,7 @@ function DashboardContent({
           ) : topRibbonRec && topRibbonClassification ? (
             topRibbonRec.source === "crux-field-only" ? (
               <>
-                Investigate <strong>{topRibbonRec.pageTitle}</strong> — {topRibbonRec.title} is the clearest next step because exact-URL visitor evidence is outside the good range while Lighthouse did not reproduce or explain it.
+                Investigate <strong>{topRibbonRec.pageTitle}</strong> — {topRibbonRec.title} is the clearest next step, because real visitors to this exact page are outside the good range and the nightly test did not reproduce or explain it.
               </>
             ) : customerActionabilityFor(topRibbonRec) === "workaround" ? (
               <>
@@ -603,8 +603,8 @@ function DashboardContent({
             <span style={{ fontSize: 13, fontWeight: 650 }}>
               {measurementIncident.status === "suspected"
                 ? measurementIncident.confirmationAttempts
-                  ? "PSI measurement anomaly persists"
-                  : "Possible PSI measurement anomaly"
+                  ? "The test environment is still behaving oddly"
+                  : "The test environment may have behaved oddly"
                 : measurementIncident.status === "confirming"
                   ? "Collecting independent confirmation"
                   : measurementIncident.status === "recovered"
@@ -621,13 +621,13 @@ function DashboardContent({
           <div style={{ maxWidth: 900, marginTop: 4, color: incidentSurface.body, fontSize: 12, lineHeight: 1.5 }}>
             {measurementIncident.status === "suspected"
               ? measurementIncident.confirmationAttempts
-                ? `Independent confirmation showed the same PSI environment pattern across ${measurementIncident.affectedPages} pages. The suspect measurements remain excluded, no action is recommended, and the next scheduled cohort will continue monitoring.`
-                : `${measurementIncident.affectedPages} of ${measurementIncident.eligiblePages} pages moved together while the PSI test environment also changed. No action is recommended until the automatic confirmation finishes.`
+                ? `A second check found the same pattern across ${measurementIncident.affectedPages} pages. The suspect readings stay out of the scoring, there is nothing to do, and the next run keeps watching.`
+                : `${measurementIncident.affectedPages} of ${measurementIncident.eligiblePages} pages moved together at the moment the test environment changed too. Nothing to do until the automatic second check finishes.`
               : measurementIncident.status === "confirming"
                 ? "Page Watch is re-testing the affected cohort with independent, staggered samples. Earlier measurements are excluded from regression statuses while confirmation is running."
                 : measurementIncident.status === "recovered"
-                  ? "Follow-up measurements returned to the expected range. The earlier movement was treated as temporary PSI test-environment variability; no action is needed."
-                  : "Independent follow-up measurements confirmed the synchronized slowdown without the earlier PSI environment anomaly. Review the affected pages and shared site dependencies."}
+                  ? "Later measurements came back to the expected range. The earlier movement was treated as the test environment being briefly unsteady, so there is nothing to do."
+                  : "A separate follow-up confirmed the slowdown, and this time the test environment was steady. Look at the affected pages and anything they share."}
           </div>
         </section>
       )}
@@ -780,7 +780,7 @@ function DashboardContent({
                     <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 6, marginTop: 11 }}>
                       {rollup.metrics.filter((metric) => metric.metric !== "other").map((metric) => (
                         <span key={`${metric.metric}:${metric.metricWeight}`} style={{ display: "inline-flex", alignItems: "baseline", gap: 5, fontSize: 12, color: "var(--text-muted)", background: "var(--surface-raised)", padding: "2px 7px", borderRadius: 5 }}>
-                          {metric.metric} ·
+                          {metricDisplay(metric.metric)} ·
                           {/* The unit sits tight against the numeral so it
                               still reads as a percent sign, not a word. */}
                           <Magnitude value={metric.metricWeight} unit="%" fontSize={12} style={{ gap: 1 }} />

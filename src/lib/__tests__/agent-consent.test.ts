@@ -14,7 +14,7 @@ import {
   readingPredatesWithdrawal,
 } from "../agentConsent";
 import { SETTINGS_CONSENT_NEVER, SETTINGS_CONSENT_UNRECORDED } from "../settings-copy";
-import type { AppState, ExternalAgentConsentEntry } from "../types";
+import type { ExternalAgentConsentEntry } from "../types";
 import type { Caller } from "../caller";
 
 /**

@@ -524,14 +524,20 @@ describe("the words", () => {
       .toBe(`${AGENT_ACCESS_SOURCES.length} sources · never averaged`);
   });
 
-  it("says the S4 brief's locked strings, verbatim", () => {
+  it("says the locked strings, verbatim", () => {
     // These are not registry words, so asserting them here is asserting the
     // decision rather than one copy against another.
+    //
+    // Three of them were re-decided in S9 and the lock moved with the decision.
+    // They said "origin" and "parse" — our word for a site, and what a program
+    // does to a document — so the sentences named the fault in vocabulary that
+    // concealed it. What they distinguish is untouched: got in, versus got in
+    // and could not read.
     expect(AGENT_TITLE).toBe("Agent access");
-    expect(AGENT_CAUSE.reach).toBe("Agents cannot reach the origin.");
-    expect(AGENT_CAUSE.comprehension).toBe("Agents reach it but cannot parse the content.");
+    expect(AGENT_CAUSE.reach).toBe("Agents cannot reach this site at all.");
+    expect(AGENT_CAUSE.comprehension).toBe("Agents reach the site but cannot read what is on it.");
     expect(AGENT_UNKNOWN.disagree)
-      .toBe("Two systems disagree about whether agents can reach this origin.");
+      .toBe("Two systems disagree about whether agents can reach this site.");
     expect(AGENT_UNKNOWN.no_reading)
       .toBe("No reading could be taken, so there is nothing to conclude yet.");
     expect(AGENT_LAST_CHECKED).toBe("Last checked");

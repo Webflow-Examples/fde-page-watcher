@@ -402,7 +402,7 @@ function SourceRow({ source }: { source: AgentIssueSource }) {
       <span style={{ color: "var(--text-muted)", minWidth: 108 }}>{systemLabel(source.system)}</span>
       <span style={{ flex: 1, minWidth: 0 }}>
         {source.label} · {agentStatusLabel(source.result)}
-        <span style={{ color: "var(--text-muted)" }}> · {source.scope === "origin" ? "origin-wide" : "this page"}</span>
+        <span style={{ color: "var(--text-muted)" }}> · {source.scope === "origin" ? "the whole site" : "this page"}</span>
       </span>
     </li>
   );
@@ -437,7 +437,7 @@ function IssueRow({
         <StatusBadge status={issue.status} />
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 4, fontSize: 12, color: "var(--text-muted)" }}>
-        <span>{issue.scope === "origin" ? "Origin-wide" : "This page"}</span>
+        <span>{issue.scope === "origin" ? "The whole site" : "This page"}</span>
         <span style={{ color: `var(--confidence-${confidence.strength})` }}>{confidence.label}</span>
         {/*
           A tier is a classification of the check, not a verdict on the page:

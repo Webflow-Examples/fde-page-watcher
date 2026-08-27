@@ -30,15 +30,22 @@ export const AGENT_TITLE = "Agent access";
 
 /* ── The subline: which half is at fault ────────────────────────────────── */
 
+/**
+ * S9 rewrote both of these. "Origin" is our word for a site, and "parse" is
+ * what a program does rather than something a reader recognises as a failure;
+ * between them the two sentences named the fault in vocabulary that hid it.
+ * The distinction they carry — got in, versus got in and could not read — is
+ * unchanged, and it is the whole reason there is no second verdict concept.
+ */
 export const AGENT_CAUSE: Record<AgentHalf, string> = {
-  reach: "Agents cannot reach the origin.",
-  comprehension: "Agents reach it but cannot parse the content.",
+  reach: "Agents cannot reach this site at all.",
+  comprehension: "Agents reach the site but cannot read what is on it.",
 };
 
 /* ── Unknown, and which of its two causes ───────────────────────────────── */
 
 export const AGENT_UNKNOWN: Record<AgentUnknownCause, string> = {
-  disagree: "Two systems disagree about whether agents can reach this origin.",
+  disagree: "Two systems disagree about whether agents can reach this site.",
   no_reading: "No reading could be taken, so there is nothing to conclude yet.",
 };
 
