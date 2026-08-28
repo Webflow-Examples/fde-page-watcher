@@ -5,12 +5,16 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
   DEFAULT_ISSUE_SORT,
+  DEFAULT_SORT_DIRECTION,
   ISSUE_SORTS,
   ISSUE_SORT_LABEL,
   parseIssueSort,
+  parseSortDirection,
+  reverseDirection,
   useIssuesView,
   useStore,
   type IssueSort,
+  type SortDirection,
 } from "@/components/store";
 import { COUNTED_QUEUES, DESTINATION_LABEL, DESTINATION_PATH, QUEUE_LABEL, parseQueue, type Queue } from "@/lib/vocabulary";
 import { PageHeader } from "@/components/page-header";
@@ -55,35 +59,44 @@ import { WATCH_EMPTY } from "@/lib/watch-copy";
  * another, and neither is a preference worth storing.
  */
 
+/** Which way round the active column currently reads. */
+const DIRECTION_GLYPH: Record<SortDirection, string> = { asc: "\u2191", desc: "\u2193" };
+const DIRECTION_WORD: Record<SortDirection, string> = { asc: "ascending", desc: "descending" };
+
 /**
  * Column headers, drawn on the same six tracks as the rows below them — and the
  * sort control for the column each one heads.
  *
- * The header IS the sort rather than a caption above one. Two consequences worth
- * stating, because both were decisions:
+ * The header IS the sort rather than a caption above one:
  *
  *   - The label comes from `ISSUE_SORT_LABEL`, so a column and the Sort menu
  *     read one map and cannot end up calling the same ordering two things.
- *   - There is no direction to toggle. Each sort has one canonical direction
- *     with a reason attached — least effort first surfaces what can be cleared
- *     today, broadest first surfaces the fix that covers six pages — and
- *     reversing them produces orders nobody asked for ("hardest first"). So no
- *     arrow is drawn, because an arrow would promise a second click that does
- *     something.
+ *   - The first click sorts the column in ITS OWN default direction rather than
+ *     a uniform descending — a triage list wants the lifecycle from `new` and
+ *     effort from the cheapest. The second click reverses it, and the arrow
+ *     says which way it currently reads.
  *
  * Newest and What changed head no column: there is no date column to head. The
  * menu is what keeps them reachable, which is why it stays.
  */
 const COLUMN_SORTS = [
   "state",
-  "diagnosis",
+  "cause",
   "pages",
   "confidence",
   "impact",
   "effort",
 ] as const satisfies readonly IssueSort[];
 
-function ColumnHeaders({ sort, hrefFor }: { sort: IssueSort; hrefFor: (next: IssueSort) => string }) {
+function ColumnHeaders({
+  sort,
+  direction,
+  hrefFor,
+}: {
+  sort: IssueSort;
+  direction: SortDirection;
+  hrefFor: (next: { sort: IssueSort; dir?: SortDirection }) => string;
+}) {
   return (
     <div
       style={{
@@ -104,29 +117,40 @@ function ColumnHeaders({ sort, hrefFor }: { sort: IssueSort; hrefFor: (next: Iss
       {COLUMN_SORTS.map((key, index) => {
         const active = key === sort;
         const numeric = index >= 4;
+        // An inactive column opens in its own default; the active one reverses.
+        const next = active ? reverseDirection(direction) : DEFAULT_SORT_DIRECTION[key];
         return (
           <Link
             key={key}
-            href={hrefFor(key)}
+            href={hrefFor({ sort: key, dir: next })}
             replace
-            // The sorted column says so in words, for a reader who cannot see
-            // which one went darker.
-            aria-label={`${active ? "Sorted by" : "Sort by"} ${ISSUE_SORT_LABEL[key]}`}
+            // Which column is sorted, which way, and what this click will do —
+            // in words, for a reader who cannot see the arrow.
+            aria-label={
+              active
+                ? `Sorted by ${ISSUE_SORT_LABEL[key]}, ${DIRECTION_WORD[direction]}. Sort ${DIRECTION_WORD[next]}.`
+                : `Sort by ${ISSUE_SORT_LABEL[key]}`
+            }
             style={{
               display: "flex",
               alignItems: "center",
               justifyContent: numeric ? "flex-end" : "flex-start",
+              gap: 4,
               minWidth: 0,
               font: "inherit",
               letterSpacing: "inherit",
               textTransform: "inherit",
               textDecoration: active ? "underline" : "none",
               textUnderlineOffset: 3,
-              // Not colour alone — the underline above carries it too.
+              // Not colour alone — the underline and the arrow carry it too.
               color: active ? "var(--text-body)" : "inherit",
             }}
           >
+            {/* Numeric columns are right-aligned, so their arrow leads rather
+                than trails; the label still ends at the column edge. */}
+            {numeric && active ? <span aria-hidden="true">{DIRECTION_GLYPH[direction]}</span> : null}
             <span style={numeric ? NUMERIC_CELL : TRUNCATE_CELL}>{ISSUE_SORT_LABEL[key]}</span>
+            {!numeric && active ? <span aria-hidden="true">{DIRECTION_GLYPH[direction]}</span> : null}
           </Link>
         );
       })}
@@ -141,21 +165,30 @@ export default function IssuesPage() {
 
   const queue = parseQueue(searchParams.get("queue"));
   const sort = parseIssueSort(searchParams.get("sort"));
-  const view = useIssuesView(queue, sort);
+  const direction = parseSortDirection(searchParams.get("dir"), sort);
+  const view = useIssuesView(queue, sort, direction);
 
   // The tail starts folded. Opening it is the one action this list offers, and
   // it is not a commitment to anything — see the note on the fold below.
   const [tailOpen, setTailOpen] = useState(false);
 
   const linkTo = useMemo(
-    () => (next: { queue?: Queue; sort?: IssueSort }) => {
+    () => (next: { queue?: Queue; sort?: IssueSort; dir?: SortDirection }) => {
       const params = new URLSearchParams();
       params.set("queue", next.queue ?? queue);
       const nextSort = next.sort ?? sort;
+      // Naming a sort without a direction means "start it the way it reads by
+      // default" — which is how the menu behaves, and how the first click on a
+      // column behaves. Staying on the current sort keeps the current
+      // direction, so changing queue does not silently un-reverse the list.
+      const nextDir = next.dir ?? (nextSort === sort ? direction : DEFAULT_SORT_DIRECTION[nextSort]);
       if (nextSort !== DEFAULT_ISSUE_SORT) params.set("sort", nextSort);
+      // Only a direction that is not the sort's own default reaches the URL, so
+      // the common link stays short and a reversed one is explicit.
+      if (nextDir !== DEFAULT_SORT_DIRECTION[nextSort]) params.set("dir", nextDir);
       return pathFor(`${DESTINATION_PATH.issues}?${params.toString()}`);
     },
-    [pathFor, queue, sort],
+    [pathFor, queue, sort, direction],
   );
 
   // The same counts the tabs badge, stated in a sentence. One selector behind
@@ -254,7 +287,7 @@ export default function IssuesPage() {
             />
           </div>
 
-          <ColumnHeaders sort={sort} hrefFor={(next) => linkTo({ sort: next })} />
+          <ColumnHeaders sort={sort} direction={direction} hrefFor={linkTo} />
 
           <div style={{ borderBottom: "1px solid var(--border-hairline)" }}>
             {view.groups.map((group) => (

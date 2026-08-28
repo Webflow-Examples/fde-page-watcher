@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_ISSUE_SORT,
+  DEFAULT_SORT_DIRECTION,
   ISSUE_SORTS,
   issueCasesFrom,
   lastRunAtOf,
   parseIssueSort,
+  parseSortDirection,
   partitionByImpact,
   queueCountsOf,
   sortRemediationGroups,
@@ -313,17 +315,71 @@ describe("sortRemediationGroups", () => {
       .toEqual(["six", "two", "one"]);
   });
 
-  it("ranks diagnosis by the sentence the row shows, falling back to the title", () => {
-    // "alpha" carries no diagnosis, so the row shows its stored title and this
-    // sort has to order on the same string — otherwise the list is alphabetical
-    // by text nobody can see.
+  it("ranks cause by the label the row shows, not by the audit id behind it", () => {
+    // The ids sort as bootup-time, dom-size, unused-javascript. The labels they
+    // classify to sort differently, and the labels are what is on screen.
     const groups = groupByRemediation([
-      makeCase({ id: "zeta", cause: "zeta", diagnosis: "Zeta blocks rendering." }),
-      makeCase({ id: "alpha", cause: "alpha", diagnosis: "", title: "Alpha blocks rendering." }),
-      makeCase({ id: "mid", cause: "mid", diagnosis: "Mid blocks rendering." }),
+      makeCase({ id: "nested", cause: "dom-size" }),           // Deeply nested elements
+      makeCase({ id: "startup", cause: "bootup-time" }),       // Code running at startup
+      makeCase({ id: "dead", cause: "unused-javascript" }),    // Code the site never runs
     ], { at: "2026-08-25T06:00:00.000Z" });
-    expect(sortRemediationGroups(groups, "diagnosis", lastRun).map((group) => group.primary.id))
-      .toEqual(["alpha", "mid", "zeta"]);
+    expect(sortRemediationGroups(groups, "cause", lastRun).map((group) => group.primary.id))
+      .toEqual(["startup", "dead", "nested"]);
+  });
+
+  /* ── Direction ────────────────────────────────────────────────────────── */
+
+  it("opens each sort in its own direction rather than a uniform descending", () => {
+    expect(parseSortDirection(undefined, "effort")).toBe("asc");
+    expect(parseSortDirection(undefined, "impact")).toBe("desc");
+    expect(parseSortDirection("nonsense", "state")).toBe("asc");
+    expect(parseSortDirection("desc", "state")).toBe("desc");
+  });
+
+  it("reverses when the same column is asked a second time", () => {
+    const stateGroups = groupByRemediation([
+      makeCase({ id: "gone", cause: "gone", state: "dismissed" }),
+      makeCase({ id: "fresh", cause: "fresh", state: "new" }),
+      makeCase({ id: "doing", cause: "doing", state: "in_progress" }),
+    ], { at: "2026-08-25T06:00:00.000Z" });
+    expect(sortRemediationGroups(stateGroups, "state", lastRun, "asc").map((group) => group.primary.id))
+      .toEqual(["fresh", "doing", "gone"]);
+    expect(sortRemediationGroups(stateGroups, "state", lastRun, "desc").map((group) => group.primary.id))
+      .toEqual(["gone", "doing", "fresh"]);
+  });
+
+  it("keeps rule 18 when impact is reversed: smallest MEASURED first, never the unmeasured", () => {
+    // The whole point of splitting rule 18 out of the sign. Reversing "largest
+    // saving first" asks for the smallest reading, not for the row that has no
+    // reading at all — an absent number is not a small one.
+    const order = sortRemediationGroups(groups, "impact", lastRun, "asc").map((group) => group.primary.id);
+    expect(order).toEqual(["quick", "mid", "slow", "vague"]);
+    expect(order.at(-1)).toBe("vague");
+  });
+
+  it("keeps rule 18 when effort is reversed, inside each band", () => {
+    const sameBand = groupByRemediation([
+      makeCase({ id: "blank", cause: "blank", impactMs: 0, effort: "hours" }),
+      makeCase({ id: "big", cause: "big", impactMs: 1900, effort: "hours" }),
+    ], { at: "2026-08-25T06:00:00.000Z" });
+    // Hardest first still does not float the unmeasured finding above the
+    // measured one it shares a band with.
+    expect(sortRemediationGroups(sameBand, "effort", lastRun, "desc").map((group) => group.primary.id))
+      .toEqual(["big", "blank"]);
+  });
+
+  it("shows the same groups in either direction", () => {
+    const baseline = groups.map((group) => group.key).sort();
+    for (const sort of ISSUE_SORTS) {
+      for (const direction of ["asc", "desc"] as const) {
+        const sorted = sortRemediationGroups(groups, sort, lastRun, direction);
+        expect(sorted.map((group) => group.key).sort(), `${sort} ${direction}`).toEqual(baseline);
+      }
+    }
+  });
+
+  it("declares a direction for every sort", () => {
+    for (const sort of ISSUE_SORTS) expect(DEFAULT_SORT_DIRECTION[sort]).toMatch(/^(asc|desc)$/);
   });
 
   it("does not mutate its input", () => {

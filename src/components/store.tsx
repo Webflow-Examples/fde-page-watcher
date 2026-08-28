@@ -16,6 +16,7 @@ import {
   byWorstMeasured,
   casesInQueue,
   groupByRemediation,
+  hasMeasuredImpact,
   type Effort,
   type IssueCase,
   type RemediationGroup,
@@ -34,7 +35,7 @@ import {
   type Queue,
   type WorkState,
 } from "@/lib/vocabulary";
-import { diagnosisLineOf } from "@/lib/case-copy";
+import { causeLineOf } from "@/lib/case-copy";
 import { normalizeNativeElementControls } from "@/lib/nativeElements";
 import { localISODate } from "@/lib/ui";
 import { withBasePath } from "@/lib/paths";
@@ -1266,7 +1267,7 @@ export const ISSUE_SORTS = [
   "newest",
   "changed",
   "state",
-  "diagnosis",
+  "cause",
   "pages",
   "confidence",
   "effort",
@@ -1281,7 +1282,7 @@ export const ISSUE_SORT_LABEL: Record<IssueSort, string> = {
   newest: "Newest",
   changed: "What changed",
   state: "State",
-  diagnosis: "Diagnosis",
+  cause: "Cause",
   pages: "Pages",
   confidence: "Confidence",
   effort: "Effort",
@@ -1289,6 +1290,45 @@ export const ISSUE_SORT_LABEL: Record<IssueSort, string> = {
 
 export function parseIssueSort(value: string | null | undefined): IssueSort {
   return (ISSUE_SORTS as readonly string[]).includes(value ?? "") ? (value as IssueSort) : DEFAULT_ISSUE_SORT;
+}
+
+/* ── Direction ──────────────────────────────────────────────────────────── */
+
+export const SORT_DIRECTIONS = ["asc", "desc"] as const;
+export type SortDirection = (typeof SORT_DIRECTIONS)[number];
+
+/**
+ * The direction each sort reads in when you first ask for it.
+ *
+ * Not a uniform default, because "descending" is not a useful opening move for
+ * half of these: a triage list wants the lifecycle from `new`, effort from the
+ * cheapest, confidence from the strongest, and impact from the largest. These
+ * are the directions the sorts already had before they could be reversed, kept
+ * as the first click so nothing about the list changed under anyone.
+ */
+export const DEFAULT_SORT_DIRECTION: Record<IssueSort, SortDirection> = {
+  impact: "desc",
+  newest: "desc",
+  changed: "desc",
+  state: "asc",
+  cause: "asc",
+  pages: "desc",
+  confidence: "asc",
+  effort: "asc",
+};
+
+export function parseSortDirection(
+  value: string | null | undefined,
+  sort: IssueSort,
+): SortDirection {
+  return (SORT_DIRECTIONS as readonly string[]).includes(value ?? "")
+    ? (value as SortDirection)
+    : DEFAULT_SORT_DIRECTION[sort];
+}
+
+/** The direction a second click on an already-sorted column asks for. */
+export function reverseDirection(direction: SortDirection): SortDirection {
+  return direction === "asc" ? "desc" : "asc";
 }
 
 /** Least work first, so a sort by effort surfaces what can be cleared today. */
@@ -1327,12 +1367,29 @@ export function sortRemediationGroups(
   groups: readonly RemediationGroup[],
   sort: IssueSort,
   lastRunAt?: string,
+  direction: SortDirection = DEFAULT_SORT_DIRECTION[sort],
 ): RemediationGroup[] {
+  // Applied to the PRIMARY key only. Everything after the first `||` is a
+  // tie-break, and a tie-break that flipped with the header would reshuffle
+  // rows the reader did not ask to reorder.
+  const sign = direction === DEFAULT_SORT_DIRECTION[sort] ? 1 : -1;
   const lastRunDay = lastRunAt ? dayOf(lastRunAt) : undefined;
   const inLastRun = (group: RemediationGroup): number =>
     lastRunDay && group.detectedAt && dayOf(group.detectedAt) >= lastRunDay ? 0 : 1;
 
   const byNewest = (a: RemediationGroup, b: RemediationGroup) => b.detectedAt.localeCompare(a.detectedAt);
+
+  /**
+   * Rule 18, split out of `byWorstMeasured` so it can sit OUTSIDE the sign.
+   *
+   * Reversing "largest saving first" has to give "smallest MEASURED first", not
+   * "no reading first". An absent measurement is not a small one, and a
+   * direction toggle is not permission to rank it as zero — which is exactly
+   * what negating the combined comparator would have done.
+   */
+  const measuredFirst = (a: RemediationGroup, b: RemediationGroup) =>
+    Number(hasMeasuredImpact(b.impactMs)) - Number(hasMeasuredImpact(a.impactMs));
+  const byImpactSize = (a: RemediationGroup, b: RemediationGroup) => b.impactMs - a.impactMs;
   // The id tie-break keeps the order stable when the sort key matches, so a
   // re-render never reshuffles equal rows.
   const byId = (a: RemediationGroup, b: RemediationGroup) => a.primary.id.localeCompare(b.primary.id);
@@ -1342,20 +1399,22 @@ export function sortRemediationGroups(
   // ordered by a zero they never measured. Newest and What changed rank on a
   // date every case carries, so no measurement stands in for a missing one.
   const compare: Record<IssueSort, (a: RemediationGroup, b: RemediationGroup) => number> = {
-    impact: (a, b) => byWorstMeasured(a, b) || byNewest(a, b) || byId(a, b),
-    newest: (a, b) => byNewest(a, b) || byId(a, b),
-    changed: (a, b) => inLastRun(a) - inLastRun(b) || byNewest(a, b) || byId(a, b),
-    state: (a, b) => STATE_ORDER[a.state] - STATE_ORDER[b.state] || byWorstMeasured(a, b) || byId(a, b),
+    impact: (a, b) => measuredFirst(a, b) || sign * byImpactSize(a, b) || byNewest(a, b) || byId(a, b),
+    newest: (a, b) => sign * byNewest(a, b) || byId(a, b),
+    changed: (a, b) => sign * (inLastRun(a) - inLastRun(b)) || byNewest(a, b) || byId(a, b),
+    state: (a, b) => sign * (STATE_ORDER[a.state] - STATE_ORDER[b.state]) || byWorstMeasured(a, b) || byId(a, b),
     // The text the row actually shows, so the order a reader sees is the order
     // they could have worked out from the screen.
-    diagnosis: (a, b) =>
-      diagnosisLineOf(a.primary).localeCompare(diagnosisLineOf(b.primary)) || byId(a, b),
+    cause: (a, b) => sign * causeLineOf(a.primary).localeCompare(causeLineOf(b.primary)) || byId(a, b),
     // Broadest first: the count is the reason to look, and one fix covering six
     // pages is the case this sort exists to surface.
-    pages: (a, b) => b.pageIds.length - a.pageIds.length || byWorstMeasured(a, b) || byId(a, b),
+    pages: (a, b) => sign * (b.pageIds.length - a.pageIds.length) || byWorstMeasured(a, b) || byId(a, b),
     confidence: (a, b) =>
-      CONFIDENCE_ORDER[a.confidence] - CONFIDENCE_ORDER[b.confidence] || byWorstMeasured(a, b) || byId(a, b),
-    effort: (a, b) => EFFORT_ORDER[a.effort] - EFFORT_ORDER[b.effort] || byWorstMeasured(a, b) || byId(a, b),
+      sign * (CONFIDENCE_ORDER[a.confidence] - CONFIDENCE_ORDER[b.confidence]) || byWorstMeasured(a, b) || byId(a, b),
+    // The effort tie-break keeps rule 18 inside each band in both directions:
+    // reversing to "hardest first" must not float an unmeasured finding to the
+    // top of its band.
+    effort: (a, b) => sign * (EFFORT_ORDER[a.effort] - EFFORT_ORDER[b.effort]) || byWorstMeasured(a, b) || byId(a, b),
   };
 
   return [...groups].sort(compare[sort]);
@@ -1390,7 +1449,11 @@ export interface IssuesView {
  * things a person should be able to link someone to, and neither is a
  * preference worth persisting.
  */
-export function useIssuesView(queue: Queue, sort: IssueSort): IssuesView {
+export function useIssuesView(
+  queue: Queue,
+  sort: IssueSort,
+  direction: SortDirection = DEFAULT_SORT_DIRECTION[sort],
+): IssuesView {
   const { recs, pages, performanceThresholds, caseDecisions } = useStore();
   return useMemo(() => {
     // The decisions log is part of the derivation's input, not a filter applied
@@ -1407,12 +1470,12 @@ export function useIssuesView(queue: Queue, sort: IssueSort): IssuesView {
       cases,
       counts: queueCountsOf(cases),
       inQueue,
-      groups: sortRemediationGroups(groupByRemediation(inline, at), sort, lastRunAt),
-      tail: sortRemediationGroups(groupByRemediation(tail, at), sort, lastRunAt),
+      groups: sortRemediationGroups(groupByRemediation(inline, at), sort, lastRunAt, direction),
+      tail: sortRemediationGroups(groupByRemediation(tail, at), sort, lastRunAt, direction),
       tailCases: tail,
       minimumSavingsMs,
       pageTitles: Object.fromEntries(pages.map((page) => [page.id, page.title])),
       lastRunAt,
     };
-  }, [recs, pages, caseDecisions, performanceThresholds, queue, sort]);
+  }, [recs, pages, caseDecisions, performanceThresholds, queue, sort, direction]);
 }
