@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useId, useState, type CSSProperties } from "react";
+import type { CSSProperties } from "react";
 import type { IssueCase } from "@/lib/issue-case";
 import type { Strategy } from "@/lib/types";
 import { EFFORT_LABEL, formatGroupImpact, formatImpact } from "@/lib/impact-format";
@@ -10,6 +10,7 @@ import { causeLineOf, diagnosisLineOf } from "@/lib/case-copy";
 import { CONFIDENCE_LABEL } from "@/lib/vocabulary";
 import { caseHref, pageHref } from "@/lib/paths";
 import { StatusChip } from "@/components/status-chip";
+import { InfoTip } from "@/components/info-tip";
 
 /**
  * One case, at the depth the list needs: state, diagnosis, scope, confidence,
@@ -156,134 +157,101 @@ export function PageScope({
 }
 
 export function IssueRow({ issue, basePath, pageTitles, nested = false }: IssueRowProps) {
-  const [open, setOpen] = useState(false);
-  const panelId = useId();
   const impact = formatImpact(issue.impactMs);
   // What KIND of problem this is, in three or four words — the column a list of
   // four dozen rows is actually scanned on.
   const cause = causeLineOf(issue);
-  // The sentence itself, one disclosure away rather than truncated at the
-  // column edge. `case-copy` owns the title fallback, because the cause sort
-  // and this both read it.
+  // The sentence itself, behind the tip rather than truncated at the column
+  // edge. `case-copy` owns the title fallback, because the cause sort and this
+  // both read it.
   const diagnosis = diagnosisLineOf(issue);
   // Where the classifier did not recognise the audit, `causeLineOf` already
-  // fell back to this same sentence — so there is no second layer to open, and
-  // a control that reveals the text you are looking at is worse than no
+  // fell back to this same sentence — so there is nothing further to say, and a
+  // control that shows you the text you are looking at is worse than no
   // control. The 18px is still reserved, so the labels start on one line down
-  // the whole list whether or not a row has something to show.
+  // the whole list whether or not a row has more to give.
   const hasSecondLayer = diagnosis !== "" && diagnosis !== cause;
 
   return (
+    /*
+      The row is no longer one big `<Link>`.
+
+      It could not stay one: the pages in it are links to somewhere else, and an
+      anchor inside an anchor is invalid — the browser closes the outer one and
+      the row silently becomes two links with a gap between them. The tip's
+      trigger is a button, which has the same problem.
+
+      So the case link is a normal link on the cause, and `.issue-row__open`
+      stretches its hit area over the whole row in CSS. One focusable link per
+      row rather than a row-sized target that reads its six cells aloud, which
+      is the announcement the UX audit called out; the page links and the tip
+      sit above it and keep their own targets.
+
+      The background and the rule above it are CSS rather than inline, because
+      an inline background beats a `:hover` rule in the stylesheet and the row
+      would never light up.
+    */
     <div
+      className={nested ? "issue-row issue-row--nested" : "issue-row"}
       style={{
-        borderTop: "1px solid var(--border-hairline)",
-        background: nested ? "var(--surface-page)" : "var(--surface-card)",
+        display: "grid",
+        gridTemplateColumns: ISSUE_ROW_COLUMNS,
+        gap: ISSUE_ROW_GAP,
+        alignItems: "center",
+        padding: "11px 40px",
       }}
     >
-      {/*
-        The row is no longer one big `<Link>`.
+      <span style={{ paddingLeft: nested ? ISSUE_ROW_NEST_INDENT : 0 }}>
+        <StatusChip state={issue.state} />
+      </span>
 
-        It could not stay one: the pages in it are links to somewhere else, and
-        an anchor inside an anchor is invalid — the browser closes the outer one
-        and the row silently becomes two links with a gap between them. The
-        disclosure has the same problem as a button.
-
-        So the case link is a normal link on the cause, and `.issue-row__open`
-        stretches its hit area over the whole row in CSS. One focusable link per
-        row rather than a row-sized target that reads its six cells aloud, which
-        is the announcement the UX audit called out; the page links and the
-        disclosure sit above it and keep their own targets.
-      */}
-      <div
-        className="issue-row"
-        style={{
-          display: "grid",
-          gridTemplateColumns: ISSUE_ROW_COLUMNS,
-          gap: ISSUE_ROW_GAP,
-          alignItems: "center",
-          padding: "11px 40px",
-          color: "var(--text-body)",
-        }}
-      >
-        <span style={{ paddingLeft: nested ? ISSUE_ROW_NEST_INDENT : 0 }}>
-          <StatusChip state={issue.state} />
-        </span>
-
-        {/* NOT `TRUNCATE_CELL` on this cell or on the link inside it. The
-            stretched hit area is a positioned `::after` on the link, and
-            `overflow: hidden` anywhere above it clips that box back to the
-            cell — which is a whole-row target that only covers one column.
-            The truncation moves to the span around the text instead, where it
-            still ellipses and no longer clips anything. */}
-        <span style={{ minWidth: 0, display: "flex", alignItems: "center", gap: 7 }}>
-          {hasSecondLayer ? (
-            <button
-              type="button"
-              className="issue-row__disclosure"
-              aria-expanded={open}
-              aria-controls={panelId}
-              aria-label={`${open ? "Hide" : "Show"} the diagnosis for ${cause}`}
-              onClick={() => setOpen((wasOpen) => !wasOpen)}
-            >
-              <span aria-hidden="true">{open ? "\u25be" : "\u25b8"}</span>
-            </button>
-          ) : (
-            <span aria-hidden="true" className="issue-row__disclosure-spacer" />
-          )}
-          <Link
-            className="issue-row__open"
-            href={caseHref(basePath, issue.id)}
-            style={{ minWidth: 0, fontSize: 13, fontWeight: 500 }}
-            // The tooltip is the VISIBLE text, not the diagnosis behind it.
-            // `title` becomes the accessible name, so a diagnosis here would
-            // announce and voice-target the link as something other than what
-            // it reads as on screen. The diagnosis has a disclosure now; that
-            // is where it belongs.
-            title={cause}
-          >
-            <span style={{ ...TRUNCATE_CELL, display: "block" }}>{cause}</span>
-          </Link>
-        </span>
-
-        <span style={{ ...TRUNCATE_CELL, fontSize: 12.5, color: "var(--text-muted)" }}>
-          <PageScope pageIds={issue.pageIds} strategies={issue.strategies} basePath={basePath} pageTitles={pageTitles} />
-        </span>
-
-        {/* The word, in the row's secondary text token — never a strength hue.
-            `--confidence-weak` under the word "Confirmed" is a token painting
-            the opposite of what it says (registry rule 13), and hue here would
-            double-encode a value the word already carries. Strength as colour
-            belongs where there is no word to read it from. */}
-        <span style={{ ...TRUNCATE_CELL, fontSize: 12.5, color: "var(--text-muted)" }}>
-          {CONFIDENCE_LABEL[issue.confidence]}
-        </span>
-
-        <span style={{ ...NUMERIC_CELL, fontSize: 12.5, color: impact.measured ? "var(--magnitude-value)" : "var(--text-muted)" }}>
-          {impact.text}
-        </span>
-
-        <span style={{ ...NUMERIC_CELL, fontSize: 12.5, color: "var(--text-muted)" }}>
-          {EFFORT_LABEL[issue.effort]}
-        </span>
-      </div>
-
-      {/* The second layer. Nothing is hidden that was not already truncated —
-          the sentence used to end in an ellipsis at the column edge, and now it
-          ends where it ends. */}
-      {open && hasSecondLayer ? (
-        <div
-          id={panelId}
-          style={{
-            padding: `0 40px 12px ${40 + (nested ? ISSUE_ROW_NEST_INDENT : 0)}px`,
-            maxWidth: "88ch",
-            fontSize: 12.5,
-            lineHeight: 1.6,
-            color: "var(--text-muted)",
-          }}
+      {/* NOT `TRUNCATE_CELL` on this cell or on the link inside it. The
+          stretched hit area is a positioned `::after` on the link, and
+          `overflow: hidden` anywhere above it clips that box back to the
+          cell — which is a whole-row target that only covers one column.
+          The truncation moves to the span around the text instead, where it
+          still ellipses and no longer clips anything. */}
+      <span style={{ minWidth: 0, display: "flex", alignItems: "center", gap: 7 }}>
+        {hasSecondLayer ? (
+          <InfoTip label={cause} text={diagnosis} />
+        ) : (
+          <span aria-hidden="true" className="issue-row__tip-spacer" />
+        )}
+        <Link
+          className="issue-row__open"
+          href={caseHref(basePath, issue.id)}
+          style={{ minWidth: 0, fontSize: 13, fontWeight: 500 }}
+          // The tooltip is the VISIBLE text, not the diagnosis behind it.
+          // `title` becomes the accessible name, so a diagnosis here would
+          // announce and voice-target the link as something other than what
+          // it reads as on screen. The diagnosis has a disclosure now; that
+          // is where it belongs.
+          title={cause}
         >
-          {diagnosis}
-        </div>
-      ) : null}
+          <span style={{ ...TRUNCATE_CELL, display: "block" }}>{cause}</span>
+        </Link>
+      </span>
+
+      <span style={{ ...TRUNCATE_CELL, fontSize: 12.5, color: "var(--text-muted)" }}>
+        <PageScope pageIds={issue.pageIds} strategies={issue.strategies} basePath={basePath} pageTitles={pageTitles} />
+      </span>
+
+      {/* The word, in the row's secondary text token — never a strength hue.
+          `--confidence-weak` under the word "Confirmed" is a token painting
+          the opposite of what it says (registry rule 13), and hue here would
+          double-encode a value the word already carries. Strength as colour
+          belongs where there is no word to read it from. */}
+      <span style={{ ...TRUNCATE_CELL, fontSize: 12.5, color: "var(--text-muted)" }}>
+        {CONFIDENCE_LABEL[issue.confidence]}
+      </span>
+
+      <span style={{ ...NUMERIC_CELL, fontSize: 12.5, color: impact.measured ? "var(--magnitude-value)" : "var(--text-muted)" }}>
+        {impact.text}
+      </span>
+
+      <span style={{ ...NUMERIC_CELL, fontSize: 12.5, color: "var(--text-muted)" }}>
+        {EFFORT_LABEL[issue.effort]}
+      </span>
     </div>
   );
 }
