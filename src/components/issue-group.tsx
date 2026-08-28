@@ -7,9 +7,9 @@ import {
   ISSUE_ROW_GAP,
   IssueRow,
   NUMERIC_CELL,
+  PageScope,
   TRUNCATE_CELL,
   formatGroupImpact,
-  scopeLineOf,
 } from "@/components/issue-row";
 
 /**
@@ -49,7 +49,6 @@ export function IssueGroup({ group, basePath, pageTitles, nested = false }: Issu
   // The remediation's first step, which is what the shared fix starts with. It
   // is data, from the case; nothing is authored here.
   const fix = group.remediation.steps.find((step) => step.trim() !== "") ?? group.primary.title;
-  const scope = scopeLineOf(group.pageIds, group.primary.strategies, pageTitles);
 
   return (
     <section>
@@ -74,8 +73,17 @@ export function IssueGroup({ group, basePath, pageTitles, nested = false }: Issu
           {fix}
         </span>
 
+        {/* The pages link here for the same reason they do on a row: this is
+            the same column, and a header that names a page the reader cannot
+            open teaches them the column is not clickable. */}
         <span style={{ ...TRUNCATE_CELL, fontSize: 12.5, color: "var(--text-muted)" }}>
-          {`${group.cases.length} cases · ${scope}`}
+          {`${group.cases.length} cases · `}
+          <PageScope
+            pageIds={group.pageIds}
+            strategies={group.primary.strategies}
+            basePath={basePath}
+            pageTitles={pageTitles}
+          />
         </span>
 
         {/* The weakest member confidence, as a word. See the note in issue-row. */}

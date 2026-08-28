@@ -2730,3 +2730,92 @@ textarea:focus-visible,
     border: 0;
   }
 }
+
+/* ── The issues list row ────────────────────────────────────────────────── */
+
+/*
+ * The row is a grid of cells, not one big link, because two of its cells are
+ * links to somewhere else and a nested anchor is invalid. The case link instead
+ * stretches its own hit area over the whole row, which keeps the row-sized
+ * click target without a row-sized announcement.
+ */
+.issue-row {
+  position: relative;
+}
+
+.issue-row__open {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* The stretched hit area. Not a second link — the same one, made row-sized. */
+.issue-row__open::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.issue-row:hover {
+  background: var(--surface-raised);
+}
+
+.issue-row__open:focus-visible {
+  outline: none;
+}
+
+/* The focus ring belongs on the row, because the row is what the link covers. */
+.issue-row:has(.issue-row__open:focus-visible) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+/*
+ * Above the stretched link, so they keep their own targets. Without the
+ * stacking context these sit under it and every click opens the case.
+ */
+.issue-row__page,
+.issue-row__disclosure {
+  position: relative;
+  z-index: 1;
+}
+
+.issue-row__page {
+  color: inherit;
+  text-decoration: none;
+}
+
+.issue-row__page:hover,
+.issue-row__page:focus-visible {
+  color: var(--action-primary-ink);
+  text-decoration: underline;
+}
+
+.issue-row__disclosure {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.issue-row__disclosure:hover {
+  background: var(--surface-input);
+  color: var(--text-body);
+}
+
+/* Keeps the cause labels on one line down the list where a row has no second
+   layer to disclose. Same width as the control it stands in for. */
+.issue-row__disclosure-spacer {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+}
