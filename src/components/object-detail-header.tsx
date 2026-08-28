@@ -22,12 +22,15 @@ import type { ReactNode } from "react";
  *   state + date  what it is now, and since when
  *   title         the object in its own words, at most two lines
  *   explanation   one paragraph — why this is here, in prose
- *   actions       stacked right, so they never separate the title from its text
- *   metadata      BELOW everything, because it is reference and not the point
+ *   actions       right of the title, in a row, so they never separate the
+ *                 title from its text
+ *   metadata      directly under the explanation, in the title's own column
  *
- * Metadata sits last on purpose. A strip of chips above the title makes the
- * reader parse a taxonomy before they have been told what the problem is, and
- * the taxonomy only means anything once they have.
+ * Metadata sits after the prose on purpose. A strip of chips above the title
+ * makes the reader parse a taxonomy before they have been told what the
+ * problem is, and the taxonomy only means anything once they have. It shares
+ * the title's column rather than spanning the header, so it stays beneath the
+ * sentence it qualifies instead of being pushed below the actions.
  */
 
 export interface ObjectDetailHeaderProps {
@@ -41,9 +44,11 @@ export interface ObjectDetailHeaderProps {
   /** One paragraph. If it needs two, one of them belongs in the body. */
   explanation?: string;
   /**
-   * Stacked at the right. Unlike `PageHeader` this takes a node rather than
+   * In a row at the right. Unlike `PageHeader` this takes a node rather than
    * one action, because an object legitimately offers a decision and its
    * opposite — Accept and Dismiss are a pair, not a primary and a runner-up.
+   * A pair reads as a pair side by side; stacked, the second looked like a
+   * consequence of the first.
    */
   actions?: ReactNode;
   /** Reference detail, rendered below the paragraph. */
@@ -116,14 +121,20 @@ export function ObjectDetailHeader({
               {explanation}
             </p>
           ) : null}
+
+          {metadata ? <div style={{ marginTop: 18 }}>{metadata}</div> : null}
         </div>
 
         {actions ? (
           <div
             style={{
               display: "flex",
-              flexDirection: "column",
-              alignItems: "stretch",
+              flexDirection: "row",
+              alignItems: "center",
+              // Wraps rather than squeezing: two actions plus a long title on a
+              // narrow viewport is the case that would otherwise clip one.
+              flexWrap: "wrap",
+              justifyContent: "flex-end",
               gap: 8,
               flex: "0 0 auto",
             }}
@@ -132,8 +143,6 @@ export function ObjectDetailHeader({
           </div>
         ) : null}
       </div>
-
-      {metadata ? <div style={{ marginTop: 18 }}>{metadata}</div> : null}
     </header>
   );
 }
