@@ -3,6 +3,7 @@ import type { CSSProperties } from "react";
 import type { IssueCase } from "@/lib/issue-case";
 import { EFFORT_LABEL, formatGroupImpact, formatImpact } from "@/lib/impact-format";
 import { scopeLineOf } from "@/lib/scope-line";
+import { diagnosisLineOf } from "@/lib/case-copy";
 import { CONFIDENCE_LABEL } from "@/lib/vocabulary";
 import { caseHref } from "@/lib/paths";
 import { StatusChip } from "@/components/status-chip";
@@ -91,10 +92,10 @@ export interface IssueRowProps {
 
 export function IssueRow({ issue, basePath, pageTitles, nested = false }: IssueRowProps) {
   const impact = formatImpact(issue.impactMs);
-  // The case's own plain sentence where it has one. `fromRec` leaves this empty
-  // rather than authoring copy, and the stored title is what the source called
-  // it — the honest fallback, not a second diagnosis.
-  const diagnosis = issue.diagnosis || issue.title;
+  // The case's own plain sentence where it has one, falling back to the stored
+  // title. `case-copy` owns the choice, because the diagnosis sort orders rows
+  // by the same text.
+  const diagnosis = diagnosisLineOf(issue);
 
   return (
     <Link

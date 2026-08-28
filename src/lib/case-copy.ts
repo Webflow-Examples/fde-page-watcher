@@ -27,6 +27,26 @@ export function acceptLabel(included: number, total: number): string {
   return included === total ? "Accept" : `Accept for ${included} pages`;
 }
 
+/* ── The diagnosis line ─────────────────────────────────────────────────── */
+
+/**
+ * The sentence the list and the digest show for a case.
+ *
+ * `fromRec` leaves `diagnosis` empty rather than authoring copy, so the stored
+ * title — what the source called it — is the fallback. That is a choice between
+ * two strings the case already carries, not a third spelling of either.
+ *
+ * It lives here because the row is no longer its only reader: sorting by
+ * diagnosis has to order rows by the text they actually show, and a comparator
+ * with its own copy of the fallback is the drift rule 20 exists to stop.
+ *
+ * Structurally typed on purpose. `issue-case.ts` imports this module, so naming
+ * `IssueCase` here would close a cycle for a two-field read.
+ */
+export function diagnosisLineOf(issue: { diagnosis: string; title: string }): string {
+  return issue.diagnosis || issue.title;
+}
+
 /* ── The pages table ────────────────────────────────────────────────────── */
 
 export function pagesCount(included: number, excluded: number): string {
