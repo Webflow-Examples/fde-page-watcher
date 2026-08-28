@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
+import Link from "next/link";
 import {
   applicabilityOf,
   exclusionReasonOf,
@@ -12,6 +13,7 @@ import { applicabilityActionLabel, type ExclusionReason } from "@/lib/vocabulary
 import { excludedNote, pagesCount } from "@/lib/case-copy";
 import { formatImpact } from "@/lib/impact-format";
 import { ExclusionReasonPicker } from "@/components/exclusion-reason-picker";
+import { useStore } from "@/components/store";
 
 /**
  * The pages this case covers, and which of them it counts (4b).
@@ -64,6 +66,7 @@ export function CasePages({
   onInclude,
   impactByPage,
 }: CasePagesProps) {
+  const { pathFor } = useStore();
   const [choosingFor, setChoosingFor] = useState<string | null>(null);
   const included = includedPages(issue);
   const excluded = excludedPageIds(issue);
@@ -92,6 +95,28 @@ export function CasePages({
           const reason = exclusionReasonOf(issue, pageId);
           const impact = formatImpact(impactByPage?.[pageId] ?? 0);
           const path = pagePaths?.[pageId];
+          const label = pageTitles[pageId] ?? path ?? pageId;
+          /**
+           * Only a page the store still knows gets a link.
+           *
+           * `issue.pageIds` is the case's own record of what it covers, and a
+           * page can leave the watchlist while the case that named it stays.
+           * Falling back to the raw id and linking it anyway would send the
+           * reader to a 404 — a row that does not navigate is the better of
+           * the two failures, so the name still renders, just as text.
+           */
+          const known = pageTitles[pageId] !== undefined || path !== undefined;
+          const nameStyle: CSSProperties = {
+            display: "block",
+            fontSize: 13,
+            color: isExcluded ? "var(--text-muted)" : "var(--text-body)",
+            // The reading stays. Struck through says "not counted";
+            // removing it would say "never measured", which is a lie.
+            textDecoration: isExcluded ? "line-through" : "none",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          };
           return (
             <div
               key={pageId}
@@ -105,20 +130,13 @@ export function CasePages({
               }}
             >
               <div style={{ flex: "1 1 auto", minWidth: 0 }}>
-                <div
-                  style={{
-                    fontSize: 13,
-                    color: isExcluded ? "var(--text-muted)" : "var(--text-body)",
-                    // The reading stays. Struck through says "not counted";
-                    // removing it would say "never measured", which is a lie.
-                    textDecoration: isExcluded ? "line-through" : "none",
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                  }}
-                >
-                  {pageTitles[pageId] ?? path ?? pageId}
-                </div>
+                {known ? (
+                  <Link href={pathFor(`/pages/${pageId}`)} style={nameStyle} title={label}>
+                    {label}
+                  </Link>
+                ) : (
+                  <div style={nameStyle}>{label}</div>
+                )}
                 {isExcluded && reason ? (
                   <div style={{ marginTop: 4, fontSize: 12, color: "var(--text-muted)", maxWidth: "70ch" }}>
                     {excludedNote(reason)}
