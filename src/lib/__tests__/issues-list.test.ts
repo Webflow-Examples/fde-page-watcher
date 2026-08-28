@@ -277,6 +277,55 @@ describe("sortRemediationGroups", () => {
     expect(changed.slice(0, 2).sort()).toEqual(["quick", "vague"]);
   });
 
+  /* ── The four column sorts ──────────────────────────────────────────── */
+
+  it("ranks state down the registry's lifecycle, not alphabetically", () => {
+    // The two orders disagree, which is the point: alphabetically this is
+    // dismissed, in_progress, new — exactly backwards for a triage list.
+    const groups = groupByRemediation([
+      makeCase({ id: "gone", cause: "gone", state: "dismissed" }),
+      makeCase({ id: "fresh", cause: "fresh", state: "new" }),
+      makeCase({ id: "doing", cause: "doing", state: "in_progress" }),
+    ], { at: "2026-08-25T06:00:00.000Z" });
+    expect(sortRemediationGroups(groups, "state", lastRun).map((group) => group.primary.id))
+      .toEqual(["fresh", "doing", "gone"]);
+  });
+
+  it("ranks confidence strongest first", () => {
+    // The registry's order happens to coincide with alphabetical here, so this
+    // pins the intent — confirmed at the top — rather than the mechanism.
+    const groups = groupByRemediation([
+      makeCase({ id: "vague", cause: "vague", confidence: "unclear" }),
+      makeCase({ id: "sure", cause: "sure", confidence: "confirmed" }),
+      makeCase({ id: "likely", cause: "likely", confidence: "probable" }),
+    ], { at: "2026-08-25T06:00:00.000Z" });
+    expect(sortRemediationGroups(groups, "confidence", lastRun).map((group) => group.primary.id))
+      .toEqual(["sure", "likely", "vague"]);
+  });
+
+  it("ranks pages broadest first, because breadth is the reason to look", () => {
+    const groups = groupByRemediation([
+      makeCase({ id: "one", cause: "one", pageIds: ["home"] }),
+      makeCase({ id: "six", cause: "six", scope: "pages", pageIds: ["home", "pricing", "docs", "blog", "about", "help"] }),
+      makeCase({ id: "two", cause: "two", scope: "pages", pageIds: ["home", "pricing"] }),
+    ], { at: "2026-08-25T06:00:00.000Z" });
+    expect(sortRemediationGroups(groups, "pages", lastRun).map((group) => group.primary.id))
+      .toEqual(["six", "two", "one"]);
+  });
+
+  it("ranks diagnosis by the sentence the row shows, falling back to the title", () => {
+    // "alpha" carries no diagnosis, so the row shows its stored title and this
+    // sort has to order on the same string — otherwise the list is alphabetical
+    // by text nobody can see.
+    const groups = groupByRemediation([
+      makeCase({ id: "zeta", cause: "zeta", diagnosis: "Zeta blocks rendering." }),
+      makeCase({ id: "alpha", cause: "alpha", diagnosis: "", title: "Alpha blocks rendering." }),
+      makeCase({ id: "mid", cause: "mid", diagnosis: "Mid blocks rendering." }),
+    ], { at: "2026-08-25T06:00:00.000Z" });
+    expect(sortRemediationGroups(groups, "diagnosis", lastRun).map((group) => group.primary.id))
+      .toEqual(["alpha", "mid", "zeta"]);
+  });
+
   it("does not mutate its input", () => {
     const before = groups.map((group) => group.key);
     sortRemediationGroups(groups, "effort", lastRun);

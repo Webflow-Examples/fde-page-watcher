@@ -23,7 +23,18 @@ import {
 import { issueCasesFrom, lastRunAtOf } from "@/lib/issue-cases";
 import type { CaseDecision, CaseDecisionRequest } from "@/lib/case-decisions";
 import { partitionByImpact } from "@/lib/impact-format";
-import { APPLICABILITY_LABEL, COUNTED_QUEUES, ISSUE_ACTION_LABEL, type ExclusionReason, type Queue } from "@/lib/vocabulary";
+import {
+  APPLICABILITY_LABEL,
+  CONFIDENCES,
+  COUNTED_QUEUES,
+  ISSUE_ACTION_LABEL,
+  WORK_STATES,
+  type Confidence,
+  type ExclusionReason,
+  type Queue,
+  type WorkState,
+} from "@/lib/vocabulary";
+import { diagnosisLineOf } from "@/lib/case-copy";
 import { normalizeNativeElementControls } from "@/lib/nativeElements";
 import { localISODate } from "@/lib/ui";
 import { withBasePath } from "@/lib/paths";
@@ -1250,7 +1261,16 @@ export { partitionByImpact };
 
 /* ── Sorting ────────────────────────────────────────────────────────────── */
 
-export const ISSUE_SORTS = ["impact", "newest", "changed", "effort"] as const;
+export const ISSUE_SORTS = [
+  "impact",
+  "newest",
+  "changed",
+  "state",
+  "diagnosis",
+  "pages",
+  "confidence",
+  "effort",
+] as const;
 export type IssueSort = (typeof ISSUE_SORTS)[number];
 
 /** Impact is the default, because it is the only one that ranks by consequence. */
@@ -1260,6 +1280,10 @@ export const ISSUE_SORT_LABEL: Record<IssueSort, string> = {
   impact: "Impact",
   newest: "Newest",
   changed: "What changed",
+  state: "State",
+  diagnosis: "Diagnosis",
+  pages: "Pages",
+  confidence: "Confidence",
   effort: "Effort",
 };
 
@@ -1269,6 +1293,23 @@ export function parseIssueSort(value: string | null | undefined): IssueSort {
 
 /** Least work first, so a sort by effort surfaces what can be cleared today. */
 const EFFORT_ORDER: Record<Effort, number> = { minutes: 0, hours: 1, days: 2, unknown: 3 };
+
+/**
+ * State and confidence rank in the registry's own declared order, derived from
+ * its arrays rather than restated here.
+ *
+ * Both arrays are already ordered the way a reader wants to read them — the
+ * lifecycle from `new` to `dismissed`, and confidence from `confirmed` down to
+ * `unclear` — so indexing them IS the comparator. Copying the numbers out would
+ * be R1's F10 again: a rule stated in one place and duplicated in a constant
+ * that no longer changes with it. A state added to the registry lands in the
+ * right position here without this file being touched.
+ */
+const indexOrder = <T extends string>(values: readonly T[]): Record<T, number> =>
+  Object.fromEntries(values.map((value, index) => [value, index])) as Record<T, number>;
+
+const STATE_ORDER: Record<WorkState, number> = indexOrder(WORK_STATES);
+const CONFIDENCE_ORDER: Record<Confidence, number> = indexOrder(CONFIDENCES);
 
 /** The calendar day of an ISO stamp, for comparing a detection to a run. */
 const dayOf = (iso: string): string => iso.slice(0, 10);
@@ -1304,6 +1345,16 @@ export function sortRemediationGroups(
     impact: (a, b) => byWorstMeasured(a, b) || byNewest(a, b) || byId(a, b),
     newest: (a, b) => byNewest(a, b) || byId(a, b),
     changed: (a, b) => inLastRun(a) - inLastRun(b) || byNewest(a, b) || byId(a, b),
+    state: (a, b) => STATE_ORDER[a.state] - STATE_ORDER[b.state] || byWorstMeasured(a, b) || byId(a, b),
+    // The text the row actually shows, so the order a reader sees is the order
+    // they could have worked out from the screen.
+    diagnosis: (a, b) =>
+      diagnosisLineOf(a.primary).localeCompare(diagnosisLineOf(b.primary)) || byId(a, b),
+    // Broadest first: the count is the reason to look, and one fix covering six
+    // pages is the case this sort exists to surface.
+    pages: (a, b) => b.pageIds.length - a.pageIds.length || byWorstMeasured(a, b) || byId(a, b),
+    confidence: (a, b) =>
+      CONFIDENCE_ORDER[a.confidence] - CONFIDENCE_ORDER[b.confidence] || byWorstMeasured(a, b) || byId(a, b),
     effort: (a, b) => EFFORT_ORDER[a.effort] - EFFORT_ORDER[b.effort] || byWorstMeasured(a, b) || byId(a, b),
   };
 

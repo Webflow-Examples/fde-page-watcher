@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import {
   DEFAULT_ISSUE_SORT,
   ISSUE_SORTS,
@@ -54,10 +55,35 @@ import { WATCH_EMPTY } from "@/lib/watch-copy";
  * another, and neither is a preference worth storing.
  */
 
-/** Column headers, drawn on the same six tracks as the rows below them. */
-const COLUMN_HEADERS = ["State", "Diagnosis", "Scope", "Confidence", "Impact", "Effort"] as const;
+/**
+ * Column headers, drawn on the same six tracks as the rows below them — and the
+ * sort control for the column each one heads.
+ *
+ * The header IS the sort rather than a caption above one. Two consequences worth
+ * stating, because both were decisions:
+ *
+ *   - The label comes from `ISSUE_SORT_LABEL`, so a column and the Sort menu
+ *     read one map and cannot end up calling the same ordering two things.
+ *   - There is no direction to toggle. Each sort has one canonical direction
+ *     with a reason attached — least effort first surfaces what can be cleared
+ *     today, broadest first surfaces the fix that covers six pages — and
+ *     reversing them produces orders nobody asked for ("hardest first"). So no
+ *     arrow is drawn, because an arrow would promise a second click that does
+ *     something.
+ *
+ * Newest and What changed head no column: there is no date column to head. The
+ * menu is what keeps them reachable, which is why it stays.
+ */
+const COLUMN_SORTS = [
+  "state",
+  "diagnosis",
+  "pages",
+  "confidence",
+  "impact",
+  "effort",
+] as const satisfies readonly IssueSort[];
 
-function ColumnHeaders() {
+function ColumnHeaders({ sort, hrefFor }: { sort: IssueSort; hrefFor: (next: IssueSort) => string }) {
   return (
     <div
       style={{
@@ -75,11 +101,35 @@ function ColumnHeaders() {
         color: "var(--text-muted)",
       }}
     >
-      {COLUMN_HEADERS.map((label, index) => (
-        <span key={label} style={index >= 4 ? NUMERIC_CELL : TRUNCATE_CELL}>
-          {label}
-        </span>
-      ))}
+      {COLUMN_SORTS.map((key, index) => {
+        const active = key === sort;
+        const numeric = index >= 4;
+        return (
+          <Link
+            key={key}
+            href={hrefFor(key)}
+            replace
+            // The sorted column says so in words, for a reader who cannot see
+            // which one went darker.
+            aria-label={`${active ? "Sorted by" : "Sort by"} ${ISSUE_SORT_LABEL[key]}`}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: numeric ? "flex-end" : "flex-start",
+              minWidth: 0,
+              font: "inherit",
+              letterSpacing: "inherit",
+              textTransform: "inherit",
+              textDecoration: active ? "underline" : "none",
+              textUnderlineOffset: 3,
+              // Not colour alone — the underline above carries it too.
+              color: active ? "var(--text-body)" : "inherit",
+            }}
+          >
+            <span style={numeric ? NUMERIC_CELL : TRUNCATE_CELL}>{ISSUE_SORT_LABEL[key]}</span>
+          </Link>
+        );
+      })}
     </div>
   );
 }
@@ -204,7 +254,7 @@ export default function IssuesPage() {
             />
           </div>
 
-          <ColumnHeaders />
+          <ColumnHeaders sort={sort} hrefFor={(next) => linkTo({ sort: next })} />
 
           <div style={{ borderBottom: "1px solid var(--border-hairline)" }}>
             {view.groups.map((group) => (
