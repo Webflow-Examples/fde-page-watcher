@@ -91,19 +91,24 @@ one commit.
   there, not to copy it — two statements of one retention rule is the drift that
   put it in the wrong place to begin with.
 
+## Landed
+
 ### The Ora note runs two sentences together on screen
 
 - **Found by:** C3, on `chunk-c3`, while merging `origin/main` (`07834fa`).
 - **Left open by C3, deliberately.** It is a one-character change in a line C3
   also edits, which is exactly the shape R3 warns about: a shared defect buried
   in a feature diff cannot be reviewed or reverted on its own.
-- **Claimed by:** `ui-improvements-post-refactor`, at base `98177fc`.
+- **Claimed by:** `ui-improvements-post-refactor` / #98 — `5e6da97`
+- **Seen at:** `98177fc` (`main`), the base the branch was cut from.
+- **Landed:** merged as `9733e8e`. `main` was green on lint, typecheck,
+  test and build at that sha.
 - **Symptom:** in `settings/page.tsx`, `{SETTINGS_SYSTEM_CONTRIBUTES.ora}` is
   followed by ` Switching it on sends...` on the same line, and the leading
   space is dropped. The rendered note reads
   "...you have to switch on.Switching it on sends...", with the DOM showing
   `switch on.<!-- -->Switching`. Introduced by S9 (#93); no check reads rendered
-  copy, so CI is green on it.
+  copy, so CI was green on it throughout.
 - **Cause — not what the symptom looks like.** "JSX drops a leading space" is
   not true, and a session that believes it will go looking for the wrong thing.
   JSX keeps the leading space on the first line of a text node; four probe
@@ -124,8 +129,6 @@ one commit.
 - **Fix:** `{SETTINGS_SYSTEM_CONTRIBUTES.ora}{" "}` with the sentence moved to
   the next line. Verified in the rendered DOM, not just the diff:
   `switch on.<!-- --> <!-- -->Switching`.
-
-## Landed
 
 ### Conflict markers committed into `DECISIONS.md`
 
