@@ -1,4 +1,5 @@
 import { CONFIDENCE_LABEL, type Confidence, type ExclusionReason } from "./vocabulary";
+import { webflowClassificationFor } from "./webflowPerformance";
 
 /**
  * The words the case says, in one place.
@@ -25,6 +26,53 @@ import { CONFIDENCE_LABEL, type Confidence, type ExclusionReason } from "./vocab
  */
 export function acceptLabel(included: number, total: number): string {
   return included === total ? "Accept" : `Accept for ${included} pages`;
+}
+
+/* ── The diagnosis line ─────────────────────────────────────────────────── */
+
+/**
+ * The sentence the list and the digest show for a case.
+ *
+ * `fromRec` leaves `diagnosis` empty rather than authoring copy, so the stored
+ * title — what the source called it — is the fallback. That is a choice between
+ * two strings the case already carries, not a third spelling of either.
+ *
+ * It lives here because the row is no longer its only reader: sorting by
+ * diagnosis has to order rows by the text they actually show, and a comparator
+ * with its own copy of the fallback is the drift rule 20 exists to stop.
+ *
+ * Structurally typed on purpose. `issue-case.ts` imports this module, so naming
+ * `IssueCase` here would close a cycle for a two-field read.
+ */
+export function diagnosisLineOf(issue: { diagnosis: string; title: string }): string {
+  return issue.diagnosis || issue.title;
+}
+
+/**
+ * What KIND of problem this is, in three or four words.
+ *
+ * "Code running at startup", "Images bigger than they are shown". The classifier
+ * already authors these against the audit id, and the page detail already shows
+ * them as a chip — this is not a new vocabulary, it is the existing one reaching
+ * the list.
+ *
+ * It exists because a diagnosis is a sentence and a list of four dozen rows is
+ * read by scanning, not by reading. The sentence is still the answer; it is one
+ * disclosure away rather than truncated at the column edge.
+ *
+ * `cause` is the audit id and `title` is what the source called it — the two
+ * inputs the classifier takes, and both are fields the case already carries.
+ *
+ * Where the classifier does NOT recognise the audit it answers `other`, and its
+ * label for that is "Something else the nightly test found" — which tells a
+ * reader strictly less than the sentence it would be replacing. The visitor
+ * findings and the agent ones all land there. So the fallback is the diagnosis
+ * itself: the column is shorter where there is something shorter to say, and
+ * never emptier than it was.
+ */
+export function causeLineOf(issue: { cause: string; title: string; diagnosis: string }): string {
+  const classification = webflowClassificationFor({ id: issue.cause, title: issue.title });
+  return classification.culprit === "other" ? diagnosisLineOf(issue) : classification.culpritLabel;
 }
 
 /* ── The pages table ────────────────────────────────────────────────────── */

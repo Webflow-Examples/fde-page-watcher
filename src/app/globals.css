@@ -2730,3 +2730,145 @@ textarea:focus-visible,
     border: 0;
   }
 }
+
+/* ── The issues list row ────────────────────────────────────────────────── */
+
+/*
+ * The row is a grid of cells, not one big link, because two of its cells are
+ * links to somewhere else and a nested anchor is invalid. The case link instead
+ * stretches its own hit area over the whole row, which keeps the row-sized
+ * click target without a row-sized announcement.
+ */
+.issue-row {
+  position: relative;
+  border-top: 1px solid var(--border-hairline);
+  background: var(--surface-card);
+  color: var(--text-body);
+}
+
+/* A member row inside a remediation group. */
+.issue-row--nested {
+  background: var(--surface-page);
+}
+
+.issue-row__open {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* The stretched hit area. Not a second link — the same one, made row-sized. */
+.issue-row__open::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.issue-row:hover {
+  background: var(--surface-raised);
+}
+
+.issue-row__open:focus-visible {
+  outline: none;
+}
+
+/* The focus ring belongs on the row, because the row is what the link covers. */
+.issue-row:has(.issue-row__open:focus-visible) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+/*
+ * Above the stretched link, so they keep their own targets. Without the
+ * stacking context these sit under it and every click opens the case.
+ */
+.issue-row__page,
+.issue-row .info-tip {
+  position: relative;
+  z-index: 1;
+}
+
+.issue-row__page {
+  color: inherit;
+  text-decoration: none;
+}
+
+.issue-row__page:hover,
+.issue-row__page:focus-visible {
+  color: var(--action-primary-ink);
+  text-decoration: underline;
+}
+
+
+/* Keeps the cause labels on one line down the list where a row has no second
+   layer to show. Same width as the control it stands in for. */
+.issue-row__tip-spacer {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+}
+
+/* ── The information tip ────────────────────────────────────────────────── */
+
+.info-tip {
+  flex: 0 0 auto;
+  display: inline-flex;
+}
+
+.info-tip__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.info-tip__button:hover,
+.info-tip__button[aria-expanded="true"] {
+  background: var(--surface-input);
+  color: var(--text-body);
+}
+
+.info-tip__button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.info-tip__panel {
+  /*
+   * There is no width token to reach for: this is the app's first tooltip, and
+   * the only measures the stylesheet had were `68ch` for running prose — three
+   * times this, and meant for a paragraph that owns its column. 20rem is the
+   * width at which a sentence or two breaks into a shape you take in at a
+   * glance rather than read across. Named so the next tip does not pick its
+   * own number.
+   */
+  --info-tip-max-width: 20rem;
+
+  position: fixed;
+  z-index: 120;
+  /* As wide as the text needs, and no wider than the measure above. */
+  width: max-content;
+  max-width: var(--info-tip-max-width);
+  padding: 9px 11px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 8px;
+  background: var(--surface-card);
+  box-shadow: var(--shadow-popover);
+  color: var(--text-body);
+  /* The row is a single nowrap line; the panel is prose and has to wrap out of
+     everything the row set on it. */
+  white-space: normal;
+  text-align: left;
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 12.5px;
+  font-weight: 400;
+  line-height: 1.5;
+}

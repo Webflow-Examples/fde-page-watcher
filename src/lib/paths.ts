@@ -43,6 +43,25 @@ export function caseHref(basePath: string, caseId: string): string {
   return withBasePath(basePath, casePath(caseId));
 }
 
+/* ── The page address ─────────────────────────────────────────── */
+
+/**
+ * Where one watched page lives, from the app root.
+ *
+ * The same reasoning as `casePath`, for the other object this app has detail
+ * screens for. Written down once because the list row, the case's Affected
+ * pages table and the watchlist all link to it, and three spellings is three
+ * places for a route change to be missed.
+ */
+export function pagePath(pageId: string): string {
+  return `${DESTINATION_PATH.pages}/${encodeURIComponent(pageId)}`;
+}
+
+/** The same address, inside the app, with the deployment's base path on it. */
+export function pageHref(basePath: string, pageId: string): string {
+  return withBasePath(basePath, pagePath(pageId));
+}
+
 /**
  * The same address from outside the app, where a relative link is no use.
  *

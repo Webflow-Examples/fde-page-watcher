@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_ISSUE_SORT,
+  DEFAULT_SORT_DIRECTION,
   ISSUE_SORTS,
   issueCasesFrom,
   lastRunAtOf,
   parseIssueSort,
+  parseSortDirection,
   partitionByImpact,
   queueCountsOf,
   sortRemediationGroups,
@@ -275,6 +277,109 @@ describe("sortRemediationGroups", () => {
     // changed, and these are sorts, not filters.
     const changed = sortRemediationGroups(groups, "changed", lastRun).map((group) => group.primary.id);
     expect(changed.slice(0, 2).sort()).toEqual(["quick", "vague"]);
+  });
+
+  /* ── The four column sorts ──────────────────────────────────────────── */
+
+  it("ranks state down the registry's lifecycle, not alphabetically", () => {
+    // The two orders disagree, which is the point: alphabetically this is
+    // dismissed, in_progress, new — exactly backwards for a triage list.
+    const groups = groupByRemediation([
+      makeCase({ id: "gone", cause: "gone", state: "dismissed" }),
+      makeCase({ id: "fresh", cause: "fresh", state: "new" }),
+      makeCase({ id: "doing", cause: "doing", state: "in_progress" }),
+    ], { at: "2026-08-25T06:00:00.000Z" });
+    expect(sortRemediationGroups(groups, "state", lastRun).map((group) => group.primary.id))
+      .toEqual(["fresh", "doing", "gone"]);
+  });
+
+  it("ranks confidence strongest first", () => {
+    // The registry's order happens to coincide with alphabetical here, so this
+    // pins the intent — confirmed at the top — rather than the mechanism.
+    const groups = groupByRemediation([
+      makeCase({ id: "vague", cause: "vague", confidence: "unclear" }),
+      makeCase({ id: "sure", cause: "sure", confidence: "confirmed" }),
+      makeCase({ id: "likely", cause: "likely", confidence: "probable" }),
+    ], { at: "2026-08-25T06:00:00.000Z" });
+    expect(sortRemediationGroups(groups, "confidence", lastRun).map((group) => group.primary.id))
+      .toEqual(["sure", "likely", "vague"]);
+  });
+
+  it("ranks pages broadest first, because breadth is the reason to look", () => {
+    const groups = groupByRemediation([
+      makeCase({ id: "one", cause: "one", pageIds: ["home"] }),
+      makeCase({ id: "six", cause: "six", scope: "pages", pageIds: ["home", "pricing", "docs", "blog", "about", "help"] }),
+      makeCase({ id: "two", cause: "two", scope: "pages", pageIds: ["home", "pricing"] }),
+    ], { at: "2026-08-25T06:00:00.000Z" });
+    expect(sortRemediationGroups(groups, "pages", lastRun).map((group) => group.primary.id))
+      .toEqual(["six", "two", "one"]);
+  });
+
+  it("ranks cause by the label the row shows, not by the audit id behind it", () => {
+    // The ids sort as bootup-time, dom-size, unused-javascript. The labels they
+    // classify to sort differently, and the labels are what is on screen.
+    const groups = groupByRemediation([
+      makeCase({ id: "nested", cause: "dom-size" }),           // Deeply nested elements
+      makeCase({ id: "startup", cause: "bootup-time" }),       // Code running at startup
+      makeCase({ id: "dead", cause: "unused-javascript" }),    // Code the site never runs
+    ], { at: "2026-08-25T06:00:00.000Z" });
+    expect(sortRemediationGroups(groups, "cause", lastRun).map((group) => group.primary.id))
+      .toEqual(["startup", "dead", "nested"]);
+  });
+
+  /* ── Direction ────────────────────────────────────────────────────────── */
+
+  it("opens each sort in its own direction rather than a uniform descending", () => {
+    expect(parseSortDirection(undefined, "effort")).toBe("asc");
+    expect(parseSortDirection(undefined, "impact")).toBe("desc");
+    expect(parseSortDirection("nonsense", "state")).toBe("asc");
+    expect(parseSortDirection("desc", "state")).toBe("desc");
+  });
+
+  it("reverses when the same column is asked a second time", () => {
+    const stateGroups = groupByRemediation([
+      makeCase({ id: "gone", cause: "gone", state: "dismissed" }),
+      makeCase({ id: "fresh", cause: "fresh", state: "new" }),
+      makeCase({ id: "doing", cause: "doing", state: "in_progress" }),
+    ], { at: "2026-08-25T06:00:00.000Z" });
+    expect(sortRemediationGroups(stateGroups, "state", lastRun, "asc").map((group) => group.primary.id))
+      .toEqual(["fresh", "doing", "gone"]);
+    expect(sortRemediationGroups(stateGroups, "state", lastRun, "desc").map((group) => group.primary.id))
+      .toEqual(["gone", "doing", "fresh"]);
+  });
+
+  it("keeps rule 18 when impact is reversed: smallest MEASURED first, never the unmeasured", () => {
+    // The whole point of splitting rule 18 out of the sign. Reversing "largest
+    // saving first" asks for the smallest reading, not for the row that has no
+    // reading at all — an absent number is not a small one.
+    const order = sortRemediationGroups(groups, "impact", lastRun, "asc").map((group) => group.primary.id);
+    expect(order).toEqual(["quick", "mid", "slow", "vague"]);
+    expect(order.at(-1)).toBe("vague");
+  });
+
+  it("keeps rule 18 when effort is reversed, inside each band", () => {
+    const sameBand = groupByRemediation([
+      makeCase({ id: "blank", cause: "blank", impactMs: 0, effort: "hours" }),
+      makeCase({ id: "big", cause: "big", impactMs: 1900, effort: "hours" }),
+    ], { at: "2026-08-25T06:00:00.000Z" });
+    // Hardest first still does not float the unmeasured finding above the
+    // measured one it shares a band with.
+    expect(sortRemediationGroups(sameBand, "effort", lastRun, "desc").map((group) => group.primary.id))
+      .toEqual(["big", "blank"]);
+  });
+
+  it("shows the same groups in either direction", () => {
+    const baseline = groups.map((group) => group.key).sort();
+    for (const sort of ISSUE_SORTS) {
+      for (const direction of ["asc", "desc"] as const) {
+        const sorted = sortRemediationGroups(groups, sort, lastRun, direction);
+        expect(sorted.map((group) => group.key).sort(), `${sort} ${direction}`).toEqual(baseline);
+      }
+    }
+  });
+
+  it("declares a direction for every sort", () => {
+    for (const sort of ISSUE_SORTS) expect(DEFAULT_SORT_DIRECTION[sort]).toMatch(/^(asc|desc)$/);
   });
 
   it("does not mutate its input", () => {

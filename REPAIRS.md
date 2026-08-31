@@ -94,20 +94,36 @@ one commit.
 ### The Ora note runs two sentences together on screen
 
 - **Found by:** C3, on `chunk-c3`, while merging `origin/main` (`07834fa`).
-- **Not claimed, and deliberately not fixed here.** It is a one-character change
-  in a line C3 also edits, which is exactly the shape R3 warns about: a shared
-  defect buried in a feature diff cannot be reviewed or reverted on its own.
+- **Left open by C3, deliberately.** It is a one-character change in a line C3
+  also edits, which is exactly the shape R3 warns about: a shared defect buried
+  in a feature diff cannot be reviewed or reverted on its own.
+- **Claimed by:** `ui-improvements-post-refactor`, at base `98177fc`.
 - **Symptom:** in `settings/page.tsx`, `{SETTINGS_SYSTEM_CONTRIBUTES.ora}` is
-  followed by ` Switching it on sends...` on the same line, and JSX drops that
-  leading space. The rendered note reads
+  followed by ` Switching it on sends...` on the same line, and the leading
+  space is dropped. The rendered note reads
   "...you have to switch on.Switching it on sends...", with the DOM showing
   `switch on.<!-- -->Switching`. Introduced by S9 (#93); no check reads rendered
   copy, so CI is green on it.
-- **Scope:** the only `{expr} Text` pair in that file, and the file uses `{" "}`
-  nowhere, so this is a one-off rather than a pattern.
-- **Fix:** `{SETTINGS_SYSTEM_CONTRIBUTES.ora}{" "}` — or move the following word
-  onto its own line, which is what makes JSX keep the gap. Worth a look at S9's
-  other screens for the same pair before closing it.
+- **Cause — not what the symptom looks like.** "JSX drops a leading space" is
+  not true, and a session that believes it will go looking for the wrong thing.
+  JSX keeps the leading space on the first line of a text node; four probe
+  routes against this app's own toolchain confirmed it. What drops the space is
+  an **HTML entity elsewhere in the same text node** — here `Ora&apos;s`, two
+  lines further down. Same paragraph with the entity spelled out as `Oras`
+  keeps its space; with `&apos;` it loses it. It is an SWC behaviour, and it
+  needs no newline: a single-line `{X} Ora&apos;s` loses the space too.
+- **Only leading whitespace is affected.** A trailing space before an
+  expression survives the entity — `previous {rangeDays} days.` in
+  `pages/[id]/page.tsx` renders correctly and is NOT a defect. Recorded because
+  it is the first thing a sweep turns up.
+- **Scope — swept, one site.** Parsing every `.tsx` for a text node that
+  carries an entity AND begins with a mid-line space next to an expression
+  returns exactly this one. So a one-off in fact, though not for the reason
+  first recorded: the file does use `{" "}`, three lines below the defect, which
+  is why the retention sentence beside it has always rendered correctly.
+- **Fix:** `{SETTINGS_SYSTEM_CONTRIBUTES.ora}{" "}` with the sentence moved to
+  the next line. Verified in the rendered DOM, not just the diff:
+  `switch on.<!-- --> <!-- -->Switching`.
 
 ## Landed
 

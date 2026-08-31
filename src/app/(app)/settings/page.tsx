@@ -572,7 +572,8 @@ function ConnectedSystemsGroup({ disabled }: { disabled: boolean }) {
           <div style={{ minWidth: 0 }}>
             <h3 className="settings-system__name">{EVIDENCE_SOURCE_LABEL.ora}</h3>
             <p className="settings-system__note">
-              {SETTINGS_SYSTEM_CONTRIBUTES.ora} Switching it on sends the live web address of each watched page to
+              {SETTINGS_SYSTEM_CONTRIBUTES.ora}{" "}
+              Switching it on sends the live web address of each watched page to
               Ora, whose scans are public: the result enters Ora&apos;s directory and anyone can read it. Webflow
               staging addresses are never sent.{" "}
               {/* Draft, pending legal review. Rendered rather than withheld: a
