@@ -115,7 +115,7 @@ function pageLabelsOf(pages: readonly WatchPage[]): Record<string, string> {
  * the log, because the evidence that made it inapplicable can go away again.
  *
  * The model does the applying. Nothing here writes `excludedPages` or a history
- * line directly: those belong to `issue-case.ts`, and a second writer is how the
+ * line directly: those belong to `issue-case/`, and a second writer is how the
  * table and the log start wording the same event differently.
  */
 function replay(
@@ -192,7 +192,7 @@ export function applyCaseDecisions(
  *
  * Recommendations are the stored shape; `fromRec` reads their four legacy
  * lifecycles and `groupByCause` collapses the same problem seen on several
- * pages. Both come from `issue-case.ts` — this only feeds them.
+ * pages. Both come from `issue-case/` — this only feeds them.
  *
  * The decisions log is read last and is never written here. The collector
  * rewrites records nightly and how it merges them is not this app's property;

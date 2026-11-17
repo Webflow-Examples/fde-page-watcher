@@ -237,7 +237,7 @@ export interface NativeElementControl {
  * identity of its own — the merged case takes the id of whichever member came
  * first, and membership changes whenever evidence does — so a decision keyed on
  * one would detach from the thing it was about the first time a page joined or
- * left. `remediationKey` in `issue-case.ts` produces the key.
+ * left. `remediationKey` in `issue-case/` produces the key.
  *
  * Two grains share the log, which is why two fields are optional rather than
  * two record types being declared. `pageId` is set for `exclude` and `include`,
@@ -683,7 +683,7 @@ export interface CollectionResult {
 }
 
 /**
- * Retired lifecycle. The canonical one is `IssueState` in `lib/issue-case.ts`;
+ * Retired lifecycle. The canonical one is `IssueState` in `lib/issue-case/`;
  * this pair survives only as the shape the store still writes, read by the
  * migration adapters there and reproduced for existing screens by `recStatusOf`
  * and `taskStatusOf`. Nothing new should branch on either — a record could hold
@@ -708,7 +708,7 @@ export type AgentIssueCheckResult =
 
 /**
  * Retired lifecycle; see `RecStatus`. `"returned"` is the F1 state `reopened`,
- * and the migration adapter in `lib/issue-case.ts` reads it as such.
+ * and the migration adapter in `lib/issue-case/` reads it as such.
  */
 export type AgentIssueVerificationStatus =
   | "not-started"
@@ -777,7 +777,7 @@ export interface FieldOnlyRecommendationSignal {
 /**
  * Retired lifecycle; see `RecStatus`. `"resolved"` and `"regressed"` are the F1
  * states `resolved` and `reopened`, read by the migration adapter in
- * `lib/issue-case.ts`.
+ * `lib/issue-case/`.
  */
 export type FieldOnlyLifecycleStatus = "active" | "verifying" | "resolved" | "corroborated" | "regressed";
 

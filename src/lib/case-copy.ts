@@ -41,7 +41,7 @@ export function acceptLabel(included: number, total: number): string {
  * diagnosis has to order rows by the text they actually show, and a comparator
  * with its own copy of the fallback is the drift rule 20 exists to stop.
  *
- * Structurally typed on purpose. `issue-case.ts` imports this module, so naming
+ * Structurally typed on purpose. `issue-case/` imports this module, so naming
  * `IssueCase` here would close a cycle for a two-field read.
  */
 export function diagnosisLineOf(issue: { diagnosis: string; title: string }): string {

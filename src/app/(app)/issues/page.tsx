@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { useStore } from "@/components/store";
+import { useIssuesView } from "@/components/use-issues-view";
 import {
   DEFAULT_ISSUE_SORT,
   DEFAULT_SORT_DIRECTION,
@@ -11,11 +13,9 @@ import {
   parseIssueSort,
   parseSortDirection,
   reverseDirection,
-  useIssuesView,
-  useStore,
   type IssueSort,
   type SortDirection,
-} from "@/components/store";
+} from "@/lib/issue-list";
 import { COUNTED_QUEUES, DESTINATION_LABEL, DESTINATION_PATH, QUEUE_LABEL, parseQueue, type Queue } from "@/lib/vocabulary";
 import { PageHeader } from "@/components/page-header";
 import { QueueTabs } from "@/components/queue-tabs";

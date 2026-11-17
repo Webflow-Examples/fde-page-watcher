@@ -25,7 +25,7 @@ import type { TaskStatus } from "./types";
  * thing this data has to an agreed outcome.
  *
  * This is display only. The storage-side migration is `stateFromTaskStatus` in
- * `src/lib/issue-case.ts`, and its `done` arm must stay in step with this one —
+ * `src/lib/issue-case/`, and its `done` arm must stay in step with this one —
  * it also writes the "no checkpoint evidence was gathered" caveat into the
  * case's history, which is the condition this mapping was approved on.
  */

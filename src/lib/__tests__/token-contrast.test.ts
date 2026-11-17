@@ -243,8 +243,8 @@ describe("device identity is named in one place", () => {
    * copy appears — including a re-added one in a file that used to hold it.
    */
   const READERS = [
-    "src/components/ScoreCard.tsx",
-    "src/app/(app)/pages/[id]/page.tsx",
+    "src/components/score-card-bits.tsx",
+    "src/app/(app)/pages/[id]/readings-section.tsx",
   ];
 
   /** Comments explaining the rule are prose; a token name in code is a copy. */

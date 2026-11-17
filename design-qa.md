@@ -19,16 +19,16 @@ No P0, P1, or P2 defects remain.
 ### Source visual truth
 
 - Browser annotation: comment 1 on `http://localhost:3001/dashboard`.
-- Desktop starting state: `/Users/mmunger/fde-page-watcher/design-qa-dashboard-combined-verdict-before-desktop.jpg`
-- Mobile starting state: `/Users/mmunger/fde-page-watcher/design-qa-dashboard-combined-verdict-before-mobile.jpg`
+- Desktop starting state: `docs/design-qa/design-qa-dashboard-combined-verdict-before-desktop.jpg`
+- Mobile starting state: `docs/design-qa/design-qa-dashboard-combined-verdict-before-mobile.jpg`
 - State: dark dashboard, Last 7 days, no regressions, six agent-readiness gaps, and four pages below the Performance threshold on at least one device.
 
 ### Rendered implementation
 
 - Local route: `http://localhost:3001/dashboard`
-- Final Desktop screenshot: `/Users/mmunger/fde-page-watcher/design-qa-dashboard-combined-verdict-after-desktop.jpg`
-- Final Mobile screenshot: `/Users/mmunger/fde-page-watcher/design-qa-dashboard-combined-verdict-after-mobile.jpg`
-- Four-state focused comparison: `/Users/mmunger/fde-page-watcher/design-qa-dashboard-combined-verdict-comparison.jpg`
+- Final Desktop screenshot: `docs/design-qa/design-qa-dashboard-combined-verdict-after-desktop.jpg`
+- Final Mobile screenshot: `docs/design-qa/design-qa-dashboard-combined-verdict-after-mobile.jpg`
+- Four-state focused comparison: `docs/design-qa/design-qa-dashboard-combined-verdict-comparison.jpg`
 - Screenshot pixels: 1269 × 714 from a 1280 × 720 CSS viewport at device pixel ratio 2; browser output is normalized to CSS pixels.
 
 ### Fidelity surfaces
@@ -80,18 +80,18 @@ No P0, P1, or P2 defects remain.
 ### Source visual truth
 
 - Layout source: `/Users/mmunger/Library/Application Support/CleanShot/media/media_pr3wAVnH4s/CleanShot 2026-07-24 at 18.47.38@2x.png`
-- Typography source: `/Users/mmunger/fde-page-watcher/design-qa-detail-heading-redesign-before.jpg`, the pre-redesign detail page with the established 12.5px/25px/13px/11.5px scale.
+- Typography source: `docs/design-qa/design-qa-detail-heading-redesign-before.jpg`, the pre-redesign detail page with the established 12.5px/25px/13px/11.5px scale.
 - User correction: preserve the implemented layout but restore the previous text sizes.
 - State note: the typography source shows Homepage while this verification uses Pricing; both routes consume the same detail-header component, and only the scale/layout system is compared.
 
 ### Rendered implementation
 
 - Local route: `http://localhost:3001/pages/pricing`
-- Oversized starting screenshot: `/Users/mmunger/fde-page-watcher/design-qa-detail-heading-scale-before.jpg`
-- Corrected implementation screenshot: `/Users/mmunger/fde-page-watcher/design-qa-detail-heading-scale-after.jpg`
+- Oversized starting screenshot: `docs/design-qa/design-qa-detail-heading-scale-before.jpg`
+- Corrected implementation screenshot: `docs/design-qa/design-qa-detail-heading-scale-after.jpg`
 - Screenshot pixels: 1269 × 714 from a 1280 × 720 CSS viewport at device pixel ratio 2; the browser capture is normalized to CSS pixels.
-- Full-page before/after comparison: `/Users/mmunger/fde-page-watcher/design-qa-detail-heading-scale-comparison.jpg`
-- Focused header comparison: `/Users/mmunger/fde-page-watcher/design-qa-detail-heading-scale-focused-comparison.jpg`
+- Full-page before/after comparison: `docs/design-qa/design-qa-detail-heading-scale-comparison.jpg`
+- Focused header comparison: `docs/design-qa/design-qa-detail-heading-scale-focused-comparison.jpg`
 - State: dark theme, Pricing, Desktop stable, Mobile stable, and no successful PSI run.
 
 ### Fidelity surfaces
@@ -146,18 +146,18 @@ No P0, P1, or P2 defects remain.
 
 - Selected reference: `/Users/mmunger/Library/Application Support/CleanShot/media/media_pr3wAVnH4s/CleanShot 2026-07-24 at 18.47.38@2x.png`
 - Original source pixels: 1846 × 402 at 2× density.
-- Normalized CSS-size reference: `/Users/mmunger/fde-page-watcher/design-qa-detail-heading-reference-normalized.png` at 923 × 201px.
+- Normalized CSS-size reference: `docs/design-qa/design-qa-detail-heading-reference-normalized.png` at 923 × 201px.
 - State: dark theme, Homepage, Desktop stable, Mobile stable, and no successful PSI run.
 
 ### Rendered implementation
 
 - Local route: `http://localhost:3001/pages/home`
-- Starting implementation screenshot: `/Users/mmunger/fde-page-watcher/design-qa-detail-heading-redesign-before.jpg`
-- Final implementation screenshot: `/Users/mmunger/fde-page-watcher/design-qa-detail-heading-redesign-after.jpg`
+- Starting implementation screenshot: `docs/design-qa/design-qa-detail-heading-redesign-before.jpg`
+- Final implementation screenshot: `docs/design-qa/design-qa-detail-heading-redesign-after.jpg`
 - Browser screenshot pixels: 1269 × 714 from a 1280 × 720 CSS viewport at device pixel ratio 2; the browser capture is normalized to CSS pixels.
-- Matched implementation crop: `/Users/mmunger/fde-page-watcher/design-qa-detail-heading-implementation-crop.png` at 923 × 201px.
-- Source-to-implementation comparison: `/Users/mmunger/fde-page-watcher/design-qa-detail-heading-source-comparison.png`
-- Full-page before/after comparison: `/Users/mmunger/fde-page-watcher/design-qa-detail-heading-redesign-page-comparison.jpg`
+- Matched implementation crop: `docs/design-qa/design-qa-detail-heading-implementation-crop.png` at 923 × 201px.
+- Source-to-implementation comparison: `docs/design-qa/design-qa-detail-heading-source-comparison.png`
+- Full-page before/after comparison: `docs/design-qa/design-qa-detail-heading-redesign-page-comparison.jpg`
 
 ### Fidelity surfaces
 
@@ -211,18 +211,18 @@ No P0, P1, or P2 defects remain.
 ### Source visual truth
 
 - Browser annotation: comment 1 on `http://localhost:3001/watchlist`.
-- Captured starting state: `/Users/mmunger/fde-page-watcher/design-qa-watchlist-drag-reorder-before.png`
+- Captured starting state: `docs/design-qa/design-qa-watchlist-drag-reorder-before.png`
 - Source pixels: 1558 × 1187, normalized browser capture from a 1569 × 1196 CSS viewport at device pixel ratio 2.2.
 - State: dark theme, default Watchlist order, eight pages grouped Priority → Watching → Paused.
 
 ### Rendered implementation
 
 - Local route: `http://localhost:3001/watchlist`
-- Final implementation screenshot: `/Users/mmunger/fde-page-watcher/design-qa-watchlist-drag-reorder-after.png`
-- Keyboard grabbed-state screenshot: `/Users/mmunger/fde-page-watcher/design-qa-watchlist-drag-reorder-keyboard.png`
+- Final implementation screenshot: `docs/design-qa/design-qa-watchlist-drag-reorder-after.png`
+- Keyboard grabbed-state screenshot: `docs/design-qa/design-qa-watchlist-drag-reorder-keyboard.png`
 - Implementation pixels: 1558 × 1187 from the same viewport, density, page data, and restored default order.
-- Full-view before/after comparison: `/Users/mmunger/fde-page-watcher/design-qa-watchlist-drag-reorder-comparison.png`
-- Focused table comparison: `/Users/mmunger/fde-page-watcher/design-qa-watchlist-drag-reorder-focused-comparison.png`
+- Full-view before/after comparison: `docs/design-qa/design-qa-watchlist-drag-reorder-comparison.png`
+- Focused table comparison: `docs/design-qa/design-qa-watchlist-drag-reorder-focused-comparison.png`
 
 ### Fidelity surfaces
 
@@ -273,17 +273,17 @@ No P0, P1, or P2 defects remain.
 ### Source visual truth
 
 - Browser annotation: comment 1 on `http://localhost:3001/watchlist`.
-- Captured starting state: `/Users/mmunger/fde-page-watcher/design-qa-watchlist-settings-heading-before.png`
+- Captured starting state: `docs/design-qa/design-qa-watchlist-settings-heading-before.png`
 - Source pixels: 1558 × 1187, normalized browser capture from a 1569 × 1196 CSS viewport at device pixel ratio 2.2.
 - State: dark theme, default Watchlist page, page table followed by the first two settings groups.
 
 ### Rendered implementation
 
 - Local route: `http://localhost:3001/watchlist`
-- Final implementation screenshot: `/Users/mmunger/fde-page-watcher/design-qa-watchlist-settings-heading-after.png`
+- Final implementation screenshot: `docs/design-qa/design-qa-watchlist-settings-heading-after.png`
 - Implementation pixels: 1558 × 1187 from the same viewport, density, page data, and control state.
-- Full-view before/after comparison: `/Users/mmunger/fde-page-watcher/design-qa-watchlist-settings-heading-comparison.png`
-- Focused settings-boundary comparison: `/Users/mmunger/fde-page-watcher/design-qa-watchlist-settings-heading-focused-comparison.png`
+- Full-view before/after comparison: `docs/design-qa/design-qa-watchlist-settings-heading-comparison.png`
+- Focused settings-boundary comparison: `docs/design-qa/design-qa-watchlist-settings-heading-focused-comparison.png`
 
 ### Fidelity surfaces
 
@@ -335,18 +335,18 @@ No P0, P1, or P2 defects remain.
 ### Source visual truth
 
 - Browser annotations: comments 1–2 on `http://localhost:3001/pages/home`.
-- Captured starting state: `/Users/mmunger/fde-page-watcher/design-qa-detail-header-refinement-before.png`
+- Captured starting state: `docs/design-qa/design-qa-detail-header-refinement-before.png`
 - Source pixels: 1269 × 714, normalized browser capture from a 1280 × 720 CSS viewport at device pixel ratio 2.
 - State: dark theme, Homepage overview, Desktop primary device, 7-day range, compact stacked status cards.
 
 ### Rendered implementation
 
 - Local route: `http://localhost:3001/pages/home`
-- Final closed-state screenshot: `/Users/mmunger/fde-page-watcher/design-qa-detail-header-refinement-after.png`
-- Open selector screenshot: `/Users/mmunger/fde-page-watcher/design-qa-detail-range-open.png`
+- Final closed-state screenshot: `docs/design-qa/design-qa-detail-header-refinement-after.png`
+- Open selector screenshot: `docs/design-qa/design-qa-detail-range-open.png`
 - Implementation pixels: 1269 × 714 from the same viewport, density, data, device, and range state.
-- Full-view before/after comparison: `/Users/mmunger/fde-page-watcher/design-qa-detail-header-refinement-comparison.png`
-- Focused header comparison: `/Users/mmunger/fde-page-watcher/design-qa-detail-header-refinement-focused-comparison.png`
+- Full-view before/after comparison: `docs/design-qa/design-qa-detail-header-refinement-comparison.png`
+- Focused header comparison: `docs/design-qa/design-qa-detail-header-refinement-focused-comparison.png`
 
 ### Fidelity surfaces
 
@@ -405,18 +405,18 @@ No P0, P1, or P2 defects remain.
 ### Source visual truth
 
 - Browser annotations: comments 1–3 on `http://localhost:3001/watchlist`.
-- Captured starting state: `/Users/mmunger/fde-page-watcher/design-qa-watchlist-ordering-before.png`
+- Captured starting state: `docs/design-qa/design-qa-watchlist-ordering-before.png`
 - Source pixels: 1558 × 1187, normalized browser capture from a 1569 × 1196 CSS viewport at device pixel ratio 2.2.
 - State: dark theme, default Watchlist, eight pages, Priority/Watching/Paused flags visible, Runtime Audit Page carrying an ISO baseline timestamp.
 
 ### Rendered implementation
 
 - Local route: `http://localhost:3001/watchlist`
-- Final implementation screenshot: `/Users/mmunger/fde-page-watcher/design-qa-watchlist-ordering-after.png`
+- Final implementation screenshot: `docs/design-qa/design-qa-watchlist-ordering-after.png`
 - Implementation pixels: 1558 × 1187 from the same viewport, density, page data, and default interaction state.
-- Full-view before/after comparison: `/Users/mmunger/fde-page-watcher/design-qa-watchlist-ordering-comparison.png`
-- Focused table comparison: `/Users/mmunger/fde-page-watcher/design-qa-watchlist-ordering-focused-comparison.png`
-- Dashboard propagation proof: `/Users/mmunger/fde-page-watcher/design-qa-dashboard-manual-order-proof.png`
+- Full-view before/after comparison: `docs/design-qa/design-qa-watchlist-ordering-comparison.png`
+- Focused table comparison: `docs/design-qa/design-qa-watchlist-ordering-focused-comparison.png`
+- Dashboard propagation proof: `docs/design-qa/design-qa-dashboard-manual-order-proof.png`
 
 ### Fidelity surfaces
 
@@ -466,18 +466,18 @@ No P0, P1, or P2 defects remain.
 ### Source visual truth
 
 - Browser annotations: vertical stacking followed by content-sized card refinement on `http://localhost:3001/pages/home`.
-- Original horizontal state: `/Users/mmunger/fde-page-watcher/design-qa-detail-status-stack-before.png`
-- Intermediate stacked-square state: `/Users/mmunger/fde-page-watcher/design-qa-detail-status-stack-after.png`
+- Original horizontal state: `docs/design-qa/design-qa-detail-status-stack-before.png`
+- Intermediate stacked-square state: `docs/design-qa/design-qa-detail-status-stack-after.png`
 - Captured pixels: 1269 × 714, normalized browser captures from the same 1280 × 720 CSS viewport at device pixel ratio 2.
 - Requested final state: Desktop above Mobile, with each card sized to its two content rows.
 
 ### Rendered implementation
 
 - Local route: `http://localhost:3001/pages/home`
-- Final implementation screenshot: `/Users/mmunger/fde-page-watcher/design-qa-detail-status-compact-after.png`
+- Final implementation screenshot: `docs/design-qa/design-qa-detail-status-compact-after.png`
 - Final implementation pixels: 1269 × 714 from the same viewport, density, page data, and device/status state.
-- Horizontal-to-vertical comparison: `/Users/mmunger/fde-page-watcher/design-qa-detail-status-stack-comparison.png`
-- Fixed-square-to-content-sized comparison: `/Users/mmunger/fde-page-watcher/design-qa-detail-status-compact-comparison.png`
+- Horizontal-to-vertical comparison: `docs/design-qa/design-qa-detail-status-stack-comparison.png`
+- Fixed-square-to-content-sized comparison: `docs/design-qa/design-qa-detail-status-compact-comparison.png`
 
 ### Fidelity surfaces
 
@@ -519,16 +519,16 @@ No P0, P1, or P2 defects remain.
 ### Source visual truth
 
 - Browser annotation: comment 1 on the open `Dashboard date range` listbox at `http://localhost:3001/dashboard`.
-- Captured starting state: `/Users/mmunger/fde-page-watcher/design-qa-selector-width-before.png`
+- Captured starting state: `docs/design-qa/design-qa-selector-width-before.png`
 - Starting-state pixels: 1558 × 1187, normalized browser capture from a 1569 × 1196 CSS viewport at device pixel ratio 2.2.
 - Requested state: shrink the open listbox to match the selector trigger width.
 
 ### Rendered implementation
 
 - Local route: `http://localhost:3001/dashboard`
-- Open-state implementation screenshot: `/Users/mmunger/fde-page-watcher/design-qa-selector-width-after.png`
+- Open-state implementation screenshot: `docs/design-qa/design-qa-selector-width-after.png`
 - Implementation pixels: 1558 × 1187 from the same viewport, density, content, and open interaction state.
-- Focused before/after comparison: `/Users/mmunger/fde-page-watcher/design-qa-selector-width-comparison.png`
+- Focused before/after comparison: `docs/design-qa/design-qa-selector-width-comparison.png`
 
 ### Fidelity surfaces
 
@@ -580,16 +580,16 @@ No P0, P1, or P2 defects remain.
 ### Source visual truth
 
 - Browser annotations: three supplied screenshots for comments 1–3 on `http://localhost:3001/dashboard`.
-- Captured starting state: `/Users/mmunger/fde-page-watcher/design-qa-dashboard-header-spacing-before.png`
+- Captured starting state: `docs/design-qa/design-qa-dashboard-header-spacing-before.png`
 - Starting-state pixels: 1558 × 1187, normalized browser capture from a 1569 × 1196 CSS viewport at device pixel ratio 2.2.
 - Requested state: metadata removed, Watcher ribbon aligned to the sidebar brand height, and verdict vertical padding doubled.
 
 ### Rendered implementation
 
 - Local route: `http://localhost:3001/dashboard`
-- Implementation screenshot: `/Users/mmunger/fde-page-watcher/design-qa-dashboard-header-spacing-after.png`
+- Implementation screenshot: `docs/design-qa/design-qa-dashboard-header-spacing-after.png`
 - Implementation pixels: 1558 × 1187, normalized browser capture from the same 1569 × 1196 CSS viewport and state.
-- Focused before/after comparison: `/Users/mmunger/fde-page-watcher/design-qa-dashboard-header-spacing-comparison.png`
+- Focused before/after comparison: `docs/design-qa/design-qa-dashboard-header-spacing-comparison.png`
 - Responsive inspection: 760 × 900 CSS pixels; metadata remains absent, ribbon stays at the existing compact 54px treatment, and verdict padding is doubled to 50px/44px.
 
 ### Fidelity surfaces
@@ -639,9 +639,9 @@ No P0, P1, or P2 defects remain.
 - Shared component: `/Users/mmunger/fde-page-watcher/src/components/segmented-control.tsx`
 - Dashboard integration: `/Users/mmunger/fde-page-watcher/src/app/(app)/dashboard/page.tsx`
 - Existing-toggle adapter: `/Users/mmunger/fde-page-watcher/src/components/bits.tsx`
-- Default implementation screenshot: `/Users/mmunger/fde-page-watcher/design-qa-segmented-controls-implementation.png`
-- Full-width implementation screenshot: `/Users/mmunger/fde-page-watcher/design-qa-segmented-controls-implementation-1569.png`
-- Focused source/implementation comparison: `/Users/mmunger/fde-page-watcher/design-qa-segmented-controls-comparison.png`
+- Default implementation screenshot: `docs/design-qa/design-qa-segmented-controls-implementation.png`
+- Full-width implementation screenshot: `docs/design-qa/design-qa-segmented-controls-implementation-1569.png`
+- Focused source/implementation comparison: `docs/design-qa/design-qa-segmented-controls-comparison.png`
 - Main comparison viewport: 1569 × 1196 CSS pixels at density 1.
 - Responsive inspection viewport: 820 × 720 CSS pixels.
 
@@ -706,9 +706,9 @@ No P0, P1, or P2 defects remain.
 - Local route: `http://localhost:3001/dashboard`
 - Reusable component: `/Users/mmunger/fde-page-watcher/src/components/select-menu.tsx`
 - Browser viewport capture: 1269 × 714 CSS pixels at density 1.
-- Open-state screenshot: `/Users/mmunger/fde-page-watcher/design-qa-selector-open.png`
-- Keyboard-focus screenshot: `/Users/mmunger/fde-page-watcher/design-qa-selector-keyboard-focus.png`
-- Focused comparison, reference left and implementation right: `/Users/mmunger/fde-page-watcher/design-qa-selector-comparison.png`
+- Open-state screenshot: `docs/design-qa/design-qa-selector-open.png`
+- Keyboard-focus screenshot: `docs/design-qa/design-qa-selector-keyboard-focus.png`
+- Focused comparison, reference left and implementation right: `docs/design-qa/design-qa-selector-comparison.png`
 - The focused source crop was normalized to the implementation menu width so density and the surrounding state-sheet canvas do not distort the comparison.
 
 ## Fidelity surfaces

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildEmptySeedState, buildInitialState, buildSeedState } from "../seed";
 import { groupByRemediation } from "../issue-case";
-import { issueCasesFrom } from "../../components/store";
+import { issueCasesFrom } from "../issue-cases";
 
 /**
  * Two states the demo seed could not previously produce.

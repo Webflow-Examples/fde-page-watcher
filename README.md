@@ -16,6 +16,30 @@ npm install
 npm run dev      # http://localhost:3000  (the bundled launch config uses 3100)
 ```
 
+### Node and npm versions
+
+This project pins npm `10.9.7` in `packageManager` and `engines`. `.npmrc` sets
+`engine-strict=true`, so any other npm refuses to install before it can touch
+`package-lock.json`; npm 11 strips Vitest's nested `esbuild` records and breaks
+`npm ci` on Webflow Cloud. Node 24 ships npm 11, so a fresh clone needs the
+pinned npm explicitly. Either activate it once with corepack:
+
+```bash
+corepack enable
+corepack prepare npm@10.9.7 --activate
+```
+
+or use it per command:
+
+```bash
+npx --yes npm@10.9.7 install
+npx --yes npm@10.9.7 ci
+```
+
+Do not raise the pin to match a newer local npm; that is a migration, not a
+fix (see AGENTS.md, "Node and npm reproducibility"). An `EBADENGINE` error that
+names `npm 11.x` against `10.9.x` is this guard doing its job.
+
 Other scripts:
 
 ```bash

@@ -95,7 +95,7 @@ function caseWriters(pattern: RegExp): string[] {
   return sourceFiles()
     .filter((file) => {
       const text = readFileSync(file, "utf8");
-      if (!imports.test(text) && !/lib[\\/]issue-case\.ts$/.test(file)) return false;
+      if (!imports.test(text) && !/lib[\\/]issue-case[\\/][^\\/]+\.ts$/.test(file)) return false;
       return pattern.test(text);
     })
     .map((file) => path.relative(srcDir, file).replace(/\\/g, "/"))
@@ -227,12 +227,12 @@ describe("S5 — start is what assigns a case", () => {
     expect(caseWriters(/\bstartedAt\b/)).toEqual([
       "components/fix-row.tsx",
       "lib/fix-copy.ts",
-      "lib/issue-case.ts",
+      "lib/issue-case/core.ts",
     ]);
     // `owner:` and `owner =` are the assignment shapes; `issue.owner` is a read
     // and prose about ownership is neither, so neither is matched. Exactly one
     // file assigns it, and that file assigns it in exactly one place.
-    expect(caseWriters(/\bowner\s*[:=][^=]/)).toEqual(["lib/issue-case.ts"]);
+    expect(caseWriters(/\bowner\s*[:=][^=]/)).toEqual(["lib/issue-case/core.ts"]);
   });
 
   it("carries free-text notes and neither a checklist nor a due date", () => {
