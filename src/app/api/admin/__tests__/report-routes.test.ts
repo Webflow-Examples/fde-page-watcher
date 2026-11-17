@@ -52,6 +52,12 @@ function finding(id: string, title: string): AggregatedLighthouseFinding {
   };
 }
 
+// The admin summaries keep only the last 30 days, so a fixture dated to a fixed
+// calendar day makes these tests expire. Date it from this run instead.
+function recentNightIso(): string {
+  return new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+}
+
 function store(state: AppState | null): DataStore {
   return {
     getState: async () => {
@@ -92,7 +98,7 @@ describe("admin report routes", () => {
     const night: Night = {
       i: 1,
       date: "Aug 10",
-      iso: "2026-08-10T12:00:00.000Z",
+      iso: recentNightIso(),
       scores,
       nativeElements: nativeElementScan(`<html data-wf-site="private" data-wf-page="private"><body></body></html>`),
       diagnostics: { mobile: [renderBlocking] },
@@ -123,7 +129,7 @@ describe("admin report routes", () => {
     const night: Night = {
       i: 1,
       date: "Aug 10",
-      iso: "2026-08-10T12:00:00.000Z",
+      iso: recentNightIso(),
       scores,
       diagnostics: { mobile: [novel] },
     };
