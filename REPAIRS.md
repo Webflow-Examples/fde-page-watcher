@@ -98,7 +98,7 @@ one commit.
 - **Claimed by:** `fix/admin-report-test-clock` / #100 — `28cadaa`
 - **Seen at:** `dab546e` (`main`), red on `npm test -- --run`.
 - **Landed:** merged as `b5d0914` (repair commit `28cadaa`). CI on the merge
-  commit was still running when this row moved.
+  commit passed lint, typecheck, test and build.
 - **Symptom:** 2 of 1393 tests failed, both in
   `src/app/api/admin/__tests__/report-routes.test.ts`. The fixtures carried
   `iso: "2026-08-10T12:00:00.000Z"`, while `summarizeKnownWebflowIssues` and
