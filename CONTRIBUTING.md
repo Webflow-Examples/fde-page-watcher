@@ -39,6 +39,10 @@ This repo uses a **branch + pull request** workflow. Don't commit directly to `m
 
 ## Local setup
 
+- Use npm `10.9.7`, not whatever npm ships with Node 24. The pin is enforced by
+  `engine-strict=true`, and an `EBADENGINE` error naming `npm 11.x` is that guard
+  working. Run `corepack enable && corepack prepare npm@10.9.7 --activate` once,
+  or prefix each command with `npx --yes npm@10.9.7`.
 - `npm install` (this environment wraps npm with Socket Firewall; if an install is
   blocked on a benign transitive dep, prefix with `SFW_BYPASS=1`).
 - Copy `.env.local.example` to `.env.local` for optional keys (`PAGESPEED_API_KEY`,
