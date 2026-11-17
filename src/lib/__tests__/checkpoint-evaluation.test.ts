@@ -370,7 +370,7 @@ describe("the evaluator and the registry", () => {
       "lib/checkpoint-evaluation.ts",
       // The predicate rule 3 and 5 are enforced by, and the schedule that
       // writes the initial `scheduled`.
-      "lib/issue-case.ts",
+      "lib/issue-case/core.ts",
       // Names the four values; assigns no meaning to them.
       "lib/vocabulary.ts",
     ]);
@@ -443,7 +443,7 @@ describe("the evaluator and the registry", () => {
           if (entry.name !== "__tests__") walk(full, rel);
           continue;
         }
-        if (!/\.(ts|tsx)$/.test(entry.name) || rel === "lib/issue-case.ts") continue;
+        if (!/\.(ts|tsx)$/.test(entry.name) || rel === "lib/issue-case/core.ts") continue;
         const code = readFileSync(full, "utf8")
           .replace(/\/\*[\s\S]*?\*\//g, "")
           .replace(/^\s*\/\/.*$/gm, "");

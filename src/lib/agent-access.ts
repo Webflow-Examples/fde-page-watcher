@@ -371,7 +371,7 @@ function disagreementRows(
   const negative = determined.find((entry) => entry.result !== "pass");
   const positive = determined.find((entry) => entry.result === "pass");
   if (!negative || !positive) return null;
-  // Which row a system writes to is stated once, in `issue-case.ts`, and read
+  // Which row a system writes to is stated once, in `issue-case/`, and read
   // back here. A second copy of that mapping is the drift rule 20 names.
   const rowFor = (system: AgentEvidenceSystem) =>
     readings.find((reading) => reading.source === EVIDENCE_SOURCE_FOR_AGENT_SYSTEM[system]);

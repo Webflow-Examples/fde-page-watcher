@@ -1219,7 +1219,7 @@ export { CAT_KEYS };
  * Everything the issues list reads, derived in one place.
  *
  * The rule these exist to keep is that queue membership is never stored and
- * never worked out locally. `queueOf` in `issue-case.ts` owns it, so the header
+ * never worked out locally. `queueOf` in `issue-case/` owns it, so the header
  * sentence, the tab badges and the rows below them are three readings of one
  * number rather than three numbers that happen to agree today.
  *

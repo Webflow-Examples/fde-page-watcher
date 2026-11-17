@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -46,9 +46,14 @@ import type { Rec } from "../types";
  */
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const registryPath = path.resolve(moduleDir, "../../../vocabulary.json");
-const sourcePath = path.resolve(moduleDir, "../issue-case.ts");
+const sourceDir = path.resolve(moduleDir, "../issue-case");
 const registry = JSON.parse(readFileSync(registryPath, "utf8"));
-const source = readFileSync(sourcePath, "utf8");
+// The module is a directory now; guard against the whole of it, not one file.
+const source = readdirSync(sourceDir)
+  .filter((name) => name.endsWith(".ts"))
+  .sort()
+  .map((name) => readFileSync(path.join(sourceDir, name), "utf8"))
+  .join("\n");
 
 interface RegistryAction { key: string; from: string[]; to: string; requires?: string; actor: string | string[] }
 const registryActions: RegistryAction[] = registry.concepts.action.values;
