@@ -91,6 +91,22 @@ one commit.
   there, not to copy it — two statements of one retention rule is the drift that
   put it in the wrong place to begin with.
 
+### Admin report tests expire when their fixed date leaves the 30-day window
+
+- **Claimed by:** `fix/admin-report-test-clock`
+- **Seen at:** `dab546e` (`main`), red on `npm test -- --run`.
+- **Symptom:** 2 of 1393 tests fail, both in
+  `src/app/api/admin/__tests__/report-routes.test.ts`. The fixtures carry
+  `iso: "2026-08-10T12:00:00.000Z"`, while `summarizeKnownWebflowIssues` and
+  `summarizeUnmappedWebflowFindings` default `now` to a real `new Date()` and
+  skip any night older than 30 days. On 2026-11-17 the cutoff is 2026-10-18, so
+  both fixtures are filtered out and the routes return empty arrays. The tests
+  were green when written and expire about a month later without any code
+  change.
+- **Fix:** derive the fixture timestamp from the test run's clock instead of
+  hard-coding a calendar date, in the test file only. One commit, no production
+  behaviour change.
+
 ## Landed
 
 ### The Ora note runs two sentences together on screen
