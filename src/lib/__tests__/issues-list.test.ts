@@ -3,14 +3,13 @@ import {
   DEFAULT_ISSUE_SORT,
   DEFAULT_SORT_DIRECTION,
   ISSUE_SORTS,
-  issueCasesFrom,
-  lastRunAtOf,
   parseIssueSort,
   parseSortDirection,
-  partitionByImpact,
   queueCountsOf,
   sortRemediationGroups,
-} from "@/components/store";
+} from "../issue-list";
+import { issueCasesFrom, lastRunAtOf } from "../issue-cases";
+import { partitionByImpact } from "../impact-format";
 import { casesInQueue, groupByRemediation, hasMeasuredImpact, type IssueCase } from "../issue-case";
 import { formatGroupImpact, formatImpact } from "@/components/issue-row";
 import { COUNTED_QUEUES, QUEUES } from "../vocabulary";

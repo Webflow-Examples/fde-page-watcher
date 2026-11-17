@@ -3,7 +3,8 @@
 import { useCallback, useMemo } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { useIssuesView, useStore } from "@/components/store";
+import { useStore } from "@/components/store";
+import { useIssuesView } from "@/components/use-issues-view";
 import { DESTINATION_LABEL, DESTINATION_PATH, type ExclusionReason } from "@/lib/vocabulary";
 import { remediationKey } from "@/lib/issue-case";
 import { CaseDetail } from "@/components/case-detail";

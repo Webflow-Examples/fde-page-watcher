@@ -3,7 +3,8 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import type { CSSProperties } from "react";
-import { issueCasesFrom, lastRunAtOf, useStore } from "@/components/store";
+import { useStore } from "@/components/store";
+import { issueCasesFrom, lastRunAtOf } from "@/lib/issue-cases";
 import { EmptyAction, EmptyState } from "@/components/empty-state";
 import { HealthChip } from "@/components/health-chip";
 import { Magnitude } from "@/components/magnitude";
