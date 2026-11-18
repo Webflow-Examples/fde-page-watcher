@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import type { CSSProperties } from "react";
+import { useRouter } from "next/navigation";
+import type { CSSProperties, MouseEvent } from "react";
 import type { IssueCase } from "@/lib/issue-case";
 import type { Strategy } from "@/lib/types";
 import { EFFORT_LABEL, formatGroupImpact, formatImpact } from "@/lib/impact-format";
@@ -157,6 +158,7 @@ export function PageScope({
 }
 
 export function IssueRow({ issue, basePath, pageTitles, nested = false }: IssueRowProps) {
+  const router = useRouter();
   const impact = formatImpact(issue.impactMs);
   // What KIND of problem this is, in three or four words — the column a list of
   // four dozen rows is actually scanned on.
@@ -171,6 +173,21 @@ export function IssueRow({ issue, basePath, pageTitles, nested = false }: IssueR
   // control. The 18px is still reserved, so the labels start on one line down
   // the whole list whether or not a row has more to give.
   const hasSecondLayer = diagnosis !== "" && diagnosis !== cause;
+
+  /**
+   * The stretched link above is the accessible target, but its hit area is a
+   * pseudo-element and some engines stop testing it outside the inline box.
+   * The row itself is the fallback: anywhere that is not already a link or a
+   * control opens the case. Links and buttons keep their own destinations.
+   */
+  const openRow = (event: MouseEvent<HTMLDivElement>) => {
+    if (event.defaultPrevented) return;
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    if (target.closest("a, button, .info-tip")) return;
+    if (window.getSelection()?.toString()) return;
+    router.push(caseHref(basePath, issue.id));
+  };
 
   return (
     /*
@@ -193,6 +210,7 @@ export function IssueRow({ issue, basePath, pageTitles, nested = false }: IssueR
     */
     <div
       className={nested ? "issue-row issue-row--nested" : "issue-row"}
+      onClick={openRow}
       style={{
         display: "grid",
         gridTemplateColumns: ISSUE_ROW_COLUMNS,
