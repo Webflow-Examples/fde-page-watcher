@@ -46,13 +46,6 @@ export function IssueGroup({ group, basePath, pageTitles, nested = false }: Issu
   }
 
   const impact = formatGroupImpact(group.impactMs);
-  // The remediation's first step, which is what the shared fix starts with. It
-  // is data, from the case; nothing is authored here.
-  const steps = group.remediation.steps.map((step) => step.trim()).filter(Boolean);
-  const fix = steps[0] ?? group.primary.title;
-  // The first step on its own reads like an instruction with no subject. Naming
-  // its position in the shared remediation makes it a step of this group.
-  const stepPrefix = steps.length > 1 ? `Step 1 of ${steps.length}: ` : "Shared step: ";
 
   return (
     <section aria-label={`One fix for ${group.cases.length} cases`}>
@@ -75,24 +68,10 @@ export function IssueGroup({ group, basePath, pageTitles, nested = false }: Issu
         </span>
 
         {/* A group is not a case, so the header is not a link. It names the
-            relationship — two findings, one fix — and shows the first step of
-            that fix in context. */}
-        <span style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
-          <span style={{ fontSize: 13, fontWeight: 600 }}>
-            One fix for {group.cases.length} cases
-            {steps.length > 0 ? ` · ${steps.length} steps` : ""}
-          </span>
-          <span
-            style={{
-              fontSize: 12,
-              lineHeight: 1.35,
-              color: "var(--text-muted)",
-              whiteSpace: "normal",
-            }}
-            title={fix}
-          >
-            {stepPrefix}{fix}
-          </span>
+            relationship — two findings, one fix — and leaves the steps to the
+            case detail, where they are readable in full. */}
+        <span style={{ minWidth: 0, fontSize: 13, fontWeight: 600 }}>
+          One fix for {group.cases.length} cases
         </span>
 
         {/* The pages link here for the same reason they do on a row: this is
