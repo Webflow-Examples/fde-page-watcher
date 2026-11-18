@@ -2801,8 +2801,20 @@ textarea:focus-visible,
  * Above the stretched link, so they keep their own targets. Without the
  * stacking context these sit under it and every click opens the case.
  */
-.issue-row__page,
+.issue-row__page {
+  position: relative;
+  z-index: 2;
+}
+
 .issue-row .info-tip {
+  position: relative;
+}
+
+/* The BUTTON needs to sit above the stretched row link, but putting the
+   z-index on the wrapper made a stacking context and trapped the fixed panel
+   inside it. A later row's tip then painted over the open panel. Keep the
+   stacking context on the button and let the panel participate in the page's. */
+.issue-row .info-tip__button {
   position: relative;
   z-index: 2;
 }
