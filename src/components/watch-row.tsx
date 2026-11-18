@@ -87,7 +87,7 @@ export function WatchRow({
     <span>{`The ${daysOf(unavailable)}-day check could not be taken`}</span>
   ) : undefined;
 
-  const dateExtra = (
+  const checkpoints = (
     <>
       <CheckpointMarks run={run} countdown now={now} locale={locale} />
       <button
@@ -134,7 +134,7 @@ export function WatchRow({
         pageTitles={pageTitles}
         dateMode="watch"
         meta={meta}
-        dateExtra={dateExtra}
+        confidenceSlot={checkpoints}
       />
 
       {open ? (

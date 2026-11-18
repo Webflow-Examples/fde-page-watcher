@@ -61,7 +61,7 @@ export const ISSUE_ROW_COLUMNS = [
   // confidence, impact, effort. Confidence is sized by its HEADER rather than
   // its values: "Probable" is 52px and "CONFIDENCE" is not, and a column header
   // that ellipses is a column nobody can identify.
-  "minmax(0, 100px)",
+  "minmax(0, 124px)",
   "minmax(88px, 96px)",
   "minmax(0, 88px)",
 ].join(" ");
@@ -119,8 +119,8 @@ export interface IssueRowProps {
   lastRunAt?: string;
   /** A queue-specific second line under the cause, such as owner or staleness. */
   meta?: ReactNode;
-  /** A queue-specific second line under the date, such as checkpoint marks. */
-  dateExtra?: ReactNode;
+  /** Replace the Confidence cell, as Watch does with checkpoint marks. */
+  confidenceSlot?: ReactNode;
 }
 
 /**
@@ -171,7 +171,7 @@ export function PageScope({
   );
 }
 
-export function IssueRow({ issue, basePath, pageTitles, nested = false, dateMode = "detected", lastRunAt, meta, dateExtra }: IssueRowProps) {
+export function IssueRow({ issue, basePath, pageTitles, nested = false, dateMode = "detected", lastRunAt, meta, confidenceSlot }: IssueRowProps) {
   const router = useRouter();
   const impact = formatImpact(issue.impactMs);
   // What KIND of problem this is, in three or four words — the column a list of
@@ -302,11 +302,6 @@ export function IssueRow({ issue, basePath, pageTitles, nested = false, dateMode
             </span>
           ) : null}
         </span>
-        {dateExtra ? (
-          <span style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 2 }}>
-            {dateExtra}
-          </span>
-        ) : null}
       </span>
 
       {/* The word, in the row's secondary text token — never a strength hue.
@@ -314,8 +309,12 @@ export function IssueRow({ issue, basePath, pageTitles, nested = false, dateMode
           the opposite of what it says (registry rule 13), and hue here would
           double-encode a value the word already carries. Strength as colour
           belongs where there is no word to read it from. */}
-      <span style={{ ...TRUNCATE_CELL, fontSize: 12.5, color: "var(--text-muted)" }}>
-        {CONFIDENCE_LABEL[issue.confidence]}
+      <span
+        style={confidenceSlot
+          ? { minWidth: 0, display: "flex", alignItems: "center", gap: 6 }
+          : { ...TRUNCATE_CELL, fontSize: 12.5, color: "var(--text-muted)" }}
+      >
+        {confidenceSlot ?? CONFIDENCE_LABEL[issue.confidence]}
       </span>
 
       <span
