@@ -357,6 +357,7 @@ export function CaseDetail({
     ).filter((action) => {
       if (action === "accept") return hasPlan && !isPlatform;
       if (action === "take_on") return !hasPlan && !isPlatform;
+      if (action === "mark_fixed") return hasPlan;
       return true;
     });
     return allowed.map((action) => ({
@@ -384,8 +385,12 @@ export function CaseDetail({
     : !hasPlan
       ? issue.state === "new" || issue.state === "reopened"
         ? NO_ACTION_REASON.none
-        : NO_ACTION_REASON.no_plan
+        : issue.state === "fixed" || issue.state === "resolved" || issue.state === "dismissed"
+          ? NO_ACTION_REASON.no_plan_closed
+          : NO_ACTION_REASON.no_plan
       : null;
+  const canEditPlan = Boolean(onPlanChange) && !isPlatform
+    && (issue.state === "new" || issue.state === "reopened" || issue.state === "todo" || issue.state === "in_progress");
 
   const sources = issue.evidence.length;
   const conflicting = issue.confidence === "unclear" && sources >= 2;
@@ -479,7 +484,7 @@ export function CaseDetail({
       <div style={{ padding: "0 40px" }}>
         {/* The steps Accept commits to. A case with no documented steps gets
             an editor here, so Take on is not a dead end. */}
-        {issue.remediation.steps.length > 0 || (onPlanChange && !isPlatform) ? (
+        {issue.remediation.steps.length > 0 || canEditPlan ? (
           <Section title="How to fix">
             {issue.remediation.steps.length > 0 ? (
               <ol

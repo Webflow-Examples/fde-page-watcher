@@ -192,7 +192,8 @@
             "in_progress"
           ],
           "to": "fixed",
-          "note": "Schedules the three checkpoints. See the checkpoint concept for what reads them."
+          "note": "Schedules the three checkpoints. See the checkpoint concept for what reads them.",
+          "requires": "remediation_plan"
         },
         {
           "key": "resolve",

@@ -80,5 +80,6 @@ export function applyCaseTransition(
   record: CaseTransitionRecord,
 ): IssueCase {
   if (!canApply(issue, record.action)) return issue;
+  if (record.action === "mark_fixed" && issue.remediation.steps.length === 0) return issue;
   return applyAction(issue, record.action, { by: record.by, at: record.at });
 }

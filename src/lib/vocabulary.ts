@@ -119,7 +119,7 @@ export const ISSUE_ACTION_LABEL: Record<IssueAction, string> = {
 export type TransitionActor = "person" | "system";
 
 /** What a transition needs before it may fire. */
-export type TransitionRequirement = "reason" | "checkpoint_agreement";
+export type TransitionRequirement = "reason" | "checkpoint_agreement" | "remediation_plan";
 
 export interface IssueTransition {
   readonly from: readonly WorkState[];
@@ -139,7 +139,7 @@ export const ISSUE_TRANSITIONS: Record<IssueAction, IssueTransition> = {
   dismiss: { from: ["new", "reopened"], to: "dismissed", actor: ["person"], requires: "reason", requiresReason: true },
   start: { from: ["todo"], to: "in_progress", actor: ["person"], requires: null, requiresReason: false },
   // Schedules the three checkpoints. The checkpoint concept says what reads them.
-  mark_fixed: { from: ["in_progress"], to: "fixed", actor: ["person"], requires: null, requiresReason: false },
+  mark_fixed: { from: ["in_progress"], to: "fixed", actor: ["person"], requires: "remediation_plan", requiresReason: false },
   // Nobody presses this — no button carries the label. The 30-day checkpoint
   // fires it once every checkpoint that produced a reading agreed. Before v5
   // Resolved had no legal entry at all, which rule 14 names as a bug.

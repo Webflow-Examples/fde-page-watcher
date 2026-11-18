@@ -417,6 +417,11 @@ describe("guards", () => {
     expect(() => accept(issue, { by: PERSON, at: AT })).toThrow(/no remediation steps/);
   });
 
+  it("refuses to mark fixed without a remediation plan", () => {
+    const issue = makeCase({ state: "in_progress", remediation: { steps: [], actionability: "none" } });
+    expect(() => markFixed(issue, { by: PERSON, at: AT })).toThrow(/no remediation steps/);
+  });
+
   it("keeps Accept closed to a case with no steps and offers Take on instead", () => {
     const waysToTodo = registryActions.filter((action) => action.to === "todo").map((action) => action.key);
     expect(waysToTodo).toEqual(["accept", "take_on"]);

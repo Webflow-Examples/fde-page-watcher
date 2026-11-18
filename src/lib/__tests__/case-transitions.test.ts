@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Caller } from "../caller";
 import { caseTransitionFrom } from "../case-transitions";
 import { remediationKey } from "../issue-case";
+import { casePlanFrom } from "../case-plans";
 import { issueCasesFrom } from "../issue-cases";
 import { buildSeedState } from "../seed";
 import type { CaseDecisionRecord, CaseTransitionRecord } from "../types";
@@ -32,7 +33,7 @@ function derive(
     .find((item) => item.cause === CAUSE)!;
 }
 
-function transition(action: "start" | "mark_fixed" | "reopen", at = AT) {
+function transition(action: "take_on" | "start" | "mark_fixed" | "reopen", at = AT) {
   return caseTransitionFrom({ caseKey: CAUSE, action }, { at, by: PERSON });
 }
 
@@ -87,6 +88,25 @@ describe("the case transition log", () => {
       transition("reopen", "2026-08-22T12:00:00.000Z"),
     ]);
     expect(reopened.state).toBe("todo");
+  });
+
+  it("applies a user plan and lets Mark fixed clear the gate", () => {
+    const { state } = seed();
+    const plan = casePlanFrom(
+      { caseKey: CAUSE, steps: ["Investigate the blocking script.", "Measure again."] },
+      { at: AT, by: PERSON },
+    );
+    const fixed = issueCasesFrom({
+      ...state,
+      caseTransitions: [
+        transition("take_on"),
+        transition("start"),
+        transition("mark_fixed", LATER),
+      ],
+      casePlans: [plan],
+    }).find((item) => item.cause === CAUSE)!;
+    expect(fixed.state).toBe("fixed");
+    expect(fixed.remediation.steps).toEqual(["Investigate the blocking script.", "Measure again."]);
   });
 
   it("refuses an entry without an action or a case key", () => {

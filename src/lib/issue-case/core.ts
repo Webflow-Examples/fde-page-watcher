@@ -622,6 +622,11 @@ export function applyAction(issue: IssueCase, action: IssueAction, options: Tran
       `applyAction: ${issue.id} has no remediation steps, so it cannot be accepted. Give it steps first.`,
     );
   }
+  if (action === "mark_fixed" && issue.remediation.steps.length === 0) {
+    throw new IssueCaseError(
+      `applyAction: ${issue.id} has no remediation steps, so it cannot be marked fixed. Add a plan first.`,
+    );
+  }
   if (transition.requiresReason && !isDismissReason(options.reason)) {
     throw new IssueCaseError(
       `applyAction: ${action} requires one of these reasons — ${DISMISS_REASONS.join(", ")}.`,
