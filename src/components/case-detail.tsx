@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { attributionOf } from "@/lib/caller";
 import {
   RESOLVING_INTERVAL,
+  enteredAt,
   includedPages,
   isTransition,
   personActionsFor,
@@ -36,6 +37,8 @@ import {
   DECISION_STRANDED,
   NO_ACTION_REASON,
   acceptLabel,
+  causeLineOf,
+  diagnosisLineOf,
   evidenceAgreement,
   evidenceConflict,
   historyDetected,
@@ -250,6 +253,10 @@ export function CaseDetail({
   // for the ticket's string to be byte-identical to this one, and the only way
   // to promise that is for there to be one string rather than two that agree.
   const impact = formatCaseImpact(issue, impactByPage);
+  // An effort band is an estimate of the documented remediation. With no steps
+  // there is nothing to estimate, so the stale source value would contradict
+  // the note beside it.
+  const hasEffortBasis = issue.remediation.steps.length > 0;
 
   /**
    * The state's own legal moves, in the order the header offers them.
@@ -313,15 +320,17 @@ export function CaseDetail({
       <ObjectDetailHeader
         breadcrumb={{ label: DESTINATION_LABEL.issues, href: DESTINATION_PATH.issues }}
         state={<StatusChip state={issue.state} />}
-        stateDate={formatDate(issue.detectedAt, locale)}
-        title={issue.diagnosis}
-        explanation={issue.successCriteria}
+        stateDate={formatDate(enteredAt(issue, issue.state) ?? issue.detectedAt, locale)}
+        title={causeLineOf(issue)}
+        explanation={diagnosisLineOf(issue)}
         actions={
           <>
             {/* Registry rule 17: where there is nothing to accept, the case says
                 why in a sentence. A disabled Accept is the thing this replaces —
                 it tells the reader they lack permission, which is not what is
-                true; there is simply nothing documented to commit to. */}
+                true; there is simply nothing documented to commit to. Only
+                Accept is withdrawn: the other legal moves, Dismiss in particular,
+                remain available so the case can still be triaged. */}
             {noAction ? (
               <p
                 style={{
@@ -334,9 +343,11 @@ export function CaseDetail({
               >
                 {noAction}
               </p>
-            ) : (
-              <ObjectDetailHeaderActions actions={actions} />
-            )}
+            ) : null}
+            <ObjectDetailHeaderActions
+              actions={noAction ? actions.filter((entry) => entry.action !== "accept") : actions}
+              quiet={Boolean(noAction)}
+            />
             {/* A decision was taken about this remediation and no longer applies
                 to it, because a reclassification changed the remediation's key
                 under it. The case is undecided and the buttons above are the
@@ -365,7 +376,11 @@ export function CaseDetail({
         metadata={
           <div style={{ display: "flex", flexWrap: "wrap", gap: 28 }}>
             <Figure label={IMPACT_LABEL} value={impact.text} muted={!impact.measured} />
-            <Figure label={EFFORT_LABEL_TEXT} value={IMPACT_EFFORT_WORDS[issue.effort]} />
+            <Figure
+              label={EFFORT_LABEL_TEXT}
+              value={hasEffortBasis ? IMPACT_EFFORT_WORDS[issue.effort] : "Not estimated"}
+              muted={!hasEffortBasis}
+            />
             <Figure label="Confidence" value={CONFIDENCE_LABEL[issue.confidence]} />
           </div>
         }
@@ -384,6 +399,22 @@ export function CaseDetail({
             onInclude={onInclude}
           />
         </div>
+
+        {issue.successCriteria ? (
+          <Section title="Done when">
+            <p
+              style={{
+                margin: 0,
+                maxWidth: "72ch",
+                fontSize: 13,
+                lineHeight: 1.6,
+                color: "var(--text-body)",
+              }}
+            >
+              {issue.successCriteria}
+            </p>
+          </Section>
+        ) : null}
 
         <CaseNotes notes={issue.notes} onNotesChange={onNotesChange} />
 
@@ -411,8 +442,11 @@ export function CaseDetail({
                 <span style={{ flex: "0 0 160px", color: "var(--text-body)" }}>
                   {EVIDENCE_SOURCE_LABEL[entry.source]}
                 </span>
-                <span style={{ flex: "1 1 auto", color: "var(--text-muted)" }}>
-                  {entry.supports ? "Supports the diagnosis" : "Does not support it"}
+                <span style={{ flex: "1 1 auto", minWidth: 0 }}>
+                  <span style={{ display: "block", color: "var(--text-body)" }}>{entry.reading}</span>
+                  <span style={{ display: "block", marginTop: 3, color: "var(--text-muted)" }}>
+                    {entry.supports ? "Supports the diagnosis" : "Does not support it"}
+                  </span>
                 </span>
                 <span style={{ flex: "0 0 auto", color: "var(--text-muted)" }}>
                   {formatDate(entry.observedAt, locale)}

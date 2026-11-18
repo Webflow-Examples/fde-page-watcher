@@ -66,13 +66,13 @@ export function diagnosisLineOf(issue: { diagnosis: string; title: string }): st
  * Where the classifier does NOT recognise the audit it answers `other`, and its
  * label for that is "Something else the nightly test found" — which tells a
  * reader strictly less than the sentence it would be replacing. The visitor
- * findings and the agent ones all land there. So the fallback is the diagnosis
- * itself: the column is shorter where there is something shorter to say, and
- * never emptier than it was.
+ * findings and the agent ones all land there. So the fallback is the source's
+ * own title: short enough to scan, specific enough to name the finding, and the
+ * full diagnosis stays one disclosure away instead of filling the column.
  */
 export function causeLineOf(issue: { cause: string; title: string; diagnosis: string }): string {
   const classification = webflowClassificationFor({ id: issue.cause, title: issue.title });
-  return classification.culprit === "other" ? diagnosisLineOf(issue) : classification.culpritLabel;
+  return classification.culprit === "other" ? issue.title : classification.culpritLabel;
 }
 
 /* ── The pages table ────────────────────────────────────────────────────── */
@@ -95,7 +95,7 @@ export function excludedNote(reason: ExclusionReason): string {
 /* ── Impact and effort ──────────────────────────────────────────────────── */
 
 /** Worst page, never a total. The label says which page it is about. */
-export const IMPACT_LABEL = "Worst page saves";
+export const IMPACT_LABEL = "Worst-page impact";
 /**
  * Named `_TEXT` because `EFFORT_LABEL` is already the effort-band word map in
  * `issue-row`. Two different things called the same name in one import list is
@@ -112,7 +112,10 @@ export const EFFORT_LABEL_TEXT = "Effort";
  * sentence — the casing is this sentence's business, and the word is not.
  */
 export function evidenceAgreement(sources: number, confidence: Confidence): string {
-  return `${sources} sources, no disagreement — so ${CONFIDENCE_LABEL[confidence].toLowerCase()}. Never averaged.`;
+  const word = CONFIDENCE_LABEL[confidence].toLowerCase();
+  return sources === 1
+    ? `1 source supports the diagnosis, so confidence is ${word}.`
+    : `${sources} sources, no disagreement, so confidence is ${word}.`;
 }
 
 export function evidenceConflict(a: string, b: string): string {
