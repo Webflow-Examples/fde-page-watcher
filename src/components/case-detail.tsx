@@ -1,7 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { attributionOf } from "@/lib/caller";
+import { caseHref, pageHref } from "@/lib/paths";
 import {
   RESOLVING_INTERVAL,
   enteredAt,
@@ -75,6 +77,8 @@ export interface CaseDetailProps {
   pagePaths?: Record<string, string>;
   impactByPage?: Record<string, number>;
   basePath?: string;
+  /** Other cases whose remediation is the same piece of work. */
+  sharedWith?: readonly IssueCase[];
   /**
    * Fire one registry transition on this case.
    *
@@ -232,6 +236,8 @@ export function CaseDetail({
   pageTitles,
   pagePaths,
   impactByPage,
+  basePath,
+  sharedWith,
   onAction,
   onExclude,
   onInclude,
@@ -320,7 +326,7 @@ export function CaseDetail({
       <ObjectDetailHeader
         breadcrumb={{ label: DESTINATION_LABEL.issues, href: DESTINATION_PATH.issues }}
         state={<StatusChip state={issue.state} />}
-        stateDate={formatDate(enteredAt(issue, issue.state) ?? issue.detectedAt, locale)}
+        stateDate={`Since ${formatDate(enteredAt(issue, issue.state) ?? issue.detectedAt, locale)}`}
         title={causeLineOf(issue)}
         explanation={diagnosisLineOf(issue)}
         actions={
@@ -408,6 +414,23 @@ export function CaseDetail({
                 <li key={`${index}-${step}`}>{step}</li>
               ))}
             </ol>
+            {sharedWith && sharedWith.length > 0 ? (
+              <p style={{ margin: "12px 0 0", fontSize: 12.5, color: "var(--text-muted)", maxWidth: "72ch" }}>
+                This fix also covers{" "}
+                {sharedWith.map((item, index) => (
+                  <span key={item.id}>
+                    {index > 0 ? ", " : ""}
+                    <Link
+                      href={caseHref(basePath ?? "", item.id)}
+                      style={{ color: "var(--action-primary-ink)", textDecoration: "none" }}
+                    >
+                      {causeLineOf(item)}
+                    </Link>
+                  </span>
+                ))}
+                .
+              </p>
+            ) : null}
           </Section>
         ) : null}
 
@@ -464,7 +487,18 @@ export function CaseDetail({
                 }}
               >
                 <span style={{ flex: "0 0 160px", color: "var(--text-body)" }}>
-                  {EVIDENCE_SOURCE_LABEL[entry.source]}
+                  {issue.pageIds.length > 0 ? (
+                    <Link
+                      href={pageHref(basePath ?? "", issue.pageIds[0])}
+                      style={{ color: "var(--action-primary-ink)", textDecoration: "none" }}
+                      title="Open page readings"
+                    >
+                      {EVIDENCE_SOURCE_LABEL[entry.source]}
+                      <span aria-hidden="true" style={{ marginLeft: 3, fontSize: 10 }}>↗</span>
+                    </Link>
+                  ) : (
+                    EVIDENCE_SOURCE_LABEL[entry.source]
+                  )}
                 </span>
                 <span style={{ flex: "1 1 auto", minWidth: 0 }}>
                   <span style={{ display: "block", color: "var(--text-body)" }}>{entry.reading}</span>

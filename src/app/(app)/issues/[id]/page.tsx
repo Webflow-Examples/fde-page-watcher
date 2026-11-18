@@ -44,10 +44,15 @@ export default function CasePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const id = decodeURIComponent(String(params?.id ?? ""));
-  const { pages, pathFor, performanceThresholds, recordCaseDecision } = useStore();
+  const { pages, pathFor, performanceThresholds, recordCaseDecision, basePath } = useStore();
   const view = useIssuesView("show_all", "impact");
 
   const issue = useMemo(() => view.cases.find((item) => item.id === id), [view.cases, id]);
+  const sharedWith = useMemo(() => {
+    if (!issue) return [];
+    const key = remediationKey(issue);
+    return view.cases.filter((item) => item.id !== issue.id && remediationKey(item) === key);
+  }, [issue, view.cases]);
 
   const pageTitles = view.pageTitles;
   const pagePaths = useMemo(
@@ -150,6 +155,8 @@ export default function CasePage() {
         issue={issue}
         pageTitles={pageTitles}
         pagePaths={pagePaths}
+        basePath={basePath}
+        sharedWith={sharedWith}
         onExclude={excludePageFromCase}
         onInclude={includePageInCase}
       />
