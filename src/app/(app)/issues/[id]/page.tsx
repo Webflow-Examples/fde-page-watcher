@@ -5,8 +5,14 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useStore } from "@/components/store";
 import { useIssuesView } from "@/components/use-issues-view";
-import { DESTINATION_LABEL, DESTINATION_PATH, type ExclusionReason } from "@/lib/vocabulary";
-import { remediationKey } from "@/lib/issue-case";
+import {
+  DESTINATION_LABEL,
+  DESTINATION_PATH,
+  type DismissReason,
+  type ExclusionReason,
+  type IssueAction,
+} from "@/lib/vocabulary";
+import { remediationKey, type IssueCase } from "@/lib/issue-case";
 import { CaseDetail } from "@/components/case-detail";
 import { DigestBanner } from "@/components/digest-banner";
 import { DIGEST_DATE_PARAM, DIGEST_LINE_PARAM, digestLineFor, parseDigestArrival } from "@/lib/digest";
@@ -39,6 +45,14 @@ import { casePath } from "@/lib/paths";
  * click is the same derivation as what is on screen after a reload — there is
  * no second copy of the answer that could disagree with the stored one.
  */
+/**
+ * Accept and dismiss are the only two verbs the decision log can keep. Accept
+ * is remediation-wide; dismiss needs a reason, so it has its own handler and
+ * picker. The other transitions stay out of this header until they have a log
+ * that can persist them.
+ */
+const CASE_ACTIONS: readonly IssueAction[] = ["accept"];
+
 export default function CasePage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -125,6 +139,22 @@ export default function CasePage() {
     [issue, recordCaseDecision],
   );
 
+  const acceptCase = useCallback(
+    (action: IssueAction, issue: IssueCase) => {
+      if (action !== "accept") return;
+      recordCaseDecision({ decision: "accept", remediationKey: remediationKey(issue) });
+    },
+    [recordCaseDecision],
+  );
+
+  const dismissCase = useCallback(
+    (reason: DismissReason) => {
+      if (!issue) return;
+      recordCaseDecision({ decision: "dismiss", remediationKey: remediationKey(issue), reason });
+    },
+    [issue, recordCaseDecision],
+  );
+
   if (!issue) {
     return (
       <div style={{ padding: "40px" }}>
@@ -157,6 +187,9 @@ export default function CasePage() {
         pagePaths={pagePaths}
         basePath={basePath}
         sharedWith={sharedWith}
+        supportedActions={CASE_ACTIONS}
+        onAction={acceptCase}
+        onDismiss={dismissCase}
         onExclude={excludePageFromCase}
         onInclude={includePageInCase}
       />

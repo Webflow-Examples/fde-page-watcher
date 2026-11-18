@@ -268,16 +268,18 @@ describe("the exclude control", () => {
     expect(code).not.toMatch(/useState/);
   });
 
-  it("offers no verb the log cannot keep", () => {
+  it("offers only the verbs the log can keep", () => {
     /**
-     * The header takes ONE action handler on purpose, so a caller cannot wire
-     * four verbs and leave a fifth as a button that does nothing. The log holds
-     * accept and dismiss but not start, mark_fixed or reopen — so wiring
-     * `onAction` here would produce precisely that dead button. It stays unwired
-     * until there is somewhere for all of them to go.
+     * The log holds accept and dismiss. Accept is remediation-wide, so it goes
+     * through `onAction`; dismiss needs a reason, so it has `onDismiss` and its
+     * own reason picker. `CASE_ACTIONS` must stay accept-only: start,
+     * mark_fixed, reopen and resolve have nowhere to go.
      */
     const code = route.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-    expect(code).not.toMatch(/onAction=/);
+    expect(code).toMatch(/onAction=\{acceptCase\}/);
+    expect(code).toMatch(/onDismiss=\{dismissCase\}/);
+    expect(code).toMatch(/const CASE_ACTIONS: readonly IssueAction\[\] = \["accept"\]/);
+    expect(code).not.toMatch(/supportedActions=\{[^}]*"(?:start|mark_fixed|reopen|resolve|dismiss)"/);
   });
 
   it("renders no control when no handler can keep the result", () => {

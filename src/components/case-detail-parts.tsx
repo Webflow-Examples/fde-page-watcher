@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { EFFORT_LABEL } from "@/components/issue-row";
-import type { IssueAction } from "@/lib/vocabulary";
+import { DISMISS_REASONS, type DismissReason, type IssueAction } from "@/lib/vocabulary";
 
 /**
  * The case header's actions, and the effort words it reuses.
@@ -31,6 +32,102 @@ export interface CaseAction {
    */
   label: string;
   onClick?: () => void;
+}
+
+/**
+ * Dismiss, with the reason the registry requires.
+ *
+ * The reason is not a follow-up prompt: choosing it is the act. The menu opens
+ * from the same button so the reader cannot fire a dismissal without deciding
+ * why, and Cancel closes it without writing anything.
+ */
+export function DismissAction({ onChoose }: { onChoose: (reason: DismissReason) => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span style={{ position: "relative", display: "inline-flex" }}>
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((wasOpen) => !wasOpen)}
+        style={{
+          appearance: "none",
+          cursor: "pointer",
+          whiteSpace: "nowrap",
+          fontSize: 13,
+          fontWeight: 500,
+          padding: "8px 15px",
+          borderRadius: 8,
+          border: "1px solid var(--border-strong)",
+          background: "var(--surface-card)",
+          color: "var(--text-body)",
+        }}
+      >
+        Dismiss
+      </button>
+      {open ? (
+        <span
+          role="group"
+          aria-label="Reason for dismissing"
+          style={{
+            position: "absolute",
+            top: "calc(100% + 8px)",
+            right: 0,
+            zIndex: 130,
+            display: "flex",
+            flexDirection: "column",
+            gap: 2,
+            minWidth: 180,
+            padding: 6,
+            borderRadius: 8,
+            border: "1px solid var(--border-hairline)",
+            background: "var(--surface-card)",
+            boxShadow: "var(--shadow-popover)",
+          }}
+        >
+          {DISMISS_REASONS.map((reason) => (
+            <button
+              key={reason}
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                onChoose(reason);
+              }}
+              style={{
+                appearance: "none",
+                cursor: "pointer",
+                textAlign: "left",
+                padding: "6px 8px",
+                border: 0,
+                borderRadius: 4,
+                background: "transparent",
+                color: "var(--text-body)",
+                fontSize: 12.5,
+              }}
+            >
+              {reason}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            style={{
+              appearance: "none",
+              cursor: "pointer",
+              textAlign: "left",
+              padding: "6px 8px",
+              border: 0,
+              borderRadius: 4,
+              background: "transparent",
+              color: "var(--text-muted)",
+              fontSize: 12.5,
+            }}
+          >
+            Cancel
+          </button>
+        </span>
+      ) : null}
+    </span>
+  );
 }
 
 export function ObjectDetailHeaderActions({

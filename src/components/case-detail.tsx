@@ -25,10 +25,12 @@ import {
   ISSUE_ACTION_LABEL,
   WORK_STATE_LABEL,
   queueHoldsState,
+  type DismissReason,
   type ExclusionReason,
   type IssueAction,
 } from "@/lib/vocabulary";
 import {
+  DismissAction,
   EFFORT_LABEL as IMPACT_EFFORT_WORDS,
   ObjectDetailHeaderActions,
   type CaseAction,
@@ -88,6 +90,13 @@ export interface CaseDetailProps {
    * the state the per-page exclude control was withheld to avoid.
    */
   onAction?: (action: IssueAction, issue: IssueCase) => void;
+  /** Dismiss is separate because the registry requires a reason. */
+  onDismiss?: (reason: DismissReason) => void;
+  /**
+   * The verbs this caller can persist. The header renders only these, so a
+   * button whose decision has nowhere to go is never shown.
+   */
+  supportedActions?: readonly IssueAction[];
   onExclude?: (pageId: string, reason: ExclusionReason) => void;
   onInclude?: (pageId: string) => void;
   /**
@@ -239,6 +248,8 @@ export function CaseDetail({
   basePath,
   sharedWith,
   onAction,
+  onDismiss,
+  supportedActions,
   onExclude,
   onInclude,
   onNotesChange,
@@ -279,14 +290,20 @@ export function CaseDetail({
     const primary = primaryActionFor(issue.state);
     if (!primary) return [];
     const ordered = [primary, ...personActionsFor(issue.state).filter((action) => action !== primary)];
-    return ordered.map((action) => ({
+    const allowed = supportedActions
+      ? ordered.filter((action) => supportedActions.includes(action))
+      : ordered;
+    return allowed.map((action) => ({
       action,
       label: action === "accept"
         ? acceptLabel(included.length, issue.pageIds.length, sharedCaseCount)
         : ISSUE_ACTION_LABEL[action],
       onClick: onAction ? () => onAction(action, issue) : undefined,
     }));
-  }, [included.length, issue, onAction, sharedCaseCount]);
+  }, [included.length, issue, onAction, sharedCaseCount, supportedActions]);
+
+  const canDismiss = Boolean(onDismiss) && personActionsFor(issue.state).includes("dismiss");
+  const headerActions = actions.filter((entry) => entry.action !== "dismiss" && entry.onClick);
 
   /**
    * Rule 17's sentence, and only where it is true.
@@ -353,9 +370,12 @@ export function CaseDetail({
               </p>
             ) : null}
             <ObjectDetailHeaderActions
-              actions={noAction ? actions.filter((entry) => entry.action !== "accept") : actions}
+              actions={noAction
+                ? headerActions.filter((entry) => entry.action !== "accept")
+                : headerActions}
               quiet={Boolean(noAction)}
             />
+            {canDismiss ? <DismissAction onChoose={onDismiss!} /> : null}
             {/* A decision was taken about this remediation and no longer applies
                 to it, because a reclassification changed the remediation's key
                 under it. The case is undecided and the buttons above are the
