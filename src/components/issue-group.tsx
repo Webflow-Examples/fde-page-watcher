@@ -1,5 +1,6 @@
 import type { RemediationGroup } from "@/lib/issue-case";
 import { CONFIDENCE_LABEL } from "@/lib/vocabulary";
+import { formatDate } from "@/lib/watch-copy";
 import { StatusChip } from "@/components/status-chip";
 import {
   EFFORT_LABEL,
@@ -38,9 +39,11 @@ export interface IssueGroupProps {
   pageTitles: Record<string, string>;
   /** Set when the group sits inside the folded tail. */
   nested?: boolean;
+  /** Marks a detection on the last run in the Date column. */
+  lastRunAt?: string;
 }
 
-export function IssueGroup({ group, basePath, pageTitles, nested = false }: IssueGroupProps) {
+export function IssueGroup({ group, basePath, pageTitles, nested = false, lastRunAt }: IssueGroupProps) {
   if (group.cases.length === 1) {
     return <IssueRow issue={group.cases[0]} basePath={basePath} pageTitles={pageTitles} nested={nested} />;
   }
@@ -61,17 +64,14 @@ export function IssueGroup({ group, basePath, pageTitles, nested = false }: Issu
           background: "var(--surface-card)",
         }}
       >
-        {/* The most urgent state among the members: a live problem never hides
-            behind a sibling somebody has already settled. */}
-        <span>
+        {/* A group is not a case, so the header is not a link. The chip is the
+            most urgent member state; the text names the relationship and leaves
+            the steps to the case detail. */}
+        <span style={{ minWidth: 0, display: "flex", alignItems: "center", gap: 7 }}>
           <StatusChip state={group.state} />
-        </span>
-
-        {/* A group is not a case, so the header is not a link. It names the
-            relationship — two findings, one fix — and leaves the steps to the
-            case detail, where they are readable in full. */}
-        <span style={{ minWidth: 0, fontSize: 13, fontWeight: 600 }}>
-          One fix for {group.cases.length} cases
+          <span style={{ minWidth: 0, ...TRUNCATE_CELL, fontSize: 13, fontWeight: 600 }}>
+            One fix for {group.cases.length} cases
+          </span>
         </span>
 
         {/* The pages link here for the same reason they do on a row: this is
@@ -84,6 +84,20 @@ export function IssueGroup({ group, basePath, pageTitles, nested = false }: Issu
             basePath={basePath}
             pageTitles={pageTitles}
           />
+        </span>
+
+        <span style={{ ...TRUNCATE_CELL, fontSize: 12.5, color: "var(--text-muted)" }}>
+          {formatDate(group.detectedAt)}
+          {lastRunAt && group.detectedAt.slice(0, 10) >= lastRunAt.slice(0, 10) ? (
+            <span
+              role="img"
+              aria-label="Detected on the last run"
+              title="Detected on the last run"
+              style={{ marginLeft: 4, color: "var(--action-primary-ink)" }}
+            >
+              ●
+            </span>
+          ) : null}
         </span>
 
         {/* The weakest member confidence, as a word. See the note in issue-row. */}
@@ -109,7 +123,14 @@ export function IssueGroup({ group, basePath, pageTitles, nested = false }: Issu
       </div>
 
       {group.cases.map((issue) => (
-        <IssueRow key={issue.id} issue={issue} basePath={basePath} pageTitles={pageTitles} nested />
+        <IssueRow
+          key={issue.id}
+          issue={issue}
+          basePath={basePath}
+          pageTitles={pageTitles}
+          nested
+          lastRunAt={lastRunAt}
+        />
       ))}
     </section>
   );

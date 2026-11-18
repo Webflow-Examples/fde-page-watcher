@@ -1,14 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useStore } from "@/components/store";
 import { useIssuesView } from "@/components/use-issues-view";
 import {
   DEFAULT_ISSUE_SORT,
   DEFAULT_SORT_DIRECTION,
-  ISSUE_SORTS,
   ISSUE_SORT_LABEL,
   parseIssueSort,
   parseSortDirection,
@@ -35,7 +34,6 @@ import {
   SettledEmpty,
   WatchEmpty,
 } from "@/components/issue-empty";
-import { SelectMenu } from "@/components/select-menu";
 import { WatchQueue } from "@/components/watch-queue";
 import { FixQueue } from "@/components/fix-queue";
 import { SettledQueue } from "@/components/settled-queue";
@@ -71,20 +69,19 @@ const DIRECTION_WORD: Record<SortDirection, string> = { asc: "ascending", desc: 
  *
  * The header IS the sort rather than a caption above one:
  *
- *   - The label comes from `ISSUE_SORT_LABEL`, so a column and the Sort menu
- *     read one map and cannot end up calling the same ordering two things.
+ *   - The label comes from `ISSUE_SORT_LABEL`, so a header and the sort cannot
+ *     call the same ordering two things.
  *   - The first click sorts the column in ITS OWN default direction rather than
- *     a uniform descending — a triage list wants the lifecycle from `new` and
- *     effort from the cheapest. The second click reverses it, and the arrow
- *     says which way it currently reads.
+ *     a uniform descending; effort opens from the cheapest, for example. The
+ *     second click reverses it, and the arrow says which way it reads.
  *
- * Newest and What changed head no column: there is no date column to head. The
- * menu is what keeps them reachable, which is why it stays.
+ * Date carries the retired Newest ordering; "what changed" is a marker in that
+ * column, not a third direction hidden behind a menu.
  */
 const COLUMN_SORTS = [
-  "state",
   "cause",
   "pages",
+  "date",
   "confidence",
   "impact",
   "effort",
@@ -116,9 +113,9 @@ function ColumnHeaders({
         color: "var(--text-muted)",
       }}
     >
-      {COLUMN_SORTS.map((key, index) => {
+      {COLUMN_SORTS.map((key) => {
         const active = key === sort;
-        const numeric = index >= 4;
+        const numeric = key === "impact" || key === "effort";
         // An inactive column opens in its own default; the active one reverses.
         const next = active ? reverseDirection(direction) : DEFAULT_SORT_DIRECTION[key];
         return (
@@ -161,7 +158,6 @@ function ColumnHeaders({
 }
 
 export default function IssuesPage() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const { basePath, pathFor, pages } = useStore();
 
@@ -276,26 +272,6 @@ export default function IssuesPage() {
 
       {hasRows && !ownQueue ? (
         <>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "flex-end",
-              alignItems: "center",
-              gap: 10,
-              padding: "0 40px 14px",
-            }}
-          >
-            <span style={{ fontSize: 12.5, color: "var(--text-muted)" }}>Sort</span>
-            <SelectMenu
-              value={sort}
-              options={ISSUE_SORTS.map((option) => ({ value: option, label: ISSUE_SORT_LABEL[option] }))}
-              onChange={(next) => router.replace(linkTo({ sort: next }))}
-              ariaLabel="Sort"
-              menuWidth={180}
-              triggerWidth={150}
-            />
-          </div>
-
           <ColumnHeaders sort={sort} direction={direction} hrefFor={linkTo} />
 
           <div style={{ borderBottom: "1px solid var(--border-hairline)" }}>
@@ -305,6 +281,7 @@ export default function IssuesPage() {
                 group={group}
                 basePath={basePath}
                 pageTitles={view.pageTitles}
+                lastRunAt={view.lastRunAt}
               />
             ))}
 

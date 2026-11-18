@@ -1,6 +1,6 @@
 import { causeLineOf } from "./case-copy";
 import { byWorstMeasured, casesInQueue, hasMeasuredImpact, type Effort, type IssueCase, type RemediationGroup } from "./issue-case";
-import { CONFIDENCES, COUNTED_QUEUES, WORK_STATES, type Confidence, type Queue, type WorkState } from "./vocabulary";
+import { CONFIDENCES, COUNTED_QUEUES, type Confidence, type Queue } from "./vocabulary";
 
 /* ── Issue-list selectors ───────────────────────────────────────────────── */
 
@@ -39,9 +39,7 @@ export function queueCountsOf(cases: readonly IssueCase[]): QueueCounts {
 
 export const ISSUE_SORTS = [
   "impact",
-  "newest",
-  "changed",
-  "state",
+  "date",
   "cause",
   "pages",
   "confidence",
@@ -54,9 +52,7 @@ export const DEFAULT_ISSUE_SORT: IssueSort = "impact";
 
 export const ISSUE_SORT_LABEL: Record<IssueSort, string> = {
   impact: "Impact",
-  newest: "Newest",
-  changed: "What changed",
-  state: "State",
+  date: "Date",
   cause: "Cause",
   pages: "Pages",
   confidence: "Confidence",
@@ -64,6 +60,10 @@ export const ISSUE_SORT_LABEL: Record<IssueSort, string> = {
 };
 
 export function parseIssueSort(value: string | null | undefined): IssueSort {
+  // Old links keep working: the three retired sort keys map to the column that
+  // now carries their meaning.
+  if (value === "newest" || value === "changed") return "date";
+  if (value === "state") return "cause";
   return (ISSUE_SORTS as readonly string[]).includes(value ?? "") ? (value as IssueSort) : DEFAULT_ISSUE_SORT;
 }
 
@@ -83,9 +83,7 @@ export type SortDirection = (typeof SORT_DIRECTIONS)[number];
  */
 export const DEFAULT_SORT_DIRECTION: Record<IssueSort, SortDirection> = {
   impact: "desc",
-  newest: "desc",
-  changed: "desc",
-  state: "asc",
+  date: "desc",
   cause: "asc",
   pages: "desc",
   confidence: "asc",
@@ -110,49 +108,38 @@ export function reverseDirection(direction: SortDirection): SortDirection {
 const EFFORT_ORDER: Record<Effort, number> = { minutes: 0, hours: 1, days: 2, unknown: 3 };
 
 /**
- * State and confidence rank in the registry's own declared order, derived from
- * its arrays rather than restated here.
+ * Confidence ranks in the registry's own declared order, derived from its
+ * array rather than restated here.
  *
- * Both arrays are already ordered the way a reader wants to read them — the
- * lifecycle from `new` to `dismissed`, and confidence from `confirmed` down to
- * `unclear` — so indexing them IS the comparator. Copying the numbers out would
- * be R1's F10 again: a rule stated in one place and duplicated in a constant
- * that no longer changes with it. A state added to the registry lands in the
- * right position here without this file being touched.
+ * The array is already ordered the way a reader wants to read it, from
+ * `confirmed` down to `unclear`, so indexing it IS the comparator. Copying the
+ * numbers out would be a rule stated twice. A value added to the registry lands
+ * in the right position here without this file being touched.
  */
 const indexOrder = <T extends string>(values: readonly T[]): Record<T, number> =>
   Object.fromEntries(values.map((value, index) => [value, index])) as Record<T, number>;
 
-const STATE_ORDER: Record<WorkState, number> = indexOrder(WORK_STATES);
 const CONFIDENCE_ORDER: Record<Confidence, number> = indexOrder(CONFIDENCES);
-
-/** The calendar day of an ISO stamp, for comparing a detection to a run. */
-const dayOf = (iso: string): string => iso.slice(0, 10);
 
 /**
  * Order the groups, without changing which of them there are.
  *
  * Every comparator is a total order over the same array — sorting is never a
- * filter here, so switching one cannot make a case disappear. "What changed"
- * is the one worth spelling out: it puts the cases the last run detected first
- * and everything else after, still in date order. That is a sort, so the older
- * cases are further down rather than gone.
+ * filter here, so switching one cannot make a case disappear. Date is the
+ * detected date; "what changed" is a marker in that column, not a direction
+ * hidden behind a third sort.
  */
 export function sortRemediationGroups(
   groups: readonly RemediationGroup[],
   sort: IssueSort,
-  lastRunAt?: string,
   direction: SortDirection = DEFAULT_SORT_DIRECTION[sort],
 ): RemediationGroup[] {
   // Applied to the PRIMARY key only. Everything after the first `||` is a
   // tie-break, and a tie-break that flipped with the header would reshuffle
   // rows the reader did not ask to reorder.
   const sign = direction === DEFAULT_SORT_DIRECTION[sort] ? 1 : -1;
-  const lastRunDay = lastRunAt ? dayOf(lastRunAt) : undefined;
-  const inLastRun = (group: RemediationGroup): number =>
-    lastRunDay && group.detectedAt && dayOf(group.detectedAt) >= lastRunDay ? 0 : 1;
 
-  const byNewest = (a: RemediationGroup, b: RemediationGroup) => b.detectedAt.localeCompare(a.detectedAt);
+  const byDate = (a: RemediationGroup, b: RemediationGroup) => b.detectedAt.localeCompare(a.detectedAt);
 
   /**
    * Rule 18, split out of `byWorstMeasured` so it can sit OUTSIDE the sign.
@@ -171,13 +158,11 @@ export function sortRemediationGroups(
 
   // Wherever impact is the ranking key, `byWorstMeasured` applies rule 18: the
   // unmeasured groups move to the end of the band as a block instead of being
-  // ordered by a zero they never measured. Newest and What changed rank on a
-  // date every case carries, so no measurement stands in for a missing one.
+  // ordered by a zero they never measured. Date ranks on a value every case
+  // carries, so no measurement stands in for a missing one.
   const compare: Record<IssueSort, (a: RemediationGroup, b: RemediationGroup) => number> = {
-    impact: (a, b) => measuredFirst(a, b) || sign * byImpactSize(a, b) || byNewest(a, b) || byId(a, b),
-    newest: (a, b) => sign * byNewest(a, b) || byId(a, b),
-    changed: (a, b) => sign * (inLastRun(a) - inLastRun(b)) || byNewest(a, b) || byId(a, b),
-    state: (a, b) => sign * (STATE_ORDER[a.state] - STATE_ORDER[b.state]) || byWorstMeasured(a, b) || byId(a, b),
+    impact: (a, b) => measuredFirst(a, b) || sign * byImpactSize(a, b) || byDate(a, b) || byId(a, b),
+    date: (a, b) => sign * byDate(a, b) || byId(a, b),
     // The text the row actually shows, so the order a reader sees is the order
     // they could have worked out from the screen.
     cause: (a, b) => sign * causeLineOf(a.primary).localeCompare(causeLineOf(b.primary)) || byId(a, b),

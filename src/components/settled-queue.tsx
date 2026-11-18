@@ -36,7 +36,7 @@ export function SettledQueue({ cases, basePath, pageTitles }: SettledQueueProps)
       </p>
       <div style={{ borderBottom: "1px solid var(--border-hairline)" }}>
         {ordered.map((issue) => (
-          <IssueRow key={issue.id} issue={issue} basePath={basePath} pageTitles={pageTitles} />
+          <IssueRow key={issue.id} issue={issue} basePath={basePath} pageTitles={pageTitles} dateMode="settled" />
         ))}
       </div>
     </div>

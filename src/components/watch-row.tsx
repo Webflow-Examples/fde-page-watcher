@@ -21,6 +21,7 @@ import { CheckpointMarks } from "@/components/checkpoint-marks";
 import { CheckpointTrack } from "@/components/checkpoint-track";
 import { ChevronDownIcon } from "@/components/icons";
 import { caseHref } from "@/lib/paths";
+import { causeLineOf } from "@/lib/case-copy";
 
 /**
  * One fixed case waiting on evidence (15d), and its drawer (14c).
@@ -144,7 +145,7 @@ export function WatchRow({
               }}
               title={issue.diagnosis}
             >
-              {issue.diagnosis}
+              {causeLineOf(issue)}
             </span>
             <span style={{ display: "block", marginTop: 2, fontSize: 12.5, color: "var(--text-muted)" }}>
               {fixedLine}

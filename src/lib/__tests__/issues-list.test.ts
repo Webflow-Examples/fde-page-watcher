@@ -216,12 +216,11 @@ describe("sortRemediationGroups", () => {
     makeCase({ id: "vague", cause: "vague", impactMs: 0, effort: "unknown", detectedAt: "2026-08-25T00:00:00.000Z" }),
   ];
   const groups = groupByRemediation(cases, { at: "2026-08-25T06:00:00.000Z" });
-  const lastRun = "2026-08-25T06:00:00.000Z";
 
   it("shows the same groups whichever sort is chosen", () => {
     const baseline = groups.map((group) => group.key).sort();
     for (const sort of ISSUE_SORTS) {
-      const sorted = sortRemediationGroups(groups, sort, lastRun);
+      const sorted = sortRemediationGroups(groups, sort);
       expect(sorted).toHaveLength(groups.length);
       expect(sorted.map((group) => group.key).sort()).toEqual(baseline);
     }
@@ -230,32 +229,25 @@ describe("sortRemediationGroups", () => {
   it("ranks by impact descending by default", () => {
     expect(parseIssueSort(undefined)).toBe(DEFAULT_ISSUE_SORT);
     expect(parseIssueSort("nonsense")).toBe("impact");
-    expect(sortRemediationGroups(groups, "impact", lastRun).map((group) => group.primary.id))
+    expect(sortRemediationGroups(groups, "impact").map((group) => group.primary.id))
       .toEqual(["slow", "mid", "quick", "vague"]);
   });
 
-  it("ranks by detection date for newest", () => {
-    const order = sortRemediationGroups(groups, "newest", lastRun).map((group) => group.primary.id);
+  it("ranks by detection date", () => {
+    const order = sortRemediationGroups(groups, "date").map((group) => group.primary.id);
     expect(order.slice(0, 2).sort()).toEqual(["quick", "vague"]);
-    expect(order.slice(2)).toEqual(["mid", "slow"]);
-  });
-
-  it("puts the last run first for what changed, and keeps the rest below it", () => {
-    const order = sortRemediationGroups(groups, "changed", lastRun).map((group) => group.primary.id);
-    expect(order.slice(0, 2).sort()).toEqual(["quick", "vague"]);
-    // A filter would have stopped there. This is a sort.
     expect(order.slice(2)).toEqual(["mid", "slow"]);
   });
 
   it("ranks by least work first for effort, with no band last", () => {
-    expect(sortRemediationGroups(groups, "effort", lastRun).map((group) => group.primary.id))
+    expect(sortRemediationGroups(groups, "effort").map((group) => group.primary.id))
       .toEqual(["quick", "mid", "slow", "vague"]);
   });
 
   it("never lets an unmeasured finding outrank a measured one on impact", () => {
     // Rule 18. "vague" was detected in the last run and has no reading; it must
     // not sit above a 2,400 ms finding on an empty cell.
-    const order = sortRemediationGroups(groups, "impact", lastRun).map((group) => group.primary.id);
+    const order = sortRemediationGroups(groups, "impact").map((group) => group.primary.id);
     expect(order.at(-1)).toBe("vague");
     const measured = order.map((id) => groups.find((group) => group.primary.id === id)!)
       .map((group) => hasMeasuredImpact(group.impactMs));
@@ -268,31 +260,11 @@ describe("sortRemediationGroups", () => {
       makeCase({ id: "blank", cause: "blank", impactMs: 0, effort: "hours" }),
       makeCase({ id: "big", cause: "big", impactMs: 1900, effort: "hours" }),
     ], { at: "2026-08-25T06:00:00.000Z" });
-    expect(sortRemediationGroups(sameBand, "effort", lastRun).map((group) => group.primary.id))
+    expect(sortRemediationGroups(sameBand, "effort").map((group) => group.primary.id))
       .toEqual(["big", "blank"]);
   });
 
-  it("ranks Newest and What changed on the date, which every case carries", () => {
-    // Rule 18 bites where a measurement is the ranking key. These two rank on a
-    // date, so an unmeasured finding is not pushed down — that would hide what
-    // changed, and these are sorts, not filters.
-    const changed = sortRemediationGroups(groups, "changed", lastRun).map((group) => group.primary.id);
-    expect(changed.slice(0, 2).sort()).toEqual(["quick", "vague"]);
-  });
-
-  /* ── The four column sorts ──────────────────────────────────────────── */
-
-  it("ranks state down the registry's lifecycle, not alphabetically", () => {
-    // The two orders disagree, which is the point: alphabetically this is
-    // dismissed, in_progress, new — exactly backwards for a triage list.
-    const groups = groupByRemediation([
-      makeCase({ id: "gone", cause: "gone", state: "dismissed" }),
-      makeCase({ id: "fresh", cause: "fresh", state: "new" }),
-      makeCase({ id: "doing", cause: "doing", state: "in_progress" }),
-    ], { at: "2026-08-25T06:00:00.000Z" });
-    expect(sortRemediationGroups(groups, "state", lastRun).map((group) => group.primary.id))
-      .toEqual(["fresh", "doing", "gone"]);
-  });
+  /* ── The column sorts ──────────────────────────────────────────────── */
 
   it("ranks confidence strongest first", () => {
     // The registry's order happens to coincide with alphabetical here, so this
@@ -302,7 +274,7 @@ describe("sortRemediationGroups", () => {
       makeCase({ id: "sure", cause: "sure", confidence: "confirmed" }),
       makeCase({ id: "likely", cause: "likely", confidence: "probable" }),
     ], { at: "2026-08-25T06:00:00.000Z" });
-    expect(sortRemediationGroups(groups, "confidence", lastRun).map((group) => group.primary.id))
+    expect(sortRemediationGroups(groups, "confidence").map((group) => group.primary.id))
       .toEqual(["sure", "likely", "vague"]);
   });
 
@@ -312,7 +284,7 @@ describe("sortRemediationGroups", () => {
       makeCase({ id: "six", cause: "six", scope: "pages", pageIds: ["home", "pricing", "docs", "blog", "about", "help"] }),
       makeCase({ id: "two", cause: "two", scope: "pages", pageIds: ["home", "pricing"] }),
     ], { at: "2026-08-25T06:00:00.000Z" });
-    expect(sortRemediationGroups(groups, "pages", lastRun).map((group) => group.primary.id))
+    expect(sortRemediationGroups(groups, "pages").map((group) => group.primary.id))
       .toEqual(["six", "two", "one"]);
   });
 
@@ -324,7 +296,7 @@ describe("sortRemediationGroups", () => {
       makeCase({ id: "startup", cause: "bootup-time" }),       // Code running at startup
       makeCase({ id: "dead", cause: "unused-javascript" }),    // Code the site never runs
     ], { at: "2026-08-25T06:00:00.000Z" });
-    expect(sortRemediationGroups(groups, "cause", lastRun).map((group) => group.primary.id))
+    expect(sortRemediationGroups(groups, "cause").map((group) => group.primary.id))
       .toEqual(["startup", "dead", "nested"]);
   });
 
@@ -333,27 +305,23 @@ describe("sortRemediationGroups", () => {
   it("opens each sort in its own direction rather than a uniform descending", () => {
     expect(parseSortDirection(undefined, "effort")).toBe("asc");
     expect(parseSortDirection(undefined, "impact")).toBe("desc");
-    expect(parseSortDirection("nonsense", "state")).toBe("asc");
-    expect(parseSortDirection("desc", "state")).toBe("desc");
+    expect(parseSortDirection("nonsense", "date")).toBe("desc");
+    expect(parseSortDirection("desc", "date")).toBe("desc");
   });
 
+
   it("reverses when the same column is asked a second time", () => {
-    const stateGroups = groupByRemediation([
-      makeCase({ id: "gone", cause: "gone", state: "dismissed" }),
-      makeCase({ id: "fresh", cause: "fresh", state: "new" }),
-      makeCase({ id: "doing", cause: "doing", state: "in_progress" }),
-    ], { at: "2026-08-25T06:00:00.000Z" });
-    expect(sortRemediationGroups(stateGroups, "state", lastRun, "asc").map((group) => group.primary.id))
-      .toEqual(["fresh", "doing", "gone"]);
-    expect(sortRemediationGroups(stateGroups, "state", lastRun, "desc").map((group) => group.primary.id))
-      .toEqual(["gone", "doing", "fresh"]);
+    expect(sortRemediationGroups(groups, "date", "asc").map((group) => group.primary.id))
+      .toEqual(["slow", "mid", "quick", "vague"]);
+    expect(sortRemediationGroups(groups, "date", "desc").map((group) => group.primary.id))
+      .toEqual(["quick", "vague", "mid", "slow"]);
   });
 
   it("keeps rule 18 when impact is reversed: smallest MEASURED first, never the unmeasured", () => {
     // The whole point of splitting rule 18 out of the sign. Reversing "largest
     // saving first" asks for the smallest reading, not for the row that has no
     // reading at all — an absent number is not a small one.
-    const order = sortRemediationGroups(groups, "impact", lastRun, "asc").map((group) => group.primary.id);
+    const order = sortRemediationGroups(groups, "impact", "asc").map((group) => group.primary.id);
     expect(order).toEqual(["quick", "mid", "slow", "vague"]);
     expect(order.at(-1)).toBe("vague");
   });
@@ -365,7 +333,7 @@ describe("sortRemediationGroups", () => {
     ], { at: "2026-08-25T06:00:00.000Z" });
     // Hardest first still does not float the unmeasured finding above the
     // measured one it shares a band with.
-    expect(sortRemediationGroups(sameBand, "effort", lastRun, "desc").map((group) => group.primary.id))
+    expect(sortRemediationGroups(sameBand, "effort", "desc").map((group) => group.primary.id))
       .toEqual(["big", "blank"]);
   });
 
@@ -373,7 +341,7 @@ describe("sortRemediationGroups", () => {
     const baseline = groups.map((group) => group.key).sort();
     for (const sort of ISSUE_SORTS) {
       for (const direction of ["asc", "desc"] as const) {
-        const sorted = sortRemediationGroups(groups, sort, lastRun, direction);
+        const sorted = sortRemediationGroups(groups, sort, direction);
         expect(sorted.map((group) => group.key).sort(), `${sort} ${direction}`).toEqual(baseline);
       }
     }
@@ -385,13 +353,13 @@ describe("sortRemediationGroups", () => {
 
   it("does not mutate its input", () => {
     const before = groups.map((group) => group.key);
-    sortRemediationGroups(groups, "effort", lastRun);
+    sortRemediationGroups(groups, "effort");
     expect(groups.map((group) => group.key)).toEqual(before);
   });
 
   it("orders the same input identically every time", () => {
-    const once = sortRemediationGroups(groups, "impact", lastRun).map((group) => group.key);
-    const twice = sortRemediationGroups(groups, "impact", lastRun).map((group) => group.key);
+    const once = sortRemediationGroups(groups, "impact").map((group) => group.key);
+    const twice = sortRemediationGroups(groups, "impact").map((group) => group.key);
     expect(once).toEqual(twice);
   });
 });

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { includedPages, enteredAt, type IssueCase } from "@/lib/issue-case";
 import { formatCaseImpact } from "@/lib/impact-format";
 import { FIX_NO_OWNER, fixOwnerMeta, fixTodoMeta, startedLongAgo } from "@/lib/fix-copy";
+import { causeLineOf } from "@/lib/case-copy";
 import { caseHref } from "@/lib/paths";
 
 /**
@@ -79,6 +80,7 @@ export interface FixRowProps {
 export function FixRow({ issue, basePath, now }: FixRowProps) {
   const impact = formatCaseImpact(issue);
   const diagnosis = issue.diagnosis || issue.title;
+  const cause = causeLineOf(issue);
   const inProgress = issue.state === "in_progress";
   // Amber past thirty days, and amber is the whole of it: the text changes
   // colour and nothing else happens. No background wash, no border, no icon, no
@@ -112,7 +114,7 @@ export function FixRow({ issue, basePath, now }: FixRowProps) {
           }}
           title={diagnosis}
         >
-          {diagnosis}
+          {cause}
         </span>
 
         <span
