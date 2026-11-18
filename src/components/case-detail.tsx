@@ -263,6 +263,8 @@ export function CaseDetail({
   // there is nothing to estimate, so the stale source value would contradict
   // the note beside it.
   const hasEffortBasis = issue.remediation.steps.length > 0;
+  // Accept is stored against the remediation, so every case sharing it moves.
+  const sharedCaseCount = 1 + (sharedWith?.length ?? 0);
 
   /**
    * The state's own legal moves, in the order the header offers them.
@@ -280,11 +282,11 @@ export function CaseDetail({
     return ordered.map((action) => ({
       action,
       label: action === "accept"
-        ? acceptLabel(included.length, issue.pageIds.length)
+        ? acceptLabel(included.length, issue.pageIds.length, sharedCaseCount)
         : ISSUE_ACTION_LABEL[action],
       onClick: onAction ? () => onAction(action, issue) : undefined,
     }));
-  }, [included.length, issue, onAction]);
+  }, [included.length, issue, onAction, sharedCaseCount]);
 
   /**
    * Rule 17's sentence, and only where it is true.
@@ -428,7 +430,8 @@ export function CaseDetail({
                     </Link>
                   </span>
                 ))}
-                .
+                . Accepting it here accepts the fix for{" "}
+                {sharedCaseCount === 2 ? "both cases" : `all ${sharedCaseCount} cases`}.
               </p>
             ) : null}
           </Section>

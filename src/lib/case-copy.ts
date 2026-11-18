@@ -23,8 +23,12 @@ import { webflowClassificationFor } from "./webflowPerformance";
  * nothing a reader did not already assume. The moment it is a subset, the
  * number is the whole point: accepting four of seven pages is a different
  * commitment from accepting seven, and the button is the last place to say so.
+ *
+ * `sharedCases` counts every case the remediation covers. Accept is recorded
+ * against the remediation, not one case, so a shared fix names its real scope.
  */
-export function acceptLabel(included: number, total: number): string {
+export function acceptLabel(included: number, total: number, sharedCases = 1): string {
+  if (sharedCases > 1) return `Accept shared fix (${sharedCases} cases)`;
   return included === total ? "Accept" : `Accept for ${included} pages`;
 }
 

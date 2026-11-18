@@ -76,6 +76,7 @@ describe("a case's pages", () => {
     expect(acceptLabel(includedPages(issue).length, issue.pageIds.length)).toBe("Accept");
     const narrowed = excludePage(issue, "p3", "Not applicable to this site", { by: PERSON, at: AT });
     expect(acceptLabel(includedPages(narrowed).length, narrowed.pageIds.length)).toBe("Accept for 2 pages");
+    expect(acceptLabel(1, 1, 2)).toBe("Accept shared fix (2 cases)");
   });
 
   it("writes a history entry naming the page and the reason", () => {
