@@ -50,13 +50,13 @@ export function useIssuesView(
   sort: IssueSort,
   direction: SortDirection = DEFAULT_SORT_DIRECTION[sort],
 ): IssuesView {
-  const { recs, pages, performanceThresholds, caseDecisions } = useStore();
+  const { recs, pages, performanceThresholds, caseDecisions, caseTransitions } = useStore();
   return useMemo(() => {
     // The decisions log is part of the derivation's input, not a filter applied
     // after it: what someone decided about a remediation changes which queue
     // its cases are in, so the counts and the rows have to be read from the
     // same pass or the badge and the list disagree.
-    const cases = issueCasesFrom({ recs, pages, caseDecisions });
+    const cases = issueCasesFrom({ recs, pages, caseDecisions, caseTransitions });
     const lastRunAt = lastRunAtOf(pages);
     const at = lastRunAt ? { at: lastRunAt } : {};
     const { minimumSavingsMs } = normalizePerformanceThresholds(performanceThresholds);
@@ -73,5 +73,5 @@ export function useIssuesView(
       pageTitles: Object.fromEntries(pages.map((page) => [page.id, page.title])),
       lastRunAt,
     };
-  }, [recs, pages, caseDecisions, performanceThresholds, queue, sort, direction]);
+  }, [recs, pages, caseDecisions, caseTransitions, performanceThresholds, queue, sort, direction]);
 }

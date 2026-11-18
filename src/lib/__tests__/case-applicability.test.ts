@@ -270,15 +270,15 @@ describe("the exclude control", () => {
 
   it("offers only the verbs the log can keep", () => {
     /**
-     * The log holds accept and dismiss. Accept is remediation-wide, so it goes
-     * through `onAction`; dismiss needs a reason, so it has `onDismiss` and its
-     * own reason picker. `CASE_ACTIONS` must stay accept-only: start,
-     * mark_fixed, reopen and resolve have nowhere to go.
+     * Accept is remediation-wide, so it goes through the decision log; dismiss
+     * needs a reason, so it has `onDismiss` and its own picker. The lifecycle
+     * verbs go through the case-transition log. `CASE_ACTIONS` names exactly
+     * the verbs those two logs can keep.
      */
     const code = route.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-    expect(code).toMatch(/onAction=\{acceptCase\}/);
+    expect(code).toMatch(/onAction=\{performAction\}/);
     expect(code).toMatch(/onDismiss=\{dismissCase\}/);
-    expect(code).toMatch(/const CASE_ACTIONS: readonly IssueAction\[\] = \["accept"\]/);
+    expect(code).toMatch(/const CASE_ACTIONS: readonly IssueAction\[\] = \["accept", "start", "mark_fixed", "reopen", "resolve"\]/);
     expect(code).not.toMatch(/supportedActions=\{[^}]*"(?:start|mark_fixed|reopen|resolve|dismiss)"/);
   });
 

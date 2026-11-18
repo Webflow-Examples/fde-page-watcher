@@ -12,6 +12,8 @@ import { thresholdsFor, type Sensitivity } from "@/lib/sensitivity";
 import type { DigestCadence } from "@/lib/digestCadence";
 import { normalizeDigestRecipients } from "@/lib/digestRecipients";
 import type { CaseDecision, CaseDecisionRequest } from "@/lib/case-decisions";
+import type { CaseTransitionRequest } from "@/lib/case-transitions";
+import type { CaseTransitionRecord } from "@/lib/types";
 import {
   APPLICABILITY_LABEL,
   ISSUE_ACTION_LABEL,
@@ -133,6 +135,11 @@ interface StoreValue extends AppState {
    * reversing a decision is another entry saying so.
    */
   recordCaseDecision: (decision: CaseDecisionRequest) => void;
+  /**
+   * Append one case-level lifecycle transition. Keyed on the case's cause,
+   * because a case id moves when its membership does.
+   */
+  recordCaseTransition: (transition: CaseTransitionRequest) => void;
   /**
    * The one control over what this site considers worth reporting.
    *
@@ -732,6 +739,27 @@ export function StoreProvider({
     [mutate, user.email],
   );
 
+  const recordCaseTransition = useCallback(
+    (transition: CaseTransitionRequest) => {
+      const cur = dataRef.current;
+      const optimistic: CaseTransitionRecord = {
+        ...transition,
+        at: new Date().toISOString(),
+        // The same caller the route resolves from the verified identity.
+        by: { kind: "person", userId: user.email },
+      };
+      mutate(
+        { ...cur, caseTransitions: [...(cur.caseTransitions ?? []), optimistic] },
+        { url: "/api/case-transitions", body: transition },
+        {
+          success: ISSUE_ACTION_LABEL[transition.action],
+          failure: "Couldn't keep that transition — try again",
+        },
+      );
+    },
+    [mutate, user.email],
+  );
+
   const setSensitivity = useCallback(
     (sensitivity: Sensitivity) => {
       const cur = dataRef.current;
@@ -1172,6 +1200,7 @@ export function StoreProvider({
     setDefaultAgentIgnore,
     setNativeElementApplicability,
     recordCaseDecision,
+    recordCaseTransition,
     setSensitivity,
     updateDigestSettings,
     updateCollectionSchedule,

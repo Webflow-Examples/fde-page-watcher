@@ -12,7 +12,8 @@ import {
   type IssueCase,
 } from "./issue-case";
 import { decisionOf, type CaseDecision, type CaseDecisionRecord } from "./case-decisions";
-import type { AppState, WatchPage } from "./types";
+import { applyCaseTransition, transitionOf } from "./case-transitions";
+import type { AppState, CaseTransitionRecord, WatchPage } from "./types";
 
 /**
  * The canonical case list, derived from stored records.
@@ -199,11 +200,35 @@ export function applyCaseDecisions(
  * keeping the two apart is what lets a decision survive a run that rewrote
  * every record the case is made of.
  */
+/**
+ * Apply the case-level transitions log after the remediation decisions.
+ *
+ * Decisions come first because they are the commitment that precedes Start and
+ * everything after it. A transition that no longer fits its case is skipped by
+ * `applyCaseTransition`, not deleted.
+ */
+function applyCaseTransitions(
+  cases: readonly IssueCase[],
+  records: readonly CaseTransitionRecord[],
+): IssueCase[] {
+  if (records.length === 0) return [...cases];
+  return cases.map((issue) => {
+    let next = issue;
+    for (const record of records) {
+      if (record.caseKey !== issue.cause) continue;
+      const transition = transitionOf(record);
+      if (transition) next = applyCaseTransition(next, transition);
+    }
+    return next;
+  });
+}
+
 export function issueCasesFrom(
-  state: Pick<AppState, "recs" | "pages" | "caseDecisions">,
+  state: Pick<AppState, "recs" | "pages"> & Partial<Pick<AppState, "caseDecisions" | "caseTransitions">>,
 ): IssueCase[] {
   const at = lastRunAtOf(state.pages);
   const options = at ? { at, referenceYear: Number(at.slice(0, 4)) } : {};
   const grouped = groupByCause(state.recs.map((rec) => fromRec(rec, options)), options);
-  return applyCaseDecisions(grouped, state.caseDecisions ?? [], pageLabelsOf(state.pages));
+  const decided = applyCaseDecisions(grouped, state.caseDecisions ?? [], pageLabelsOf(state.pages));
+  return applyCaseTransitions(decided, state.caseTransitions ?? []);
 }

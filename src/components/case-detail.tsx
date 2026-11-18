@@ -6,6 +6,7 @@ import { attributionOf } from "@/lib/caller";
 import { caseHref, pageHref } from "@/lib/paths";
 import {
   RESOLVING_INTERVAL,
+  checkpointsAgree,
   enteredAt,
   includedPages,
   isTransition,
@@ -290,9 +291,10 @@ export function CaseDetail({
     const primary = primaryActionFor(issue.state);
     if (!primary) return [];
     const ordered = [primary, ...personActionsFor(issue.state).filter((action) => action !== primary)];
-    const allowed = supportedActions
+    const allowed = (supportedActions
       ? ordered.filter((action) => supportedActions.includes(action))
-      : ordered;
+      : ordered
+    ).filter((action) => action !== "resolve" || checkpointsAgree(issue.checkpoints));
     return allowed.map((action) => ({
       action,
       label: action === "accept"
@@ -409,6 +411,7 @@ export function CaseDetail({
               value={hasEffortBasis ? IMPACT_EFFORT_WORDS[issue.effort] : "Not estimated"}
               muted={!hasEffortBasis}
             />
+            {issue.owner ? <Figure label="Owner" value={issue.owner} /> : null}
             <Figure label="Confidence" value={CONFIDENCE_LABEL[issue.confidence]} />
           </div>
         }

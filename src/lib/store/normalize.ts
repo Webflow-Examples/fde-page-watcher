@@ -111,5 +111,6 @@ export function normalizeState(state: AppState): AppState {
   // log exists to prevent: a decision whose remediation is gone today is still
   // a decision a person made, and the remediation can come back.
   state.caseDecisions = state.caseDecisions ?? [];
+  state.caseTransitions = state.caseTransitions ?? [];
   return state;
 }

@@ -46,19 +46,25 @@ import { casePath } from "@/lib/paths";
  * no second copy of the answer that could disagree with the stored one.
  */
 /**
- * Accept and dismiss are the only two verbs the decision log can keep. Accept
- * is remediation-wide; dismiss needs a reason, so it has its own handler and
- * picker. The other transitions stay out of this header until they have a log
- * that can persist them.
+ * Accept is remediation-wide; the lifecycle verbs are case-level and keyed on
+ * the case's cause. Dismiss needs a reason, so it has its own handler and
+ * picker. Every verb here has a log that can keep it.
  */
-const CASE_ACTIONS: readonly IssueAction[] = ["accept"];
+const CASE_ACTIONS: readonly IssueAction[] = ["accept", "start", "mark_fixed", "reopen", "resolve"];
 
 export default function CasePage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const searchParams = useSearchParams();
   const id = decodeURIComponent(String(params?.id ?? ""));
-  const { pages, pathFor, performanceThresholds, recordCaseDecision, basePath } = useStore();
+  const {
+    pages,
+    pathFor,
+    performanceThresholds,
+    recordCaseDecision,
+    recordCaseTransition,
+    basePath,
+  } = useStore();
   const view = useIssuesView("show_all", "impact");
 
   const issue = useMemo(() => view.cases.find((item) => item.id === id), [view.cases, id]);
@@ -139,12 +145,23 @@ export default function CasePage() {
     [issue, recordCaseDecision],
   );
 
-  const acceptCase = useCallback(
+  const performAction = useCallback(
     (action: IssueAction, issue: IssueCase) => {
-      if (action !== "accept") return;
-      recordCaseDecision({ decision: "accept", remediationKey: remediationKey(issue) });
+      switch (action) {
+        case "accept":
+          recordCaseDecision({ decision: "accept", remediationKey: remediationKey(issue) });
+          return;
+        case "start":
+        case "mark_fixed":
+        case "reopen":
+        case "resolve":
+          recordCaseTransition({ caseKey: issue.cause, action });
+          return;
+        default:
+          return;
+      }
     },
-    [recordCaseDecision],
+    [recordCaseDecision, recordCaseTransition],
   );
 
   const dismissCase = useCallback(
@@ -188,7 +205,7 @@ export default function CasePage() {
         basePath={basePath}
         sharedWith={sharedWith}
         supportedActions={CASE_ACTIONS}
-        onAction={acceptCase}
+        onAction={performAction}
         onDismiss={dismissCase}
         onExclude={excludePageFromCase}
         onInclude={includePageInCase}
