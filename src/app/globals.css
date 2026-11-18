@@ -2741,10 +2741,6 @@ textarea:focus-visible,
  */
 .issue-row {
   position: relative;
-  /* The row is one link, including its hairline border. Without this the
-     1px border between rows shows the default cursor and the hand flickers
-     as the pointer crosses it. */
-  cursor: pointer;
   border-top: 1px solid var(--border-hairline);
   background: var(--surface-card);
   color: var(--text-body);
@@ -2771,53 +2767,10 @@ textarea:focus-visible,
   text-decoration: none;
 }
 
-/* The stretched hit area. Not a second link — the same one, made row-sized.
-   The explicit stacking layer keeps it above the row's static cells in every
-   engine; without it the cells can win hit testing even though the overlay's
-   box covers them. */
-.issue-row__open::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  pointer-events: auto;
-}
-
-.issue-row:hover {
-  background: var(--surface-raised);
-}
-
+.issue-row__open:hover,
 .issue-row__open:focus-visible {
-  outline: none;
-}
-
-/* The focus ring belongs on the row, because the row is what the link covers. */
-.issue-row:has(.issue-row__open:focus-visible) {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -2px;
-}
-
-/*
- * Above the stretched link, so they keep their own targets. Without the
- * stacking context these sit under it and every click opens the case.
- */
-.issue-row__page,
-.issue-row button {
-  position: relative;
-  z-index: 2;
-}
-
-.issue-row .info-tip {
-  position: relative;
-}
-
-/* The BUTTON needs to sit above the stretched row link, but putting the
-   z-index on the wrapper made a stacking context and trapped the fixed panel
-   inside it. A later row's tip then painted over the open panel. Keep the
-   stacking context on the button and let the panel participate in the page's. */
-.issue-row .info-tip__button {
-  position: relative;
-  z-index: 2;
+  color: var(--action-primary-ink);
+  text-decoration: underline;
 }
 
 .issue-row__page {
@@ -2829,6 +2782,13 @@ textarea:focus-visible,
 .issue-row__page:focus-visible {
   color: var(--action-primary-ink);
   text-decoration: underline;
+}
+
+/* The title link and every control in a row share the app's focus ring. */
+.issue-row a:focus-visible,
+.issue-row button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
 }
 
 

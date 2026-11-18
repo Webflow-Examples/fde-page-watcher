@@ -1,8 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import type { CSSProperties, MouseEvent, ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { enteredAt, type IssueCase } from "@/lib/issue-case";
 import type { Strategy } from "@/lib/types";
 import { EFFORT_LABEL, formatGroupImpact, formatImpact } from "@/lib/impact-format";
@@ -172,7 +171,6 @@ export function PageScope({
 }
 
 export function IssueRow({ issue, basePath, pageTitles, nested = false, dateMode = "detected", lastRunAt, meta, confidenceSlot }: IssueRowProps) {
-  const router = useRouter();
   const impact = formatImpact(issue.impactMs);
   // What KIND of problem this is, in three or four words — the column a list of
   // four dozen rows is actually scanned on.
@@ -187,21 +185,6 @@ export function IssueRow({ issue, basePath, pageTitles, nested = false, dateMode
   // control. The 18px is still reserved, so the labels start on one line down
   // the whole list whether or not a row has more to give.
   const hasSecondLayer = diagnosis !== "" && diagnosis !== cause;
-
-  /**
-   * The stretched link above is the accessible target, but its hit area is a
-   * pseudo-element and some engines stop testing it outside the inline box.
-   * The row itself is the fallback: anywhere that is not already a link or a
-   * control opens the case. Links and buttons keep their own destinations.
-   */
-  const openRow = (event: MouseEvent<HTMLDivElement>) => {
-    if (event.defaultPrevented) return;
-    const target = event.target;
-    if (!(target instanceof Element)) return;
-    if (target.closest("a, button, .info-tip")) return;
-    if (window.getSelection()?.toString()) return;
-    router.push(caseHref(basePath, issue.id));
-  };
 
   return (
     /*
@@ -224,7 +207,6 @@ export function IssueRow({ issue, basePath, pageTitles, nested = false, dateMode
     */
     <div
       className={nested ? "issue-row issue-row--nested" : "issue-row"}
-      onClick={openRow}
       style={{
         display: "grid",
         gridTemplateColumns: ISSUE_ROW_COLUMNS,
@@ -233,12 +215,8 @@ export function IssueRow({ issue, basePath, pageTitles, nested = false, dateMode
         padding: "11px 40px",
       }}
     >
-      {/* NOT `TRUNCATE_CELL` on this cell or on the link inside it. The
-          stretched hit area is a positioned `::after` on the link, and
-          `overflow: hidden` anywhere above it clips that box back to the
-          cell — which is a whole-row target that only covers one column.
-          The truncation moves to the span around the text instead, where it
-          still ellipses and no longer clips anything. */}
+      {/* Truncation lives on the span around the title. The title link is the
+          primary target; the row itself is not clickable. */}
       <span
         style={{
           paddingLeft: nested ? ISSUE_ROW_NEST_INDENT : 0,
