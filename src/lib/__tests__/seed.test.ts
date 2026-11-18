@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { visitorExperienceTrend } from "../visitorExperience";
+import { issueCasesFrom } from "../issue-cases";
 import { normalizeState } from "../store/normalize";
 import {
   buildInitialState,
@@ -60,6 +61,18 @@ describe("scenario-rich demo data", () => {
     expect(state.collectionSchedule).toMatchObject({ timeZone: "America/Chicago", overridden: true });
     expect(state.followUps?.some(({ sent }) => sent)).toBe(true);
     expect(state.followUps?.some(({ retryAfterISO }) => !!retryAfterISO)).toBe(true);
+
+    // The case the case-detail UX work needs to see: two pages, no documented
+    // remediation (so Accept is absent but Dismiss must survive), and a
+    // diagnosis long enough to prove the header separates cause from sentence.
+    const video = issueCasesFrom({
+      recs: state.recs,
+      pages: state.pages,
+      caseDecisions: state.caseDecisions,
+    }).find((item) => item.cause === "webflow-video-embed-eager");
+    expect(video).toMatchObject({ state: "new", pageIds: ["home", "ai"] });
+    expect(video?.remediation).toEqual({ steps: [], actionability: "none" });
+    expect(video?.diagnosis).toMatch(/embedded YouTube or Vimeo/);
     // The note must still account for the excluded nights — a demo that shows
     // two missing readings and never says why teaches the reader to distrust
     // the record. Asserted on the claim rather than on the old phrase

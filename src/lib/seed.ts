@@ -30,7 +30,7 @@ import { nativeElementScan, unavailableNativeElementScan } from "./nativeElement
 import { classifyWebflowPerformance } from "./webflowPerformance";
 
 /** Increment when the bundled demo scenarios change materially. */
-export const DEMO_DATA_VERSION = 2;
+export const DEMO_DATA_VERSION = 3;
 
 interface Seed {
   id: string;
@@ -440,7 +440,7 @@ export function buildSeedState(now = new Date()): AppState {
   // the reader has seen and set aside (dismissed), and one that does not apply
   // to this site at all (excluded, with the reason applicability requires).
   page("templates").nativeElementControls = {
-    "webflow-video-embed-eager": { dismissed: true, updatedAt: isoAt(anchor, -2) },
+    "webflow-video-embed-duplicate": { dismissed: true, updatedAt: isoAt(anchor, -2) },
   };
   page("pricing").nativeElementControls = {
     "webflow-image-unresponsive": {
@@ -482,10 +482,31 @@ export function buildSeedState(now = new Date()): AppState {
       aiSummary: "The published page starts loading a 3D scene before it comes into view.",
     },
     {
-      key: "templates:webflow-video-embed-eager", pageId: "templates", pageTitle: "Templates", url: page("templates").url,
-      id: "webflow-video-embed-eager", source: "native-elements", strategies: ["mobile"], sourceRunId: page("templates").history[N - 2].runId,
-      title: "Video players load before anyone plays them", category: "Native elements", webflow: classifyWebflowPerformance("webflow-video-embed-eager"),
+      key: "templates:webflow-video-embed-duplicate", pageId: "templates", pageTitle: "Templates", url: page("templates").url,
+      id: "webflow-video-embed-duplicate", source: "native-elements", strategies: ["mobile"], sourceRunId: page("templates").history[N - 2].runId,
+      title: "The same video player loads twice", category: "Native elements", webflow: classifyWebflowPerformance("webflow-video-embed-duplicate"),
       savings: "Observed", estTime: "1 day", status: "ignored", taskStatus: "todo", added: dateKey(isoAt(anchor, -7)), doneDate: null,
+    },
+    // The no-remediation case, on two pages. `actionability` is deliberately
+    // absent: `fromRec` reads that as "no documented steps", so the detail page
+    // has nothing to accept and must still offer Dismiss. The long diagnosis is
+    // here on purpose, to exercise the header's short-cause plus full-sentence
+    // layout against realistic copy.
+    {
+      key: "home:webflow-video-embed-eager", pageId: "home", pageTitle: "Homepage", url: page("home").url,
+      id: "webflow-video-embed-eager", source: "native-elements", strategies: ["mobile", "desktop"], sourceRunId: page("home").history.at(-1)!.runId,
+      title: "Video players load before anyone plays them", category: "Native elements",
+      webflow: { ...classifyWebflowPerformance("webflow-video-embed-eager"), actionability: undefined },
+      savings: "Observed", estTime: "2 days", status: "inbox", taskStatus: "todo", added: dateKey(isoAt(anchor, -3)), doneDate: null,
+      aiSummary: "Right now, embedded YouTube or Vimeo videos on the homepage start loading all their background code the moment the page opens, even if a visitor never plays them, which slows things down unnecessarily and delays the main thread for every visitor.",
+    },
+    {
+      key: "ai:webflow-video-embed-eager", pageId: "ai", pageTitle: "AI", url: page("ai").url,
+      id: "webflow-video-embed-eager", source: "native-elements", strategies: ["mobile"], sourceRunId: page("ai").history.at(-1)!.runId,
+      title: "Video players load before anyone plays them", category: "Native elements",
+      webflow: { ...classifyWebflowPerformance("webflow-video-embed-eager"), actionability: undefined },
+      savings: "Observed", estTime: "2 days", status: "inbox", taskStatus: "todo", added: dateKey(isoAt(anchor, -3)), doneDate: null,
+      aiSummary: "Embedded video players on the AI page load their background code before anyone plays them.",
     },
     {
       key: "hosting:crux-field-only-inp", pageId: "hosting", pageTitle: "Hosting", url: page("hosting").url,
