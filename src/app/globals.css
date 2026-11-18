@@ -2771,11 +2771,16 @@ textarea:focus-visible,
   text-decoration: none;
 }
 
-/* The stretched hit area. Not a second link — the same one, made row-sized. */
+/* The stretched hit area. Not a second link — the same one, made row-sized.
+   The explicit stacking layer keeps it above the row's static cells in every
+   engine; without it the cells can win hit testing even though the overlay's
+   box covers them. */
 .issue-row__open::after {
   content: "";
   position: absolute;
   inset: 0;
+  z-index: 1;
+  pointer-events: auto;
 }
 
 .issue-row:hover {
@@ -2799,7 +2804,7 @@ textarea:focus-visible,
 .issue-row__page,
 .issue-row .info-tip {
   position: relative;
-  z-index: 1;
+  z-index: 2;
 }
 
 .issue-row__page {
