@@ -12,7 +12,7 @@ import {
   type ExclusionReason,
   type IssueAction,
 } from "@/lib/vocabulary";
-import { remediationKey, type IssueCase } from "@/lib/issue-case";
+import { queueOf, remediationKey, type IssueCase } from "@/lib/issue-case";
 import { CaseDetail } from "@/components/case-detail";
 import { DigestBanner } from "@/components/digest-banner";
 import { DIGEST_DATE_PARAM, DIGEST_LINE_PARAM, digestLineFor, parseDigestArrival } from "@/lib/digest";
@@ -202,6 +202,7 @@ export default function CasePage() {
         pageTitles={pageTitles}
         pagePaths={pagePaths}
         basePath={basePath}
+        backHref={pathFor(`${DESTINATION_PATH.issues}?queue=${queueOf(issue.state)}`)}
         sharedWith={sharedWith}
         supportedActions={CASE_ACTIONS}
         onAction={performAction}

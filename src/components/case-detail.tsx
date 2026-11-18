@@ -82,6 +82,8 @@ export interface CaseDetailProps {
   basePath?: string;
   /** Other cases whose remediation is the same piece of work. */
   sharedWith?: readonly IssueCase[];
+  /** Where the Issues breadcrumb returns, including the case's queue. */
+  backHref?: string;
   /**
    * Fire one registry transition on this case.
    *
@@ -248,6 +250,7 @@ export function CaseDetail({
   impactByPage,
   basePath,
   sharedWith,
+  backHref,
   onAction,
   onDismiss,
   supportedActions,
@@ -344,7 +347,7 @@ export function CaseDetail({
   return (
     <div style={{ minWidth: 0, paddingBottom: 48 }}>
       <ObjectDetailHeader
-        breadcrumb={{ label: DESTINATION_LABEL.issues, href: DESTINATION_PATH.issues }}
+        breadcrumb={{ label: DESTINATION_LABEL.issues, href: backHref ?? DESTINATION_PATH.issues }}
         state={<StatusChip state={issue.state} />}
         stateDate={`Since ${formatDate(enteredAt(issue, issue.state) ?? issue.detectedAt, locale)}`}
         title={causeLineOf(issue)}

@@ -52,6 +52,7 @@ export function DismissAction({ onChoose }: { onChoose: (reason: DismissReason) 
         style={{
           appearance: "none",
           cursor: "pointer",
+          boxSizing: "border-box",
           whiteSpace: "nowrap",
           fontSize: 13,
           fontWeight: 500,
@@ -154,12 +155,15 @@ export function ObjectDetailHeaderActions({
             style={{
               appearance: "none",
               cursor: "pointer",
+              boxSizing: "border-box",
               whiteSpace: "nowrap",
               fontSize: 13,
               fontWeight: primary ? 550 : 500,
               padding: "8px 15px",
               borderRadius: 8,
-              border: primary ? 0 : "1px solid var(--border-strong)",
+              // Same border width as the secondary action, so the two buttons
+              // share a height and sit on one baseline.
+              border: primary ? "1px solid transparent" : "1px solid var(--border-strong)",
               background: primary ? "var(--action-primary-bg)" : "var(--surface-card)",
               color: primary ? "var(--action-primary-text)" : "var(--text-body)",
             }}
