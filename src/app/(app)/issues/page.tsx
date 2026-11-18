@@ -259,7 +259,12 @@ export default function IssuesPage() {
     <div style={{ minWidth: 0 }}>
       <PageHeader title={DESTINATION_LABEL.issues} purpose={purpose} flush />
 
-      <QueueTabs activeQueue={queue} counts={view.counts} hrefFor={(next) => linkTo({ queue: next })} />
+      <QueueTabs
+        activeQueue={queue}
+        counts={view.counts}
+        total={view.cases.length}
+        hrefFor={(next) => linkTo({ queue: next })}
+      />
 
       {hasRows && isFix ? <FixQueue cases={view.inQueue} basePath={basePath} /> : null}
 

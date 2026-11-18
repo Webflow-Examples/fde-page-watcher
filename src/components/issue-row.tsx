@@ -10,6 +10,7 @@ import { PAGE_SCOPE_NAME_LIMIT, SCOPE_SEPARATOR, deviceScopeOf, pageScopeNames, 
 import { causeLineOf, diagnosisLineOf } from "@/lib/case-copy";
 import { CONFIDENCE_LABEL } from "@/lib/vocabulary";
 import { caseHref, pageHref } from "@/lib/paths";
+import { formatDate } from "@/lib/watch-copy";
 import { StatusChip } from "@/components/status-chip";
 import { InfoTip } from "@/components/info-tip";
 
@@ -143,8 +144,13 @@ export function PageScope({
         ? names.map((page, index) => (
             <span key={page.id}>
               {index > 0 ? ", " : null}
-              <Link className="issue-row__page" href={pageHref(basePath, page.id)}>
+              <Link
+                className="issue-row__page"
+                href={pageHref(basePath, page.id)}
+                aria-label={`Open ${page.title} page`}
+              >
                 {page.title}
+                <span aria-hidden="true" style={{ marginLeft: 2, fontSize: 10 }}>↗</span>
               </Link>
             </span>
           ))
@@ -229,25 +235,39 @@ export function IssueRow({ issue, basePath, pageTitles, nested = false }: IssueR
           cell — which is a whole-row target that only covers one column.
           The truncation moves to the span around the text instead, where it
           still ellipses and no longer clips anything. */}
-      <span style={{ minWidth: 0, display: "flex", alignItems: "center", gap: 7 }}>
+      <span style={{ minWidth: 0, display: "flex", alignItems: "flex-start", gap: 7 }}>
         {hasSecondLayer ? (
           <InfoTip label={cause} text={diagnosis} />
         ) : (
           <span aria-hidden="true" className="issue-row__tip-spacer" />
         )}
-        <Link
-          className="issue-row__open"
-          href={caseHref(basePath, issue.id)}
-          style={{ minWidth: 0, fontSize: 13, fontWeight: 500 }}
-          // The tooltip is the VISIBLE text, not the diagnosis behind it.
-          // `title` becomes the accessible name, so a diagnosis here would
-          // announce and voice-target the link as something other than what
-          // it reads as on screen. The diagnosis has a disclosure now; that
-          // is where it belongs.
-          title={cause}
-        >
-          <span style={{ ...TRUNCATE_CELL, display: "block" }}>{cause}</span>
-        </Link>
+        <span style={{ minWidth: 0, flex: "1 1 auto", display: "flex", flexDirection: "column", gap: 1 }}>
+          <Link
+            className="issue-row__open"
+            href={caseHref(basePath, issue.id)}
+            style={{ minWidth: 0, fontSize: 13, fontWeight: 500 }}
+            // The tooltip is the VISIBLE text, not the diagnosis behind it.
+            // `title` becomes the accessible name, so a diagnosis here would
+            // announce and voice-target the link as something other than what
+            // it reads as on screen. The diagnosis has a disclosure now; that
+            // is where it belongs.
+            title={cause}
+          >
+            <span style={{ ...TRUNCATE_CELL, display: "block" }}>{cause}</span>
+          </Link>
+          {/* Newest and What changed were sorts without a visible date. */}
+          <span
+            style={{
+              fontSize: 12,
+              color: "var(--text-muted)",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            Detected {formatDate(issue.detectedAt)}
+          </span>
+        </span>
       </span>
 
       <span style={{ ...TRUNCATE_CELL, fontSize: 12.5, color: "var(--text-muted)" }}>
@@ -263,8 +283,12 @@ export function IssueRow({ issue, basePath, pageTitles, nested = false }: IssueR
         {CONFIDENCE_LABEL[issue.confidence]}
       </span>
 
-      <span style={{ ...NUMERIC_CELL, fontSize: 12.5, color: impact.measured ? "var(--magnitude-value)" : "var(--text-muted)" }}>
-        {impact.text}
+      <span
+        style={{ ...NUMERIC_CELL, fontSize: 12.5, color: impact.measured ? "var(--magnitude-value)" : "var(--text-muted)" }}
+        title={impact.measured ? undefined : "Not measured"}
+        aria-label={impact.measured ? undefined : "Not measured"}
+      >
+        {impact.measured ? impact.text : "—"}
       </span>
 
       <span style={{ ...NUMERIC_CELL, fontSize: 12.5, color: "var(--text-muted)" }}>

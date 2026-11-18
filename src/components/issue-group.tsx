@@ -80,9 +80,15 @@ export function IssueGroup({ group, basePath, pageTitles, nested = false }: Issu
         <span style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
           <span style={{ fontSize: 13, fontWeight: 600 }}>
             One fix for {group.cases.length} cases
+            {steps.length > 0 ? ` · ${steps.length} steps` : ""}
           </span>
           <span
-            style={{ ...TRUNCATE_CELL, display: "block", fontSize: 12, color: "var(--text-muted)" }}
+            style={{
+              fontSize: 12,
+              lineHeight: 1.35,
+              color: "var(--text-muted)",
+              whiteSpace: "normal",
+            }}
             title={fix}
           >
             {stepPrefix}{fix}
@@ -110,8 +116,12 @@ export function IssueGroup({ group, basePath, pageTitles, nested = false }: Issu
             is one of the numbers on the rows below, so the two reconcile
             (rule 19). The effort is the single shared one — the fix is carried
             out once. */}
-        <span style={{ ...NUMERIC_CELL, fontSize: 12.5, fontWeight: 600, color: impact.measured ? "var(--magnitude-value)" : "var(--text-muted)" }}>
-          {impact.text}
+        <span
+          style={{ ...NUMERIC_CELL, fontSize: 12.5, fontWeight: 600, color: impact.measured ? "var(--magnitude-value)" : "var(--text-muted)" }}
+          title={impact.measured ? undefined : "Not measured"}
+          aria-label={impact.measured ? undefined : "Not measured"}
+        >
+          {impact.measured ? impact.text : "—"}
         </span>
 
         <span style={{ ...NUMERIC_CELL, fontSize: 12.5, color: "var(--text-muted)" }}>

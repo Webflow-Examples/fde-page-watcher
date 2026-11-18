@@ -10,9 +10,10 @@ import { TabStrip } from "@/components/tab-strip";
  * arrive already derived from `queueOf`, which is the only thing in the app
  * that knows where a case belongs.
  *
- * Show all carries no badge, and cannot: it is the unfiltered view rather than
- * a queue (registry rule 1), so the selector that produces these counts never
- * produces one for it. There is no branch here to get wrong.
+ * Show all carries the total case count, not a queue count. It is the
+ * unfiltered view rather than a queue (registry rule 1), so the selector that
+ * produces the queue counts never produces one for it; the total arrives
+ * separately and is labelled as a total.
  *
  * The strip itself is `<TabStrip>`, shared with the pages destination's view
  * switch. What stays here is what is actually about queues.
@@ -22,6 +23,8 @@ export interface QueueTabsProps {
   activeQueue: Queue;
   /** Counted queues only. A queue absent from this map shows no badge. */
   counts: Partial<Record<Queue, number>>;
+  /** Every case, including the settled ones Show all surfaces. */
+  total: number;
   hrefFor: (queue: Queue) => string;
 }
 
@@ -45,13 +48,15 @@ function Badge({ count, active }: { count: number; active: boolean }) {
   );
 }
 
-export function QueueTabs({ activeQueue, counts, hrefFor }: QueueTabsProps) {
+export function QueueTabs({ activeQueue, counts, total, hrefFor }: QueueTabsProps) {
   return (
     <TabStrip
       ariaLabel="Queues"
       tabs={QUEUES.map((queue) => {
         const active = queue === activeQueue;
-        const count = COUNTED_QUEUES.includes(queue) ? counts[queue] : undefined;
+        const count = queue === "show_all"
+          ? total
+          : COUNTED_QUEUES.includes(queue) ? counts[queue] : undefined;
         return {
           key: queue,
           label: QUEUE_LABEL[queue],
