@@ -1,6 +1,4 @@
-import Link from "next/link";
 import type { RemediationGroup } from "@/lib/issue-case";
-import { caseHref } from "@/lib/paths";
 import { CONFIDENCE_LABEL } from "@/lib/vocabulary";
 import { StatusChip } from "@/components/status-chip";
 import {
@@ -50,12 +48,16 @@ export function IssueGroup({ group, basePath, pageTitles, nested = false }: Issu
   const impact = formatGroupImpact(group.impactMs);
   // The remediation's first step, which is what the shared fix starts with. It
   // is data, from the case; nothing is authored here.
-  const fix = group.remediation.steps.find((step) => step.trim() !== "") ?? group.primary.title;
+  const steps = group.remediation.steps.map((step) => step.trim()).filter(Boolean);
+  const fix = steps[0] ?? group.primary.title;
+  // The first step on its own reads like an instruction with no subject. Naming
+  // its position in the shared remediation makes it a step of this group.
+  const stepPrefix = steps.length > 1 ? `Step 1 of ${steps.length}: ` : "Shared step: ";
 
   return (
-    <section>
+    <section aria-label={`One fix for ${group.cases.length} cases`}>
       <div
-        className="issue-row issue-group__header"
+        className="issue-group__header"
         style={{
           display: "grid",
           gridTemplateColumns: ISSUE_ROW_COLUMNS,
@@ -72,25 +74,25 @@ export function IssueGroup({ group, basePath, pageTitles, nested = false }: Issu
           <StatusChip state={group.state} />
         </span>
 
-        {/* A group is not a case, so there is no group page to open. The
-            header opens its worst member instead, which is the case whose
-            reading the header is summarising. The stretched hit area is the
-            same mechanism the rows use, so the whole header is one target and
-            the page links above keep their own. */}
-        <Link
-          className="issue-row__open"
-          href={caseHref(basePath, group.primary.id)}
-          style={{ minWidth: 0, fontSize: 13, fontWeight: 600 }}
-          title={fix}
-        >
-          <span style={{ ...TRUNCATE_CELL, display: "block" }}>{fix}</span>
-        </Link>
+        {/* A group is not a case, so the header is not a link. It names the
+            relationship — two findings, one fix — and shows the first step of
+            that fix in context. */}
+        <span style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
+          <span style={{ fontSize: 13, fontWeight: 600 }}>
+            One fix for {group.cases.length} cases
+          </span>
+          <span
+            style={{ ...TRUNCATE_CELL, display: "block", fontSize: 12, color: "var(--text-muted)" }}
+            title={fix}
+          >
+            {stepPrefix}{fix}
+          </span>
+        </span>
 
         {/* The pages link here for the same reason they do on a row: this is
             the same column, and a header that names a page the reader cannot
             open teaches them the column is not clickable. */}
         <span style={{ ...TRUNCATE_CELL, fontSize: 12.5, color: "var(--text-muted)" }}>
-          {`${group.cases.length} cases · `}
           <PageScope
             pageIds={group.pageIds}
             strategies={group.primary.strategies}

@@ -2750,9 +2750,20 @@ textarea:focus-visible,
   color: var(--text-body);
 }
 
-/* A member row inside a remediation group. */
+/* A member row inside a remediation group. The rail is what says the rows
+   below the header belong to it; the background alone is too quiet. */
 .issue-row--nested {
   background: var(--surface-page);
+}
+
+.issue-row--nested::before {
+  content: "";
+  position: absolute;
+  left: 22px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--border-hairline);
 }
 
 .issue-row__open {
