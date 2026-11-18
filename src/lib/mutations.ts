@@ -21,6 +21,7 @@ import { narrowAgentCheckExclusionReason } from "./settings-exclusions";
 import { type ExclusionReason } from "./vocabulary";
 import { caseDecisionFrom, type CaseDecisionInput } from "./case-decisions";
 import { caseTransitionFrom, type CaseTransitionInput } from "./case-transitions";
+import { casePlanFrom, type CasePlanInput } from "./case-plans";
 import type { Caller } from "./caller";
 import { alertWebhookUrlIsValid } from "./webhook";
 import { COLLECTION_JOB_STALE_AFTER_MS, collectionJobIsStale } from "./collectionRetry";
@@ -220,6 +221,19 @@ export async function recordCaseTransition(
   const transition = caseTransitionFrom(input, { at: now.toISOString(), by });
   return withState((state) => {
     state.caseTransitions = [...(state.caseTransitions ?? []), transition];
+  }, dataStore);
+}
+
+/** Append one user-authored remediation plan for a case that had none. */
+export async function recordCasePlan(
+  input: CasePlanInput,
+  by: Caller,
+  dataStore: DataStore = getStore(),
+  now: Date = new Date(),
+): Promise<AppState> {
+  const plan = casePlanFrom(input, { at: now.toISOString(), by });
+  return withState((state) => {
+    state.casePlans = [...(state.casePlans ?? []), plan];
   }, dataStore);
 }
 

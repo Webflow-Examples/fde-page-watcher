@@ -85,6 +85,7 @@ export function Sidebar() {
     pages,
     caseDecisions,
     caseTransitions,
+    casePlans,
     pathFor,
     collectionSchedule,
     projects,
@@ -99,8 +100,8 @@ export function Sidebar() {
   const [devEmail, setDevEmail] = useState(user.email);
   const [signingOut, setSigningOut] = useState(false);
   const decisionCount = useMemo(
-    () => casesInQueue(issueCasesFrom({ recs, pages, caseDecisions, caseTransitions }), "decide").length,
-    [recs, pages, caseDecisions, caseTransitions],
+    () => casesInQueue(issueCasesFrom({ recs, pages, caseDecisions, caseTransitions, casePlans }), "decide").length,
+    [recs, pages, caseDecisions, caseTransitions, casePlans],
   );
   const schedule = normalizeCollectionSchedule(collectionSchedule);
   const zoneLabel = schedule.timeZone.replaceAll("_", " ");

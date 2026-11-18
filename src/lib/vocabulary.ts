@@ -102,11 +102,12 @@ export const WORK_STATE_QUEUE: Record<WorkState, Queue> = {
 
 /* ── Action — the verbs that move an issue between states ───────────────── */
 
-export const ISSUE_ACTIONS = ["accept", "dismiss", "start", "mark_fixed", "resolve", "reopen"] as const;
+export const ISSUE_ACTIONS = ["accept", "take_on", "dismiss", "start", "mark_fixed", "resolve", "reopen"] as const;
 export type IssueAction = (typeof ISSUE_ACTIONS)[number];
 
 export const ISSUE_ACTION_LABEL: Record<IssueAction, string> = {
   accept: "Accept",
+  take_on: "Take on",
   dismiss: "Dismiss",
   start: "Start",
   mark_fixed: "Mark fixed",
@@ -132,6 +133,9 @@ export interface IssueTransition {
 
 export const ISSUE_TRANSITIONS: Record<IssueAction, IssueTransition> = {
   accept: { from: ["new", "reopened"], to: "todo", actor: ["person"], requires: null, requiresReason: false },
+  // The undocumented path. It commits to working out the fix, not to a plan
+  // nobody has written yet, so it does not require remediation steps.
+  take_on: { from: ["new", "reopened"], to: "todo", actor: ["person"], requires: null, requiresReason: false },
   dismiss: { from: ["new", "reopened"], to: "dismissed", actor: ["person"], requires: "reason", requiresReason: true },
   start: { from: ["todo"], to: "in_progress", actor: ["person"], requires: null, requiresReason: false },
   // Schedules the three checkpoints. The checkpoint concept says what reads them.

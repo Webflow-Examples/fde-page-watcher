@@ -155,6 +155,16 @@
           "to": "todo"
         },
         {
+          "key": "take_on",
+          "from": [
+            "new",
+            "reopened"
+          ],
+          "to": "todo",
+          "actor": "person",
+          "label": "Take on"
+        },
+        {
           "key": "dismiss",
           "label": "Dismiss",
           "actor": "person",

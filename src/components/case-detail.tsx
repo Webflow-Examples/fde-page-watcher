@@ -95,6 +95,8 @@ export interface CaseDetailProps {
   onAction?: (action: IssueAction, issue: IssueCase) => void;
   /** Dismiss is separate because the registry requires a reason. */
   onDismiss?: (reason: DismissReason) => void;
+  /** Save steps for a case whose source documented no remediation. */
+  onPlanChange?: (steps: string[]) => void;
   /**
    * The verbs this caller can persist. The header renders only these, so a
    * button whose decision has nowhere to go is never shown.
@@ -120,6 +122,58 @@ export interface CaseDetailProps {
   appUrl?: string;
   now?: Date;
   locale?: string;
+}
+
+function PlanEditor({ onSave }: { onSave: (steps: string[]) => void }) {
+  const [value, setValue] = useState("");
+  const steps = value.split(/\r?\n/).map((step) => step.trim()).filter(Boolean);
+  return (
+    <div style={{ maxWidth: "72ch" }}>
+      <p style={{ margin: "0 0 8px", fontSize: 12.5, lineHeight: 1.5, color: "var(--text-muted)" }}>
+        No remediation steps are documented. Write one step per line, then save.
+      </p>
+      <textarea
+        aria-label="Remediation steps, one per line"
+        value={value}
+        onChange={(event) => setValue(event.target.value)}
+        rows={3}
+        placeholder="Open the page settings and…"
+        style={{
+          boxSizing: "border-box",
+          width: "100%",
+          padding: "9px 10px",
+          borderRadius: 8,
+          border: "1px solid var(--border-strong)",
+          background: "var(--surface-card)",
+          color: "var(--text-body)",
+          font: "inherit",
+          fontSize: 13,
+          lineHeight: 1.5,
+          resize: "vertical",
+        }}
+      />
+      <button
+        type="button"
+        disabled={steps.length === 0}
+        onClick={() => onSave(steps)}
+        style={{
+          appearance: "none",
+          cursor: steps.length === 0 ? "not-allowed" : "pointer",
+          marginTop: 8,
+          padding: "7px 12px",
+          borderRadius: 7,
+          border: "1px solid var(--border-strong)",
+          background: "var(--action-primary-bg)",
+          color: "var(--action-primary-text)",
+          fontSize: 12.5,
+          fontWeight: 550,
+          opacity: steps.length === 0 ? 0.55 : 1,
+        }}
+      >
+        Save plan
+      </button>
+    </div>
+  );
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -253,6 +307,7 @@ export function CaseDetail({
   backHref,
   onAction,
   onDismiss,
+  onPlanChange,
   supportedActions,
   onExclude,
   onInclude,
@@ -278,6 +333,8 @@ export function CaseDetail({
   // there is nothing to estimate, so the stale source value would contradict
   // the note beside it.
   const hasEffortBasis = issue.remediation.steps.length > 0;
+  const hasPlan = hasEffortBasis;
+  const isPlatform = issue.remediation.actionability === "platform";
   // Accept is stored against the remediation, so every case sharing it moves.
   const sharedCaseCount = 1 + (sharedWith?.length ?? 0);
 
@@ -294,9 +351,14 @@ export function CaseDetail({
     const primary = primaryActionFor(issue.state);
     if (!primary) return [];
     const ordered = [primary, ...personActionsFor(issue.state).filter((action) => action !== primary)];
-    const allowed = supportedActions
+    const allowed = (supportedActions
       ? ordered.filter((action) => supportedActions.includes(action))
-      : ordered;
+      : ordered
+    ).filter((action) => {
+      if (action === "accept") return hasPlan && !isPlatform;
+      if (action === "take_on") return !hasPlan && !isPlatform;
+      return true;
+    });
     return allowed.map((action) => ({
       action,
       label: action === "accept"
@@ -304,7 +366,7 @@ export function CaseDetail({
         : ISSUE_ACTION_LABEL[action],
       onClick: onAction ? () => onAction(action, issue) : undefined,
     }));
-  }, [included.length, issue, onAction, sharedCaseCount, supportedActions]);
+  }, [hasPlan, included.length, isPlatform, issue, onAction, sharedCaseCount, supportedActions]);
 
   const canDismiss = Boolean(onDismiss) && personActionsFor(issue.state).includes("dismiss");
   const headerActions = actions.filter((entry) => entry.action !== "dismiss" && entry.onClick);
@@ -317,13 +379,13 @@ export function CaseDetail({
    * describing a button that was never going to be there, which is a different
    * and untrue explanation.
    */
-  const noAction = actions[0]?.action !== "accept"
-    ? null
-    : issue.remediation.actionability === "none"
-      ? NO_ACTION_REASON.none
-      : issue.remediation.actionability === "platform"
-        ? NO_ACTION_REASON.platform
-        : null;
+  const noAction = isPlatform
+    ? NO_ACTION_REASON.platform
+    : !hasPlan
+      ? issue.state === "new" || issue.state === "reopened"
+        ? NO_ACTION_REASON.none
+        : NO_ACTION_REASON.no_plan
+      : null;
 
   const sources = issue.evidence.length;
   const conflicting = issue.confidence === "unclear" && sources >= 2;
@@ -373,12 +435,7 @@ export function CaseDetail({
                 {noAction}
               </p>
             ) : null}
-            <ObjectDetailHeaderActions
-              actions={noAction
-                ? headerActions.filter((entry) => entry.action !== "accept")
-                : headerActions}
-              quiet={Boolean(noAction)}
-            />
+            <ObjectDetailHeaderActions actions={headerActions} quiet={isPlatform} />
             {canDismiss ? <DismissAction onChoose={onDismiss!} /> : null}
             {/* A decision was taken about this remediation and no longer applies
                 to it, because a reclassification changed the remediation's key
@@ -420,27 +477,31 @@ export function CaseDetail({
       />
 
       <div style={{ padding: "0 40px" }}>
-        {/* The steps Accept commits to. The list can only show the first one,
-            so this is where the other two are actually readable. */}
-        {issue.remediation.steps.length > 0 ? (
+        {/* The steps Accept commits to. A case with no documented steps gets
+            an editor here, so Take on is not a dead end. */}
+        {issue.remediation.steps.length > 0 || (onPlanChange && !isPlatform) ? (
           <Section title="How to fix">
-            <ol
-              style={{
-                margin: 0,
-                paddingLeft: 20,
-                display: "flex",
-                flexDirection: "column",
-                gap: 8,
-                maxWidth: "72ch",
-                fontSize: 13,
-                lineHeight: 1.6,
-                color: "var(--text-body)",
-              }}
-            >
-              {issue.remediation.steps.map((step, index) => (
-                <li key={`${index}-${step}`}>{step}</li>
-              ))}
-            </ol>
+            {issue.remediation.steps.length > 0 ? (
+              <ol
+                style={{
+                  margin: 0,
+                  paddingLeft: 20,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 8,
+                  maxWidth: "72ch",
+                  fontSize: 13,
+                  lineHeight: 1.6,
+                  color: "var(--text-body)",
+                }}
+              >
+                {issue.remediation.steps.map((step, index) => (
+                  <li key={`${index}-${step}`}>{step}</li>
+                ))}
+              </ol>
+            ) : (
+              <PlanEditor onSave={onPlanChange!} />
+            )}
             {sharedWith && sharedWith.length > 0 ? (
               <p style={{ margin: "12px 0 0", fontSize: 12.5, color: "var(--text-muted)", maxWidth: "72ch" }}>
                 This fix also covers{" "}

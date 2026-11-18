@@ -50,7 +50,7 @@ import { casePath } from "@/lib/paths";
  * the case's cause. Dismiss needs a reason, so it has its own handler and
  * picker. Every verb here has a log that can keep it.
  */
-const CASE_ACTIONS: readonly IssueAction[] = ["accept", "start", "mark_fixed", "reopen"];
+const CASE_ACTIONS: readonly IssueAction[] = ["accept", "take_on", "start", "mark_fixed", "reopen"];
 
 export default function CasePage() {
   const params = useParams<{ id: string }>();
@@ -63,6 +63,7 @@ export default function CasePage() {
     performanceThresholds,
     recordCaseDecision,
     recordCaseTransition,
+    recordCasePlan,
     basePath,
   } = useStore();
   const view = useIssuesView("show_all", "impact");
@@ -151,6 +152,7 @@ export default function CasePage() {
         case "accept":
           recordCaseDecision({ decision: "accept", remediationKey: remediationKey(issue) });
           return;
+        case "take_on":
         case "start":
         case "mark_fixed":
         case "reopen":
@@ -169,6 +171,14 @@ export default function CasePage() {
       recordCaseDecision({ decision: "dismiss", remediationKey: remediationKey(issue), reason });
     },
     [issue, recordCaseDecision],
+  );
+
+  const savePlan = useCallback(
+    (steps: string[]) => {
+      if (!issue) return;
+      recordCasePlan({ caseKey: issue.cause, steps });
+    },
+    [issue, recordCasePlan],
   );
 
   if (!issue) {
@@ -207,6 +217,7 @@ export default function CasePage() {
         supportedActions={CASE_ACTIONS}
         onAction={performAction}
         onDismiss={dismissCase}
+        onPlanChange={savePlan}
         onExclude={excludePageFromCase}
         onInclude={includePageInCase}
       />

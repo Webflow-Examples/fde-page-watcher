@@ -112,5 +112,6 @@ export function normalizeState(state: AppState): AppState {
   // a decision a person made, and the remediation can come back.
   state.caseDecisions = state.caseDecisions ?? [];
   state.caseTransitions = state.caseTransitions ?? [];
+  state.casePlans = state.casePlans ?? [];
   return state;
 }

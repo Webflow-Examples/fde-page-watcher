@@ -306,7 +306,7 @@ export interface CaseDecisionRecord {
 }
 
 /** The case transitions a person can fire, in the registry's words. */
-export type CaseTransitionKind = "start" | "mark_fixed" | "reopen";
+export type CaseTransitionKind = "take_on" | "start" | "mark_fixed" | "reopen";
 
 /**
  * One lifecycle transition somebody took on a case, as it is stored.
@@ -319,6 +319,21 @@ export type CaseTransitionKind = "start" | "mark_fixed" | "reopen";
 export interface CaseTransitionRecord {
   caseKey: string;
   action: CaseTransitionKind;
+  /** ISO. Also the entry's place in the log, which is kept in append order. */
+  at: string;
+  by: CaseDecisionCaller;
+}
+
+/**
+ * One person-authored remediation plan for a case that had no documented steps.
+ *
+ * Append-only; the latest entry for a cause wins. Plans key on the same cause
+ * as transitions, so they survive page membership changes and can be replaced
+ * without editing history.
+ */
+export interface CasePlanRecord {
+  caseKey: string;
+  steps: string[];
   /** ISO. Also the entry's place in the log, which is kept in append order. */
   at: string;
   by: CaseDecisionCaller;
@@ -920,6 +935,8 @@ export interface AppState {
    * log.
    */
   caseTransitions?: CaseTransitionRecord[];
+  /** User-authored remediation plans, oldest first. */
+  casePlans?: CasePlanRecord[];
   /** Workspace-owned HTTPS endpoint for confirmed performance-regression alerts. */
   alertWebhookUrl?: string | null;
   /** Recent scheduled digest claims/deliveries, retained for idempotency and retries. */

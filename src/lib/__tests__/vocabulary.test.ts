@@ -559,9 +559,9 @@ describe("vocabulary helpers", () => {
     expect([...statesInQueue("show_all")]).toEqual([...WORK_STATES]);
   });
 
-  it("offers Accept and Dismiss on the states Decide holds", () => {
+  it("offers Accept, Take on and Dismiss on the states Decide holds", () => {
     for (const state of statesInQueue("decide")) {
-      expect([...actionsFromState(state)]).toEqual(["accept", "dismiss"]);
+      expect([...actionsFromState(state)]).toEqual(["accept", "take_on", "dismiss"]);
     }
     expect([...actionsFromState("todo")]).toEqual(["start"]);
     expect([...actionsFromState("in_progress")]).toEqual(["mark_fixed"]);

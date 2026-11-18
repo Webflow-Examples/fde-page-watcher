@@ -16,6 +16,7 @@ import type { CaseTransitionKind, CaseTransitionRecord } from "./types";
  */
 
 const DECLARED: Record<CaseTransitionKind, true> = {
+  take_on: true,
   start: true,
   mark_fixed: true,
   reopen: true,

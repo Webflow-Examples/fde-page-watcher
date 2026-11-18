@@ -51,8 +51,11 @@ export interface FixRowProps {
 
 export function FixRow({ issue, basePath, pageTitles, now }: FixRowProps) {
   const inProgress = issue.state === "in_progress";
+  const noPlan = issue.remediation.steps.length === 0;
   const stale = inProgress && startedLongAgo(issue.startedAt, now ?? new Date());
-  const meta = inProgress ? (
+  const meta = noPlan ? (
+    <span>Plan needed</span>
+  ) : inProgress ? (
     issue.owner ? (
       <span style={{ display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0 }}>
         <OwnerAvatar name={issue.owner} />

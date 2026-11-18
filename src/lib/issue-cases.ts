@@ -13,7 +13,8 @@ import {
 } from "./issue-case";
 import { decisionOf, type CaseDecision, type CaseDecisionRecord } from "./case-decisions";
 import { applyCaseTransition, transitionOf } from "./case-transitions";
-import type { AppState, CaseTransitionRecord, WatchPage } from "./types";
+import { planOf } from "./case-plans";
+import type { AppState, CasePlanRecord, CaseTransitionRecord, WatchPage } from "./types";
 
 /**
  * The canonical case list, derived from stored records.
@@ -240,12 +241,30 @@ function applyCaseEvents(
   });
 }
 
+/** Apply the latest user-authored plan for each cause before anything else. */
+function applyCasePlans(
+  cases: readonly IssueCase[],
+  plans: readonly CasePlanRecord[],
+): IssueCase[] {
+  if (plans.length === 0) return [...cases];
+  const latest = new Map<string, string[]>();
+  for (const record of plans) {
+    const plan = planOf(record);
+    if (plan) latest.set(plan.caseKey, plan.steps);
+  }
+  return cases.map((issue) => {
+    const steps = latest.get(issue.cause);
+    return steps ? { ...issue, remediation: { ...issue.remediation, steps } } : issue;
+  });
+}
+
 export function issueCasesFrom(
-  state: Pick<AppState, "recs" | "pages"> & Partial<Pick<AppState, "caseDecisions" | "caseTransitions">>,
+  state: Pick<AppState, "recs" | "pages"> & Partial<Pick<AppState, "caseDecisions" | "caseTransitions" | "casePlans">>,
 ): IssueCase[] {
   const at = lastRunAtOf(state.pages);
   const options = at ? { at, referenceYear: Number(at.slice(0, 4)) } : {};
   const grouped = groupByCause(state.recs.map((rec) => fromRec(rec, options)), options);
+  const planned = applyCasePlans(grouped, state.casePlans ?? []);
   const decisions = state.caseDecisions ?? [];
   const transitions = state.caseTransitions ?? [];
   const pageLabels = pageLabelsOf(state.pages);
@@ -253,6 +272,6 @@ export function issueCasesFrom(
   // nothing from the other grain to interleave it with. Once both logs exist,
   // timestamp order is the only common ordering, and it is what makes a second
   // accept after a reopen apply.
-  if (transitions.length === 0) return applyCaseDecisions(grouped, decisions, pageLabels);
-  return applyCaseEvents(grouped, decisions, transitions, pageLabels);
+  if (transitions.length === 0) return applyCaseDecisions(planned, decisions, pageLabels);
+  return applyCaseEvents(planned, decisions, transitions, pageLabels);
 }

@@ -417,12 +417,15 @@ describe("guards", () => {
     expect(() => accept(issue, { by: PERSON, at: AT })).toThrow(/no remediation steps/);
   });
 
-  it("closes every path to the fix queue for a case with no steps", () => {
-    // Accept is the only way in, per the registry, so guarding it is sufficient.
+  it("keeps Accept closed to a case with no steps and offers Take on instead", () => {
     const waysToTodo = registryActions.filter((action) => action.to === "todo").map((action) => action.key);
-    expect(waysToTodo).toEqual(["accept"]);
+    expect(waysToTodo).toEqual(["accept", "take_on"]);
 
     const stepless = makeCase({ remediation: { steps: [], actionability: "none" } });
+    expect(() => applyAction(stepless, "accept", { by: PERSON, at: AT })).toThrow(/no remediation steps/);
+    expect(applyAction(stepless, "take_on", { by: PERSON, at: AT }).state).toBe("todo");
+
+    // Take on is the only path into Fix for a case without a plan.
     for (const state of ISSUE_STATES) {
       for (const action of registryActions) {
         try {
@@ -431,7 +434,7 @@ describe("guards", () => {
             at: AT,
             reason: DISMISS_REASONS[0],
           });
-          expect(moved.state).not.toBe("todo");
+          if (action.key !== "take_on") expect(moved.state).not.toBe("todo");
         } catch (error) {
           expect(error).toBeInstanceOf(IssueCaseError);
         }

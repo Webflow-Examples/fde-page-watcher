@@ -136,7 +136,8 @@ export function evidenceConflict(a: string, b: string): string {
  * that silently renders no button and no explanation.
  */
 export const NO_ACTION_REASON = {
-  none: "No remediation is documented for this yet, so there is nothing to accept.",
+  none: "No remediation is documented for this yet. Write a plan below, take it on, or dismiss it.",
+  no_plan: "This case was taken on without a remediation plan. Write one below before marking it fixed.",
   platform: "Webflow owns this one. It is shown so the reading is not hidden from you.",
 } as const;
 
