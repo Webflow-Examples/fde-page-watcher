@@ -283,8 +283,10 @@ export function IssueRow({ issue, basePath, pageTitles, nested = false, dateMode
       <span style={{ ...TRUNCATE_CELL, display: "block", fontSize: 12.5, color: "var(--text-muted)" }}>
         <span style={{ display: "block" }}>
           {formatDate(
-            dateMode === "settled" || dateMode === "fix"
+            dateMode === "settled"
               ? enteredAt(issue, issue.state)
+              : dateMode === "fix"
+                ? enteredAt(issue, "todo")
               : dateMode === "watch"
                 ? enteredAt(issue, "fixed") ?? issue.detectedAt
                 : issue.detectedAt,

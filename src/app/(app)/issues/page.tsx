@@ -167,7 +167,7 @@ export default function IssuesPage() {
 
       {hasRows && !ownQueue ? (
         <>
-          <CaseColumnHeaders sort={sort} direction={direction} hrefFor={linkTo} />
+          <CaseColumnHeaders sort={sort} direction={direction} hrefFor={linkTo} dateLabel="Detected" />
 
           <div style={{ borderBottom: "1px solid var(--border-hairline)" }}>
             {view.groups.map((group) => (

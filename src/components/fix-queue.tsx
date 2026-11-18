@@ -56,7 +56,7 @@ export function FixQueue({ cases, basePath, pageTitles, now }: FixQueueProps) {
         {FIX_QUEUE_NOTE}
       </p>
 
-      <CaseColumnHeaders />
+      <CaseColumnHeaders dateLabel="Accepted" />
 
       <div style={{ borderBottom: "1px solid var(--border-hairline)" }}>
         {groups.map((group) => (

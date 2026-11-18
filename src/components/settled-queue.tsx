@@ -35,7 +35,7 @@ export function SettledQueue({ cases, basePath, pageTitles }: SettledQueueProps)
       >
         Resolved and dismissed cases. Nothing here is waiting on you.
       </p>
-      <CaseColumnHeaders />
+      <CaseColumnHeaders dateLabel="Settled" />
 
       <div style={{ borderBottom: "1px solid var(--border-hairline)" }}>
         {ordered.map((issue) => (

@@ -52,7 +52,7 @@ export function WatchQueue({ cases, basePath, pageTitles, onReopen, onRecheck, n
         {watchIntro(ordered.length)}
       </p>
 
-      <CaseColumnHeaders />
+      <CaseColumnHeaders dateLabel="Fixed" />
 
       <div style={{ borderBottom: "1px solid var(--border-hairline)" }}>
         {ordered.map((issue) => (

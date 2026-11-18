@@ -31,9 +31,11 @@ export interface CaseColumnHeadersProps {
   sort?: IssueSort;
   direction?: SortDirection;
   hrefFor?: (next: { sort: IssueSort; dir?: SortDirection }) => string;
+  /** The queue's word for the Date column: Detected, Accepted, Fixed, Settled. */
+  dateLabel?: string;
 }
 
-export function CaseColumnHeaders({ sort, direction, hrefFor }: CaseColumnHeadersProps) {
+export function CaseColumnHeaders({ sort, direction, hrefFor, dateLabel }: CaseColumnHeadersProps) {
   return (
     <div
       style={{
@@ -53,7 +55,7 @@ export function CaseColumnHeaders({ sort, direction, hrefFor }: CaseColumnHeader
     >
       {CASE_COLUMNS.map((key) => {
         const numeric = key === "impact" || key === "effort";
-        const label = ISSUE_SORT_LABEL[key];
+        const label = key === "date" && dateLabel ? dateLabel : ISSUE_SORT_LABEL[key];
         const style = {
           display: "flex",
           alignItems: "center",
