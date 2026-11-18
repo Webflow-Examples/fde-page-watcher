@@ -387,6 +387,30 @@ export function CaseDetail({
       />
 
       <div style={{ padding: "0 40px" }}>
+        {/* The steps Accept commits to. The list can only show the first one,
+            so this is where the other two are actually readable. */}
+        {issue.remediation.steps.length > 0 ? (
+          <Section title="How to fix">
+            <ol
+              style={{
+                margin: 0,
+                paddingLeft: 20,
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+                maxWidth: "72ch",
+                fontSize: 13,
+                lineHeight: 1.6,
+                color: "var(--text-body)",
+              }}
+            >
+              {issue.remediation.steps.map((step, index) => (
+                <li key={`${index}-${step}`}>{step}</li>
+              ))}
+            </ol>
+          </Section>
+        ) : null}
+
         {/* `CasePages` carries its own heading and count, because the count
             belongs beside the title rather than under it. */}
         <div style={{ marginTop: 26 }}>
