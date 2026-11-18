@@ -85,6 +85,20 @@ describe("the case transition log", () => {
     expect(other.state).toBe("todo");
   });
 
+  it("replays a second accept after a reopen", () => {
+    const { state, accept } = seed();
+    const secondAccept: CaseDecisionRecord = {
+      ...accept[0],
+      at: "2026-08-23T12:00:00.000Z",
+    };
+    const reopened = derive(state, [...accept, secondAccept], [
+      transition("start"),
+      transition("mark_fixed", LATER),
+      transition("reopen", "2026-08-22T12:00:00.000Z"),
+    ]);
+    expect(reopened.state).toBe("todo");
+  });
+
   it("refuses an entry without an action or a case key", () => {
     expect(() => caseTransitionFrom({ caseKey: CAUSE }, { at: AT, by: PERSON })).toThrow(/action/);
     expect(() => caseTransitionFrom({ action: "start" }, { at: AT, by: PERSON })).toThrow(/caseKey/);

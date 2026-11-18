@@ -200,26 +200,43 @@ export function applyCaseDecisions(
  * keeping the two apart is what lets a decision survive a run that rewrote
  * every record the case is made of.
  */
+type CaseEvent =
+  | { at: string; order: 0; decision: CaseDecisionRecord }
+  | { at: string; order: 1; transition: CaseTransitionRecord };
+
 /**
- * Apply the case-level transitions log after the remediation decisions.
+ * Replay a case's decisions and transitions in the order they happened.
  *
- * Decisions come first because they are the commitment that precedes Start and
- * everything after it. A transition that no longer fits its case is skipped by
- * `applyCaseTransition`, not deleted.
+ * The two logs have different keys and different grains, but they describe one
+ * case's life. Applying every decision before every transition would lose the
+ * second accept after a reopen: the decision would be tried against the state
+ * the case has since left. Merging them by timestamp keeps the stored scopes
+ * while making the replay match what a person actually did.
  */
-function applyCaseTransitions(
+function applyCaseEvents(
   cases: readonly IssueCase[],
-  records: readonly CaseTransitionRecord[],
+  decisions: readonly CaseDecisionRecord[],
+  transitions: readonly CaseTransitionRecord[],
+  pageLabels: Record<string, string>,
 ): IssueCase[] {
-  if (records.length === 0) return [...cases];
+  if (decisions.length === 0 && transitions.length === 0) return [...cases];
   return cases.map((issue) => {
+    const { matched, stranded } = matchDecisions(remediationKey(issue), decisions);
+    const caseTransitions = transitions
+      .filter((record) => record.caseKey === issue.cause)
+      .map(transitionOf)
+      .filter((record): record is CaseTransitionRecord => record !== null);
+    const events: CaseEvent[] = [
+      ...matched.map((decision) => ({ at: decision.at, order: 0 as const, decision })),
+      ...caseTransitions.map((transition) => ({ at: transition.at, order: 1 as const, transition })),
+    ].sort((left, right) => left.at.localeCompare(right.at) || left.order - right.order);
     let next = issue;
-    for (const record of records) {
-      if (record.caseKey !== issue.cause) continue;
-      const transition = transitionOf(record);
-      if (transition) next = applyCaseTransition(next, transition);
+    for (const event of events) {
+      next = "decision" in event
+        ? replay(next, event.decision, pageLabels)
+        : applyCaseTransition(next, event.transition);
     }
-    return next;
+    return stranded ? { ...next, strandedDecision: true } : next;
   });
 }
 
@@ -229,6 +246,13 @@ export function issueCasesFrom(
   const at = lastRunAtOf(state.pages);
   const options = at ? { at, referenceYear: Number(at.slice(0, 4)) } : {};
   const grouped = groupByCause(state.recs.map((rec) => fromRec(rec, options)), options);
-  const decided = applyCaseDecisions(grouped, state.caseDecisions ?? [], pageLabelsOf(state.pages));
-  return applyCaseTransitions(decided, state.caseTransitions ?? []);
+  const decisions = state.caseDecisions ?? [];
+  const transitions = state.caseTransitions ?? [];
+  const pageLabels = pageLabelsOf(state.pages);
+  // A decision-only log keeps its append order, which is its contract; there is
+  // nothing from the other grain to interleave it with. Once both logs exist,
+  // timestamp order is the only common ordering, and it is what makes a second
+  // accept after a reopen apply.
+  if (transitions.length === 0) return applyCaseDecisions(grouped, decisions, pageLabels);
+  return applyCaseEvents(grouped, decisions, transitions, pageLabels);
 }
