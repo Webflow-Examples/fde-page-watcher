@@ -153,7 +153,7 @@ export const DECISION_STRANDED =
 /* ── History ────────────────────────────────────────────────────────────── */
 
 export function historyDetected(pages: number): string {
-  return `Detected on ${pages} pages`;
+  return `Detected on ${pages} ${pages === 1 ? "page" : "pages"}`;
 }
 
 export function historyExcluded(page: string, reason: ExclusionReason): string {
