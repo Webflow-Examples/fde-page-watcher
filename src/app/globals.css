@@ -2791,6 +2791,14 @@ textarea:focus-visible,
   outline-offset: 3px;
 }
 
+/* A page link sits inside the truncated Pages cell, whose overflow clips an
+   outward ring into one visible edge. Draw this one inside its own box. */
+.issue-row a.issue-row__page:focus-visible {
+  outline-offset: -2px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--focus-ring) 12%, transparent);
+}
+
 
 /* Keeps the cause labels on one line down the list where a row has no second
    layer to show. Same width as the control it stands in for. */
