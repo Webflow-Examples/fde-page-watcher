@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type { CSSProperties, MouseEvent } from "react";
+import type { CSSProperties, MouseEvent, ReactNode } from "react";
 import { enteredAt, type IssueCase } from "@/lib/issue-case";
 import type { Strategy } from "@/lib/types";
 import { EFFORT_LABEL, formatGroupImpact, formatImpact } from "@/lib/impact-format";
@@ -114,9 +114,13 @@ export interface IssueRowProps {
   /** Set when the row sits under a remediation group it shares with others. */
   nested?: boolean;
   /** Which date the Date column carries. */
-  dateMode?: "detected" | "settled";
+  dateMode?: "detected" | "settled" | "fix" | "watch";
   /** Marks rows detected on the last run; never a sort direction. */
   lastRunAt?: string;
+  /** A queue-specific second line under the cause, such as owner or staleness. */
+  meta?: ReactNode;
+  /** A queue-specific second line under the date, such as checkpoint marks. */
+  dateExtra?: ReactNode;
 }
 
 /**
@@ -167,7 +171,7 @@ export function PageScope({
   );
 }
 
-export function IssueRow({ issue, basePath, pageTitles, nested = false, dateMode = "detected", lastRunAt }: IssueRowProps) {
+export function IssueRow({ issue, basePath, pageTitles, nested = false, dateMode = "detected", lastRunAt, meta, dateExtra }: IssueRowProps) {
   const router = useRouter();
   const impact = formatImpact(issue.impactMs);
   // What KIND of problem this is, in three or four words — the column a list of
@@ -250,35 +254,55 @@ export function IssueRow({ issue, basePath, pageTitles, nested = false, dateMode
         ) : (
           <span aria-hidden="true" className="issue-row__tip-spacer" />
         )}
-        <Link
-          className="issue-row__open"
-          href={caseHref(basePath, issue.id)}
-          style={{ minWidth: 0, fontSize: 13, fontWeight: 500 }}
-          // The tooltip is the VISIBLE text, not the diagnosis behind it.
-          // `title` becomes the accessible name, so a diagnosis here would
-          // announce and voice-target the link as something other than what
-          // it reads as on screen. The diagnosis has a disclosure now; that
-          // is where it belongs.
-          title={cause}
-        >
-          <span style={{ ...TRUNCATE_CELL, display: "block" }}>{cause}</span>
-        </Link>
+        <span style={{ minWidth: 0, flex: "1 1 auto", display: "flex", flexDirection: "column", gap: 1 }}>
+          <Link
+            className="issue-row__open"
+            href={caseHref(basePath, issue.id)}
+            style={{ minWidth: 0, fontSize: 13, fontWeight: 500 }}
+            // The tooltip is the VISIBLE text, not the diagnosis behind it.
+            // `title` becomes the accessible name, so a diagnosis here would
+            // announce and voice-target the link as something other than what
+            // it reads as on screen. The diagnosis has a disclosure now; that
+            // is where it belongs.
+            title={cause}
+          >
+            <span style={{ ...TRUNCATE_CELL, display: "block" }}>{cause}</span>
+          </Link>
+          {meta ? (
+            <span style={{ ...TRUNCATE_CELL, display: "block", fontSize: 12, color: "var(--text-muted)" }}>
+              {meta}
+            </span>
+          ) : null}
+        </span>
       </span>
 
       <span style={{ ...TRUNCATE_CELL, fontSize: 12.5, color: "var(--text-muted)" }}>
         <PageScope pageIds={issue.pageIds} strategies={issue.strategies} basePath={basePath} pageTitles={pageTitles} />
       </span>
 
-      <span style={{ ...TRUNCATE_CELL, fontSize: 12.5, color: "var(--text-muted)" }}>
-        {formatDate(dateMode === "settled" ? enteredAt(issue, issue.state) : issue.detectedAt)}
-        {dateMode === "detected" && lastRunAt && issue.detectedAt.slice(0, 10) >= lastRunAt.slice(0, 10) ? (
-          <span
-            role="img"
-            aria-label="Detected on the last run"
-            title="Detected on the last run"
-            style={{ marginLeft: 4, color: "var(--action-primary-ink)" }}
-          >
-            ●
+      <span style={{ ...TRUNCATE_CELL, display: "block", fontSize: 12.5, color: "var(--text-muted)" }}>
+        <span style={{ display: "block" }}>
+          {formatDate(
+            dateMode === "settled" || dateMode === "fix"
+              ? enteredAt(issue, issue.state)
+              : dateMode === "watch"
+                ? enteredAt(issue, "fixed") ?? issue.detectedAt
+                : issue.detectedAt,
+          )}
+          {dateMode === "detected" && lastRunAt && issue.detectedAt.slice(0, 10) >= lastRunAt.slice(0, 10) ? (
+            <span
+              role="img"
+              aria-label="Detected on the last run"
+              title="Detected on the last run"
+              style={{ marginLeft: 4, color: "var(--action-primary-ink)" }}
+            >
+              ●
+            </span>
+          ) : null}
+        </span>
+        {dateExtra ? (
+          <span style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 2 }}>
+            {dateExtra}
           </span>
         ) : null}
       </span>

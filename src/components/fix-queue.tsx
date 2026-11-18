@@ -2,6 +2,7 @@ import { byWorstMeasured, type IssueCase } from "@/lib/issue-case";
 import { FIX_GROUPS, FIX_QUEUE_NOTE } from "@/lib/fix-copy";
 import { WORK_STATE_LABEL } from "@/lib/vocabulary";
 import { FixRow } from "@/components/fix-row";
+import { CaseColumnHeaders } from "@/components/case-columns";
 
 /**
  * The Fix tab: what has been committed to, and what is being worked on.
@@ -27,10 +28,11 @@ import { FixRow } from "@/components/fix-row";
 export interface FixQueueProps {
   cases: readonly IssueCase[];
   basePath: string;
+  pageTitles: Record<string, string>;
   now?: Date;
 }
 
-export function FixQueue({ cases, basePath, now }: FixQueueProps) {
+export function FixQueue({ cases, basePath, pageTitles, now }: FixQueueProps) {
   const groups = FIX_GROUPS.map((state) => ({
     state,
     // A group is impact-ordered within itself and never against the other one.
@@ -53,6 +55,8 @@ export function FixQueue({ cases, basePath, now }: FixQueueProps) {
       >
         {FIX_QUEUE_NOTE}
       </p>
+
+      <CaseColumnHeaders />
 
       <div style={{ borderBottom: "1px solid var(--border-hairline)" }}>
         {groups.map((group) => (
@@ -86,7 +90,7 @@ export function FixQueue({ cases, basePath, now }: FixQueueProps) {
             </h2>
 
             {group.cases.map((issue) => (
-              <FixRow key={issue.id} issue={issue} basePath={basePath} now={now} />
+              <FixRow key={issue.id} issue={issue} basePath={basePath} pageTitles={pageTitles} now={now} />
             ))}
           </section>
         ))}

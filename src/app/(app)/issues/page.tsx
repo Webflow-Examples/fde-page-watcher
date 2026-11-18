@@ -2,16 +2,13 @@
 
 import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import Link from "next/link";
 import { useStore } from "@/components/store";
 import { useIssuesView } from "@/components/use-issues-view";
 import {
   DEFAULT_ISSUE_SORT,
   DEFAULT_SORT_DIRECTION,
-  ISSUE_SORT_LABEL,
   parseIssueSort,
   parseSortDirection,
-  reverseDirection,
   type IssueSort,
   type SortDirection,
 } from "@/lib/issue-list";
@@ -19,12 +16,8 @@ import { COUNTED_QUEUES, DESTINATION_LABEL, DESTINATION_PATH, QUEUE_LABEL, parse
 import { PageHeader } from "@/components/page-header";
 import { QueueTabs } from "@/components/queue-tabs";
 import { IssueGroup } from "@/components/issue-group";
-import {
-  ISSUE_ROW_COLUMNS,
-  ISSUE_ROW_GAP,
-  NUMERIC_CELL,
-  TRUNCATE_CELL,
-} from "@/components/issue-row";
+import { TRUNCATE_CELL } from "@/components/issue-row";
+import { CaseColumnHeaders } from "@/components/case-columns";
 import {
   EverythingResolved,
   FirstRunPending,
@@ -58,104 +51,6 @@ import { WATCH_EMPTY } from "@/lib/watch-copy";
  * The queue and the sort live in the URL. Both are things one person sends
  * another, and neither is a preference worth storing.
  */
-
-/** Which way round the active column currently reads. */
-const DIRECTION_GLYPH: Record<SortDirection, string> = { asc: "\u2191", desc: "\u2193" };
-const DIRECTION_WORD: Record<SortDirection, string> = { asc: "ascending", desc: "descending" };
-
-/**
- * Column headers, drawn on the same six tracks as the rows below them — and the
- * sort control for the column each one heads.
- *
- * The header IS the sort rather than a caption above one:
- *
- *   - The label comes from `ISSUE_SORT_LABEL`, so a header and the sort cannot
- *     call the same ordering two things.
- *   - The first click sorts the column in ITS OWN default direction rather than
- *     a uniform descending; effort opens from the cheapest, for example. The
- *     second click reverses it, and the arrow says which way it reads.
- *
- * Date carries the retired Newest ordering; "what changed" is a marker in that
- * column, not a third direction hidden behind a menu.
- */
-const COLUMN_SORTS = [
-  "cause",
-  "pages",
-  "date",
-  "confidence",
-  "impact",
-  "effort",
-] as const satisfies readonly IssueSort[];
-
-function ColumnHeaders({
-  sort,
-  direction,
-  hrefFor,
-}: {
-  sort: IssueSort;
-  direction: SortDirection;
-  hrefFor: (next: { sort: IssueSort; dir?: SortDirection }) => string;
-}) {
-  return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: ISSUE_ROW_COLUMNS,
-        gap: ISSUE_ROW_GAP,
-        alignItems: "center",
-        padding: "0 40px 8px",
-        // Registry rule 8: nothing carrying meaning renders below 12px, and a
-        // column header is what tells you which column you are reading.
-        fontSize: 12,
-        fontWeight: 600,
-        letterSpacing: ".04em",
-        textTransform: "uppercase",
-        color: "var(--text-muted)",
-      }}
-    >
-      {COLUMN_SORTS.map((key) => {
-        const active = key === sort;
-        const numeric = key === "impact" || key === "effort";
-        // An inactive column opens in its own default; the active one reverses.
-        const next = active ? reverseDirection(direction) : DEFAULT_SORT_DIRECTION[key];
-        return (
-          <Link
-            key={key}
-            href={hrefFor({ sort: key, dir: next })}
-            replace
-            // Which column is sorted, which way, and what this click will do —
-            // in words, for a reader who cannot see the arrow.
-            aria-label={
-              active
-                ? `Sorted by ${ISSUE_SORT_LABEL[key]}, ${DIRECTION_WORD[direction]}. Sort ${DIRECTION_WORD[next]}.`
-                : `Sort by ${ISSUE_SORT_LABEL[key]}`
-            }
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: numeric ? "flex-end" : "flex-start",
-              gap: 4,
-              minWidth: 0,
-              font: "inherit",
-              letterSpacing: "inherit",
-              textTransform: "inherit",
-              textDecoration: active ? "underline" : "none",
-              textUnderlineOffset: 3,
-              // Not colour alone — the underline and the arrow carry it too.
-              color: active ? "var(--text-body)" : "inherit",
-            }}
-          >
-            {/* Numeric columns are right-aligned, so their arrow leads rather
-                than trails; the label still ends at the column edge. */}
-            {numeric && active ? <span aria-hidden="true">{DIRECTION_GLYPH[direction]}</span> : null}
-            <span style={numeric ? NUMERIC_CELL : TRUNCATE_CELL}>{ISSUE_SORT_LABEL[key]}</span>
-            {!numeric && active ? <span aria-hidden="true">{DIRECTION_GLYPH[direction]}</span> : null}
-          </Link>
-        );
-      })}
-    </div>
-  );
-}
 
 export default function IssuesPage() {
   const searchParams = useSearchParams();
@@ -262,9 +157,9 @@ export default function IssuesPage() {
         hrefFor={(next) => linkTo({ queue: next })}
       />
 
-      {hasRows && isFix ? <FixQueue cases={view.inQueue} basePath={basePath} /> : null}
+      {hasRows && isFix ? <FixQueue cases={view.inQueue} basePath={basePath} pageTitles={view.pageTitles} /> : null}
 
-      {hasRows && isWatch ? <WatchQueue cases={view.inQueue} basePath={basePath} /> : null}
+      {hasRows && isWatch ? <WatchQueue cases={view.inQueue} basePath={basePath} pageTitles={view.pageTitles} /> : null}
 
       {hasRows && isSettled ? (
         <SettledQueue cases={view.inQueue} basePath={basePath} pageTitles={view.pageTitles} />
@@ -272,7 +167,7 @@ export default function IssuesPage() {
 
       {hasRows && !ownQueue ? (
         <>
-          <ColumnHeaders sort={sort} direction={direction} hrefFor={linkTo} />
+          <CaseColumnHeaders sort={sort} direction={direction} hrefFor={linkTo} />
 
           <div style={{ borderBottom: "1px solid var(--border-hairline)" }}>
             {view.groups.map((group) => (

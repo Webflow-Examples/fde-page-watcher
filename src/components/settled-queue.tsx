@@ -1,5 +1,6 @@
 import { enteredAt, type IssueCase } from "@/lib/issue-case";
 import { IssueRow } from "@/components/issue-row";
+import { CaseColumnHeaders } from "@/components/case-columns";
 
 /**
  * The Settled tab: the two off-ramp states, resolved and dismissed.
@@ -34,6 +35,8 @@ export function SettledQueue({ cases, basePath, pageTitles }: SettledQueueProps)
       >
         Resolved and dismissed cases. Nothing here is waiting on you.
       </p>
+      <CaseColumnHeaders />
+
       <div style={{ borderBottom: "1px solid var(--border-hairline)" }}>
         {ordered.map((issue) => (
           <IssueRow key={issue.id} issue={issue} basePath={basePath} pageTitles={pageTitles} dateMode="settled" />
