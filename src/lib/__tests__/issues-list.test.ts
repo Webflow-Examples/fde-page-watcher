@@ -136,11 +136,13 @@ describe("queueCountsOf", () => {
     expect(counts).toEqual({ decide: 2, fix: 1, watch: 1 });
   });
 
-  it("never produces a count for Show all", () => {
+  it("never produces a count for Show all or Settled", () => {
     // Not "hides the badge" — there is no number to render, so a badge cannot
-    // appear on it by mistake.
+    // appear on either by mistake.
     expect(queueCountsOf(cases).show_all).toBeUndefined();
+    expect(queueCountsOf(cases).settled).toBeUndefined();
     expect(queueCountsOf([]).show_all).toBeUndefined();
+    expect(queueCountsOf([]).settled).toBeUndefined();
   });
 
   it("agrees with the rows in that queue, because both come from queueOf", () => {

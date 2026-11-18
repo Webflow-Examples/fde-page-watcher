@@ -20,7 +20,8 @@ import { CONFIDENCES, COUNTED_QUEUES, WORK_STATES, type Confidence, type Queue, 
 /**
  * How many cases each counted queue holds.
  *
- * Deliberately partial. `show_all` is the unfiltered view rather than a queue,
+ * Deliberately partial. `settled` is the terminal view rather than a queue,
+ * and `show_all` remains the internal unfiltered view; neither is counted,
  * so the registry marks it uncounted and this never produces a number for it —
  * a badge cannot appear on it by accident, because there is nothing to read.
  */

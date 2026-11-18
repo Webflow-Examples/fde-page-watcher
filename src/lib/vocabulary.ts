@@ -59,28 +59,34 @@ export const WORK_STATE_MEANS: Record<WorkState, string> = {
 
 /* ── Queue — a filter over work state, named with a verb ────────────────── */
 
-export const QUEUES = ["decide", "fix", "watch", "show_all"] as const;
+export const QUEUES = ["decide", "fix", "watch", "settled", "show_all"] as const;
 export type Queue = (typeof QUEUES)[number];
+
+/** The four tabs. `show_all` is an internal unfiltered view, not a tab. */
+export const QUEUE_TABS = ["decide", "fix", "watch", "settled"] as const;
 
 export const QUEUE_LABEL: Record<Queue, string> = {
   decide: "Decide",
   fix: "Fix",
   watch: "Watch",
+  settled: "Settled",
   show_all: "Show all",
 };
 
 /**
- * Which states each queue holds. `show_all` is the unfiltered view, not a
- * queue, so it holds every state and is never counted.
+ * Which states each queue holds. `settled` is the two off-ramp states, so the
+ * four tabs partition the lifecycle. `show_all` remains an internal unfiltered
+ * view for surfaces that need every case, never a tab.
  */
 export const QUEUE_HOLDS: Record<Queue, readonly WorkState[]> = {
   decide: ["new", "reopened"],
   fix: ["todo", "in_progress"],
   watch: ["fixed"],
+  settled: ["resolved", "dismissed"],
   show_all: WORK_STATES,
 };
 
-/** `show_all` carries no count badge. */
+/** Only the three action queues carry a count badge. Settled is not awaiting anything. */
 export const COUNTED_QUEUES: readonly Queue[] = ["decide", "fix", "watch"];
 
 /** The queue a state appears in when queues are treated as a partition. */
@@ -89,9 +95,9 @@ export const WORK_STATE_QUEUE: Record<WorkState, Queue> = {
   todo: "fix",
   in_progress: "fix",
   fixed: "watch",
-  resolved: "show_all",
+  resolved: "settled",
   reopened: "decide",
-  dismissed: "show_all",
+  dismissed: "settled",
 };
 
 /* ── Action — the verbs that move an issue between states ───────────────── */
@@ -399,8 +405,9 @@ export function isWorkState(value: unknown): value is WorkState {
   return typeof value === "string" && (WORK_STATES as readonly string[]).includes(value);
 }
 
-/** Read a `?queue=` value. Anything unrecognised falls back to Decide. */
+/** Read a `?queue=` value. Old Show all links land on Settled. */
 export function parseQueue(value: string | null | undefined): Queue {
+  if (value === "show_all") return "settled";
   return isQueue(value) ? value : "decide";
 }
 

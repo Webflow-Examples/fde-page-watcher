@@ -21,7 +21,7 @@ import { useStore } from "./store";
 export interface IssuesView {
   /** Every case in the project, one per problem. */
   cases: IssueCase[];
-  /** Counted queues only. `show_all` is absent by design. */
+  /** Counted queues only. `settled` is absent by design. */
   counts: QueueCounts;
   /** The cases in the requested queue. */
   inQueue: IssueCase[];

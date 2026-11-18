@@ -262,10 +262,10 @@ export class IssueCaseError extends Error {
  */
 export function queueOf(state: IssueState): Queue {
   const holder = COUNTED_QUEUES.find((queue) => QUEUE_HOLDS[queue].includes(state));
-  return holder ?? "show_all";
+  return holder ?? "settled";
 }
 
-/** The cases in one queue. Show all is unfiltered, exactly as the registry says. */
+/** The cases in one queue. Show all is the internal unfiltered view. */
 export function casesInQueue(cases: readonly IssueCase[], queue: Queue): IssueCase[] {
   if (queue === "show_all") return [...cases];
   return cases.filter((item) => queueOf(item.state) === queue);

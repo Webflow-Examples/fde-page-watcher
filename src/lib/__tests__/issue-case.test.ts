@@ -207,8 +207,8 @@ describe("queue membership", () => {
   });
 
   it("sends the states no counted queue claims to the unfiltered view", () => {
-    expect(queueOf("resolved")).toBe("show_all");
-    expect(queueOf("dismissed")).toBe("show_all");
+    expect(queueOf("resolved")).toBe("settled");
+    expect(queueOf("dismissed")).toBe("settled");
   });
 });
 
@@ -937,7 +937,7 @@ describe("grouping by cause", () => {
     const fixed = markFixed(applyAction(accepted, "start", { by: PERSON, at: AT }), { by: PERSON, at: AT });
     const resolved: IssueCase = { ...fixed, state: "resolved" };
     expect(resolved.pageIds).toEqual(["p1", "p2"]);
-    expect(queueOf(resolved.state)).toBe("show_all");
+    expect(queueOf(resolved.state)).toBe("settled");
   });
 
   it("reopens on a subset scoped to the pages that came back", () => {

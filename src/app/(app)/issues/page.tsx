@@ -32,11 +32,13 @@ import {
   LastRunFailed,
   NoPagesWatched,
   QueueEmptyOthersBusy,
+  SettledEmpty,
   WatchEmpty,
 } from "@/components/issue-empty";
 import { SelectMenu } from "@/components/select-menu";
 import { WatchQueue } from "@/components/watch-queue";
 import { FixQueue } from "@/components/fix-queue";
+import { SettledQueue } from "@/components/settled-queue";
 import { WATCH_EMPTY } from "@/lib/watch-copy";
 
 /**
@@ -231,28 +233,27 @@ export default function IssuesPage() {
     if (queue === "watch") {
       return <WatchEmpty heading={WATCH_EMPTY} />;
     }
+    if (queue === "settled") {
+      return <SettledEmpty />;
+    }
     if (elsewhere) {
       return <QueueEmptyOthersBusy queue={queue} counts={view.counts} hrefFor={(next) => linkTo({ queue: next })} />;
     }
-    // Nothing is in flight in any queue. Cases may still exist — settled ones
-    // live in Show all — or the runs may simply never have found anything.
-    return <EverythingResolved caseCount={view.cases.length} showAllHref={linkTo({ queue: "show_all" })} />;
+    // Nothing is in flight in any queue. Cases may still exist — the settled
+    // ones have their own view — or the runs may simply never have found anything.
+    return <EverythingResolved caseCount={view.cases.length} settledHref={linkTo({ queue: "settled" })} />;
   }
 
   /**
-   * Two of the four queues draw themselves, and both for the same reason.
-   *
-   * Decide and Show all are lists of undecided things, so they are grouped by
-   * remediation, folded at the savings gate and sorted however the reader asks —
-   * every one of those is a way of deciding. Fix and Watch hold things that have
-   * already been decided, and neither question left has a sort control as its
-   * answer: Fix asks which to do next, Watch asks what is heard from when. Both
-   * read the queue's cases directly rather than the folded groups, because a
-   * fold is a triage affordance and there is no triage left to do.
+   * Only Decide is a triage list: grouped by remediation, folded at the savings
+   * gate and sorted however the reader asks. Fix, Watch and Settled read the
+   * queue's cases directly, because the question each one answers is not "which
+   * of these should I decide" and a sort control is not its answer.
    */
   const isFix = queue === "fix";
   const isWatch = queue === "watch";
-  const ownQueue = isFix || isWatch;
+  const isSettled = queue === "settled";
+  const ownQueue = isFix || isWatch || isSettled;
   const hasRows = ownQueue ? view.inQueue.length > 0 : view.groups.length > 0 || view.tail.length > 0;
 
   return (
@@ -262,13 +263,16 @@ export default function IssuesPage() {
       <QueueTabs
         activeQueue={queue}
         counts={view.counts}
-        total={view.cases.length}
         hrefFor={(next) => linkTo({ queue: next })}
       />
 
       {hasRows && isFix ? <FixQueue cases={view.inQueue} basePath={basePath} /> : null}
 
       {hasRows && isWatch ? <WatchQueue cases={view.inQueue} basePath={basePath} /> : null}
+
+      {hasRows && isSettled ? (
+        <SettledQueue cases={view.inQueue} basePath={basePath} pageTitles={view.pageTitles} />
+      ) : null}
 
       {hasRows && !ownQueue ? (
         <>

@@ -39,7 +39,7 @@
         {
           "key": "resolved",
           "label": "Resolved",
-          "queue": "show_all",
+          "queue": "settled",
           "tone": "success",
           "means": "The evidence agreed and held.",
           "entered_by": "resolve"
@@ -54,7 +54,7 @@
         {
           "key": "dismissed",
           "label": "Dismissed",
-          "queue": "show_all",
+          "queue": "settled",
           "tone": "neutral",
           "means": "Deliberately excluded. Off-ramp from Decide only, and it requires a reason.",
           "requires": "reason",
@@ -111,6 +111,15 @@
           "holds": [
             "fixed"
           ]
+        },
+        {
+          "key": "settled",
+          "label": "Settled",
+          "holds": [
+            "resolved",
+            "dismissed"
+          ],
+          "counted": false
         },
         {
           "key": "show_all",
