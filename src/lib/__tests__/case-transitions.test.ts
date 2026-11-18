@@ -32,7 +32,7 @@ function derive(
     .find((item) => item.cause === CAUSE)!;
 }
 
-function transition(action: "start" | "mark_fixed" | "reopen" | "resolve", at = AT) {
+function transition(action: "start" | "mark_fixed" | "reopen", at = AT) {
   return caseTransitionFrom({ caseKey: CAUSE, action }, { at, by: PERSON });
 }
 
@@ -50,16 +50,6 @@ describe("the case transition log", () => {
     expect(fixed.state).toBe("fixed");
     expect(fixed.checkpoints.map((checkpoint) => checkpoint.interval)).toEqual(["2d", "7d", "30d"]);
     expect(fixed.checkpoints.every((checkpoint) => checkpoint.result === "scheduled")).toBe(true);
-  });
-
-  it("refuses resolve until the resolving checkpoint agrees", () => {
-    const { state, accept } = seed();
-    const stuck = derive(state, accept, [
-      transition("start"),
-      transition("mark_fixed", LATER),
-      transition("resolve", LATER),
-    ]);
-    expect(stuck.state).toBe("fixed");
   });
 
   it("reopens a fixed case", () => {

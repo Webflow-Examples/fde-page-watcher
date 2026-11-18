@@ -291,10 +291,9 @@ export function CaseDetail({
     const primary = primaryActionFor(issue.state);
     if (!primary) return [];
     const ordered = [primary, ...personActionsFor(issue.state).filter((action) => action !== primary)];
-    const allowed = (supportedActions
+    const allowed = supportedActions
       ? ordered.filter((action) => supportedActions.includes(action))
-      : ordered
-    ).filter((action) => action !== "resolve" || checkpointsAgree(issue.checkpoints));
+      : ordered;
     return allowed.map((action) => ({
       action,
       label: action === "accept"
@@ -554,6 +553,19 @@ export function CaseDetail({
               now={now}
               locale={locale}
             />
+            {issue.state === "fixed" && !checkpointsAgree(issue.checkpoints) ? (
+              <p
+                style={{
+                  margin: "10px 0 0",
+                  maxWidth: "72ch",
+                  fontSize: 12.5,
+                  lineHeight: 1.5,
+                  color: "var(--text-muted)",
+                }}
+              >
+                Resolve happens automatically when the 30-day check agrees and no check has disagreed.
+              </p>
+            ) : null}
           </Section>
         ) : null}
 

@@ -50,7 +50,7 @@ import { casePath } from "@/lib/paths";
  * the case's cause. Dismiss needs a reason, so it has its own handler and
  * picker. Every verb here has a log that can keep it.
  */
-const CASE_ACTIONS: readonly IssueAction[] = ["accept", "start", "mark_fixed", "reopen", "resolve"];
+const CASE_ACTIONS: readonly IssueAction[] = ["accept", "start", "mark_fixed", "reopen"];
 
 export default function CasePage() {
   const params = useParams<{ id: string }>();
@@ -154,7 +154,6 @@ export default function CasePage() {
         case "start":
         case "mark_fixed":
         case "reopen":
-        case "resolve":
           recordCaseTransition({ caseKey: issue.cause, action });
           return;
         default:

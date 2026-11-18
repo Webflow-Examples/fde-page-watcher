@@ -1,5 +1,5 @@
 import type { Caller } from "./caller";
-import { applyAction, canApply, checkpointsAgree, type IssueCase } from "./issue-case";
+import { applyAction, canApply, type IssueCase } from "./issue-case";
 import type { CaseTransitionKind, CaseTransitionRecord } from "./types";
 
 /**
@@ -19,7 +19,6 @@ const DECLARED: Record<CaseTransitionKind, true> = {
   start: true,
   mark_fixed: true,
   reopen: true,
-  resolve: true,
 };
 
 export const CASE_TRANSITIONS = Object.keys(DECLARED) as readonly CaseTransitionKind[];
@@ -71,15 +70,14 @@ export function transitionOf(record: CaseTransitionRecord): CaseTransitionRecord
 /**
  * Apply one stored transition, if the registry still permits it.
  *
- * The state guard and the checkpoint guard are the same rules `applyAction`
- * enforces. Asking them here means an entry left behind by an earlier state is
- * skipped rather than crashing the whole derivation.
+ * Resolve is deliberately absent: the registry gives it to the system, fired
+ * by an agreed checkpoint, never to a person. The state guard here is what
+ * makes an entry left behind by an earlier state a skip rather than a crash.
  */
 export function applyCaseTransition(
   issue: IssueCase,
   record: CaseTransitionRecord,
 ): IssueCase {
   if (!canApply(issue, record.action)) return issue;
-  if (record.action === "resolve" && !checkpointsAgree(issue.checkpoints)) return issue;
   return applyAction(issue, record.action, { by: record.by, at: record.at });
 }

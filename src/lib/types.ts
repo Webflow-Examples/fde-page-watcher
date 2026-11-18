@@ -306,7 +306,7 @@ export interface CaseDecisionRecord {
 }
 
 /** The case transitions a person can fire, in the registry's words. */
-export type CaseTransitionKind = "start" | "mark_fixed" | "reopen" | "resolve";
+export type CaseTransitionKind = "start" | "mark_fixed" | "reopen";
 
 /**
  * One lifecycle transition somebody took on a case, as it is stored.

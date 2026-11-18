@@ -278,7 +278,7 @@ describe("the exclude control", () => {
     const code = route.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
     expect(code).toMatch(/onAction=\{performAction\}/);
     expect(code).toMatch(/onDismiss=\{dismissCase\}/);
-    expect(code).toMatch(/const CASE_ACTIONS: readonly IssueAction\[\] = \["accept", "start", "mark_fixed", "reopen", "resolve"\]/);
+    expect(code).toMatch(/const CASE_ACTIONS: readonly IssueAction\[\] = \["accept", "start", "mark_fixed", "reopen"\]/);
     expect(code).not.toMatch(/supportedActions=\{[^}]*"(?:start|mark_fixed|reopen|resolve|dismiss)"/);
   });
 
@@ -359,11 +359,13 @@ describe("a case with nothing to accept", () => {
     // at all on that branch.
     expect(detail).toMatch(/NO_ACTION_REASON\.none/);
     expect(detail).toMatch(/NO_ACTION_REASON\.platform/);
-    // No disabled ATTRIBUTE anywhere — prose about why there isn't one is fine,
-    // which is why this looks for the property rather than the word.
+    // No disabled ATTRIBUTE — prose about why there isn't one is fine, which
+    // is why this looks for the property rather than the word.
     const code = detail.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\{\/\*[\s\S]*?\*\/\}/g, "");
     expect(code).not.toMatch(/\bdisabled[=:]/);
     expect(code).not.toMatch(/aria-disabled/);
+    // Resolve is a system verb; the fixed case explains when it happens.
+    expect(code).toMatch(/Resolve happens automatically when the 30-day check agrees/);
   });
 });
 
