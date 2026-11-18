@@ -22,13 +22,14 @@ import { WatchRow } from "@/components/watch-row";
 
 export interface WatchQueueProps {
   cases: readonly IssueCase[];
+  basePath: string;
   onReopen?: (issue: IssueCase) => void;
   onRecheck?: (issue: IssueCase) => void;
   now?: Date;
   locale?: string;
 }
 
-export function WatchQueue({ cases, onReopen, onRecheck, now, locale }: WatchQueueProps) {
+export function WatchQueue({ cases, basePath, onReopen, onRecheck, now, locale }: WatchQueueProps) {
   const [openId, setOpenId] = useState<string | null>(null);
   const ordered = [...cases].sort(byNextDue);
 
@@ -54,6 +55,7 @@ export function WatchQueue({ cases, onReopen, onRecheck, now, locale }: WatchQue
           <WatchRow
             key={issue.id}
             issue={issue}
+            basePath={basePath}
             open={openId === issue.id}
             onToggle={() => setOpenId((previous) => (previous === issue.id ? null : issue.id))}
             onReopen={onReopen ? () => onReopen(issue) : undefined}

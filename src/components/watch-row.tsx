@@ -1,6 +1,7 @@
 "use client";
 
 import { useId } from "react";
+import Link from "next/link";
 import {
   fixedAtOf,
   firstUnavailable,
@@ -18,6 +19,8 @@ import {
 } from "@/lib/watch-copy";
 import { CheckpointMarks } from "@/components/checkpoint-marks";
 import { CheckpointTrack } from "@/components/checkpoint-track";
+import { ChevronDownIcon } from "@/components/icons";
+import { caseHref } from "@/lib/paths";
 
 /**
  * One fixed case waiting on evidence (15d), and its drawer (14c).
@@ -42,6 +45,7 @@ import { CheckpointTrack } from "@/components/checkpoint-track";
 
 export interface WatchRowProps {
   issue: IssueCase;
+  basePath: string;
   open: boolean;
   onToggle: () => void;
   /** The row's actions, wired by the queue. Only the actionable row uses them. */
@@ -75,6 +79,7 @@ function ActionButton({ label, onClick }: { label: string; onClick?: () => void 
 
 export function WatchRow({
   issue,
+  basePath,
   open,
   onToggle,
   onReopen,
@@ -113,25 +118,17 @@ export function WatchRow({
             screen reader reading "Reopen" nested in an expand button cannot say
             which of the two it is about to activate. On every row but the
             stalled one there are no actions, so the trigger is the whole row. */}
-        <button
-          type="button"
-          aria-expanded={open}
-          aria-controls={drawerId}
-          onClick={onToggle}
+        <Link
+          href={caseHref(basePath, issue.id)}
           style={{
             display: "flex",
             alignItems: "center",
             gap: 16,
             flex: "1 1 auto",
             minWidth: 0,
-            appearance: "none",
-            border: 0,
-            background: "transparent",
-            font: "inherit",
             color: "inherit",
+            textDecoration: "none",
             padding: "13px 0",
-            cursor: "pointer",
-            textAlign: "left",
           }}
         >
           <span style={{ flex: "1 1 auto", minWidth: 0 }}>
@@ -155,6 +152,30 @@ export function WatchRow({
           </span>
 
           <CheckpointMarks run={run} countdown now={now} locale={locale} />
+        </Link>
+
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={drawerId}
+          aria-label={open ? "Hide checkpoints" : "Show checkpoints"}
+          title={open ? "Hide checkpoints" : "Show checkpoints"}
+          onClick={onToggle}
+          style={{
+            appearance: "none",
+            cursor: "pointer",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flex: "0 0 auto",
+            padding: 8,
+            border: 0,
+            borderRadius: 6,
+            background: "transparent",
+            color: "var(--text-muted)",
+          }}
+        >
+          <ChevronDownIcon size={12} style={{ transform: open ? "rotate(180deg)" : undefined }} />
         </button>
 
         {stalled ? (

@@ -268,7 +268,7 @@ export default function IssuesPage() {
 
       {hasRows && isFix ? <FixQueue cases={view.inQueue} basePath={basePath} /> : null}
 
-      {hasRows && isWatch ? <WatchQueue cases={view.inQueue} /> : null}
+      {hasRows && isWatch ? <WatchQueue cases={view.inQueue} basePath={basePath} /> : null}
 
       {hasRows && !ownQueue ? (
         <>
