@@ -1,4 +1,6 @@
+import Link from "next/link";
 import type { RemediationGroup } from "@/lib/issue-case";
+import { caseHref } from "@/lib/paths";
 import { CONFIDENCE_LABEL } from "@/lib/vocabulary";
 import { StatusChip } from "@/components/status-chip";
 import {
@@ -53,6 +55,7 @@ export function IssueGroup({ group, basePath, pageTitles, nested = false }: Issu
   return (
     <section>
       <div
+        className="issue-row issue-group__header"
         style={{
           display: "grid",
           gridTemplateColumns: ISSUE_ROW_COLUMNS,
@@ -69,9 +72,19 @@ export function IssueGroup({ group, basePath, pageTitles, nested = false }: Issu
           <StatusChip state={group.state} />
         </span>
 
-        <span style={{ ...TRUNCATE_CELL, fontSize: 13, fontWeight: 600 }} title={fix}>
-          {fix}
-        </span>
+        {/* A group is not a case, so there is no group page to open. The
+            header opens its worst member instead, which is the case whose
+            reading the header is summarising. The stretched hit area is the
+            same mechanism the rows use, so the whole header is one target and
+            the page links above keep their own. */}
+        <Link
+          className="issue-row__open"
+          href={caseHref(basePath, group.primary.id)}
+          style={{ minWidth: 0, fontSize: 13, fontWeight: 600 }}
+          title={fix}
+        >
+          <span style={{ ...TRUNCATE_CELL, display: "block" }}>{fix}</span>
+        </Link>
 
         {/* The pages link here for the same reason they do on a row: this is
             the same column, and a header that names a page the reader cannot

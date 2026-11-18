@@ -2741,6 +2741,10 @@ textarea:focus-visible,
  */
 .issue-row {
   position: relative;
+  /* The row is one link, including its hairline border. Without this the
+     1px border between rows shows the default cursor and the hand flickers
+     as the pointer crosses it. */
+  cursor: pointer;
   border-top: 1px solid var(--border-hairline);
   background: var(--surface-card);
   color: var(--text-body);
