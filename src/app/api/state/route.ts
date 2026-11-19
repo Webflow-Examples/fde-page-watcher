@@ -26,15 +26,40 @@ export async function GET(request: Request) {
     }
     throw error;
   }
-  await reconcileCollectionJobs({ dataStore });
-  const recovered = await recoverStaleRuns(dataStore);
+  /**
+   * Reading a project must not depend on its housekeeping.
+   *
+   * The app shell loads the same state with a plain `getState()` and no
+   * reconciliation, which is how a project can render while this endpoint
+   * fails. Both steps below write the state, and a write that loses a race or
+   * hits a read-only tenant is a reason to skip the maintenance, not a reason
+   * to make the project unreadable. Each failure is logged and the read
+   * continues from the freshest state that could be obtained.
+   */
+  const housekeepingFailed = (step: string, error: unknown) => {
+    console.error(JSON.stringify({
+      message: "state housekeeping failed",
+      step,
+      error: String(error).slice(0, 500),
+    }));
+  };
+  const reconciled = await reconcileCollectionJobs({ dataStore }).catch((error) => {
+    housekeepingFailed("reconcile", error);
+    return null;
+  });
+  const recovered = await recoverStaleRuns(dataStore).catch(async (error) => {
+    housekeepingFailed("recover", error);
+    // A read that still works is better than a 500; one that does not is a
+    // real storage failure and is allowed to reach the caller.
+    return reconciled ?? await dataStore.getState();
+  });
   const now = new Date();
   const ready = (recovered.jobs ?? []).filter((job) => {
     if (job.state !== "succeeded" || (job.enrichedAt && job.notifiedAt)) return false;
     return !job.finalizationStartedAt || now.getTime() - Date.parse(job.finalizationStartedAt) > 10 * 60 * 1000;
   }).slice(0, 4);
   const claimed: string[] = [];
-  const state = ready.length === 0 ? recovered : await dataStore.updateState((draft) => {
+  const claimReady = () => dataStore.updateState((draft) => {
     for (const candidate of ready) {
       const job = (draft.jobs ?? []).find((item) => item.id === candidate.id);
       if (!job || job.state !== "succeeded" || (job.enrichedAt && job.notifiedAt)) continue;
@@ -42,6 +67,12 @@ export async function GET(request: Request) {
       job.finalizationStartedAt = now.toISOString();
       claimed.push(job.id);
     }
+  });
+  const state = ready.length === 0 ? recovered : await claimReady().catch((error) => {
+    // Nothing was claimed for certain, so finalization waits for the next read.
+    housekeepingFailed("claim", error);
+    claimed.length = 0;
+    return recovered;
   });
   for (const jobId of claimed) {
     after(async () => {
