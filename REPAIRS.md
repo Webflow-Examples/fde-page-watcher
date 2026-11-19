@@ -53,6 +53,22 @@ one commit.
 
 ## Open
 
+### Webflow Cloud rejects `wrangler.json` before the build starts
+
+- **Claimed by:** `repair/wrangler-observability-traces` / #104
+- **Seen at:** `426db907` (`main`), on the Webflow Cloud deployments of #100
+  (`b5d0914`) and #101 (`426db90`).
+- **Symptom:** the builder stops at `[cloud:error:WRANGLER_JSON_INVALID]` and
+  reports `observability.traces.destinations: Required` and
+  `observability.traces.persist: Required`. Nothing in the workflow reads
+  `wrangler.json`, so `main` passed lint, typecheck, test and build while every
+  deployment failed before installing dependencies.
+- **Fix:** remove the committed `observability` block. Webflow Cloud lists
+  observability as platform-provided configuration that it replaces at build
+  time and tells projects to leave out of their own config. Its validator
+  requires the trace subfields that Wrangler itself treats as optional, so
+  committing the block can only fail there.
+
 ### The per-page agent-ignore route has no caller in the app
 
 - **Found by:** F6, on `chunk-f6`, at base `95d77a9`.

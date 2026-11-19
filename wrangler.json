@@ -21,10 +21,5 @@
       "binding": "REPORTS",
       "bucket_name": "page-watcher-reports"
     }
-  ],
-  "observability": {
-    "enabled": true,
-    "logs": { "head_sampling_rate": 1 },
-    "traces": { "enabled": true, "head_sampling_rate": 0.05 }
-  }
+  ]
 }
