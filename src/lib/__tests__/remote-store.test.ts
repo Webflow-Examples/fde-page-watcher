@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RemoteDataStore } from "../store/remoteStore";
-import type { AppState } from "../types";
+import { buildInitialState } from "../seed";
+import type { AppState, Night } from "../types";
 
 afterEach(() => vi.unstubAllEnvs());
 
@@ -91,5 +92,108 @@ describe("FDE remote store", () => {
     const store = new RemoteDataStore("tenant", fetchFn);
     await store.putReport("page", "run-1", { raw: true });
     await expect(store.getReport("page", "run-1")).resolves.toEqual({ raw: true });
+  });
+});
+
+function stateWithHistory(): AppState {
+  const state = buildInitialState("demo");
+  state.pages = [state.pages[0]];
+  return state;
+}
+
+function nightInput(night: Night): Omit<Night, "i" | "runId" | "rawReportKey"> {
+  const copy = { ...night } as Partial<Night>;
+  delete copy.i;
+  delete copy.runId;
+  delete copy.rawReportKey;
+  return copy as Omit<Night, "i" | "runId" | "rawReportKey">;
+}
+
+describe("FDE remote state writes", () => {
+  it("sends a history-free state once the collector advertises delta writes", async () => {
+    vi.stubEnv("FDE_DATA_URL", "https://collector.example.test");
+    vi.stubEnv("CRON_SECRET", "shared-secret");
+    const original = stateWithHistory();
+    const page = original.pages[0];
+    const seen: { body?: { state: AppState; expectedVersion: number; history?: unknown } } = {};
+    const fetchFn = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      if (!init?.method || init.method === "GET") {
+        return Response.json(
+          { state: original, version: 0, updatedAt: "2026-11-19T00:00:00Z" },
+          { headers: { "x-fde-history-write": "delta" } },
+        );
+      }
+      seen.body = JSON.parse(String(init.body)) as typeof seen.body;
+      return Response.json({ state: original, version: 1, updatedAt: "2026-11-19T00:00:01Z" });
+    }) as typeof fetch;
+
+    const store = new RemoteDataStore("tenant", fetchFn);
+    const result = await store.updateState((draft) => {
+      draft.watcherNote = { text: "small write", generatedAt: "2026-11-19T00:00:00Z" };
+    });
+
+    expect(seen.body?.history).toBe("unchanged");
+    expect(seen.body?.state.watcherNote?.text).toBe("small write");
+    expect(seen.body?.state.pages[0].history).toEqual([]);
+    expect(result.pages[0].history).toEqual(page.history);
+  });
+
+  it("keeps the full snapshot for a collector that has not advertised delta writes", async () => {
+    vi.stubEnv("FDE_DATA_URL", "https://collector.example.test");
+    vi.stubEnv("CRON_SECRET", "shared-secret");
+    const original = stateWithHistory();
+    const page = original.pages[0];
+    const seen: { body?: { state: AppState; history?: unknown } } = {};
+    const fetchFn = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      if (!init?.method || init.method === "GET") {
+        return Response.json({ state: original, version: 0, updatedAt: "2026-11-19T00:00:00Z" });
+      }
+      seen.body = JSON.parse(String(init.body)) as typeof seen.body;
+      return Response.json({ state: original, version: 1, updatedAt: "2026-11-19T00:00:01Z" });
+    }) as typeof fetch;
+
+    const store = new RemoteDataStore("tenant", fetchFn);
+    await store.updateState((draft) => {
+      draft.watcherNote = { text: "legacy write", generatedAt: "2026-11-19T00:00:00Z" };
+    });
+
+    expect(seen.body?.history).toBeUndefined();
+    expect(seen.body?.state.pages[0].history).toEqual(page.history);
+  });
+
+  it("names the appended night in a history delta", async () => {
+    vi.stubEnv("FDE_DATA_URL", "https://collector.example.test");
+    vi.stubEnv("CRON_SECRET", "shared-secret");
+    const original = stateWithHistory();
+    const page = original.pages[0];
+    const last = page.history.at(-1)!;
+    page.runState = "running";
+    page.runId = "run-new";
+    const seen: {
+      body?: {
+        state: AppState;
+        history?: { upserts: Array<{ pageId: string; night: Night }>; deletes: Array<{ pageId: string; i: number }> };
+      };
+    } = {};
+    const fetchFn = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      if (!init?.method || init.method === "GET") {
+        return Response.json(
+          { state: original, version: 0, updatedAt: "2026-11-19T00:00:00Z" },
+          { headers: { "x-fde-history-write": "delta" } },
+        );
+      }
+      seen.body = JSON.parse(String(init.body)) as typeof seen.body;
+      return Response.json({ state: original, version: 1, updatedAt: "2026-11-19T00:00:01Z" });
+    }) as typeof fetch;
+
+    const store = new RemoteDataStore("tenant", fetchFn);
+    await store.appendNight(page.id, "run-new", nightInput(last));
+
+    expect(seen.body?.state.pages[0].history).toEqual([]);
+    expect(seen.body?.history?.upserts).toHaveLength(1);
+    expect(seen.body?.history?.upserts[0].pageId).toBe(page.id);
+    expect(seen.body?.history?.upserts[0].night.runId).toBe("run-new");
+    expect(seen.body?.history?.upserts[0].night.i).toBe(last.i + 1);
+    expect(seen.body?.history?.deletes).toEqual([]);
   });
 });

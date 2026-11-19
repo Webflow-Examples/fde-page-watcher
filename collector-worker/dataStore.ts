@@ -11,6 +11,7 @@ import {
   stateWithoutEmbeddedHistory,
   type StoredHistoryRow,
 } from "../src/lib/store/historyState";
+import type { HistoryWrite } from "../src/lib/store/remoteState";
 import {
   cruxEvidenceFromRows,
   type CruxPageEvidence,
@@ -126,8 +127,11 @@ export class FdeDataStore {
   }
 
   /** Compare-and-swap a complete state snapshot. `null` means create only. */
-  async writeVersionedState(state: AppState, expectedVersion: number | null): Promise<StateWriteResult> {
-    const normalized = normalizeState(copyState(state));
+  async writeVersionedState(
+    state: AppState,
+    expectedVersion: number | null,
+    history?: HistoryWrite,
+  ): Promise<StateWriteResult> {
     const beforeRow = await this.rawState();
     const before = beforeRow ? await this.materializedState(beforeRow) : emptyState();
     if (expectedVersion === null ? !!beforeRow : !beforeRow || beforeRow.version !== expectedVersion) {
@@ -139,6 +143,36 @@ export class FdeDataStore {
         } : undefined,
       };
     }
+
+    /**
+     * Attach the nights this write keeps before normalization runs.
+     *
+     * A history-free state normalized on its own derives page status from an
+     * empty history and would persist that answer. The table already holds the
+     * nights, so the write's view of history is rebuilt first and normalization
+     * sees the same state a reader will.
+     */
+    const incoming = copyState(state);
+    if (history !== undefined) {
+      const histories = new Map(before.pages.map((page) => [page.id, page.history]));
+      for (const page of incoming.pages) page.history = histories.get(page.id) ?? [];
+      if (history !== "unchanged") {
+        for (const upsert of history.upserts) {
+          const page = incoming.pages.find((candidate) => candidate.id === upsert.pageId);
+          if (!page) continue;
+          page.history = page.history
+            .filter((night) => night.i !== upsert.night.i)
+            .concat(upsert.night)
+            .sort((left, right) => left.i - right.i);
+        }
+        for (const removal of history.deletes) {
+          const page = incoming.pages.find((candidate) => candidate.id === removal.pageId);
+          if (!page) continue;
+          page.history = page.history.filter((night) => night.i !== removal.i);
+        }
+      }
+    }
+    const normalized = normalizeState(incoming);
 
     const updatedAt = new Date().toISOString();
     const json = JSON.stringify(stateWithoutEmbeddedHistory(normalized));
@@ -155,7 +189,7 @@ export class FdeDataStore {
       return { conflict: conflict ?? undefined };
     }
 
-    await this.syncDerived(before, normalized);
+    await this.syncDerived(before, normalized, history);
     return {
       value: {
         state: copyState(normalized),
@@ -300,7 +334,19 @@ export class FdeDataStore {
     }
   }
 
-  private async syncDerived(before: AppState, after: AppState): Promise<void> {
+  /**
+   * Mirror the derived tables that live beside the state row.
+   *
+   * `history` says what the write knows about the night table:
+   *   - absent: the snapshot's embedded history is authoritative (legacy);
+   *   - `"unchanged"`: keep every stored night, and only drop the nights of a
+   *     page that no longer exists;
+   *   - a delta: apply exactly the nights the writer named.
+   *
+   * Without this distinction a history-free snapshot would look like a page
+   * with no nights, and the table would be emptied on every mutation.
+   */
+  private async syncDerived(before: AppState, after: AppState, history?: HistoryWrite): Promise<void> {
     const statements: D1PreparedStatement[] = [];
     const previousJobs = new Map((before.jobs ?? []).map((job) => [job.id, JSON.stringify(job)]));
     const nextJobs = new Map((after.jobs ?? []).map((job) => [job.id, JSON.stringify(job)]));
@@ -318,25 +364,9 @@ export class FdeDataStore {
       }
     }
 
-    const beforeHistory = new Map(before.pages.flatMap((page) => page.history.map((night) => [
-      `${page.id}:${night.runId ?? night.i}`,
-      JSON.stringify(night),
-    ])));
-    const afterHistoryKeys = new Set(after.pages.flatMap((page) =>
-      page.history.map((night) => `${page.id}:${night.i}`)));
-    const storedHistory = await this.bindings.DB.prepare(
-      "SELECT page_id, i, night_json FROM history WHERE tenant = ?",
-    ).bind(this.tenant).all<StoredHistoryRow>();
     const beforeMarkers = new Map(before.pages.flatMap((page) => page.markers.map((marker) => [`${page.id}:${marker.id}`, JSON.stringify(marker)])));
     const afterMarkerKeys = new Set(after.pages.flatMap((page) => page.markers.map((marker) => `${page.id}:${marker.id}`)));
     for (const page of after.pages) {
-      for (const night of page.history) {
-        if (beforeHistory.get(`${page.id}:${night.runId ?? night.i}`) === JSON.stringify(night)) continue;
-        statements.push(this.bindings.DB.prepare(
-          "INSERT INTO history (tenant, page_id, i, night_json) VALUES (?, ?, ?, ?) " +
-          "ON CONFLICT(tenant, page_id, i) DO UPDATE SET night_json = excluded.night_json",
-        ).bind(this.tenant, page.id, night.i, JSON.stringify(night)));
-      }
       for (const marker of page.markers) {
         if (beforeMarkers.get(`${page.id}:${marker.id}`) === JSON.stringify(marker)) continue;
         statements.push(this.bindings.DB.prepare(
@@ -351,11 +381,55 @@ export class FdeDataStore {
         "DELETE FROM markers WHERE tenant = ? AND page_id = ? AND id = ?",
       ).bind(this.tenant, key.slice(0, separator), key.slice(separator + 1)));
     }
-    for (const row of storedHistory.results) {
-      if (afterHistoryKeys.has(`${row.page_id}:${row.i}`)) continue;
-      statements.push(this.bindings.DB.prepare(
-        "DELETE FROM history WHERE tenant = ? AND page_id = ? AND i = ?",
-      ).bind(this.tenant, row.page_id, row.i));
+
+    if (history === "unchanged") {
+      const pageIds = new Set(after.pages.map((page) => page.id));
+      const stored = await this.bindings.DB.prepare(
+        "SELECT DISTINCT page_id FROM history WHERE tenant = ?",
+      ).bind(this.tenant).all<{ page_id: string }>();
+      for (const row of stored.results) {
+        if (pageIds.has(row.page_id)) continue;
+        statements.push(this.bindings.DB.prepare(
+          "DELETE FROM history WHERE tenant = ? AND page_id = ?",
+        ).bind(this.tenant, row.page_id));
+      }
+    } else if (history) {
+      for (const upsert of history.upserts) {
+        statements.push(this.bindings.DB.prepare(
+          "INSERT INTO history (tenant, page_id, i, night_json) VALUES (?, ?, ?, ?) " +
+          "ON CONFLICT(tenant, page_id, i) DO UPDATE SET night_json = excluded.night_json",
+        ).bind(this.tenant, upsert.pageId, upsert.night.i, JSON.stringify(upsert.night)));
+      }
+      for (const removal of history.deletes) {
+        statements.push(this.bindings.DB.prepare(
+          "DELETE FROM history WHERE tenant = ? AND page_id = ? AND i = ?",
+        ).bind(this.tenant, removal.pageId, removal.i));
+      }
+    } else {
+      const beforeHistory = new Map(before.pages.flatMap((page) => page.history.map((night) => [
+        `${page.id}:${night.runId ?? night.i}`,
+        JSON.stringify(night),
+      ])));
+      const afterHistoryKeys = new Set(after.pages.flatMap((page) =>
+        page.history.map((night) => `${page.id}:${night.i}`)));
+      const storedHistory = await this.bindings.DB.prepare(
+        "SELECT page_id, i, night_json FROM history WHERE tenant = ?",
+      ).bind(this.tenant).all<StoredHistoryRow>();
+      for (const page of after.pages) {
+        for (const night of page.history) {
+          if (beforeHistory.get(`${page.id}:${night.runId ?? night.i}`) === JSON.stringify(night)) continue;
+          statements.push(this.bindings.DB.prepare(
+            "INSERT INTO history (tenant, page_id, i, night_json) VALUES (?, ?, ?, ?) " +
+            "ON CONFLICT(tenant, page_id, i) DO UPDATE SET night_json = excluded.night_json",
+          ).bind(this.tenant, page.id, night.i, JSON.stringify(night)));
+        }
+      }
+      for (const row of storedHistory.results) {
+        if (afterHistoryKeys.has(`${row.page_id}:${row.i}`)) continue;
+        statements.push(this.bindings.DB.prepare(
+          "DELETE FROM history WHERE tenant = ? AND page_id = ? AND i = ?",
+        ).bind(this.tenant, row.page_id, row.i));
+      }
     }
     await this.runStatements(statements);
   }
