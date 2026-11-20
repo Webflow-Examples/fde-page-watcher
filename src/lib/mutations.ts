@@ -20,6 +20,8 @@ import { narrowNativeElementExclusionReason } from "./nativeElements";
 import { narrowAgentCheckExclusionReason } from "./settings-exclusions";
 import { type ExclusionReason } from "./vocabulary";
 import { caseDecisionFrom, type CaseDecisionInput } from "./case-decisions";
+import { caseTransitionFrom, type CaseTransitionInput } from "./case-transitions";
+import { casePlanFrom, type CasePlanInput } from "./case-plans";
 import type { Caller } from "./caller";
 import { alertWebhookUrlIsValid } from "./webhook";
 import { COLLECTION_JOB_STALE_AFTER_MS, collectionJobIsStale } from "./collectionRetry";
@@ -200,6 +202,38 @@ export async function recordCaseDecision(
   const decision = caseDecisionFrom(input, { at: now.toISOString(), by });
   return withState((state) => {
     state.caseDecisions = [...(state.caseDecisions ?? []), decision];
+  }, dataStore);
+}
+
+/**
+ * Append one lifecycle transition about a case.
+ *
+ * Keyed on the case's cause, because that is the finding's stable identity.
+ * The server stamps the caller and time, just as it does for a remediation
+ * decision.
+ */
+export async function recordCaseTransition(
+  input: CaseTransitionInput,
+  by: Caller,
+  dataStore: DataStore = getStore(),
+  now: Date = new Date(),
+): Promise<AppState> {
+  const transition = caseTransitionFrom(input, { at: now.toISOString(), by });
+  return withState((state) => {
+    state.caseTransitions = [...(state.caseTransitions ?? []), transition];
+  }, dataStore);
+}
+
+/** Append one user-authored remediation plan for a case that had none. */
+export async function recordCasePlan(
+  input: CasePlanInput,
+  by: Caller,
+  dataStore: DataStore = getStore(),
+  now: Date = new Date(),
+): Promise<AppState> {
+  const plan = casePlanFrom(input, { at: now.toISOString(), by });
+  return withState((state) => {
+    state.casePlans = [...(state.casePlans ?? []), plan];
   }, dataStore);
 }
 

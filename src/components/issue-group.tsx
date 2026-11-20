@@ -1,5 +1,6 @@
 import type { RemediationGroup } from "@/lib/issue-case";
 import { CONFIDENCE_LABEL } from "@/lib/vocabulary";
+import { formatDate } from "@/lib/watch-copy";
 import { StatusChip } from "@/components/status-chip";
 import {
   EFFORT_LABEL,
@@ -38,21 +39,21 @@ export interface IssueGroupProps {
   pageTitles: Record<string, string>;
   /** Set when the group sits inside the folded tail. */
   nested?: boolean;
+  /** Marks a detection on the last run in the Date column. */
+  lastRunAt?: string;
 }
 
-export function IssueGroup({ group, basePath, pageTitles, nested = false }: IssueGroupProps) {
+export function IssueGroup({ group, basePath, pageTitles, nested = false, lastRunAt }: IssueGroupProps) {
   if (group.cases.length === 1) {
     return <IssueRow issue={group.cases[0]} basePath={basePath} pageTitles={pageTitles} nested={nested} />;
   }
 
   const impact = formatGroupImpact(group.impactMs);
-  // The remediation's first step, which is what the shared fix starts with. It
-  // is data, from the case; nothing is authored here.
-  const fix = group.remediation.steps.find((step) => step.trim() !== "") ?? group.primary.title;
 
   return (
-    <section>
+    <section aria-label={`One fix for ${group.cases.length} cases`}>
       <div
+        className="issue-group__header"
         style={{
           display: "grid",
           gridTemplateColumns: ISSUE_ROW_COLUMNS,
@@ -63,27 +64,40 @@ export function IssueGroup({ group, basePath, pageTitles, nested = false }: Issu
           background: "var(--surface-card)",
         }}
       >
-        {/* The most urgent state among the members: a live problem never hides
-            behind a sibling somebody has already settled. */}
-        <span>
+        {/* A group is not a case, so the header is not a link. The chip is the
+            most urgent member state; the text names the relationship and leaves
+            the steps to the case detail. */}
+        <span style={{ minWidth: 0, display: "flex", alignItems: "center", gap: 7 }}>
           <StatusChip state={group.state} />
-        </span>
-
-        <span style={{ ...TRUNCATE_CELL, fontSize: 13, fontWeight: 600 }} title={fix}>
-          {fix}
+          <span style={{ minWidth: 0, ...TRUNCATE_CELL, fontSize: 13, fontWeight: 600 }}>
+            One fix for {group.cases.length} cases
+          </span>
         </span>
 
         {/* The pages link here for the same reason they do on a row: this is
             the same column, and a header that names a page the reader cannot
             open teaches them the column is not clickable. */}
         <span style={{ ...TRUNCATE_CELL, fontSize: 12.5, color: "var(--text-muted)" }}>
-          {`${group.cases.length} cases · `}
           <PageScope
             pageIds={group.pageIds}
             strategies={group.primary.strategies}
             basePath={basePath}
             pageTitles={pageTitles}
           />
+        </span>
+
+        <span style={{ ...TRUNCATE_CELL, fontSize: 12.5, color: "var(--text-muted)" }}>
+          {formatDate(group.detectedAt)}
+          {lastRunAt && group.detectedAt.slice(0, 10) >= lastRunAt.slice(0, 10) ? (
+            <span
+              role="img"
+              aria-label="Detected on the last run"
+              title="Detected on the last run"
+              style={{ marginLeft: 4, color: "var(--action-primary-ink)" }}
+            >
+              ●
+            </span>
+          ) : null}
         </span>
 
         {/* The weakest member confidence, as a word. See the note in issue-row. */}
@@ -95,8 +109,12 @@ export function IssueGroup({ group, basePath, pageTitles, nested = false }: Issu
             is one of the numbers on the rows below, so the two reconcile
             (rule 19). The effort is the single shared one — the fix is carried
             out once. */}
-        <span style={{ ...NUMERIC_CELL, fontSize: 12.5, fontWeight: 600, color: impact.measured ? "var(--magnitude-value)" : "var(--text-muted)" }}>
-          {impact.text}
+        <span
+          style={{ ...NUMERIC_CELL, fontSize: 12.5, fontWeight: 600, color: impact.measured ? "var(--magnitude-value)" : "var(--text-muted)" }}
+          title={impact.measured ? undefined : "Not measured"}
+          aria-label={impact.measured ? undefined : "Not measured"}
+        >
+          {impact.measured ? impact.text : "—"}
         </span>
 
         <span style={{ ...NUMERIC_CELL, fontSize: 12.5, color: "var(--text-muted)" }}>
@@ -105,7 +123,14 @@ export function IssueGroup({ group, basePath, pageTitles, nested = false }: Issu
       </div>
 
       {group.cases.map((issue) => (
-        <IssueRow key={issue.id} issue={issue} basePath={basePath} pageTitles={pageTitles} nested />
+        <IssueRow
+          key={issue.id}
+          issue={issue}
+          basePath={basePath}
+          pageTitles={pageTitles}
+          nested
+          lastRunAt={lastRunAt}
+        />
       ))}
     </section>
   );

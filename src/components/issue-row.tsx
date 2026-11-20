@@ -1,14 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import type { CSSProperties } from "react";
-import type { IssueCase } from "@/lib/issue-case";
+import type { CSSProperties, ReactNode } from "react";
+import { enteredAt, type IssueCase } from "@/lib/issue-case";
 import type { Strategy } from "@/lib/types";
 import { EFFORT_LABEL, formatGroupImpact, formatImpact } from "@/lib/impact-format";
 import { PAGE_SCOPE_NAME_LIMIT, SCOPE_SEPARATOR, deviceScopeOf, pageScopeNames, scopeLineOf } from "@/lib/scope-line";
 import { causeLineOf, diagnosisLineOf } from "@/lib/case-copy";
 import { CONFIDENCE_LABEL } from "@/lib/vocabulary";
 import { caseHref, pageHref } from "@/lib/paths";
+import { formatDate } from "@/lib/watch-copy";
 import { StatusChip } from "@/components/status-chip";
 import { InfoTip } from "@/components/info-tip";
 
@@ -50,16 +51,16 @@ import { InfoTip } from "@/components/info-tip";
  * the template no longer reads the content.
  */
 export const ISSUE_ROW_COLUMNS = [
-  // state — a chip carries meaning, so it keeps its floor and is never clipped
-  "minmax(72px, 104px)",
-  // cause — takes the space the others do not need, and ellipses
+  // cause — carries the state chip at its left edge and takes the rest
   "minmax(0, 1fr)",
   // pages — shrinks alongside the cause, at a smaller share of it
   "minmax(0, 0.62fr)",
+  // date — the queue-relevant date: detected here, settled in Settled
+  "minmax(88px, 104px)",
   // confidence, impact, effort. Confidence is sized by its HEADER rather than
   // its values: "Probable" is 52px and "CONFIDENCE" is not, and a column header
   // that ellipses is a column nobody can identify.
-  "minmax(0, 100px)",
+  "minmax(0, 124px)",
   "minmax(88px, 96px)",
   "minmax(0, 88px)",
 ].join(" ");
@@ -111,6 +112,14 @@ export interface IssueRowProps {
   pageTitles: Record<string, string>;
   /** Set when the row sits under a remediation group it shares with others. */
   nested?: boolean;
+  /** Which date the Date column carries. */
+  dateMode?: "detected" | "settled" | "fix" | "watch";
+  /** Marks rows detected on the last run; never a sort direction. */
+  lastRunAt?: string;
+  /** A queue-specific second line under the cause, such as owner or staleness. */
+  meta?: ReactNode;
+  /** Replace the Confidence cell, as Watch does with checkpoint marks. */
+  confidenceSlot?: ReactNode;
 }
 
 /**
@@ -142,8 +151,13 @@ export function PageScope({
         ? names.map((page, index) => (
             <span key={page.id}>
               {index > 0 ? ", " : null}
-              <Link className="issue-row__page" href={pageHref(basePath, page.id)}>
+              <Link
+                className="issue-row__page"
+                href={pageHref(basePath, page.id)}
+                aria-label={`Open ${page.title} page`}
+              >
                 {page.title}
+                <span aria-hidden="true" style={{ marginLeft: 2, fontSize: 10 }}>↗</span>
               </Link>
             </span>
           ))
@@ -156,7 +170,7 @@ export function PageScope({
   );
 }
 
-export function IssueRow({ issue, basePath, pageTitles, nested = false }: IssueRowProps) {
+export function IssueRow({ issue, basePath, pageTitles, nested = false, dateMode = "detected", lastRunAt, meta, confidenceSlot }: IssueRowProps) {
   const impact = formatImpact(issue.impactMs);
   // What KIND of problem this is, in three or four words — the column a list of
   // four dozen rows is actually scanned on.
@@ -201,39 +215,71 @@ export function IssueRow({ issue, basePath, pageTitles, nested = false }: IssueR
         padding: "11px 40px",
       }}
     >
-      <span style={{ paddingLeft: nested ? ISSUE_ROW_NEST_INDENT : 0 }}>
+      {/* Truncation lives on the span around the title. The title link is the
+          primary target; the row itself is not clickable. */}
+      <span
+        style={{
+          paddingLeft: nested ? ISSUE_ROW_NEST_INDENT : 0,
+          minWidth: 0,
+          display: "flex",
+          alignItems: "center",
+          gap: 7,
+        }}
+      >
         <StatusChip state={issue.state} />
-      </span>
-
-      {/* NOT `TRUNCATE_CELL` on this cell or on the link inside it. The
-          stretched hit area is a positioned `::after` on the link, and
-          `overflow: hidden` anywhere above it clips that box back to the
-          cell — which is a whole-row target that only covers one column.
-          The truncation moves to the span around the text instead, where it
-          still ellipses and no longer clips anything. */}
-      <span style={{ minWidth: 0, display: "flex", alignItems: "center", gap: 7 }}>
         {hasSecondLayer ? (
           <InfoTip label={cause} text={diagnosis} />
         ) : (
           <span aria-hidden="true" className="issue-row__tip-spacer" />
         )}
-        <Link
-          className="issue-row__open"
-          href={caseHref(basePath, issue.id)}
-          style={{ minWidth: 0, fontSize: 13, fontWeight: 500 }}
-          // The tooltip is the VISIBLE text, not the diagnosis behind it.
-          // `title` becomes the accessible name, so a diagnosis here would
-          // announce and voice-target the link as something other than what
-          // it reads as on screen. The diagnosis has a disclosure now; that
-          // is where it belongs.
-          title={cause}
-        >
-          <span style={{ ...TRUNCATE_CELL, display: "block" }}>{cause}</span>
-        </Link>
+        <span style={{ minWidth: 0, flex: "1 1 auto", display: "flex", flexDirection: "column", gap: 1 }}>
+          <Link
+            className="issue-row__open"
+            href={caseHref(basePath, issue.id)}
+            style={{ minWidth: 0, fontSize: 13, fontWeight: 500 }}
+            // The tooltip is the VISIBLE text, not the diagnosis behind it.
+            // `title` becomes the accessible name, so a diagnosis here would
+            // announce and voice-target the link as something other than what
+            // it reads as on screen. The diagnosis has a disclosure now; that
+            // is where it belongs.
+            title={cause}
+          >
+            <span style={{ ...TRUNCATE_CELL, display: "block" }}>{cause}</span>
+          </Link>
+          {meta ? (
+            <span style={{ ...TRUNCATE_CELL, display: "block", fontSize: 12, color: "var(--text-muted)" }}>
+              {meta}
+            </span>
+          ) : null}
+        </span>
       </span>
 
       <span style={{ ...TRUNCATE_CELL, fontSize: 12.5, color: "var(--text-muted)" }}>
         <PageScope pageIds={issue.pageIds} strategies={issue.strategies} basePath={basePath} pageTitles={pageTitles} />
+      </span>
+
+      <span style={{ ...TRUNCATE_CELL, display: "block", fontSize: 12.5, color: "var(--text-muted)" }}>
+        <span style={{ display: "block" }}>
+          {formatDate(
+            dateMode === "settled"
+              ? enteredAt(issue, issue.state)
+              : dateMode === "fix"
+                ? enteredAt(issue, "todo")
+              : dateMode === "watch"
+                ? enteredAt(issue, "fixed") ?? issue.detectedAt
+                : issue.detectedAt,
+          )}
+          {dateMode === "detected" && lastRunAt && issue.detectedAt.slice(0, 10) >= lastRunAt.slice(0, 10) ? (
+            <span
+              role="img"
+              aria-label="Detected on the last run"
+              title="Detected on the last run"
+              style={{ marginLeft: 4, color: "var(--action-primary-ink)" }}
+            >
+              ●
+            </span>
+          ) : null}
+        </span>
       </span>
 
       {/* The word, in the row's secondary text token — never a strength hue.
@@ -241,12 +287,20 @@ export function IssueRow({ issue, basePath, pageTitles, nested = false }: IssueR
           the opposite of what it says (registry rule 13), and hue here would
           double-encode a value the word already carries. Strength as colour
           belongs where there is no word to read it from. */}
-      <span style={{ ...TRUNCATE_CELL, fontSize: 12.5, color: "var(--text-muted)" }}>
-        {CONFIDENCE_LABEL[issue.confidence]}
+      <span
+        style={confidenceSlot
+          ? { minWidth: 0, display: "flex", alignItems: "center", gap: 6 }
+          : { ...TRUNCATE_CELL, fontSize: 12.5, color: "var(--text-muted)" }}
+      >
+        {confidenceSlot ?? CONFIDENCE_LABEL[issue.confidence]}
       </span>
 
-      <span style={{ ...NUMERIC_CELL, fontSize: 12.5, color: impact.measured ? "var(--magnitude-value)" : "var(--text-muted)" }}>
-        {impact.text}
+      <span
+        style={{ ...NUMERIC_CELL, fontSize: 12.5, color: impact.measured ? "var(--magnitude-value)" : "var(--text-muted)" }}
+        title={impact.measured ? undefined : "Not measured"}
+        aria-label={impact.measured ? undefined : "Not measured"}
+      >
+        {impact.measured ? impact.text : "—"}
       </span>
 
       <span style={{ ...NUMERIC_CELL, fontSize: 12.5, color: "var(--text-muted)" }}>

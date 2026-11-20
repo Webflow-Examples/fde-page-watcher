@@ -6,7 +6,7 @@ import type { WatchPage } from "@/lib/types";
 import { APPLICABILITY_LABEL, CONFIDENCE_LABEL, applicabilityActionLabel, type ExclusionReason } from "@/lib/vocabulary";
 import { queueOf, type IssueCase } from "@/lib/issue-case";
 import { runOf } from "@/lib/checkpoint-evaluation";
-import { excludedNote } from "@/lib/case-copy";
+import { causeLineOf, diagnosisLineOf, excludedNote } from "@/lib/case-copy";
 import { formatImpact } from "@/lib/impact-format";
 import { caseHref } from "@/lib/paths";
 import { StatusChip } from "@/components/status-chip";
@@ -36,7 +36,7 @@ const CASE_ROW_COLUMNS = [
 ].join(" ");
 
 /**
- * One case, as a link and nothing else.
+ * One case; the title is the link.
  *
  * A case in Watch carries W1's marks, imported rather than redrawn: the run is
  * three 16px marks with the next scheduled check stretched into a countdown, and
@@ -62,7 +62,8 @@ function CaseRow({
   applicability?: React.ReactNode;
 }) {
   const impact = formatImpact(issue.impactMs);
-  const diagnosis = issue.diagnosis || issue.title;
+  const title = causeLineOf(issue);
+  const diagnosis = diagnosisLineOf(issue);
   const run = queueOf(issue.state) === "watch" ? runOf(issue) : [];
 
   return (
@@ -75,8 +76,7 @@ function CaseRow({
         background: "var(--surface-card)",
       }}
     >
-      <Link
-        href={caseHref(basePath, issue.id)}
+      <div
         style={{
           display: "grid",
           gridTemplateColumns: CASE_ROW_COLUMNS,
@@ -85,7 +85,6 @@ function CaseRow({
           flex: "1 1 auto",
           minWidth: 0,
           padding: "11px 14px",
-          textDecoration: "none",
           color: "var(--text-body)",
         }}
       >
@@ -93,9 +92,13 @@ function CaseRow({
           <StatusChip state={issue.state} />
         </span>
 
-        <span style={{ ...TRUNCATE_CELL, fontSize: 13, fontWeight: 500 }} title={diagnosis}>
-          {diagnosis}
-        </span>
+        <Link
+          href={caseHref(basePath, issue.id)}
+          title={diagnosis}
+          style={{ minWidth: 0, color: "inherit", textDecoration: "none", fontSize: 13, fontWeight: 500 }}
+        >
+          <span style={{ ...TRUNCATE_CELL, display: "block" }}>{title}</span>
+        </Link>
 
         {run.length > 0 ? (
           <CheckpointMarks run={run} countdown now={now} />
@@ -118,7 +121,7 @@ function CaseRow({
         <span style={{ ...NUMERIC_CELL, fontSize: 12.5, color: "var(--text-muted)" }}>
           {EFFORT_LABEL[issue.effort]}
         </span>
-      </Link>
+      </div>
 
       {applicability ? <span style={{ flex: "0 0 auto", paddingRight: 14 }}>{applicability}</span> : null}
     </div>

@@ -12,7 +12,9 @@ import {
   type IssueCase,
 } from "./issue-case";
 import { decisionOf, type CaseDecision, type CaseDecisionRecord } from "./case-decisions";
-import type { AppState, WatchPage } from "./types";
+import { applyCaseTransition, transitionOf } from "./case-transitions";
+import { planOf } from "./case-plans";
+import type { AppState, CasePlanRecord, CaseTransitionRecord, WatchPage } from "./types";
 
 /**
  * The canonical case list, derived from stored records.
@@ -199,11 +201,77 @@ export function applyCaseDecisions(
  * keeping the two apart is what lets a decision survive a run that rewrote
  * every record the case is made of.
  */
+type CaseEvent =
+  | { at: string; order: 0; decision: CaseDecisionRecord }
+  | { at: string; order: 1; transition: CaseTransitionRecord };
+
+/**
+ * Replay a case's decisions and transitions in the order they happened.
+ *
+ * The two logs have different keys and different grains, but they describe one
+ * case's life. Applying every decision before every transition would lose the
+ * second accept after a reopen: the decision would be tried against the state
+ * the case has since left. Merging them by timestamp keeps the stored scopes
+ * while making the replay match what a person actually did.
+ */
+function applyCaseEvents(
+  cases: readonly IssueCase[],
+  decisions: readonly CaseDecisionRecord[],
+  transitions: readonly CaseTransitionRecord[],
+  pageLabels: Record<string, string>,
+): IssueCase[] {
+  if (decisions.length === 0 && transitions.length === 0) return [...cases];
+  return cases.map((issue) => {
+    const { matched, stranded } = matchDecisions(remediationKey(issue), decisions);
+    const caseTransitions = transitions
+      .filter((record) => record.caseKey === issue.cause)
+      .map(transitionOf)
+      .filter((record): record is CaseTransitionRecord => record !== null);
+    const events: CaseEvent[] = [
+      ...matched.map((decision) => ({ at: decision.at, order: 0 as const, decision })),
+      ...caseTransitions.map((transition) => ({ at: transition.at, order: 1 as const, transition })),
+    ].sort((left, right) => left.at.localeCompare(right.at) || left.order - right.order);
+    let next = issue;
+    for (const event of events) {
+      next = "decision" in event
+        ? replay(next, event.decision, pageLabels)
+        : applyCaseTransition(next, event.transition);
+    }
+    return stranded ? { ...next, strandedDecision: true } : next;
+  });
+}
+
+/** Apply the latest user-authored plan for each cause before anything else. */
+function applyCasePlans(
+  cases: readonly IssueCase[],
+  plans: readonly CasePlanRecord[],
+): IssueCase[] {
+  if (plans.length === 0) return [...cases];
+  const latest = new Map<string, string[]>();
+  for (const record of plans) {
+    const plan = planOf(record);
+    if (plan) latest.set(plan.caseKey, plan.steps);
+  }
+  return cases.map((issue) => {
+    const steps = latest.get(issue.cause);
+    return steps ? { ...issue, remediation: { ...issue.remediation, steps } } : issue;
+  });
+}
+
 export function issueCasesFrom(
-  state: Pick<AppState, "recs" | "pages" | "caseDecisions">,
+  state: Pick<AppState, "recs" | "pages"> & Partial<Pick<AppState, "caseDecisions" | "caseTransitions" | "casePlans">>,
 ): IssueCase[] {
   const at = lastRunAtOf(state.pages);
   const options = at ? { at, referenceYear: Number(at.slice(0, 4)) } : {};
   const grouped = groupByCause(state.recs.map((rec) => fromRec(rec, options)), options);
-  return applyCaseDecisions(grouped, state.caseDecisions ?? [], pageLabelsOf(state.pages));
+  const planned = applyCasePlans(grouped, state.casePlans ?? []);
+  const decisions = state.caseDecisions ?? [];
+  const transitions = state.caseTransitions ?? [];
+  const pageLabels = pageLabelsOf(state.pages);
+  // A decision-only log keeps its append order, which is its contract; there is
+  // nothing from the other grain to interleave it with. Once both logs exist,
+  // timestamp order is the only common ordering, and it is what makes a second
+  // accept after a reopen apply.
+  if (transitions.length === 0) return applyCaseDecisions(planned, decisions, pageLabels);
+  return applyCaseEvents(planned, decisions, transitions, pageLabels);
 }

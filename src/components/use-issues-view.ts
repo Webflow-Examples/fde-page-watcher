@@ -21,7 +21,7 @@ import { useStore } from "./store";
 export interface IssuesView {
   /** Every case in the project, one per problem. */
   cases: IssueCase[];
-  /** Counted queues only. `show_all` is absent by design. */
+  /** Counted queues only. `settled` is absent by design. */
   counts: QueueCounts;
   /** The cases in the requested queue. */
   inQueue: IssueCase[];
@@ -50,13 +50,13 @@ export function useIssuesView(
   sort: IssueSort,
   direction: SortDirection = DEFAULT_SORT_DIRECTION[sort],
 ): IssuesView {
-  const { recs, pages, performanceThresholds, caseDecisions } = useStore();
+  const { recs, pages, performanceThresholds, caseDecisions, caseTransitions, casePlans } = useStore();
   return useMemo(() => {
     // The decisions log is part of the derivation's input, not a filter applied
     // after it: what someone decided about a remediation changes which queue
     // its cases are in, so the counts and the rows have to be read from the
     // same pass or the badge and the list disagree.
-    const cases = issueCasesFrom({ recs, pages, caseDecisions });
+    const cases = issueCasesFrom({ recs, pages, caseDecisions, caseTransitions, casePlans });
     const lastRunAt = lastRunAtOf(pages);
     const at = lastRunAt ? { at: lastRunAt } : {};
     const { minimumSavingsMs } = normalizePerformanceThresholds(performanceThresholds);
@@ -66,12 +66,12 @@ export function useIssuesView(
       cases,
       counts: queueCountsOf(cases),
       inQueue,
-      groups: sortRemediationGroups(groupByRemediation(inline, at), sort, lastRunAt, direction),
-      tail: sortRemediationGroups(groupByRemediation(tail, at), sort, lastRunAt, direction),
+      groups: sortRemediationGroups(groupByRemediation(inline, at), sort, direction),
+      tail: sortRemediationGroups(groupByRemediation(tail, at), sort, direction),
       tailCases: tail,
       minimumSavingsMs,
       pageTitles: Object.fromEntries(pages.map((page) => [page.id, page.title])),
       lastRunAt,
     };
-  }, [recs, pages, caseDecisions, performanceThresholds, queue, sort, direction]);
+  }, [recs, pages, caseDecisions, caseTransitions, casePlans, performanceThresholds, queue, sort, direction]);
 }

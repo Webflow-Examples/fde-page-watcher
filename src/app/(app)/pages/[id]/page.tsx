@@ -58,7 +58,7 @@ export default function PageDetail() {
     () => view.cases
       // Open means a queue holds it. Resolved and Dismissed are reachable only
       // through Show all, and a page's open work is not either of those.
-      .filter((issue) => queueOf(issue.state) !== "show_all" && issue.pageIds.includes(id))
+      .filter((issue) => queueOf(issue.state) !== "settled" && issue.pageIds.includes(id))
       // An excluded finding does not count for this site, so it is not open work
       // — it keeps its reading below, under Excluded.
       .filter((issue) => !isKnownNativeElementId(issue.cause)

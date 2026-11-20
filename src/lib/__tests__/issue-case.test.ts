@@ -207,8 +207,8 @@ describe("queue membership", () => {
   });
 
   it("sends the states no counted queue claims to the unfiltered view", () => {
-    expect(queueOf("resolved")).toBe("show_all");
-    expect(queueOf("dismissed")).toBe("show_all");
+    expect(queueOf("resolved")).toBe("settled");
+    expect(queueOf("dismissed")).toBe("settled");
   });
 });
 
@@ -417,12 +417,20 @@ describe("guards", () => {
     expect(() => accept(issue, { by: PERSON, at: AT })).toThrow(/no remediation steps/);
   });
 
-  it("closes every path to the fix queue for a case with no steps", () => {
-    // Accept is the only way in, per the registry, so guarding it is sufficient.
+  it("refuses to mark fixed without a remediation plan", () => {
+    const issue = makeCase({ state: "in_progress", remediation: { steps: [], actionability: "none" } });
+    expect(() => markFixed(issue, { by: PERSON, at: AT })).toThrow(/no remediation steps/);
+  });
+
+  it("keeps Accept closed to a case with no steps and offers Take on instead", () => {
     const waysToTodo = registryActions.filter((action) => action.to === "todo").map((action) => action.key);
-    expect(waysToTodo).toEqual(["accept"]);
+    expect(waysToTodo).toEqual(["accept", "take_on"]);
 
     const stepless = makeCase({ remediation: { steps: [], actionability: "none" } });
+    expect(() => applyAction(stepless, "accept", { by: PERSON, at: AT })).toThrow(/no remediation steps/);
+    expect(applyAction(stepless, "take_on", { by: PERSON, at: AT }).state).toBe("todo");
+
+    // Take on is the only path into Fix for a case without a plan.
     for (const state of ISSUE_STATES) {
       for (const action of registryActions) {
         try {
@@ -431,7 +439,7 @@ describe("guards", () => {
             at: AT,
             reason: DISMISS_REASONS[0],
           });
-          expect(moved.state).not.toBe("todo");
+          if (action.key !== "take_on") expect(moved.state).not.toBe("todo");
         } catch (error) {
           expect(error).toBeInstanceOf(IssueCaseError);
         }
@@ -937,7 +945,7 @@ describe("grouping by cause", () => {
     const fixed = markFixed(applyAction(accepted, "start", { by: PERSON, at: AT }), { by: PERSON, at: AT });
     const resolved: IssueCase = { ...fixed, state: "resolved" };
     expect(resolved.pageIds).toEqual(["p1", "p2"]);
-    expect(queueOf(resolved.state)).toBe("show_all");
+    expect(queueOf(resolved.state)).toBe("settled");
   });
 
   it("reopens on a subset scoped to the pages that came back", () => {

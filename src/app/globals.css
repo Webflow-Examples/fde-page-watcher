@@ -2746,9 +2746,20 @@ textarea:focus-visible,
   color: var(--text-body);
 }
 
-/* A member row inside a remediation group. */
+/* A member row inside a remediation group. The rail is what says the rows
+   below the header belong to it; the background alone is too quiet. */
 .issue-row--nested {
   background: var(--surface-page);
+}
+
+.issue-row--nested::before {
+  content: "";
+  position: absolute;
+  left: 22px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--border-hairline);
 }
 
 .issue-row__open {
@@ -2756,35 +2767,10 @@ textarea:focus-visible,
   text-decoration: none;
 }
 
-/* The stretched hit area. Not a second link — the same one, made row-sized. */
-.issue-row__open::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-}
-
-.issue-row:hover {
-  background: var(--surface-raised);
-}
-
+.issue-row__open:hover,
 .issue-row__open:focus-visible {
-  outline: none;
-}
-
-/* The focus ring belongs on the row, because the row is what the link covers. */
-.issue-row:has(.issue-row__open:focus-visible) {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -2px;
-}
-
-/*
- * Above the stretched link, so they keep their own targets. Without the
- * stacking context these sit under it and every click opens the case.
- */
-.issue-row__page,
-.issue-row .info-tip {
-  position: relative;
-  z-index: 1;
+  color: var(--action-primary-ink);
+  text-decoration: underline;
 }
 
 .issue-row__page {
@@ -2796,6 +2782,21 @@ textarea:focus-visible,
 .issue-row__page:focus-visible {
   color: var(--action-primary-ink);
   text-decoration: underline;
+}
+
+/* The title link and every control in a row share the app's focus ring. */
+.issue-row a:focus-visible,
+.issue-row button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+/* A page link sits inside the truncated Pages cell, whose overflow clips an
+   outward ring into one visible edge. Draw this one inside its own box. */
+.issue-row a.issue-row__page:focus-visible {
+  outline-offset: -2px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--focus-ring) 12%, transparent);
 }
 
 

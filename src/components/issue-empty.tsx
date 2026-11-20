@@ -118,7 +118,7 @@ export function WatchEmpty({ heading }: { heading: string }) {
 
 /* ── 4. Nothing anywhere is in flight ────────────────────────────────── */
 
-export function EverythingResolved({ caseCount, showAllHref }: { caseCount: number; showAllHref: string }) {
+export function EverythingResolved({ caseCount, settledHref }: { caseCount: number; settledHref: string }) {
   const settled = caseCount === 0
     // Reachable on a project whose runs have simply never found anything. The
     // heading is still the true one — nothing is in flight — but claiming a
@@ -129,11 +129,21 @@ export function EverythingResolved({ caseCount, showAllHref }: { caseCount: numb
   return (
     <EmptyState
       heading="Nothing is in flight"
-      action={<EmptyAction href={showAllHref}>{`Go to ${QUEUE_LABEL.show_all}`}</EmptyAction>}
+      action={<EmptyAction href={settledHref}>{`Go to ${QUEUE_LABEL.settled}`}</EmptyAction>}
     >
       {`${settled} `}
       Nothing is waiting on a decision, a fix, or a scheduled check. Every
       reading taken so far is still on the record.
+    </EmptyState>
+  );
+}
+
+/** The Settled view has nothing in it, whether or not other queues are busy. */
+export function SettledEmpty() {
+  return (
+    <EmptyState heading="Nothing is settled yet">
+      Resolved and dismissed cases appear here. Nothing in this view is waiting
+      on a decision, a fix, or a scheduled check.
     </EmptyState>
   );
 }

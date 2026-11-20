@@ -305,6 +305,40 @@ export interface CaseDecisionRecord {
   by: CaseDecisionCaller;
 }
 
+/** The case transitions a person can fire, in the registry's words. */
+export type CaseTransitionKind = "take_on" | "start" | "mark_fixed" | "reopen";
+
+/**
+ * One lifecycle transition somebody took on a case, as it is stored.
+ *
+ * Keyed on the case's cause rather than its id. A case id belongs to whichever
+ * member came first and moves when membership does; the cause is the finding's
+ * stable identity. A transition whose case is gone today stays in the log, and
+ * applies again if that cause comes back.
+ */
+export interface CaseTransitionRecord {
+  caseKey: string;
+  action: CaseTransitionKind;
+  /** ISO. Also the entry's place in the log, which is kept in append order. */
+  at: string;
+  by: CaseDecisionCaller;
+}
+
+/**
+ * One person-authored remediation plan for a case that had no documented steps.
+ *
+ * Append-only; the latest entry for a cause wins. Plans key on the same cause
+ * as transitions, so they survive page membership changes and can be replaced
+ * without editing history.
+ */
+export interface CasePlanRecord {
+  caseKey: string;
+  steps: string[];
+  /** ISO. Also the entry's place in the log, which is kept in append order. */
+  at: string;
+  by: CaseDecisionCaller;
+}
+
 /** Privacy-safe page-content finding for a known Webflow-native element footprint. */
 export interface NativeElementFinding {
   id: string;
@@ -892,6 +926,17 @@ export interface AppState {
    * made, not a decision that stopped existing.
    */
   caseDecisions?: CaseDecisionRecord[];
+  /**
+   * What people did to a case after it left Decide, oldest first.
+   *
+   * Separate from `caseDecisions` because it has a different grain: decisions
+   * are about a remediation and survive membership changes; transitions are
+   * about one case and are keyed on its cause. Append-only, like the decision
+   * log.
+   */
+  caseTransitions?: CaseTransitionRecord[];
+  /** User-authored remediation plans, oldest first. */
+  casePlans?: CasePlanRecord[];
   /** Workspace-owned HTTPS endpoint for confirmed performance-regression alerts. */
   alertWebhookUrl?: string | null;
   /** Recent scheduled digest claims/deliveries, retained for idempotency and retries. */

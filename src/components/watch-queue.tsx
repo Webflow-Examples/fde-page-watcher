@@ -5,6 +5,7 @@ import { byNextDue } from "@/lib/checkpoint-evaluation";
 import type { IssueCase } from "@/lib/issue-case";
 import { watchIntro } from "@/lib/watch-copy";
 import { WatchRow } from "@/components/watch-row";
+import { CaseColumnHeaders } from "@/components/case-columns";
 
 /**
  * The Watch tab (15d, and the ordering in item 6).
@@ -22,13 +23,15 @@ import { WatchRow } from "@/components/watch-row";
 
 export interface WatchQueueProps {
   cases: readonly IssueCase[];
+  basePath: string;
+  pageTitles: Record<string, string>;
   onReopen?: (issue: IssueCase) => void;
   onRecheck?: (issue: IssueCase) => void;
   now?: Date;
   locale?: string;
 }
 
-export function WatchQueue({ cases, onReopen, onRecheck, now, locale }: WatchQueueProps) {
+export function WatchQueue({ cases, basePath, pageTitles, onReopen, onRecheck, now, locale }: WatchQueueProps) {
   const [openId, setOpenId] = useState<string | null>(null);
   const ordered = [...cases].sort(byNextDue);
 
@@ -49,11 +52,15 @@ export function WatchQueue({ cases, onReopen, onRecheck, now, locale }: WatchQue
         {watchIntro(ordered.length)}
       </p>
 
+      <CaseColumnHeaders labels={{ date: "Fixed", confidence: "Checkpoints" }} />
+
       <div style={{ borderBottom: "1px solid var(--border-hairline)" }}>
         {ordered.map((issue) => (
           <WatchRow
             key={issue.id}
             issue={issue}
+            basePath={basePath}
+            pageTitles={pageTitles}
             open={openId === issue.id}
             onToggle={() => setOpenId((previous) => (previous === issue.id ? null : issue.id))}
             onReopen={onReopen ? () => onReopen(issue) : undefined}

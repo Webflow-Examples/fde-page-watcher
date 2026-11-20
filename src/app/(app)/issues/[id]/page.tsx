@@ -5,8 +5,14 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useStore } from "@/components/store";
 import { useIssuesView } from "@/components/use-issues-view";
-import { DESTINATION_LABEL, DESTINATION_PATH, type ExclusionReason } from "@/lib/vocabulary";
-import { remediationKey } from "@/lib/issue-case";
+import {
+  DESTINATION_LABEL,
+  DESTINATION_PATH,
+  type DismissReason,
+  type ExclusionReason,
+  type IssueAction,
+} from "@/lib/vocabulary";
+import { queueOf, remediationKey, type IssueCase } from "@/lib/issue-case";
 import { CaseDetail } from "@/components/case-detail";
 import { DigestBanner } from "@/components/digest-banner";
 import { DIGEST_DATE_PARAM, DIGEST_LINE_PARAM, digestLineFor, parseDigestArrival } from "@/lib/digest";
@@ -39,15 +45,35 @@ import { casePath } from "@/lib/paths";
  * click is the same derivation as what is on screen after a reload — there is
  * no second copy of the answer that could disagree with the stored one.
  */
+/**
+ * Accept is remediation-wide; the lifecycle verbs are case-level and keyed on
+ * the case's cause. Dismiss needs a reason, so it has its own handler and
+ * picker. Every verb here has a log that can keep it.
+ */
+const CASE_ACTIONS: readonly IssueAction[] = ["accept", "take_on", "start", "mark_fixed", "reopen"];
+
 export default function CasePage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const searchParams = useSearchParams();
   const id = decodeURIComponent(String(params?.id ?? ""));
-  const { pages, pathFor, performanceThresholds, recordCaseDecision } = useStore();
+  const {
+    pages,
+    pathFor,
+    performanceThresholds,
+    recordCaseDecision,
+    recordCaseTransition,
+    recordCasePlan,
+    basePath,
+  } = useStore();
   const view = useIssuesView("show_all", "impact");
 
   const issue = useMemo(() => view.cases.find((item) => item.id === id), [view.cases, id]);
+  const sharedWith = useMemo(() => {
+    if (!issue) return [];
+    const key = remediationKey(issue);
+    return view.cases.filter((item) => item.id !== issue.id && remediationKey(item) === key);
+  }, [issue, view.cases]);
 
   const pageTitles = view.pageTitles;
   const pagePaths = useMemo(
@@ -120,6 +146,41 @@ export default function CasePage() {
     [issue, recordCaseDecision],
   );
 
+  const performAction = useCallback(
+    (action: IssueAction, issue: IssueCase) => {
+      switch (action) {
+        case "accept":
+          recordCaseDecision({ decision: "accept", remediationKey: remediationKey(issue) });
+          return;
+        case "take_on":
+        case "start":
+        case "mark_fixed":
+        case "reopen":
+          recordCaseTransition({ caseKey: issue.cause, action });
+          return;
+        default:
+          return;
+      }
+    },
+    [recordCaseDecision, recordCaseTransition],
+  );
+
+  const dismissCase = useCallback(
+    (reason: DismissReason) => {
+      if (!issue) return;
+      recordCaseDecision({ decision: "dismiss", remediationKey: remediationKey(issue), reason });
+    },
+    [issue, recordCaseDecision],
+  );
+
+  const savePlan = useCallback(
+    (steps: string[]) => {
+      if (!issue) return;
+      recordCasePlan({ caseKey: issue.cause, steps });
+    },
+    [issue, recordCasePlan],
+  );
+
   if (!issue) {
     return (
       <div style={{ padding: "40px" }}>
@@ -150,6 +211,13 @@ export default function CasePage() {
         issue={issue}
         pageTitles={pageTitles}
         pagePaths={pagePaths}
+        basePath={basePath}
+        backHref={pathFor(`${DESTINATION_PATH.issues}?queue=${queueOf(issue.state)}`)}
+        sharedWith={sharedWith}
+        supportedActions={CASE_ACTIONS}
+        onAction={performAction}
+        onDismiss={dismissCase}
+        onPlanChange={savePlan}
         onExclude={excludePageFromCase}
         onInclude={includePageInCase}
       />

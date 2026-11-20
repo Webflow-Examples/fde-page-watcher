@@ -63,7 +63,7 @@ export function CopyTicketButton({ ticket }: CopyTicketButtonProps) {
   return (
     // A column, because the header stacks its actions and a confirmation beside
     // the button would widen the whole column by a sentence.
-    <span style={{ display: "flex", flexDirection: "column", alignItems: "stretch", gap: 6 }}>
+    <span style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "stretch", gap: 6 }}>
       <button
         type="button"
         onClick={copy}
@@ -89,6 +89,13 @@ export function CopyTicketButton({ ticket }: CopyTicketButtonProps) {
         role="status"
         aria-live="polite"
         style={{
+          // Absolute, so a confirmation line does not make this button taller
+          // than the primary action beside it. The message still appears
+          // directly under the control that produced it.
+          position: "absolute",
+          top: "calc(100% + 6px)",
+          left: 0,
+          right: 0,
           maxWidth: "34ch",
           fontSize: 12.5,
           lineHeight: 1.45,

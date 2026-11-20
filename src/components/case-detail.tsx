@@ -1,9 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { attributionOf } from "@/lib/caller";
+import { caseHref, pageHref } from "@/lib/paths";
 import {
   RESOLVING_INTERVAL,
+  checkpointsAgree,
+  enteredAt,
   includedPages,
   isTransition,
   personActionsFor,
@@ -22,10 +26,12 @@ import {
   ISSUE_ACTION_LABEL,
   WORK_STATE_LABEL,
   queueHoldsState,
+  type DismissReason,
   type ExclusionReason,
   type IssueAction,
 } from "@/lib/vocabulary";
 import {
+  DismissAction,
   EFFORT_LABEL as IMPACT_EFFORT_WORDS,
   ObjectDetailHeaderActions,
   type CaseAction,
@@ -36,6 +42,8 @@ import {
   DECISION_STRANDED,
   NO_ACTION_REASON,
   acceptLabel,
+  causeLineOf,
+  diagnosisLineOf,
   evidenceAgreement,
   evidenceConflict,
   historyDetected,
@@ -72,6 +80,10 @@ export interface CaseDetailProps {
   pagePaths?: Record<string, string>;
   impactByPage?: Record<string, number>;
   basePath?: string;
+  /** Other cases whose remediation is the same piece of work. */
+  sharedWith?: readonly IssueCase[];
+  /** Where the Issues breadcrumb returns, including the case's queue. */
+  backHref?: string;
   /**
    * Fire one registry transition on this case.
    *
@@ -81,6 +93,15 @@ export interface CaseDetailProps {
    * the state the per-page exclude control was withheld to avoid.
    */
   onAction?: (action: IssueAction, issue: IssueCase) => void;
+  /** Dismiss is separate because the registry requires a reason. */
+  onDismiss?: (reason: DismissReason) => void;
+  /** Save steps for a case whose source documented no remediation. */
+  onPlanChange?: (steps: string[]) => void;
+  /**
+   * The verbs this caller can persist. The header renders only these, so a
+   * button whose decision has nowhere to go is never shown.
+   */
+  supportedActions?: readonly IssueAction[];
   onExclude?: (pageId: string, reason: ExclusionReason) => void;
   onInclude?: (pageId: string) => void;
   /**
@@ -101,6 +122,58 @@ export interface CaseDetailProps {
   appUrl?: string;
   now?: Date;
   locale?: string;
+}
+
+function PlanEditor({ onSave }: { onSave: (steps: string[]) => void }) {
+  const [value, setValue] = useState("");
+  const steps = value.split(/\r?\n/).map((step) => step.trim()).filter(Boolean);
+  return (
+    <div style={{ maxWidth: "72ch" }}>
+      <p style={{ margin: "0 0 8px", fontSize: 12.5, lineHeight: 1.5, color: "var(--text-muted)" }}>
+        No remediation steps are documented. Write one step per line, then save.
+      </p>
+      <textarea
+        aria-label="Remediation steps, one per line"
+        value={value}
+        onChange={(event) => setValue(event.target.value)}
+        rows={3}
+        placeholder="Open the page settings and…"
+        style={{
+          boxSizing: "border-box",
+          width: "100%",
+          padding: "9px 10px",
+          borderRadius: 8,
+          border: "1px solid var(--border-strong)",
+          background: "var(--surface-card)",
+          color: "var(--text-body)",
+          font: "inherit",
+          fontSize: 13,
+          lineHeight: 1.5,
+          resize: "vertical",
+        }}
+      />
+      <button
+        type="button"
+        disabled={steps.length === 0}
+        onClick={() => onSave(steps)}
+        style={{
+          appearance: "none",
+          cursor: steps.length === 0 ? "not-allowed" : "pointer",
+          marginTop: 8,
+          padding: "7px 12px",
+          borderRadius: 7,
+          border: "1px solid var(--border-strong)",
+          background: "var(--action-primary-bg)",
+          color: "var(--action-primary-text)",
+          fontSize: 12.5,
+          fontWeight: 550,
+          opacity: steps.length === 0 ? 0.55 : 1,
+        }}
+      >
+        Save plan
+      </button>
+    </div>
+  );
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -229,7 +302,13 @@ export function CaseDetail({
   pageTitles,
   pagePaths,
   impactByPage,
+  basePath,
+  sharedWith,
+  backHref,
   onAction,
+  onDismiss,
+  onPlanChange,
+  supportedActions,
   onExclude,
   onInclude,
   onNotesChange,
@@ -250,6 +329,14 @@ export function CaseDetail({
   // for the ticket's string to be byte-identical to this one, and the only way
   // to promise that is for there to be one string rather than two that agree.
   const impact = formatCaseImpact(issue, impactByPage);
+  // An effort band is an estimate of the documented remediation. With no steps
+  // there is nothing to estimate, so the stale source value would contradict
+  // the note beside it.
+  const hasEffortBasis = issue.remediation.steps.length > 0;
+  const hasPlan = hasEffortBasis;
+  const isPlatform = issue.remediation.actionability === "platform";
+  // Accept is stored against the remediation, so every case sharing it moves.
+  const sharedCaseCount = 1 + (sharedWith?.length ?? 0);
 
   /**
    * The state's own legal moves, in the order the header offers them.
@@ -264,14 +351,26 @@ export function CaseDetail({
     const primary = primaryActionFor(issue.state);
     if (!primary) return [];
     const ordered = [primary, ...personActionsFor(issue.state).filter((action) => action !== primary)];
-    return ordered.map((action) => ({
+    const allowed = (supportedActions
+      ? ordered.filter((action) => supportedActions.includes(action))
+      : ordered
+    ).filter((action) => {
+      if (action === "accept") return hasPlan && !isPlatform;
+      if (action === "take_on") return !hasPlan && !isPlatform;
+      if (action === "mark_fixed") return hasPlan;
+      return true;
+    });
+    return allowed.map((action) => ({
       action,
       label: action === "accept"
-        ? acceptLabel(included.length, issue.pageIds.length)
+        ? acceptLabel(included.length, issue.pageIds.length, sharedCaseCount)
         : ISSUE_ACTION_LABEL[action],
       onClick: onAction ? () => onAction(action, issue) : undefined,
     }));
-  }, [included.length, issue, onAction]);
+  }, [hasPlan, included.length, isPlatform, issue, onAction, sharedCaseCount, supportedActions]);
+
+  const canDismiss = Boolean(onDismiss) && personActionsFor(issue.state).includes("dismiss");
+  const headerActions = actions.filter((entry) => entry.action !== "dismiss" && entry.onClick);
 
   /**
    * Rule 17's sentence, and only where it is true.
@@ -281,13 +380,17 @@ export function CaseDetail({
    * describing a button that was never going to be there, which is a different
    * and untrue explanation.
    */
-  const noAction = actions[0]?.action !== "accept"
-    ? null
-    : issue.remediation.actionability === "none"
-      ? NO_ACTION_REASON.none
-      : issue.remediation.actionability === "platform"
-        ? NO_ACTION_REASON.platform
-        : null;
+  const noAction = isPlatform
+    ? NO_ACTION_REASON.platform
+    : !hasPlan
+      ? issue.state === "new" || issue.state === "reopened"
+        ? NO_ACTION_REASON.none
+        : issue.state === "fixed" || issue.state === "resolved" || issue.state === "dismissed"
+          ? NO_ACTION_REASON.no_plan_closed
+          : NO_ACTION_REASON.no_plan
+      : null;
+  const canEditPlan = Boolean(onPlanChange) && !isPlatform
+    && (issue.state === "new" || issue.state === "reopened" || issue.state === "todo" || issue.state === "in_progress");
 
   const sources = issue.evidence.length;
   const conflicting = issue.confidence === "unclear" && sources >= 2;
@@ -311,17 +414,19 @@ export function CaseDetail({
   return (
     <div style={{ minWidth: 0, paddingBottom: 48 }}>
       <ObjectDetailHeader
-        breadcrumb={{ label: DESTINATION_LABEL.issues, href: DESTINATION_PATH.issues }}
+        breadcrumb={{ label: DESTINATION_LABEL.issues, href: backHref ?? DESTINATION_PATH.issues }}
         state={<StatusChip state={issue.state} />}
-        stateDate={formatDate(issue.detectedAt, locale)}
-        title={issue.diagnosis}
-        explanation={issue.successCriteria}
+        stateDate={`Since ${formatDate(enteredAt(issue, issue.state) ?? issue.detectedAt, locale)}`}
+        title={causeLineOf(issue)}
+        explanation={diagnosisLineOf(issue)}
         actions={
           <>
             {/* Registry rule 17: where there is nothing to accept, the case says
                 why in a sentence. A disabled Accept is the thing this replaces —
                 it tells the reader they lack permission, which is not what is
-                true; there is simply nothing documented to commit to. */}
+                true; there is simply nothing documented to commit to. Only
+                Accept is withdrawn: the other legal moves, Dismiss in particular,
+                remain available so the case can still be triaged. */}
             {noAction ? (
               <p
                 style={{
@@ -334,9 +439,9 @@ export function CaseDetail({
               >
                 {noAction}
               </p>
-            ) : (
-              <ObjectDetailHeaderActions actions={actions} />
-            )}
+            ) : null}
+            <ObjectDetailHeaderActions actions={headerActions} quiet={isPlatform} />
+            {canDismiss ? <DismissAction onChoose={onDismiss!} /> : null}
             {/* A decision was taken about this remediation and no longer applies
                 to it, because a reclassification changed the remediation's key
                 under it. The case is undecided and the buttons above are the
@@ -365,13 +470,64 @@ export function CaseDetail({
         metadata={
           <div style={{ display: "flex", flexWrap: "wrap", gap: 28 }}>
             <Figure label={IMPACT_LABEL} value={impact.text} muted={!impact.measured} />
-            <Figure label={EFFORT_LABEL_TEXT} value={IMPACT_EFFORT_WORDS[issue.effort]} />
+            <Figure
+              label={EFFORT_LABEL_TEXT}
+              value={hasEffortBasis ? IMPACT_EFFORT_WORDS[issue.effort] : "Not estimated"}
+              muted={!hasEffortBasis}
+            />
+            {issue.owner ? <Figure label="Owner" value={issue.owner} /> : null}
             <Figure label="Confidence" value={CONFIDENCE_LABEL[issue.confidence]} />
           </div>
         }
       />
 
       <div style={{ padding: "0 40px" }}>
+        {/* The steps Accept commits to. A case with no documented steps gets
+            an editor here, so Take on is not a dead end. */}
+        {issue.remediation.steps.length > 0 || canEditPlan ? (
+          <Section title="How to fix">
+            {issue.remediation.steps.length > 0 ? (
+              <ol
+                style={{
+                  margin: 0,
+                  paddingLeft: 20,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 8,
+                  maxWidth: "72ch",
+                  fontSize: 13,
+                  lineHeight: 1.6,
+                  color: "var(--text-body)",
+                }}
+              >
+                {issue.remediation.steps.map((step, index) => (
+                  <li key={`${index}-${step}`}>{step}</li>
+                ))}
+              </ol>
+            ) : (
+              <PlanEditor onSave={onPlanChange!} />
+            )}
+            {sharedWith && sharedWith.length > 0 ? (
+              <p style={{ margin: "12px 0 0", fontSize: 12.5, color: "var(--text-muted)", maxWidth: "72ch" }}>
+                This fix also covers{" "}
+                {sharedWith.map((item, index) => (
+                  <span key={item.id}>
+                    {index > 0 ? ", " : ""}
+                    <Link
+                      href={caseHref(basePath ?? "", item.id)}
+                      style={{ color: "var(--action-primary-ink)", textDecoration: "none" }}
+                    >
+                      {causeLineOf(item)}
+                    </Link>
+                  </span>
+                ))}
+                . Accepting it here accepts the fix for{" "}
+                {sharedCaseCount === 2 ? "both cases" : `all ${sharedCaseCount} cases`}.
+              </p>
+            ) : null}
+          </Section>
+        ) : null}
+
         {/* `CasePages` carries its own heading and count, because the count
             belongs beside the title rather than under it. */}
         <div style={{ marginTop: 26 }}>
@@ -384,6 +540,22 @@ export function CaseDetail({
             onInclude={onInclude}
           />
         </div>
+
+        {issue.successCriteria ? (
+          <Section title="Done when">
+            <p
+              style={{
+                margin: 0,
+                maxWidth: "72ch",
+                fontSize: 13,
+                lineHeight: 1.6,
+                color: "var(--text-body)",
+              }}
+            >
+              {issue.successCriteria}
+            </p>
+          </Section>
+        ) : null}
 
         <CaseNotes notes={issue.notes} onNotesChange={onNotesChange} />
 
@@ -409,10 +581,24 @@ export function CaseDetail({
                 }}
               >
                 <span style={{ flex: "0 0 160px", color: "var(--text-body)" }}>
-                  {EVIDENCE_SOURCE_LABEL[entry.source]}
+                  {issue.pageIds.length > 0 ? (
+                    <Link
+                      href={pageHref(basePath ?? "", issue.pageIds[0])}
+                      style={{ color: "var(--action-primary-ink)", textDecoration: "none" }}
+                      title="Open page readings"
+                    >
+                      {EVIDENCE_SOURCE_LABEL[entry.source]}
+                      <span aria-hidden="true" style={{ marginLeft: 3, fontSize: 10 }}>↗</span>
+                    </Link>
+                  ) : (
+                    EVIDENCE_SOURCE_LABEL[entry.source]
+                  )}
                 </span>
-                <span style={{ flex: "1 1 auto", color: "var(--text-muted)" }}>
-                  {entry.supports ? "Supports the diagnosis" : "Does not support it"}
+                <span style={{ flex: "1 1 auto", minWidth: 0 }}>
+                  <span style={{ display: "block", color: "var(--text-body)" }}>{entry.reading}</span>
+                  <span style={{ display: "block", marginTop: 3, color: "var(--text-muted)" }}>
+                    {entry.supports ? "Supports the diagnosis" : "Does not support it"}
+                  </span>
                 </span>
                 <span style={{ flex: "0 0 auto", color: "var(--text-muted)" }}>
                   {formatDate(entry.observedAt, locale)}
@@ -436,6 +622,19 @@ export function CaseDetail({
               now={now}
               locale={locale}
             />
+            {issue.state === "fixed" && !checkpointsAgree(issue.checkpoints) ? (
+              <p
+                style={{
+                  margin: "10px 0 0",
+                  maxWidth: "72ch",
+                  fontSize: 12.5,
+                  lineHeight: 1.5,
+                  color: "var(--text-muted)",
+                }}
+              >
+                Resolve happens automatically when the 30-day check agrees and no check has disagreed.
+              </p>
+            ) : null}
           </Section>
         ) : null}
 

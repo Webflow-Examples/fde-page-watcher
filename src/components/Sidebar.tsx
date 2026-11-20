@@ -8,13 +8,14 @@ import { MAGNITUDE_WEIGHT } from "./magnitude";
 import { normalizeCollectionSchedule } from "@/lib/collectionSchedule";
 import { ClockIcon, EyeIcon, PagesIcon } from "./icons";
 import { GearIcon, ShieldCheckIcon, SignOutIcon, WarningDiamondIcon } from "@phosphor-icons/react";
-import { decideQueueCount } from "@/lib/decideQueue";
+import { casesInQueue } from "@/lib/issue-case";
+import { issueCasesFrom } from "@/lib/issue-cases";
 import { DESTINATION_LABEL, DESTINATION_PATH, QUEUE_LABEL } from "@/lib/vocabulary";
 import type { Destination } from "@/lib/vocabulary";
 import { SelectMenu } from "./select-menu";
 import webflowSocialLogo from "../../public/webflow-social.png";
 import type { ComponentType } from "react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { clearPageWatchBrowserState } from "@/lib/clientLogout";
 import { AppearanceControl } from "./appearance";
 
@@ -45,8 +46,8 @@ const navItems: readonly NavItem[] = [
 
 /**
  * The sidebar's one numeric badge: how many issue cases are waiting in Decide.
- * The count itself comes from `decideQueueCount`, so chunk F2 can repoint it at
- * real issue cases without touching this file.
+ * The count comes from the same case derivation and queue predicate the Issues
+ * page uses, so the badge and the page header cannot disagree.
  *
  * It is a magnitude, not a work state (F3 R3): weight carries the emphasis and
  * the pill is plain chrome. Deliberately not a <StatusChip> — a queue depth is
@@ -81,6 +82,10 @@ export function Sidebar() {
   const router = useRouter();
   const {
     recs,
+    pages,
+    caseDecisions,
+    caseTransitions,
+    casePlans,
     pathFor,
     collectionSchedule,
     projects,
@@ -94,9 +99,12 @@ export function Sidebar() {
   } = useStore();
   const [devEmail, setDevEmail] = useState(user.email);
   const [signingOut, setSigningOut] = useState(false);
-  const decisionCount = decideQueueCount(recs);
-
+  const decisionCount = useMemo(
+    () => casesInQueue(issueCasesFrom({ recs, pages, caseDecisions, caseTransitions, casePlans }), "decide").length,
+    [recs, pages, caseDecisions, caseTransitions, casePlans],
+  );
   const schedule = normalizeCollectionSchedule(collectionSchedule);
+  const zoneLabel = schedule.timeZone.replaceAll("_", " ");
   const visibleNavItems = navItems.filter((item) => canManageProject || !item.requiresProjectAdmin);
 
   return (
@@ -234,7 +242,7 @@ export function Sidebar() {
               is worse than a second line, because the zone is the half that
               tells you whether 02:30 is your 02:30. */}
           <span style={{ minWidth: 0, lineHeight: 1.4 }}>
-            {projectSwitching ? "Loading project…" : `Next run ${schedule.localTime} ${schedule.timeZone}`}
+            {projectSwitching ? "Loading project…" : `Next run ${schedule.localTime} ${zoneLabel}`}
           </span>
         </div>
 

@@ -1,4 +1,4 @@
-import { COUNTED_QUEUES, QUEUES, QUEUE_LABEL, type Queue } from "@/lib/vocabulary";
+import { COUNTED_QUEUES, QUEUE_LABEL, QUEUE_TABS, type Queue } from "@/lib/vocabulary";
 import { TabStrip } from "@/components/tab-strip";
 
 /**
@@ -10,9 +10,8 @@ import { TabStrip } from "@/components/tab-strip";
  * arrive already derived from `queueOf`, which is the only thing in the app
  * that knows where a case belongs.
  *
- * Show all carries no badge, and cannot: it is the unfiltered view rather than
- * a queue (registry rule 1), so the selector that produces these counts never
- * produces one for it. There is no branch here to get wrong.
+ * Settled carries no badge: those cases are not awaiting anything. The three
+ * action queues are the only counted ones.
  *
  * The strip itself is `<TabStrip>`, shared with the pages destination's view
  * switch. What stays here is what is actually about queues.
@@ -49,7 +48,7 @@ export function QueueTabs({ activeQueue, counts, hrefFor }: QueueTabsProps) {
   return (
     <TabStrip
       ariaLabel="Queues"
-      tabs={QUEUES.map((queue) => {
+      tabs={QUEUE_TABS.map((queue) => {
         const active = queue === activeQueue;
         const count = COUNTED_QUEUES.includes(queue) ? counts[queue] : undefined;
         return {

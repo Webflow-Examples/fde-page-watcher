@@ -262,10 +262,10 @@ export class IssueCaseError extends Error {
  */
 export function queueOf(state: IssueState): Queue {
   const holder = COUNTED_QUEUES.find((queue) => QUEUE_HOLDS[queue].includes(state));
-  return holder ?? "show_all";
+  return holder ?? "settled";
 }
 
-/** The cases in one queue. Show all is unfiltered, exactly as the registry says. */
+/** The cases in one queue. Show all is the internal unfiltered view. */
 export function casesInQueue(cases: readonly IssueCase[], queue: Queue): IssueCase[] {
   if (queue === "show_all") return [...cases];
   return cases.filter((item) => queueOf(item.state) === queue);
@@ -620,6 +620,11 @@ export function applyAction(issue: IssueCase, action: IssueAction, options: Tran
   if (action === "accept" && issue.remediation.steps.length === 0) {
     throw new IssueCaseError(
       `applyAction: ${issue.id} has no remediation steps, so it cannot be accepted. Give it steps first.`,
+    );
+  }
+  if (action === "mark_fixed" && issue.remediation.steps.length === 0) {
+    throw new IssueCaseError(
+      `applyAction: ${issue.id} has no remediation steps, so it cannot be marked fixed. Add a plan first.`,
     );
   }
   if (transition.requiresReason && !isDismissReason(options.reason)) {

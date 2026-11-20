@@ -152,8 +152,8 @@ describe("vocabulary registry parity", () => {
   });
 
   /**
-   * `show_all` carries `"counted": false` in the registry and `COUNTED_QUEUES`
-   * lists the other three by hand. Nothing read the flag, so a queue marked
+   * `show_all` and `settled` carry `"counted": false` in the registry and
+   * `COUNTED_QUEUES` lists the other three by hand. Nothing read the flag, so a queue marked
    * uncounted would still have badged, and an added queue would have gone
    * uncounted with no failure anywhere.
    */
@@ -163,6 +163,7 @@ describe("vocabulary registry parity", () => {
       .map((value) => value.key);
     expect([...COUNTED_QUEUES]).toEqual(counted);
     expect([...COUNTED_QUEUES]).not.toContain("show_all");
+    expect([...COUNTED_QUEUES]).not.toContain("settled");
   });
 
   it("agrees with the registry about which queue each state belongs to", () => {
@@ -545,20 +546,22 @@ describe("banned vocabulary", () => {
 describe("vocabulary helpers", () => {
   it("falls back to Decide for missing or unrecognised queue values", () => {
     expect(parseQueue("fix")).toBe("fix");
-    expect(parseQueue("show_all")).toBe("show_all");
+    expect(parseQueue("show_all")).toBe("settled");
     expect(parseQueue(null)).toBe("decide");
     expect(parseQueue(undefined)).toBe("decide");
     expect(parseQueue("inbox")).toBe("decide");
   });
 
-  it("puts New and Reopened in Decide, and everything in Show all", () => {
+  it("puts New and Reopened in Decide, and the terminal states in Settled", () => {
     expect([...statesInQueue("decide")]).toEqual(["new", "reopened"]);
+    expect([...statesInQueue("settled")]).toEqual(["resolved", "dismissed"]);
+    // The internal unfiltered view still holds every state.
     expect([...statesInQueue("show_all")]).toEqual([...WORK_STATES]);
   });
 
-  it("offers Accept and Dismiss on the states Decide holds", () => {
+  it("offers Accept, Take on and Dismiss on the states Decide holds", () => {
     for (const state of statesInQueue("decide")) {
-      expect([...actionsFromState(state)]).toEqual(["accept", "dismiss"]);
+      expect([...actionsFromState(state)]).toEqual(["accept", "take_on", "dismiss"]);
     }
     expect([...actionsFromState("todo")]).toEqual(["start"]);
     expect([...actionsFromState("in_progress")]).toEqual(["mark_fixed"]);

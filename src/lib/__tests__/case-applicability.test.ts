@@ -76,6 +76,7 @@ describe("a case's pages", () => {
     expect(acceptLabel(includedPages(issue).length, issue.pageIds.length)).toBe("Accept");
     const narrowed = excludePage(issue, "p3", "Not applicable to this site", { by: PERSON, at: AT });
     expect(acceptLabel(includedPages(narrowed).length, narrowed.pageIds.length)).toBe("Accept for 2 pages");
+    expect(acceptLabel(1, 1, 2)).toBe("Accept shared fix (2 cases)");
   });
 
   it("writes a history entry naming the page and the reason", () => {
@@ -267,16 +268,18 @@ describe("the exclude control", () => {
     expect(code).not.toMatch(/useState/);
   });
 
-  it("offers no verb the log cannot keep", () => {
+  it("offers only the verbs the log can keep", () => {
     /**
-     * The header takes ONE action handler on purpose, so a caller cannot wire
-     * four verbs and leave a fifth as a button that does nothing. The log holds
-     * accept and dismiss but not start, mark_fixed or reopen — so wiring
-     * `onAction` here would produce precisely that dead button. It stays unwired
-     * until there is somewhere for all of them to go.
+     * Accept is remediation-wide, so it goes through the decision log; dismiss
+     * needs a reason, so it has `onDismiss` and its own picker. The lifecycle
+     * verbs go through the case-transition log. `CASE_ACTIONS` names exactly
+     * the verbs those two logs can keep.
      */
     const code = route.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-    expect(code).not.toMatch(/onAction=/);
+    expect(code).toMatch(/onAction=\{performAction\}/);
+    expect(code).toMatch(/onDismiss=\{dismissCase\}/);
+    expect(code).toMatch(/const CASE_ACTIONS: readonly IssueAction\[\] = \["accept", "take_on", "start", "mark_fixed", "reopen"\]/);
+    expect(code).not.toMatch(/supportedActions=\{[^}]*"(?:start|mark_fixed|reopen|resolve|dismiss)"/);
   });
 
   it("renders no control when no handler can keep the result", () => {
@@ -356,11 +359,14 @@ describe("a case with nothing to accept", () => {
     // at all on that branch.
     expect(detail).toMatch(/NO_ACTION_REASON\.none/);
     expect(detail).toMatch(/NO_ACTION_REASON\.platform/);
-    // No disabled ATTRIBUTE anywhere — prose about why there isn't one is fine,
-    // which is why this looks for the property rather than the word.
+    // Accept is withdrawn, not disabled. The plan editor's Save button may be
+    // disabled while its textarea is empty; that is a different control.
     const code = detail.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\{\/\*[\s\S]*?\*\/\}/g, "");
-    expect(code).not.toMatch(/\bdisabled[=:]/);
-    expect(code).not.toMatch(/aria-disabled/);
+    expect(code).not.toMatch(/disabled:\s*action === "accept"/);
+    expect(code).not.toMatch(/disabled=\{action === "accept"\}/);
+    expect(code).toMatch(/disabled=\{steps\.length === 0\}/);
+    // Resolve is a system verb; the fixed case explains when it happens.
+    expect(code).toMatch(/Resolve happens automatically when the 30-day check agrees/);
   });
 });
 

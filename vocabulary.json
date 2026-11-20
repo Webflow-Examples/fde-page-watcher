@@ -39,7 +39,7 @@
         {
           "key": "resolved",
           "label": "Resolved",
-          "queue": "show_all",
+          "queue": "settled",
           "tone": "success",
           "means": "The evidence agreed and held.",
           "entered_by": "resolve"
@@ -54,7 +54,7 @@
         {
           "key": "dismissed",
           "label": "Dismissed",
-          "queue": "show_all",
+          "queue": "settled",
           "tone": "neutral",
           "means": "Deliberately excluded. Off-ramp from Decide only, and it requires a reason.",
           "requires": "reason",
@@ -113,6 +113,15 @@
           ]
         },
         {
+          "key": "settled",
+          "label": "Settled",
+          "holds": [
+            "resolved",
+            "dismissed"
+          ],
+          "counted": false
+        },
+        {
           "key": "show_all",
           "label": "Show all",
           "holds": "*",
@@ -146,6 +155,16 @@
           "to": "todo"
         },
         {
+          "key": "take_on",
+          "from": [
+            "new",
+            "reopened"
+          ],
+          "to": "todo",
+          "actor": "person",
+          "label": "Take on"
+        },
+        {
           "key": "dismiss",
           "label": "Dismiss",
           "actor": "person",
@@ -173,7 +192,8 @@
             "in_progress"
           ],
           "to": "fixed",
-          "note": "Schedules the three checkpoints. See the checkpoint concept for what reads them."
+          "note": "Schedules the three checkpoints. See the checkpoint concept for what reads them.",
+          "requires": "remediation_plan"
         },
         {
           "key": "resolve",

@@ -93,7 +93,8 @@ export function CasePages({
         {issue.pageIds.map((pageId, index) => {
           const isExcluded = applicabilityOf(issue, pageId) === "excluded";
           const reason = exclusionReasonOf(issue, pageId);
-          const impact = formatImpact(impactByPage?.[pageId] ?? 0);
+          const pageImpact = impactByPage?.[pageId];
+          const impact = pageImpact === undefined ? null : formatImpact(pageImpact);
           const path = pagePaths?.[pageId];
           const label = pageTitles[pageId] ?? path ?? pageId;
           /**
@@ -155,17 +156,19 @@ export function CasePages({
                 ) : null}
               </div>
 
-              <span
-                style={{
-                  fontSize: 12.5,
-                  fontVariantNumeric: "tabular-nums",
-                  color: impact.measured && !isExcluded ? "var(--magnitude-value)" : "var(--text-muted)",
-                  textDecoration: isExcluded ? "line-through" : "none",
-                  flex: "0 0 auto",
-                }}
-              >
-                {impact.text}
-              </span>
+              {impact && impact.measured ? (
+                <span
+                  style={{
+                    fontSize: 12.5,
+                    fontVariantNumeric: "tabular-nums",
+                    color: !isExcluded ? "var(--magnitude-value)" : "var(--text-muted)",
+                    textDecoration: isExcluded ? "line-through" : "none",
+                    flex: "0 0 auto",
+                  }}
+                >
+                  {impact.text}
+                </span>
+              ) : null}
 
               {isExcluded && canInclude ? (
                 <button

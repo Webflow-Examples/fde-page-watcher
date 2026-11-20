@@ -1,18 +1,14 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useStore } from "@/components/store";
 import { useIssuesView } from "@/components/use-issues-view";
 import {
   DEFAULT_ISSUE_SORT,
   DEFAULT_SORT_DIRECTION,
-  ISSUE_SORTS,
-  ISSUE_SORT_LABEL,
   parseIssueSort,
   parseSortDirection,
-  reverseDirection,
   type IssueSort,
   type SortDirection,
 } from "@/lib/issue-list";
@@ -20,23 +16,20 @@ import { COUNTED_QUEUES, DESTINATION_LABEL, DESTINATION_PATH, QUEUE_LABEL, parse
 import { PageHeader } from "@/components/page-header";
 import { QueueTabs } from "@/components/queue-tabs";
 import { IssueGroup } from "@/components/issue-group";
-import {
-  ISSUE_ROW_COLUMNS,
-  ISSUE_ROW_GAP,
-  NUMERIC_CELL,
-  TRUNCATE_CELL,
-} from "@/components/issue-row";
+import { TRUNCATE_CELL } from "@/components/issue-row";
+import { CaseColumnHeaders } from "@/components/case-columns";
 import {
   EverythingResolved,
   FirstRunPending,
   LastRunFailed,
   NoPagesWatched,
   QueueEmptyOthersBusy,
+  SettledEmpty,
   WatchEmpty,
 } from "@/components/issue-empty";
-import { SelectMenu } from "@/components/select-menu";
 import { WatchQueue } from "@/components/watch-queue";
 import { FixQueue } from "@/components/fix-queue";
+import { SettledQueue } from "@/components/settled-queue";
 import { WATCH_EMPTY } from "@/lib/watch-copy";
 
 /**
@@ -59,107 +52,7 @@ import { WATCH_EMPTY } from "@/lib/watch-copy";
  * another, and neither is a preference worth storing.
  */
 
-/** Which way round the active column currently reads. */
-const DIRECTION_GLYPH: Record<SortDirection, string> = { asc: "\u2191", desc: "\u2193" };
-const DIRECTION_WORD: Record<SortDirection, string> = { asc: "ascending", desc: "descending" };
-
-/**
- * Column headers, drawn on the same six tracks as the rows below them — and the
- * sort control for the column each one heads.
- *
- * The header IS the sort rather than a caption above one:
- *
- *   - The label comes from `ISSUE_SORT_LABEL`, so a column and the Sort menu
- *     read one map and cannot end up calling the same ordering two things.
- *   - The first click sorts the column in ITS OWN default direction rather than
- *     a uniform descending — a triage list wants the lifecycle from `new` and
- *     effort from the cheapest. The second click reverses it, and the arrow
- *     says which way it currently reads.
- *
- * Newest and What changed head no column: there is no date column to head. The
- * menu is what keeps them reachable, which is why it stays.
- */
-const COLUMN_SORTS = [
-  "state",
-  "cause",
-  "pages",
-  "confidence",
-  "impact",
-  "effort",
-] as const satisfies readonly IssueSort[];
-
-function ColumnHeaders({
-  sort,
-  direction,
-  hrefFor,
-}: {
-  sort: IssueSort;
-  direction: SortDirection;
-  hrefFor: (next: { sort: IssueSort; dir?: SortDirection }) => string;
-}) {
-  return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: ISSUE_ROW_COLUMNS,
-        gap: ISSUE_ROW_GAP,
-        alignItems: "center",
-        padding: "0 40px 8px",
-        // Registry rule 8: nothing carrying meaning renders below 12px, and a
-        // column header is what tells you which column you are reading.
-        fontSize: 12,
-        fontWeight: 600,
-        letterSpacing: ".04em",
-        textTransform: "uppercase",
-        color: "var(--text-muted)",
-      }}
-    >
-      {COLUMN_SORTS.map((key, index) => {
-        const active = key === sort;
-        const numeric = index >= 4;
-        // An inactive column opens in its own default; the active one reverses.
-        const next = active ? reverseDirection(direction) : DEFAULT_SORT_DIRECTION[key];
-        return (
-          <Link
-            key={key}
-            href={hrefFor({ sort: key, dir: next })}
-            replace
-            // Which column is sorted, which way, and what this click will do —
-            // in words, for a reader who cannot see the arrow.
-            aria-label={
-              active
-                ? `Sorted by ${ISSUE_SORT_LABEL[key]}, ${DIRECTION_WORD[direction]}. Sort ${DIRECTION_WORD[next]}.`
-                : `Sort by ${ISSUE_SORT_LABEL[key]}`
-            }
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: numeric ? "flex-end" : "flex-start",
-              gap: 4,
-              minWidth: 0,
-              font: "inherit",
-              letterSpacing: "inherit",
-              textTransform: "inherit",
-              textDecoration: active ? "underline" : "none",
-              textUnderlineOffset: 3,
-              // Not colour alone — the underline and the arrow carry it too.
-              color: active ? "var(--text-body)" : "inherit",
-            }}
-          >
-            {/* Numeric columns are right-aligned, so their arrow leads rather
-                than trails; the label still ends at the column edge. */}
-            {numeric && active ? <span aria-hidden="true">{DIRECTION_GLYPH[direction]}</span> : null}
-            <span style={numeric ? NUMERIC_CELL : TRUNCATE_CELL}>{ISSUE_SORT_LABEL[key]}</span>
-            {!numeric && active ? <span aria-hidden="true">{DIRECTION_GLYPH[direction]}</span> : null}
-          </Link>
-        );
-      })}
-    </div>
-  );
-}
-
 export default function IssuesPage() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const { basePath, pathFor, pages } = useStore();
 
@@ -231,63 +124,50 @@ export default function IssuesPage() {
     if (queue === "watch") {
       return <WatchEmpty heading={WATCH_EMPTY} />;
     }
+    if (queue === "settled") {
+      return <SettledEmpty />;
+    }
     if (elsewhere) {
       return <QueueEmptyOthersBusy queue={queue} counts={view.counts} hrefFor={(next) => linkTo({ queue: next })} />;
     }
-    // Nothing is in flight in any queue. Cases may still exist — settled ones
-    // live in Show all — or the runs may simply never have found anything.
-    return <EverythingResolved caseCount={view.cases.length} showAllHref={linkTo({ queue: "show_all" })} />;
+    // Nothing is in flight in any queue. Cases may still exist — the settled
+    // ones have their own view — or the runs may simply never have found anything.
+    return <EverythingResolved caseCount={view.cases.length} settledHref={linkTo({ queue: "settled" })} />;
   }
 
   /**
-   * Two of the four queues draw themselves, and both for the same reason.
-   *
-   * Decide and Show all are lists of undecided things, so they are grouped by
-   * remediation, folded at the savings gate and sorted however the reader asks —
-   * every one of those is a way of deciding. Fix and Watch hold things that have
-   * already been decided, and neither question left has a sort control as its
-   * answer: Fix asks which to do next, Watch asks what is heard from when. Both
-   * read the queue's cases directly rather than the folded groups, because a
-   * fold is a triage affordance and there is no triage left to do.
+   * Only Decide is a triage list: grouped by remediation, folded at the savings
+   * gate and sorted however the reader asks. Fix, Watch and Settled read the
+   * queue's cases directly, because the question each one answers is not "which
+   * of these should I decide" and a sort control is not its answer.
    */
   const isFix = queue === "fix";
   const isWatch = queue === "watch";
-  const ownQueue = isFix || isWatch;
+  const isSettled = queue === "settled";
+  const ownQueue = isFix || isWatch || isSettled;
   const hasRows = ownQueue ? view.inQueue.length > 0 : view.groups.length > 0 || view.tail.length > 0;
 
   return (
     <div style={{ minWidth: 0 }}>
       <PageHeader title={DESTINATION_LABEL.issues} purpose={purpose} flush />
 
-      <QueueTabs activeQueue={queue} counts={view.counts} hrefFor={(next) => linkTo({ queue: next })} />
+      <QueueTabs
+        activeQueue={queue}
+        counts={view.counts}
+        hrefFor={(next) => linkTo({ queue: next })}
+      />
 
-      {hasRows && isFix ? <FixQueue cases={view.inQueue} basePath={basePath} /> : null}
+      {hasRows && isFix ? <FixQueue cases={view.inQueue} basePath={basePath} pageTitles={view.pageTitles} /> : null}
 
-      {hasRows && isWatch ? <WatchQueue cases={view.inQueue} /> : null}
+      {hasRows && isWatch ? <WatchQueue cases={view.inQueue} basePath={basePath} pageTitles={view.pageTitles} /> : null}
+
+      {hasRows && isSettled ? (
+        <SettledQueue cases={view.inQueue} basePath={basePath} pageTitles={view.pageTitles} />
+      ) : null}
 
       {hasRows && !ownQueue ? (
         <>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "flex-end",
-              alignItems: "center",
-              gap: 10,
-              padding: "0 40px 14px",
-            }}
-          >
-            <span style={{ fontSize: 12.5, color: "var(--text-muted)" }}>Sort</span>
-            <SelectMenu
-              value={sort}
-              options={ISSUE_SORTS.map((option) => ({ value: option, label: ISSUE_SORT_LABEL[option] }))}
-              onChange={(next) => router.replace(linkTo({ sort: next }))}
-              ariaLabel="Sort"
-              menuWidth={180}
-              triggerWidth={150}
-            />
-          </div>
-
-          <ColumnHeaders sort={sort} direction={direction} hrefFor={linkTo} />
+          <CaseColumnHeaders sort={sort} direction={direction} hrefFor={linkTo} dateLabel="Detected" />
 
           <div style={{ borderBottom: "1px solid var(--border-hairline)" }}>
             {view.groups.map((group) => (
@@ -296,6 +176,7 @@ export default function IssuesPage() {
                 group={group}
                 basePath={basePath}
                 pageTitles={view.pageTitles}
+                lastRunAt={view.lastRunAt}
               />
             ))}
 
