@@ -6,6 +6,13 @@ import { resolveMarkerIndex } from "../followups";
 import { getEnv } from "../env";
 import type { DataStore } from "./fsStore";
 import { normalizeState } from "./normalize";
+import { stateWithoutEmbeddedHistory } from "./historyState";
+import {
+  HISTORY_WRITE_CAPABILITY,
+  HISTORY_WRITE_CAPABILITY_HEADER,
+  type HistoryWrite,
+  type StateWriteRequest,
+} from "./remoteState";
 import type { CruxPageEvidence } from "../crux";
 import type { ExternalAgentOriginAudit } from "../agentAudit";
 
@@ -33,6 +40,15 @@ function segment(value: string): string {
 
 export class RemoteDataStore implements DataStore {
   readonly tenant: string;
+  /**
+   * Whether the collector says it can apply a history delta.
+   *
+   * Read off every state response rather than assumed: a collector that does
+   * not advertise it would treat a history-free snapshot as the whole truth
+   * and delete the night table, so the app keeps sending full snapshots until
+   * the collector is deployed.
+   */
+  private historyWriteSupported = false;
 
   constructor(tenant: string, private readonly fetchFn: typeof fetch = fetch) {
     if (!tenant || !tenant.trim()) throw new Error("DataStore: a tenant scope is required");
@@ -54,6 +70,7 @@ export class RemoteDataStore implements DataStore {
   private async versionedState(): Promise<VersionedStateResponse> {
     const response = await this.request(`/data/${segment(this.tenant)}/state`);
     if (!response.ok) throw new Error(`FDE state read ${response.status}: ${(await response.text()).slice(0, 300)}`);
+    this.historyWriteSupported = response.headers.get(HISTORY_WRITE_CAPABILITY_HEADER) === HISTORY_WRITE_CAPABILITY;
     const value = await response.json() as VersionedStateResponse;
     return { ...value, state: normalizeState(value.state) };
   }
@@ -78,14 +95,28 @@ export class RemoteDataStore implements DataStore {
     return Array.isArray(value.audits) ? value.audits : [];
   }
 
-  async updateState(mutate: (state: AppState) => void | Promise<void>): Promise<AppState> {
+  /**
+   * Write one mutation.
+   *
+   * `historyFor` is read after the mutation runs, so an append can name the one
+   * night it added. A collector without the capability gets the full snapshot,
+   * exactly as before; only a collector that advertises the delta protocol is
+   * sent a history-free state.
+   */
+  private async writeState(
+    mutate: (state: AppState) => void | Promise<void>,
+    historyFor: () => HistoryWrite,
+  ): Promise<AppState> {
     for (let attempt = 0; attempt < 8; attempt += 1) {
       const current = await this.versionedState();
       const draft = structuredClone(current.state);
       await mutate(draft);
+      const body: StateWriteRequest = this.historyWriteSupported
+        ? { state: stateWithoutEmbeddedHistory(draft), expectedVersion: current.version, history: historyFor() }
+        : { state: draft, expectedVersion: current.version };
       const response = await this.request(`/data/${segment(this.tenant)}/state`, {
         method: "PUT",
-        body: JSON.stringify({ state: draft, expectedVersion: current.version }),
+        body: JSON.stringify(body),
       });
       if (response.status === 409) continue;
       if (!response.ok) throw new Error(`FDE state write ${response.status}: ${(await response.text()).slice(0, 300)}`);
@@ -95,6 +126,10 @@ export class RemoteDataStore implements DataStore {
     throw new Error("DataStore: remote state update retry exhausted");
   }
 
+  async updateState(mutate: (state: AppState) => void | Promise<void>): Promise<AppState> {
+    return this.writeState(mutate, () => "unchanged");
+  }
+
   async appendNight(
     pageId: string,
     runId: string,
@@ -102,7 +137,9 @@ export class RemoteDataStore implements DataStore {
     rawReport?: unknown,
   ): Promise<{ state: AppState; night: Night | null; inserted: boolean }> {
     const commit: { night: Night | null; inserted: boolean } = { night: null, inserted: false };
-    const state = await this.updateState((draft) => {
+    let history: HistoryWrite = "unchanged";
+    const state = await this.writeState((draft) => {
+      history = "unchanged";
       const page = draft.pages.find((item) => item.id === pageId);
       if (!page) return;
       const existing = page.history.find((item) => item.runId === runId);
@@ -122,7 +159,12 @@ export class RemoteDataStore implements DataStore {
         ?? (agent ? captureAgentReadiness(agent, page.agentIgnores, draft.agentIgnoreDefaults, page.agentIgnoreRestores) : undefined);
       const night: Night = { ...input, i, runId, rawReportKey, agent, agentReadiness };
       page.history.push(night);
-      if (page.history.length > 180) page.history = page.history.slice(-180);
+      const trimmed = page.history.length > 180 ? page.history.slice(0, page.history.length - 180) : [];
+      if (trimmed.length > 0) page.history = page.history.slice(-180);
+      history = {
+        upserts: [{ pageId: page.id, night }],
+        deletes: trimmed.map((old) => ({ pageId: page.id, i: old.i })),
+      };
       page.current = {
         mobile: mediansOf(night.scores.mobile),
         desktop: mediansOf(night.scores.desktop),
@@ -135,7 +177,7 @@ export class RemoteDataStore implements DataStore {
       delete page.lastError;
       commit.night = night;
       commit.inserted = true;
-    });
+    }, () => history);
     if (commit.night && rawReport !== undefined) {
       await this.putReport(pageId, commit.night.rawReportKey!, {
         ...((rawReport && typeof rawReport === "object") ? rawReport : { payload: rawReport }),

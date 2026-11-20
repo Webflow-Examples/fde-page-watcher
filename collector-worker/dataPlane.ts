@@ -1,6 +1,11 @@
 import { createFdeStore, type FdeStoreBindings } from "./dataStore";
 import type { AppState } from "../src/lib/types";
 import {
+  HISTORY_WRITE_CAPABILITY,
+  HISTORY_WRITE_CAPABILITY_HEADER,
+  historyWriteFrom,
+} from "../src/lib/store/remoteState";
+import {
   connectWebflowSite,
   disconnectWebflowSite,
   getWebflowConnectionStatus,
@@ -260,7 +265,11 @@ export async function handleDataPlaneRequest(
       const seed = url.searchParams.get("seed") !== "false";
       const value = await store.readVersionedState(seed);
       if (!value) return noStore(Response.json({ error: "state not found" }, { status: 404 }));
-      return noStore(Response.json(value));
+      // The app keeps sending full snapshots until it sees this, so deploying
+      // the collector and the app in either order cannot lose the night table.
+      return noStore(Response.json(value, {
+        headers: { [HISTORY_WRITE_CAPABILITY_HEADER]: HISTORY_WRITE_CAPABILITY },
+      }));
     }
     if (request.method !== "PUT") return Response.json({ error: "method not allowed" }, { status: 405 });
     let body: unknown;
@@ -269,12 +278,14 @@ export async function handleDataPlaneRequest(
     } catch (error) {
       return Response.json({ error: error instanceof RangeError ? error.message : "invalid JSON" }, { status: 400 });
     }
-    const input = body as { state?: unknown; expectedVersion?: unknown };
+    const input = body as { state?: unknown; expectedVersion?: unknown; history?: unknown };
     const expected = input?.expectedVersion;
     if (!isAppState(input?.state) || !(expected === null || (Number.isInteger(expected) && Number(expected) >= 0))) {
       return Response.json({ error: "invalid state write" }, { status: 400 });
     }
-    const result = await store.writeVersionedState(input.state, expected as number | null);
+    const history = historyWriteFrom(input.history);
+    if (history === null) return Response.json({ error: "invalid history write" }, { status: 400 });
+    const result = await store.writeVersionedState(input.state, expected as number | null, history);
     if (!result.value) {
       return noStore(Response.json({
         error: "state version conflict",
