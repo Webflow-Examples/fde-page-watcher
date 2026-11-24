@@ -9,6 +9,7 @@ import * as agentChecks from "../agentChecks";
 import * as agentCopy from "../agent-copy";
 import * as agentIssueCases from "../agentIssueCases";
 import * as caseCopy from "../case-copy";
+import * as caseTitles from "../case-titles";
 import * as digestCopy from "../digest-copy";
 import * as impactFormat from "../impact-format";
 import * as labFieldComparison from "../labFieldComparison";
@@ -46,6 +47,7 @@ const MODULES: Record<string, unknown> = {
   agentCopy,
   agentIssueCases,
   caseCopy,
+  caseTitles,
   digestCopy,
   impactFormat,
   labFieldComparison,

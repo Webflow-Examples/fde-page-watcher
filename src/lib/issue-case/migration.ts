@@ -10,6 +10,7 @@ import { isFieldRecommendationActionable, fieldRecommendationLifecycleStatus } f
 import { parseMarkerDate } from "../ui";
 import type { AgentEvidenceSystem, AgentIssueCase, AgentIssueStatus } from "../agentIssueCases";
 import { remediationFor } from "../remediation";
+import { caseTitleFor } from "../case-titles";
 import type { Effort, EvidenceEntry, EvidenceSource, HistoryEntry, ImpactOrigin, IssueCase, IssueState, ProgressState } from "./core";
 import {
   PROGRESS_RANK,
@@ -305,7 +306,9 @@ export function fromRec(rec: Rec, options: FromRecOptions = {}): IssueCase {
     id: rec.key,
     cause: options.cause ?? rec.id,
     state,
-    title: rec.title,
+    // The audit id stays the cause; the name on screen is a symptom (rule 5's
+    // plain language), which is not always what the source called it.
+    title: caseTitleFor(rec.id, rec.title),
     // Never the audit title. Absent when the record carries no plain sentence —
     // authoring one here would put copy in a logic module.
     diagnosis: options.diagnosis ?? rec.aiSummary ?? "",
