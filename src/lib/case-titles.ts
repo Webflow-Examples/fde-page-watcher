@@ -75,7 +75,9 @@ export function caseTitleFor(auditId: string, storedTitle: string | undefined): 
 export function lcpElementStatement(element: LcpElementEvidence): string {
   const tag = element.elementType === "element" ? "element" : `<${element.elementType}>`;
   const from = element.assetHost ? ` served from ${element.assetHost}` : "";
-  const subject = `The ${element.elementType === "img" ? "image" : "element"} visitors wait for is a${tag === "element" ? "n" : ""} ${tag}${from}`;
+  const article = /^[aeiou]/i.test(element.elementType) ? "an" : "a";
+  const noun = element.elementType === "img" ? "image" : "element";
+  const subject = `The ${noun} visitors wait for is ${article} ${tag}${from}`;
   const lazy = element.loading === "lazy";
   const high = element.fetchPriority === "high";
   if (lazy && !high) {
@@ -84,10 +86,12 @@ export function lcpElementStatement(element: LcpElementEvidence): string {
   if (lazy) {
     return `${subject} and is marked lazy (loading="lazy"), so on a phone the browser may fetch it later than a visitor wants it.`;
   }
-  if (!high) {
-    return `${subject}, and nothing marks it as the element to fetch first, so it competes with everything else the page loads.`;
+  if (high) {
+    return `${subject}, marked to load first. The delay is elsewhere: look at what has to arrive before it — a script, a stylesheet or the consent banner.`;
   }
-  return `${subject}, marked to load first. The delay is elsewhere: look at what has to arrive before it — a script, a stylesheet or the consent banner.`;
+  // Nothing about how it loads is known. Rule 18: the claim is withheld rather
+  // than reasoned from an attribute the report never mentioned.
+  return `${subject}.`;
 }
 
 /**

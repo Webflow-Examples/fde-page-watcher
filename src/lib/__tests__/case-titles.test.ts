@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CASE_TITLE_BY_AUDIT_ID, caseTitleFor } from "../case-titles";
+import { CASE_TITLE_BY_AUDIT_ID, caseTitleFor, lcpElementEvidenceLine, lcpElementStatement } from "../case-titles";
 import { fromRec } from "../issue-case";
 import type { Rec } from "../types";
 
@@ -60,5 +60,35 @@ describe("plain-language case titles", () => {
     // A title that already names a symptom is left alone.
     expect(caseTitleFor("uses-responsive-images", "Images were bigger than the space they fill"))
       .toBe("Images were bigger than the space they fill");
+  });
+});
+
+describe("the LCP element's sentence", () => {
+  const marquee = {
+    elementType: "img",
+    assetHost: "cdn.prod.website-files.com",
+    width: 1_440,
+    height: 810,
+    loading: "lazy" as const,
+  };
+
+  it("names the element, its host and the loading attribute", () => {
+    const sentence = lcpElementStatement(marquee);
+    expect(sentence).toMatch(/an <img>/);
+    expect(sentence).toMatch(/cdn\.prod\.website-files\.com/);
+    expect(sentence).toMatch(/loading="lazy"/);
+    expect(sentence).toMatch(/no fetchpriority/);
+  });
+
+  it("claims nothing about loading when the report said nothing", () => {
+    const sentence = lcpElementStatement({ elementType: "img" });
+    expect(sentence).toBe("The image visitors wait for is an <img>.");
+    expect(sentence).not.toMatch(/lazy|fetchpriority/);
+  });
+
+  it("states the element facts as an evidence line, and no page text", () => {
+    expect(lcpElementEvidenceLine(marquee))
+      .toBe('<img> from cdn.prod.website-files.com, loading="lazy", no fetchpriority');
+    expect(lcpElementEvidenceLine({ elementType: "img" })).toBe("<img>, no loading attribute, no fetchpriority");
   });
 });
