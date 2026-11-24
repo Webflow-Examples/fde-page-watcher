@@ -8,10 +8,12 @@ import {
   parseSortDirection,
   queueCountsOf,
   sortRemediationGroups,
+  startHereCases,
+  START_HERE_LIMIT,
 } from "../issue-list";
 import { issueCasesFrom, lastRunAtOf } from "../issue-cases";
 import { partitionByImpact } from "../impact-format";
-import { casesInQueue, groupByRemediation, hasMeasuredImpact, type IssueCase } from "../issue-case";
+import { accept, casesInQueue, groupByRemediation, hasMeasuredImpact, remediationKey, type IssueCase } from "../issue-case";
 import { formatGroupImpact, formatImpact } from "@/components/issue-row";
 import { caseImpactReading, groupImpactReading, impactOriginLabel } from "../impact-format";
 import { COUNTED_QUEUES, QUEUES } from "../vocabulary";
@@ -470,5 +472,63 @@ describe("caseRank — observed, then measured, then oldest", () => {
     const once = [...cases()].sort(caseRank).map((item) => item.id);
     const twice = [...cases()].sort(caseRank).map((item) => item.id);
     expect(once).toEqual(twice);
+  });
+});
+
+/* ── T3 — Start Here: three decisions, not sixteen rows ────────────────── */
+
+describe("Start Here", () => {
+  const plan = (name: string) => ({ steps: [`Fix ${name}.`], actionability: "direct" as const });
+
+  /** Four decisions and one that is not one: a settled case and a platform case. */
+  const decideCases = () => [
+    makeCase({ id: "obs-time", cause: "obs-time", impactMs: 10_800, impactOrigin: "observed", detectedAt: "2026-08-10T00:00:00.000Z", remediation: plan("obs-time") }),
+    makeCase({ id: "obs-bytes", cause: "obs-bytes", impactMs: 0, impactBytes: 579 * 1024, impactOrigin: "observed", detectedAt: "2026-08-11T00:00:00.000Z", remediation: plan("obs-bytes") }),
+    makeCase({ id: "sim-big", cause: "sim-big", impactMs: 12_400, impactOrigin: "simulated", detectedAt: "2026-08-01T00:00:00.000Z", remediation: plan("sim-big") }),
+    makeCase({ id: "sim-small", cause: "sim-small", impactMs: 400, impactOrigin: "simulated", detectedAt: "2026-08-02T00:00:00.000Z", remediation: plan("sim-small") }),
+    makeCase({ id: "settled", cause: "settled", state: "resolved", impactMs: 20_000, impactOrigin: "observed" }),
+    makeCase({ id: "platform", cause: "platform", impactMs: 30_000, impactOrigin: "observed", remediation: { steps: [], actionability: "platform" } }),
+  ];
+
+  it("asks for three decisions, ranked observed first and never platform-owned", () => {
+    const chosen = startHereCases(decideCases());
+    expect(chosen).toHaveLength(START_HERE_LIMIT);
+    expect(chosen.map((item) => item.id)).toEqual(["obs-time", "obs-bytes", "sim-big"]);
+  });
+
+  it("shows fewer than three when Decide holds fewer", () => {
+    const one = startHereCases([makeCase({ id: "only", cause: "only", remediation: plan("only") })]);
+    expect(one.map((item) => item.id)).toEqual(["only"]);
+    expect(startHereCases([])).toEqual([]);
+  });
+
+  it("asks once per remediation, and never duplicates a row", () => {
+    const shared = { steps: ["One fix covers both."], actionability: "direct" as const };
+    const chosen = startHereCases([
+      makeCase({ id: "a", cause: "a", impactMs: 900, impactOrigin: "observed", remediation: shared }),
+      makeCase({ id: "b", cause: "b", impactMs: 800, impactOrigin: "observed", remediation: shared }),
+      makeCase({ id: "c", cause: "c", impactMs: 700, impactOrigin: "observed", remediation: plan("c") }),
+    ]);
+    expect(chosen.map((item) => item.id)).toEqual(["a", "c"]);
+    // Every case in the block is exactly one row in the table below it.
+    const tableIds = groupByRemediation(decideCases()).flatMap((group) => group.cases.map((item) => item.id));
+    for (const item of startHereCases(decideCases())) {
+      expect(tableIds.filter((id) => id === item.id)).toHaveLength(1);
+    }
+    expect(new Set(chosen.map((item) => item.id)).size).toBe(chosen.length);
+  });
+
+  it("refills after an action, because the block is a view of the queue", () => {
+    // Accept the first: the decision is stored against its remediation, and the
+    // case leaves Decide on the same derivation the block reads.
+    const before = startHereCases(decideCases());
+    const key = remediationKey(before[0]);
+    const afterCases = decideCases().map((issue) =>
+      remediationKey(issue) === key ? accept(issue, { by: { kind: "person", userId: "rae@webflow.com" }, at: "2026-08-24T00:00:00.000Z" }) : issue);
+    const after = startHereCases(afterCases);
+    expect(after.map((item) => item.id)).not.toContain(before[0].id);
+    expect(after.map((item) => item.id)).toEqual(["obs-bytes", "sim-big", "sim-small"]);
+    // The accepted case is still in the table, in Fix where it now belongs.
+    expect(casesInQueue(afterCases, "fix").map((item) => item.id)).toEqual([before[0].id]);
   });
 });

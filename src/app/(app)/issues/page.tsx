@@ -9,10 +9,19 @@ import {
   DEFAULT_SORT_DIRECTION,
   parseIssueSort,
   parseSortDirection,
+  startHereCases,
   type IssueSort,
   type SortDirection,
 } from "@/lib/issue-list";
-import { COUNTED_QUEUES, DESTINATION_LABEL, DESTINATION_PATH, QUEUE_LABEL, parseQueue, type Queue } from "@/lib/vocabulary";
+import {
+  COUNTED_QUEUES,
+  DESTINATION_LABEL,
+  DESTINATION_PATH,
+  QUEUE_LABEL,
+  parseQueue,
+  type DismissReason,
+  type Queue,
+} from "@/lib/vocabulary";
 import { PageHeader } from "@/components/page-header";
 import { QueueTabs } from "@/components/queue-tabs";
 import { IssueGroup } from "@/components/issue-group";
@@ -28,6 +37,8 @@ import {
   WatchEmpty,
 } from "@/components/issue-empty";
 import { WatchQueue } from "@/components/watch-queue";
+import { StartHere } from "@/components/start-here";
+import { remediationKey, type IssueCase } from "@/lib/issue-case";
 import { FixQueue } from "@/components/fix-queue";
 import { SettledQueue } from "@/components/settled-queue";
 import { WATCH_EMPTY } from "@/lib/watch-copy";
@@ -54,7 +65,7 @@ import { WATCH_EMPTY } from "@/lib/watch-copy";
 
 export default function IssuesPage() {
   const searchParams = useSearchParams();
-  const { basePath, pathFor, pages } = useStore();
+  const { basePath, pathFor, pages, recordCaseDecision, recordCaseTransition } = useStore();
 
   const queue = parseQueue(searchParams.get("queue"));
   const sort = parseIssueSort(searchParams.get("sort"));
@@ -89,6 +100,24 @@ export default function IssuesPage() {
   const purpose = `One case per problem. ${COUNTED_QUEUES
     .map((counted) => `${view.counts[counted] ?? 0} to ${QUEUE_LABEL[counted].toLowerCase()}`)
     .join(", ")}.`;
+
+  /**
+   * The three decisions the block leads with, and the actions they fire.
+   *
+   * The block is derived from the same cases the table is, so an action that
+   * moves a case out of Decide refills it on the next render without a refetch
+   * and without a second copy of the queue anywhere: Accept and Dismiss are
+   * decisions about the remediation, Take on is a case transition, and both are
+   * the registry's own verbs.
+   */
+  const startHere = queue === "decide" ? startHereCases(view.cases) : [];
+
+  const acceptCase = (issue: IssueCase) =>
+    recordCaseDecision({ decision: "accept", remediationKey: remediationKey(issue) });
+  const takeOnCase = (issue: IssueCase) =>
+    recordCaseTransition({ caseKey: issue.cause, action: "take_on" });
+  const dismissCase = (issue: IssueCase, reason: DismissReason) =>
+    recordCaseDecision({ decision: "dismiss", remediationKey: remediationKey(issue), reason });
 
   const watched = pages.filter((page) => page.flag !== "paused");
   const failed = watched
@@ -167,6 +196,34 @@ export default function IssuesPage() {
 
       {hasRows && !ownQueue ? (
         <>
+          {/* The block is a view of the same rows, never a filter over them:
+              the table below still holds every case in the queue. */}
+          {queue === "decide" ? (
+            <StartHere
+              cases={startHere}
+              basePath={basePath}
+              pageTitles={view.pageTitles}
+              onAccept={acceptCase}
+              onTakeOn={takeOnCase}
+              onDismiss={dismissCase}
+            />
+          ) : null}
+
+          {queue === "decide" && startHere.length > 0 ? (
+            <h2
+              style={{
+                margin: 0,
+                padding: "18px 40px 8px",
+                fontSize: 14,
+                fontWeight: 600,
+                color: "var(--text-body)",
+                borderTop: "1px solid var(--border-hairline)",
+              }}
+            >
+              {`All ${view.inQueue.length} ${view.inQueue.length === 1 ? "case" : "cases"}`}
+            </h2>
+          ) : null}
+
           <CaseColumnHeaders sort={sort} direction={direction} hrefFor={linkTo} dateLabel="Detected" />
 
           <div style={{ borderBottom: "1px solid var(--border-hairline)" }}>

@@ -1,5 +1,8 @@
 import { CONFIDENCE_LABEL, type Confidence, type ExclusionReason } from "./vocabulary";
 import { webflowClassificationFor } from "./webflowPerformance";
+import { impactReading } from "./impact-format";
+import { pageScopeOf } from "./scope-line";
+import { formatDate } from "./watch-copy";
 
 /**
  * The words the case says, in one place.
@@ -168,4 +171,36 @@ export function historyExcluded(page: string, reason: ExclusionReason): string {
 
 export function historyIncluded(page: string): string {
   return `${page} included again`;
+}
+
+/* ── Start Here ─────────────────────────────────────────────────────────── */
+
+/**
+ * Why a case is in Start Here, in one line.
+ *
+ * The ranking has three keys and this says which one placed the case: real
+ * visitors measured it, a simulated run measured it, or nothing measured it yet.
+ * That is the reason a reader can check — "Real visitors see 11 s on Homepage"
+ * is the fact that put this row first, and the row above a simulated 12 s
+ * estimate says so in its own words rather than in a legend.
+ */
+export function startHereReason(
+  issue: { pageIds: readonly string[]; impactMs: number; impactBytes?: number; impactOrigin?: "observed" | "simulated"; detectedAt: string },
+  pageTitles: Record<string, string>,
+): string {
+  const pages = pageScopeOf(issue.pageIds, pageTitles) || "this page";
+  // No per-page reading here: this line states the case's own figure, which is
+  // the one the block ranks on. `impactReading` is the same wording a row uses.
+  const reading = impactReading({
+    impactMs: issue.impactMs,
+    ...(issue.impactBytes !== undefined ? { impactBytes: issue.impactBytes } : {}),
+    ...(issue.impactOrigin ? { impactOrigin: issue.impactOrigin } : {}),
+  });
+  if (!reading.measured) return `First seen ${formatDate(issue.detectedAt)}, not measured in any run yet.`;
+  if (reading.origin === "observed") {
+    return reading.unit === "bytes"
+      ? `Real visitors download ${reading.text} they do not need on ${pages}.`
+      : `Real visitors see ${reading.text} on ${pages}.`;
+  }
+  return `Simulated saving of ${reading.text} on ${pages}.`;
 }

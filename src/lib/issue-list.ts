@@ -1,5 +1,13 @@
 import { causeLineOf } from "./case-copy";
-import { byWorstMeasured, casesInQueue, hasAnyImpact, type Effort, type IssueCase, type RemediationGroup } from "./issue-case";
+import {
+  byWorstMeasured,
+  casesInQueue,
+  hasAnyImpact,
+  remediationKey,
+  type Effort,
+  type IssueCase,
+  type RemediationGroup,
+} from "./issue-case";
 import { CONFIDENCES, COUNTED_QUEUES, type Confidence, type Queue } from "./vocabulary";
 
 /* ── Issue-list selectors ───────────────────────────────────────────────── */
@@ -211,4 +219,42 @@ export function caseRank(a: IssueCase, b: IssueCase): number {
     || byWorstMeasured(a, b)
     || (a.detectedAt || "").localeCompare(b.detectedAt || "")
     || a.id.localeCompare(b.id);
+}
+
+/** How many decisions the block asks for. Three is a first session, not a list. */
+export const START_HERE_LIMIT = 3;
+
+/**
+ * The three cases Decide leads with.
+ *
+ * A fresh project's Decide queue is a wall of sixteen equal rows, and a
+ * first-time reader needs a place to start rather than a sort to choose. These
+ * are chosen, not filtered: the table below still holds every case, and a case
+ * that is not in the block is one row in it either the same as before.
+ *
+ * Two rules the block keeps:
+ *
+ *   - A case the customer cannot act on is not a place to start. A
+ *     platform-owned case is Webflow's work, not the reader's, and Start Here is
+ *     a list of decisions.
+ *   - One case per remediation. Two cases a single fix covers would ask for the
+ *     same decision twice; the table still shows both.
+ *
+ * Fewer than three cases in Decide yields fewer than three items — the block is
+ * a view of what is there, never a promise of three.
+ */
+export function startHereCases(cases: readonly IssueCase[], limit = START_HERE_LIMIT): IssueCase[] {
+  const seen = new Set<string>();
+  const chosen: IssueCase[] = [];
+  const candidates = casesInQueue(cases, "decide")
+    .filter((issue) => issue.remediation.actionability !== "platform")
+    .sort(caseRank);
+  for (const issue of candidates) {
+    const key = remediationKey(issue);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    chosen.push(issue);
+    if (chosen.length >= limit) break;
+  }
+  return chosen;
 }
