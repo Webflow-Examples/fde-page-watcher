@@ -131,21 +131,26 @@ export async function afterDecision(deps: AutomationDeps & { decision: CaseDecis
   }
 
   if (decision.decision === "dismiss" && settings.automations.dismissClosesTask) {
-    if (!connection) {
+    if (connections.length === 0) {
       runs.push({ automation: "dismissClosesTask", outcome: "skipped", detail: "no task tool is connected" });
     } else {
-      const links = linksForRemediation(await deps.store.listLinks(), decision.remediationKey)
-        .filter((link) => link.provider === connection.provider);
-      if (links.length === 0) {
-        runs.push({ automation: "dismissClosesTask", outcome: "skipped", detail: "no linked task" });
-      } else {
+      const allLinks = await deps.store.listLinks();
+      let acted = false;
+      // Both providers can be connected. Close every link of this remediation,
+      // once per provider — the event id names the provider so one run cannot
+      // suppress the other.
+      for (const candidate of connections) {
+        const links = linksForRemediation(allLinks, decision.remediationKey)
+          .filter((link) => link.provider === candidate.provider);
+        if (links.length === 0) continue;
+        acted = true;
         runs.push(await runOnce(deps, {
           automation: "dismissClosesTask",
-          fact,
-          provider: connection.provider,
+          fact: `${fact}:${candidate.provider}`,
+          provider: candidate.provider,
           type: "automation.dismiss.close_task",
           run: async () => {
-            const provider = await providerFor(deps, connection);
+            const provider = await providerFor(deps, candidate);
             for (const link of links) {
               const task = await provider.close(link.externalId, decision.reason ?? "Dismissed in Page Watch");
               await deps.store.updateLink({
@@ -159,6 +164,7 @@ export async function afterDecision(deps: AutomationDeps & { decision: CaseDecis
           },
         }));
       }
+      if (!acted) runs.push({ automation: "dismissClosesTask", outcome: "skipped", detail: "no linked task" });
     }
   }
 
@@ -182,33 +188,36 @@ export async function afterTransition(
   const issue = issueCasesFrom(deps.state).find((candidate) => candidate.cause === transition.caseKey);
   if (!issue) return [{ automation: "reopenCommentsAndReopens", outcome: "skipped", detail: "the case is no longer on the board" }];
   const key = remediationKeyOf(issue);
-  const connections = await deps.store.listConnections();
-  const connection = connections.find((candidate) => candidate.status !== "disconnected");
-  if (!connection) return [{ automation: "reopenCommentsAndReopens", outcome: "skipped", detail: "no task tool is connected" }];
-  const links = linksForRemediation(await deps.store.listLinks(), key).filter((link) => link.provider === connection.provider);
-  if (links.length === 0) return [{ automation: "reopenCommentsAndReopens", outcome: "skipped", detail: "no linked task" }];
-
+  const connections = (await deps.store.listConnections()).filter((candidate) => candidate.status !== "disconnected");
+  if (connections.length === 0) return [{ automation: "reopenCommentsAndReopens", outcome: "skipped", detail: "no task tool is connected" }];
+  const allLinks = await deps.store.listLinks();
   const fact = `${transition.action}:${transition.caseKey}:${transition.at}:${callerKey(transition.by)}`;
-  return [await runOnce(deps, {
-    automation: "reopenCommentsAndReopens",
-    fact,
-    provider: connection.provider,
-    type: "automation.reopen.reopen_task",
-    run: async () => {
-      const provider = await providerFor(deps, connection);
-      for (const link of links) {
-        await provider.comment(link.externalId, "Reopened in Page Watch — the problem was found again. The 2/7/30-day checks will confirm it once fixed.");
-        const task = await provider.reopen(link.externalId);
-        await deps.store.updateLink({
-          ...link,
-          externalState: task.state,
-          lastSyncedAt: (deps.now ?? new Date()).toISOString(),
-          updatedAt: (deps.now ?? new Date()).toISOString(),
-        });
-      }
-      return `reopened ${links.length}`;
-    },
-  })];
+  const runs: AutomationRun[] = [];
+  for (const connection of connections) {
+    const links = linksForRemediation(allLinks, key).filter((link) => link.provider === connection.provider);
+    if (links.length === 0) continue;
+    runs.push(await runOnce(deps, {
+      automation: "reopenCommentsAndReopens",
+      fact: `${fact}:${connection.provider}`,
+      provider: connection.provider,
+      type: "automation.reopen.reopen_task",
+      run: async () => {
+        const provider = await providerFor(deps, connection);
+        for (const link of links) {
+          await provider.comment(link.externalId, "Reopened in Page Watch — the problem was found again. The 2/7/30-day checks will confirm it once fixed.");
+          const task = await provider.reopen(link.externalId);
+          await deps.store.updateLink({
+            ...link,
+            externalState: task.state,
+            lastSyncedAt: (deps.now ?? new Date()).toISOString(),
+            updatedAt: (deps.now ?? new Date()).toISOString(),
+          });
+        }
+        return `reopened ${links.length}`;
+      },
+    }));
+  }
+  return runs.length > 0 ? runs : [{ automation: "reopenCommentsAndReopens", outcome: "skipped", detail: "no linked task" }];
 }
 
 /** Exposed for the dismiss route's manual close, which is not an automation. */
