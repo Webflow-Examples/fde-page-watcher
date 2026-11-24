@@ -420,11 +420,24 @@ describe("S5 — what the fix queue replaces", () => {
   it("leaves no task UI — only the retired redirect may keep the name", () => {
     // S10 restored /tasks as a redirect so old links stop 404ing. That file is
     // allowed; anything else named task would be a second destination.
-    const named = sourceFiles()
+    //
+    // DECISIONS.md 7 later allowed a task-TOOL connection: the task tool owns
+    // execution and Page Watch still owns the lifecycle. Its store and routes
+    // live under lib/integrations and app/api/integrations and are not a task
+    // surface, so they are excluded from this scan. The two assertions below
+    // keep the part that matters: no app destination and no component is named
+    // for a task view.
+    const isIntegration = (file: string) => file.startsWith("lib/integrations/") || file.startsWith("app/api/integrations/");
+    const relative = sourceFiles()
       .map((file) => path.relative(srcDir, file).replace(/\\/g, "/"))
-      .filter((file) => /(^|\/)tasks?(\/|\.|-)/i.test(file))
+      .filter((file) => /(^|\/)tasks?(\/|\.|-)/i.test(file));
+    const named = relative
+      .filter((file) => !isIntegration(file))
       .filter((file) => file !== "app/(app)/tasks/page.tsx");
     expect(named).toEqual([]);
+    expect(relative.filter((file) => file.startsWith("app/(app)/")).sort())
+      .toEqual(["app/(app)/tasks/page.tsx"]);
+    expect(relative.filter((file) => file.startsWith("components/"))).toEqual([]);
     const redirect = readFileSync(path.join(srcDir, "app/(app)/tasks/page.tsx"), "utf8")
       .replace(/\/\*[\s\S]*?\*\//g, "")
       .replace(/^\s*\/\/.*$/gm, "");

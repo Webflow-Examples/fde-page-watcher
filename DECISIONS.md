@@ -141,3 +141,46 @@ the only one for it.
   `src/lib/settings-exclusions.ts`; `setAgentIgnore` / `setDefaultAgentIgnore` in
   `src/components/store.tsx`; `SETTINGS_EXCLUDED_SITE_SCOPE` in
   `src/lib/settings-copy.ts`.
+
+## 7. Task tools execute; Page Watch owns the problem
+
+**Status:** decided for workstream 2. The objection in `fix-ticket.ts` was
+correct about the failure mode it named, and this decision keeps it.
+
+`fix-ticket.ts` and `copy-ticket-button.tsx` refused tracker integrations
+because "a connection is a second place the work's state lives". That is still
+true of the shape they refused: mirroring status both ways, so two systems hold
+one fact and disagree. The integration added in workstream 2 is allowed only
+under a boundary that gives each fact exactly one writer.
+
+**The boundary, in one sentence: Page Watch owns the problem, its evidence, its
+lifecycle and its plan; the task tool owns execution — who is doing it, comments,
+subtasks and delivery state.**
+
+What follows from it, and should not be reopened without a decision:
+
+- **A task completion is a signal that the change shipped, not a resolution.**
+  It adds a note against the case and offers **Mark fixed**; it never fires
+  `resolve`. Only the 2/7/30-day checkpoints decide Resolved, and they still do.
+- **A dismissal in Page Watch closes the linked task**, with the dismissal
+  reason. The task tool cannot dismiss a case.
+- **Nothing in Page Watch rewrites a task's comments.** Comments belong to the
+  people doing the work.
+- **Accept is still Accept.** Creating a task never replaces it; "Accept and
+  create task" is Accept plus a second, recorded act. A task link is a record
+  of an external id, not a second lifecycle.
+- **One task per remediation.** `remediationKey` is the unit, so siblings of a
+  shared fix share one task rather than each growing their own.
+- **Copy as ticket stays.** It is the escape hatch for teams with no connection,
+  and markdown on the clipboard still cannot drift because it holds no state.
+- **No case data beyond the ticket leaves the app.** The task body is
+  `ticketMarkdown` plus a hidden marker; the evidence ledger, raw reports and
+  visitor data are never sent.
+- **V1 is outbound only.** No inbound webhook is added while the app sits behind
+  Cloudflare Access; inbound delivery needs a public worker or an Access bypass
+  and that is a follow-up, not this change.
+
+- Where: `src/lib/integrations/` (connections, links, providers, automations),
+  `migrations/0008_task_integrations.sql`, `/api/integrations/*`,
+  `src/components/work-tools-card.tsx`, `src/components/work-integrations.tsx`.
+  The boundary is asserted by `src/lib/integrations/__tests__/*`.

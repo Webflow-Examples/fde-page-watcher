@@ -12,6 +12,7 @@ import {
   isTransition,
   personActionsFor,
   primaryActionFor,
+  remediationKey as remediationKeyOf,
   type IssueCase,
 } from "@/lib/issue-case";
 import { fixedAtOf, runOf } from "@/lib/checkpoint-evaluation";
@@ -53,6 +54,7 @@ import { StatusChip } from "@/components/status-chip";
 import { CasePages } from "@/components/case-pages";
 import { CheckpointTrack } from "@/components/checkpoint-track";
 import { CopyTicketButton } from "@/components/copy-ticket-button";
+import { WorkTaskAction } from "@/components/work-integrations";
 import { daysOf, formatDate } from "@/lib/watch-copy";
 
 /**
@@ -469,6 +471,20 @@ export function CaseDetail({
                 Mark fixed change what is true about the work; this takes a
                 copy of what is already true and changes nothing. */}
             {inFixQueue ? <CopyTicketButton ticket={ticket} /> : null}
+            {/* A connected task tool is execution, not a second lifecycle
+                (DECISIONS.md 7). Offered from Decide and Fix only: Watch has
+                shipped and Settled is closed, so there is no work to send. An
+                existing link still renders wherever the case is read. */}
+            {inFixQueue || issue.state === "new" || issue.state === "reopened" ? (
+              <WorkTaskAction
+                remediationKey={remediationKeyOf(issue)}
+                caseId={issue.id}
+                caseState={issue.state}
+                hasPlan={hasPlan}
+                onAccept={onAction ? () => onAction("accept", issue) : undefined}
+                onMarkFixed={onAction ? () => onAction("mark_fixed", issue) : undefined}
+              />
+            ) : null}
           </>
         }
         metadata={
