@@ -532,3 +532,25 @@ describe("Start Here", () => {
     expect(casesInQueue(afterCases, "fix").map((item) => item.id)).toEqual([before[0].id]);
   });
 });
+
+/* ── T6 — the Webflow-owned lane does not change the Decide count ───────── */
+
+describe("a platform-owned case in the list", () => {
+  it("never adds to a counted queue", () => {
+    const work = [
+      makeCase({ id: "a", cause: "a", impactMs: 900 }),
+      makeCase({ id: "b", cause: "b", impactMs: 400 }),
+    ];
+    const platform = makeCase({
+      id: "rb",
+      cause: "render-blocking-resources",
+      impactMs: 981,
+      impactOrigin: "simulated",
+      remediation: { steps: [], actionability: "platform" },
+    });
+    expect(queueCountsOf([...work, platform])).toEqual(queueCountsOf(work));
+    expect(queueCountsOf([...work, platform]).decide).toBe(work.length);
+    // And Start Here does not offer it as a decision.
+    expect(startHereCases([...work, platform]).map((item) => item.id)).toEqual(["a", "b"]);
+  });
+});

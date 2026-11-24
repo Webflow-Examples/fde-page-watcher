@@ -144,3 +144,111 @@ describe("multi-run Lighthouse evidence", () => {
     expect(JSON.stringify(normalized)).not.toContain("customer.example");
   });
 });
+
+/* ── T6 — the informative audits that were dropped ──────────────────────── */
+
+describe("informative audits", () => {
+  const thirdPartyRun = (blocking: number, bytes: number) => ({
+    lighthouseResult: {
+      categories: {
+        performance: {
+          score: 0.5,
+          auditRefs: [{ id: "third-party-summary" }, { id: "resource-summary" }, { id: "lcp-lazy-loaded" }],
+        },
+      },
+      audits: {
+        "third-party-summary": {
+          title: "Reduce the impact of third-party code",
+          score: null,
+          scoreDisplayMode: "informative",
+          details: {
+            type: "table",
+            items: [
+              { url: "https://www.googletagmanager.com/gtm.js", transferSize: Math.round(bytes * 0.6), blockingTime: Math.round(blocking * 0.7), mainThreadTime: blocking },
+              { url: "https://connect.facebook.net/sdk.js", transferSize: Math.round(bytes * 0.4), blockingTime: Math.round(blocking * 0.3), mainThreadTime: blocking },
+            ],
+          },
+        },
+        "resource-summary": {
+          title: "Keep request counts low and transfer sizes small",
+          score: null,
+          scoreDisplayMode: "informative",
+          details: {
+            type: "table",
+            items: [
+              { resourceType: "total", transferSize: 3_515_000 },
+              { resourceType: "third-party", transferSize: 2_849 * 1024 },
+            ],
+          },
+        },
+        "lcp-lazy-loaded": {
+          title: "The largest contentful paint image was lazily loaded",
+          score: null,
+          scoreDisplayMode: "informative",
+          details: { type: "debugdata", items: [{ node: { nodeLabel: "Image", loading: "lazy" } }] },
+        },
+      },
+    },
+  });
+
+  it("keeps a third-party summary with its transfer and blocking numbers", () => {
+    const normalized = extractLighthouseRunEvidence(thirdPartyRun(1_200, 2_849 * 1024), 1);
+    const summary = normalized.findings.find((item) => item.id === "third-party-summary");
+    expect(summary).toMatchObject({
+      category: "Performance",
+      scoreDisplayMode: "informative",
+      savingsBytes: 2_849 * 1024,
+      savingsMs: 1_200,
+      actionable: true,
+    });
+    expect(summary?.webflow?.culprit).toBe("third-party-code");
+  });
+
+  it("keeps a resource summary as evidence, never as work of its own", () => {
+    const normalized = extractLighthouseRunEvidence(thirdPartyRun(1_200, 2_849 * 1024), 1);
+    expect(normalized.findings.find((item) => item.id === "resource-summary")).toMatchObject({
+      savingsBytes: 2_849 * 1024,
+      savingsMs: 0,
+      actionable: false,
+    });
+  });
+
+  it("keeps the lazy-loaded image as an actionable finding", () => {
+    const normalized = extractLighthouseRunEvidence(thirdPartyRun(1_200, 2_849 * 1024), 1);
+    expect(normalized.findings.find((item) => item.id === "lcp-lazy-loaded")).toMatchObject({
+      actionable: true,
+      scoreDisplayMode: "informative",
+    });
+  });
+
+  it("promotes the third-party case through the same strict-majority quorum", () => {
+    const result = aggregateLighthouseRunEvidence([
+      extractLighthouseRunEvidence(thirdPartyRun(1_200, 2_849 * 1024), 1),
+      extractLighthouseRunEvidence(thirdPartyRun(1_100, 2_800 * 1024), 2),
+      extractLighthouseRunEvidence(thirdPartyRun(1_300, 2_900 * 1024), 3),
+    ], 3);
+    const summary = result.findings.find((item) => item.id === "third-party-summary");
+    expect(summary).toMatchObject({ promoted: true, observedRuns: 3, eligibleRuns: 3 });
+    // Median of the three runs, never a sum of runs.
+    expect(summary?.savingsMs).toBe(1_200);
+    expect(summary?.savingsBytes).toBe(2_849 * 1024);
+  });
+
+  it("adds no finding when an informative audit found nothing", () => {
+    const quiet = {
+      lighthouseResult: {
+        categories: { performance: { score: 0.9, auditRefs: [{ id: "third-party-summary" }, { id: "lcp-lazy-loaded" }] } },
+        audits: {
+          "third-party-summary": { title: "Third party", score: null, scoreDisplayMode: "informative", details: { items: [] } },
+          "lcp-lazy-loaded": {
+            title: "LCP image",
+            score: null,
+            scoreDisplayMode: "informative",
+            details: { items: [{ node: { nodeLabel: "Image", loading: "eager" } }] },
+          },
+        },
+      },
+    };
+    expect(extractLighthouseRunEvidence(quiet, 1).findings).toEqual([]);
+  });
+});

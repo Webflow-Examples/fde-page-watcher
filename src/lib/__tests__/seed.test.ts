@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { visitorExperienceTrend } from "../visitorExperience";
 import { issueCasesFrom } from "../issue-cases";
+import { queueCountsOf } from "../issue-list";
 import { normalizeState } from "../store/normalize";
 import {
   buildInitialState,
@@ -113,5 +114,38 @@ describe("separately stored demo evidence", () => {
       latestPublish: { changeDensity: "high-change", pageCount: 6 },
       latestActivity: { event: "page_updated", resourceName: "Pricing" },
     });
+  });
+});
+
+describe("the demo shows the audit's largest causes", () => {
+  const state = buildSeedState(NOW);
+  const cases = issueCasesFrom({ recs: state.recs, pages: state.pages, caseDecisions: state.caseDecisions });
+
+  it("has a third-party case with both the transfer and the blocking number", () => {
+    const thirdParty = cases.find((item) => item.cause === "third-party-summary");
+    expect(thirdParty).toMatchObject({ state: "new", impactOrigin: "simulated" });
+    expect(thirdParty!.impactMs).toBeGreaterThan(0);
+    expect(thirdParty!.impactBytes).toBeGreaterThan(1024 * 1024);
+    // Both numbers reach the reader, in the evidence line.
+    const reading = thirdParty!.evidence.map((entry) => entry.reading).join(" ");
+    expect(reading).toMatch(/1\.2 s/);
+    expect(reading).toMatch(/MB/);
+    expect(thirdParty!.remediation.steps.length).toBeGreaterThan(0);
+  });
+
+  it("has an LCP case naming the element and its loading", () => {
+    const lcp = cases.find((item) => item.cause === "lcp-lazy-loaded");
+    expect(lcp).toMatchObject({ state: "new", impactOrigin: "simulated" });
+    expect(lcp!.diagnosis).toMatch(/marquee/);
+    expect(lcp!.diagnosis).toMatch(/lazy/);
+    expect(lcp!.evidence.map((entry) => entry.reading).join(" ")).toMatch(/<img>/);
+    expect(lcp!.evidence.map((entry) => entry.reading).join(" ")).toMatch(/loading="lazy"/);
+  });
+
+  it("has a Webflow-owned render-blocking case that Decide does not count", () => {
+    const owned = cases.find((item) => item.cause === "render-blocking-resources");
+    expect(owned?.remediation.actionability).toBe("platform");
+    expect(owned!.impactMs).toBe(981);
+    expect(queueCountsOf(cases).decide).toBe(queueCountsOf(cases.filter((item) => item !== owned)).decide);
   });
 });

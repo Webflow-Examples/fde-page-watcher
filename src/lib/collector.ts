@@ -19,6 +19,7 @@ import type {
   FollowUp,
   LighthouseCollectionQuality,
   LighthouseOpportunity,
+  LcpElementEvidence,
   Night,
   Rec,
   Strategy,
@@ -30,9 +31,9 @@ import { markRunFinished, requestPageRun } from "./mutations";
 import { isPageActivelyMonitored } from "./watchCapacity";
 import { mergeStrategyOpportunities, promotedDiagnostics } from "./diagnostics";
 import { summarizePsiMeasurements } from "./psiCore";
-import { classificationForPage, customerActionabilityFor, formatDiagnosticImpact, recommendationIsCustomerActionable } from "./webflowPerformance";
+import { classificationForPage, formatDiagnosticImpact } from "./webflowPerformance";
 import { isWebflowGenerated, nativeElementApplicability, nativeElementIsDismissed, nativeRecommendationOpportunities, unavailableNativeElementScan } from "./nativeElements";
-import { summarizeCulpritEvidence } from "./culpritEvidence";
+import { isLcpElementAudit, summarizeCulpritEvidence } from "./culpritEvidence";
 import { reconcileFieldOnlyRecommendations } from "./fieldOnlyRecommendations";
 
 type CollectFn = typeof collect;
@@ -93,6 +94,7 @@ export async function executePageRun(pageId: string, runId: string, options: Col
   const opportunitiesByStrategy: Partial<Record<Strategy, LighthouseOpportunity[]>> = {};
   const diagnostics: Night["diagnostics"] = {};
   const culpritEvidence: Night["culpritEvidence"] = {};
+  const lcpElementByStrategy: Partial<Record<Strategy, LcpElementEvidence>> = {};
   const measurementContext: Night["measurementContext"] = {};
   for (const { strategy, result } of stratResults) {
     if (result.quality?.status && result.quality.status !== "reliable") {
@@ -108,6 +110,8 @@ export async function executePageRun(pageId: string, runId: string, options: Col
     opportunitiesByStrategy[strategy] = result.opportunities;
     diagnostics[strategy] = promotedDiagnostics(result.findings);
     culpritEvidence[strategy] = summarizeCulpritEvidence(result.raws);
+    const element = culpritEvidence[strategy]!.find((item) => isLcpElementAudit(item.auditId))?.lcpElement;
+    if (element) lcpElementByStrategy[strategy] = element;
     measurementContext[strategy] = summarizePsiMeasurements(result.raws);
   }
   const sampleSize = Math.min(...STRATEGIES.map((strategy) => samples[strategy] ?? 0));
@@ -134,11 +138,17 @@ export async function executePageRun(pageId: string, runId: string, options: Col
 
   // Recommendation insertion is its own short atomic commit. Re-running this
   // after a crash is safe because keys/titles are deduplicated authoritatively.
+  // The LCP element rides on the LCP findings, so the case can name the image
+  // and its loading attributes rather than saying "the main thing".
+  const lcpElement = lcpElementByStrategy.mobile ?? lcpElementByStrategy.desktop;
   await insertRecommendations(
     d.dataStore,
     pageId,
     [
-      ...mergeStrategyOpportunities(opportunitiesByStrategy, diagnostics),
+      ...mergeStrategyOpportunities(opportunitiesByStrategy, diagnostics)
+        .map((opportunity) => (lcpElement && isLcpElementAudit(opportunity.id)
+          ? { ...opportunity, lcpElement }
+          : opportunity)),
       ...nativeRecommendationOpportunities(pageScan.nativeElements),
     ],
     completedAt,
@@ -176,6 +186,7 @@ export async function insertRecommendations(
     observedRuns?: number;
     strategies?: Strategy[];
     webflow?: WebflowPerformanceClassification;
+    lcpElement?: LcpElementEvidence;
   }[],
   now: Date,
   options: { summarize?: boolean; webflowGenerated?: boolean } = {},
@@ -190,13 +201,18 @@ export async function insertRecommendations(
     && (opportunity.category !== "Native elements"
       || (nativeElementApplicability(page.nativeElementControls, opportunity.id) === "included"
         && !nativeElementIsDismissed(page.nativeElementControls, opportunity.id))));
+  /**
+   * Every finding becomes a record except one nobody has written anything about.
+   *
+   * A platform-owned finding is stored too — that is the whole point of the lane
+   * it is shown in — so the filter is `"none"` alone: no documented remediation
+   * of any kind. `recommendationIsCustomerActionable` still answers the narrower
+   * question for surfaces that offer work, and it says no to both.
+   */
   const taskCandidates = actionable.map((opportunity) => ({
     opportunity,
     classification: classificationForPage(opportunity, options.webflowGenerated === true),
-  })).filter(({ opportunity, classification }) => recommendationIsCustomerActionable({
-    ...opportunity,
-    webflow: classification,
-  }));
+  })).filter(({ classification }) => classification.actionability !== "none");
   const candidates = await Promise.all(taskCandidates.slice(0, 12).map(async ({ opportunity, classification }) => {
     const rec: Rec = {
       key: `${pageId}:${opportunity.id}`,
@@ -214,6 +230,7 @@ export async function insertRecommendations(
       // estimate was in bytes. `savings` stays the display label.
       ...(opportunity.savingsBytes ? { savingsBytes: opportunity.savingsBytes } : {}),
       ...(opportunity.observedRuns ? { observedRuns: opportunity.observedRuns } : {}),
+      ...(opportunity.lcpElement ? { lcpElement: opportunity.lcpElement } : {}),
       estTime: costBand(`${opportunity.id} ${opportunity.title}`),
       status: "inbox",
       taskStatus: "todo",
@@ -232,7 +249,9 @@ export async function insertRecommendations(
     state.recs = state.recs.filter((item) => {
       if (item.pageId !== pageId || item.source === "crux-field-only") return true;
       item.webflow = classificationForPage(item, options.webflowGenerated === true);
-      return customerActionabilityFor(item) !== "none";
+      // Kept while there is anything documented about it, platform ownership
+      // included: a reading this surface no longer lists is still a reading.
+      return item.webflow.actionability !== "none";
     });
     for (const rec of candidates) {
       const title = rec.title.trim().toLowerCase();

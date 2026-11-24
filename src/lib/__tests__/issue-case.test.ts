@@ -19,6 +19,7 @@ import {
   fromAgentIssue,
   fromRec,
   groupByCause,
+  isPlatformOwned,
   groupByRemediation,
   markFixed,
   parseEffort,
@@ -39,6 +40,7 @@ import { attributionOf, type Caller } from "../caller";
 import { taskStatusWorkState } from "../workState";
 import type { AgentIssueCase } from "../agentIssueCases";
 import type { Rec } from "../types";
+import { classifyWebflowPerformance } from "../webflowPerformance";
 
 /**
  * `vocabulary.json` is the source of truth for the lifecycle, so the transition
@@ -1339,5 +1341,31 @@ describe("byte impact and evidence origin", () => {
     expect(grouped[0].impactMs).toBe(12_400);
     expect(grouped[0].impactBytes).toBe(180 * 1024);
     expect(grouped[0].impactOrigin).toBe("simulated");
+  });
+});
+
+/* ── T6 — the platform lane is a lane, not a hidden reading ─────────────── */
+
+describe("a Webflow-owned case", () => {
+  it("maps the platform classification onto the registry's platform disposition", () => {
+    expect(actionabilityFrom("platform")).toBe("platform");
+    const issue = fromRec(makeRec({
+      id: "render-blocking-resources",
+      webflow: { ...classifyWebflowPerformance("render-blocking-resources"), actionability: "platform" },
+    }));
+    expect(issue.remediation.actionability).toBe("platform");
+    expect(isPlatformOwned(issue)).toBe(true);
+  });
+
+  it("is not the reader's decision, so it is never counted as one", () => {
+    const own = {
+      ...fromRec(makeRec({ key: "home:render-blocking-resources", id: "render-blocking-resources" }), { at: AT }),
+      remediation: { steps: [], actionability: "platform" as const },
+    };
+    const work = { ...fromRec(makeRec({ key: "home:unused-javascript" }), { at: AT }), state: "new" as const };
+    expect(isPlatformOwned(own)).toBe(true);
+    expect(isPlatformOwned(work)).toBe(false);
+    // The case still exists and still has a state — it is only not offered.
+    expect(own.state).toBe("new");
   });
 });

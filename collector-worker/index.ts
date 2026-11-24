@@ -37,7 +37,11 @@ import {
   mergeNativeElementScans,
   nativeRecommendationOpportunities,
 } from "../src/lib/nativeElements";
-import { summarizeCulpritEvidence } from "../src/lib/culpritEvidence";
+import {
+  isLcpElementAudit,
+  lcpElementFromEvidence,
+  summarizeCulpritEvidence,
+} from "../src/lib/culpritEvidence";
 import { CATEGORIES, STRATEGIES } from "../src/lib/types";
 import {
   EVIDENCE_RETRY_DELAY,
@@ -449,7 +453,11 @@ async function commitWorkflowResult(
     // customer cannot fix it, but hiding the reading is how the Webflow-owned
     // section came to exist in the first place.
     const webflowGenerated = isWebflowGenerated(result.nativeElements);
-    for (const opportunity of recommendationOpportunities.slice(0, 12)) {
+    const lcpElement = lcpElementFromEvidence(result.culpritEvidence);
+    for (const rawOpportunity of recommendationOpportunities.slice(0, 12)) {
+      const opportunity = lcpElement && isLcpElementAudit(rawOpportunity.id)
+        ? { ...rawOpportunity, lcpElement }
+        : rawOpportunity;
       const title = opportunity.title.trim().toLowerCase();
       const classification = classificationForPage(opportunity, webflowGenerated);
       const existing = draft.recs.find((item) =>
@@ -480,6 +488,9 @@ async function commitWorkflowResult(
         // Lighthouse sample has one.
         ...("observedRuns" in opportunity && opportunity.observedRuns
           ? { observedRuns: opportunity.observedRuns }
+          : {}),
+        ...("lcpElement" in opportunity && opportunity.lcpElement
+          ? { lcpElement: opportunity.lcpElement }
           : {}),
         estTime: costBand(`${opportunity.id} ${opportunity.title}`),
         status: "inbox",

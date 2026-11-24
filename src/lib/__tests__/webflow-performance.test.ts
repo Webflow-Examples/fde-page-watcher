@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   CULPRIT_GROUP_LABELS,
   classifyWebflowPerformance,
+  PLATFORM_OWNED_LABEL,
   classificationForPage,
   culpritGroupLabel,
   effortLabel,
   formatDiagnosticImpact,
   isDocumentedWebflowAudit,
+  isPlatformOwnedClassification,
   recommendationIsCustomerActionable,
 } from "../webflowPerformance";
 
@@ -60,9 +62,11 @@ describe("Webflow performance taxonomy", () => {
   });
 
   it("keeps platform ownership separate from neutral customer guidance", () => {
+    // A platform-owned finding is a lane of its own, not a dropped reading: the
+    // classification says who owns it and the label says so in words.
     expect(classificationForPage({ id: "render-blocking-resources" }, true)).toMatchObject({
-      actionability: "none",
-      remediationLabel: "No direct action",
+      actionability: "platform",
+      remediationLabel: PLATFORM_OWNED_LABEL,
     });
     expect(classificationForPage({ id: "render-blocking-resources" }, false)).toMatchObject({
       actionability: "workaround",
@@ -83,6 +87,23 @@ describe("Webflow performance taxonomy", () => {
     expect(recommendationIsCustomerActionable({
       id: "render-blocking-resources",
       webflow: classificationForPage({ id: "render-blocking-resources" }, true),
+    })).toBe(false);
+  });
+
+  it("labels a platform-owned finding's effort as ownership, not an estimate", () => {
+    expect(effortLabel({
+      id: "render-blocking-resources",
+      estTime: "2 days",
+      webflow: classificationForPage({ id: "render-blocking-resources" }, true),
+    })).toBe(PLATFORM_OWNED_LABEL);
+    expect(isPlatformOwnedClassification({
+      id: "render-blocking-insight",
+      webflow: classificationForPage({ id: "render-blocking-insight" }, true),
+    })).toBe(true);
+    // The same audit on a page Webflow did not generate is the customer's work.
+    expect(isPlatformOwnedClassification({
+      id: "render-blocking-resources",
+      webflow: classificationForPage({ id: "render-blocking-resources" }, false),
     })).toBe(false);
   });
 

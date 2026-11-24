@@ -517,8 +517,24 @@ export function widerEffort(left: Effort, right: Effort): Effort {
 export function actionabilityFrom(actionability: CustomerActionability | undefined): Actionability {
   if (actionability === "direct") return "direct";
   if (actionability === "workaround") return "workaround";
+  if (actionability === "platform") return "platform";
+  // `"none"` is the legacy spelling of the same thing: before the platform lane
+  // existed it was written only where Webflow owned the audit on a Webflow page.
   if (actionability === "none") return "platform";
   return "none";
+}
+
+/**
+ * Whether this case is Webflow's own work rather than the reader's.
+ *
+ * The registry's `actionability.platform`: "Webflow owns this one. Nothing for
+ * the customer to do; the case is shown so the reading is not hidden." It is a
+ * property of the case, not a fifth queue and not a second lifecycle — the case
+ * still has a state, it is simply not a decision the reader can take. Callers
+ * that count or rank work ask this; callers that show readings do not.
+ */
+export function isPlatformOwned(issue: { remediation: Remediation }): boolean {
+  return issue.remediation.actionability === "platform";
 }
 
 /* ── Confidence — counted from the ledger, never scored ─────────────────── */

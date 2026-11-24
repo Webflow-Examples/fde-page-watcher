@@ -27,10 +27,10 @@ import { DEFAULT_DIGEST_CADENCE } from "./digestCadence";
 import { AGENT_CHECK_GROUPS } from "./agentChecks";
 import { agentCheckKey, captureAgentReadiness } from "./agentScoring";
 import { nativeElementScan, unavailableNativeElementScan } from "./nativeElements";
-import { classifyWebflowPerformance } from "./webflowPerformance";
+import { classificationForPage, classifyWebflowPerformance } from "./webflowPerformance";
 
 /** Increment when the bundled demo scenarios change materially. */
-export const DEMO_DATA_VERSION = 3;
+export const DEMO_DATA_VERSION = 4;
 
 interface Seed {
   id: string;
@@ -530,12 +530,16 @@ export function buildSeedState(now = new Date()): AppState {
     // share a cause would have been folded by `groupByCause` first and never
     // reached the remediation step.
     {
-      key: "enterprise:render-blocking-resources", pageId: "enterprise", pageTitle: "Enterprise", url: page("enterprise").url,
-      id: "render-blocking-resources", source: "lighthouse", strategies: ["mobile"], sourceRunId: page("enterprise").history.at(-1)!.runId,
-      title: "A stylesheet delays the first text on the page", category: "Performance", webflow: classifyWebflowPerformance("render-blocking-resources"),
+      // The customer-fixable render-blocking case. It is deliberately NOT the
+      // `render-blocking-resources` audit: the homepage below holds the same
+      // audit as a Webflow-owned reading, and one cause is one case — two
+      // records of it would merge into a case whose owner contradicts itself.
+      key: "enterprise:render-blocking-insight", pageId: "enterprise", pageTitle: "Enterprise", url: page("enterprise").url,
+      id: "render-blocking-insight", source: "lighthouse", strategies: ["mobile"], sourceRunId: page("enterprise").history.at(-1)!.runId,
+      title: "A stylesheet delays the first text on the page", category: "Performance", webflow: classifyWebflowPerformance("render-blocking-insight"),
       savings: "0.9 s", estTime: "1 day", status: "inbox", taskStatus: "todo", added: dateKey(isoAt(anchor, -4)), doneDate: null,
       aiSummary: "A site-wide stylesheet has to finish loading before any text appears on Enterprise.",
-      agentIssue: sharedHeadFix("enterprise:render-blocking-resources", "A stylesheet delays the first text on the page", isoAt(anchor, -4)),
+      agentIssue: sharedHeadFix("enterprise:render-blocking-insight", "A stylesheet delays the first text on the page", isoAt(anchor, -4)),
     },
     {
       key: "ai:unused-css-rules", pageId: "ai", pageTitle: "AI", url: page("ai").url,
@@ -544,6 +548,38 @@ export function buildSeedState(now = new Date()): AppState {
       savings: "0.4 s", estTime: "1 day", status: "inbox", taskStatus: "todo", added: dateKey(isoAt(anchor, -4)), doneDate: null,
       aiSummary: "Most of the same site-wide stylesheet goes unused on this page.",
       agentIssue: sharedHeadFix("ai:unused-css-rules", "Most of a stylesheet this page loads goes unused", isoAt(anchor, -4)),
+    },
+    // The audit's two largest causes, made visible. Both are Lighthouse records
+    // — simulated evidence — and both carry the numbers behind them: a transfer
+    // size as well as a time, and the element visitors wait for.
+    {
+      key: "home:third-party-summary", pageId: "home", pageTitle: "Homepage", url: page("home").url,
+      id: "third-party-summary", source: "lighthouse", strategies: ["mobile", "desktop"], sourceRunId: page("home").history.at(-1)!.runId,
+      title: "Other companies' code is most of the page", category: "Performance", webflow: classifyWebflowPerformance("third-party-summary"),
+      savings: "1.2 s", savingsBytes: 2_849 * 1024, observedRuns: 4,
+      estTime: "2 days", status: "inbox", taskStatus: "todo", added: dateKey(isoAt(anchor, -6)), doneDate: null,
+      aiSummary: "Google Tag Manager, reCAPTCHA, the Facebook pixel and the Qualified chat widget transfer about 2.8 MB and keep the browser busy for 1.2 seconds. Qualified alone is 1.65 MB, and none of these tags is your code to edit — they are tags in the site's head.",
+    },
+    {
+      key: "home:lcp-lazy-loaded", pageId: "home", pageTitle: "Homepage", url: page("home").url,
+      id: "lcp-lazy-loaded", source: "lighthouse", strategies: ["mobile"], sourceRunId: page("home").history.at(-1)!.runId,
+      title: "The first marquee image loads last", category: "Performance", webflow: classifyWebflowPerformance("lcp-lazy-loaded"),
+      savings: "10.8 s", savingsBytes: 26 * 1024, observedRuns: 3,
+      lcpElement: { elementType: "img", assetHost: "cdn.prod.website-files.com", width: 1_440, height: 810, loading: "lazy" },
+      estTime: "1 day", status: "inbox", taskStatus: "todo", added: dateKey(isoAt(anchor, -5)), doneDate: null,
+      aiSummary: "The first image in the homepage marquee is the main thing visitors wait for, and it is set to load late (loading=\"lazy\") with no fetchpriority, so a phone fetches it after everything else on the page: 10.8 seconds under real throttling, for an image of 26 KB.",
+    },
+    // Webflow-owned: the audit's 981 ms render-blocking finding. Classified
+    // `platform` because this page is Webflow-generated, so it is shown in its
+    // own section and never counted as the reader's work.
+    {
+      key: "home:render-blocking-resources", pageId: "home", pageTitle: "Homepage", url: page("home").url,
+      id: "render-blocking-resources", source: "lighthouse", strategies: ["mobile", "desktop"], sourceRunId: page("home").history.at(-1)!.runId,
+      title: "A font script delays the first text on the page", category: "Performance",
+      webflow: classificationForPage({ id: "render-blocking-resources" }, true),
+      savings: "981 ms", observedRuns: 5,
+      estTime: "No direct action", status: "inbox", taskStatus: "todo", added: dateKey(isoAt(anchor, -8)), doneDate: null,
+      aiSummary: "webfont.js has to finish before any text appears on the homepage, and it takes 981 milliseconds. Webflow ships that script, so there is nothing for you to change here.",
     },
     {
       key: "pricing:crux-field-only-lcp", pageId: "pricing", pageTitle: "Pricing", url: page("pricing").url,

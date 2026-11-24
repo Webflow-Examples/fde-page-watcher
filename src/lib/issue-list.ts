@@ -3,6 +3,7 @@ import {
   byWorstMeasured,
   casesInQueue,
   hasAnyImpact,
+  isPlatformOwned,
   remediationKey,
   type Effort,
   type IssueCase,
@@ -32,12 +33,18 @@ import { CONFIDENCES, COUNTED_QUEUES, type Confidence, type Queue } from "./voca
  * and `show_all` remains the internal unfiltered view; neither is counted,
  * so the registry marks it uncounted and this never produces a number for it —
  * a badge cannot appear on it by accident, because there is nothing to read.
+ *
+ * A platform-owned case is not counted. It is a reading Webflow owns, not work
+ * the reader can do, and a Decide badge that included it would ask for a
+ * decision nobody can take. It is still shown, in its own section, and the case
+ * still exists — this is a count of the reader's work, not of the evidence.
  */
 export type QueueCounts = Partial<Record<Queue, number>>;
 
 export function queueCountsOf(cases: readonly IssueCase[]): QueueCounts {
   const counts: QueueCounts = {};
-  for (const queue of COUNTED_QUEUES) counts[queue] = casesInQueue(cases, queue).length;
+  const own = cases.filter((issue) => !isPlatformOwned(issue));
+  for (const queue of COUNTED_QUEUES) counts[queue] = casesInQueue(own, queue).length;
   return counts;
 }
 
@@ -247,7 +254,7 @@ export function startHereCases(cases: readonly IssueCase[], limit = START_HERE_L
   const seen = new Set<string>();
   const chosen: IssueCase[] = [];
   const candidates = casesInQueue(cases, "decide")
-    .filter((issue) => issue.remediation.actionability !== "platform")
+    .filter((issue) => !isPlatformOwned(issue))
     .sort(caseRank);
   for (const issue of candidates) {
     const key = remediationKey(issue);

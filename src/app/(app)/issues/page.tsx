@@ -38,6 +38,7 @@ import {
 } from "@/components/issue-empty";
 import { WatchQueue } from "@/components/watch-queue";
 import { StartHere } from "@/components/start-here";
+import { WebflowOwned } from "@/components/webflow-owned";
 import { remediationKey, type IssueCase } from "@/lib/issue-case";
 import { FixQueue } from "@/components/fix-queue";
 import { SettledQueue } from "@/components/settled-queue";
@@ -260,7 +261,17 @@ export default function IssuesPage() {
         </>
       ) : null}
 
-      {hasRows ? null : nonListState()}
+      {/* A Webflow-owned reading is shown whoever is looking, and however few
+          rows Decide holds: the one thing this section must not do is vanish
+          because the counts it is excluded from reached zero. */}
+      <WebflowOwned
+        cases={view.platformOwned}
+        basePath={basePath}
+        pageTitles={view.pageTitles}
+        lastRunAt={view.lastRunAt}
+      />
+
+      {hasRows || view.platformOwned.length > 0 ? null : nonListState()}
     </div>
   );
 }

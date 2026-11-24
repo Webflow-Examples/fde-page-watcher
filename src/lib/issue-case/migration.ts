@@ -10,13 +10,15 @@ import { isFieldRecommendationActionable, fieldRecommendationLifecycleStatus } f
 import { parseMarkerDate } from "../ui";
 import type { AgentEvidenceSystem, AgentIssueCase, AgentIssueStatus } from "../agentIssueCases";
 import { remediationFor } from "../remediation";
-import { caseTitleFor } from "../case-titles";
+import { caseTitleFor, lcpElementEvidenceLine, lcpElementStatement } from "../case-titles";
+import { formatBytes, formatImpact } from "../impact-units";
 import type { Effort, EvidenceEntry, EvidenceSource, HistoryEntry, ImpactOrigin, IssueCase, IssueState, ProgressState } from "./core";
 import {
   PROGRESS_RANK,
   actionabilityFrom,
   confidenceFrom,
   hasMeasuredBytes,
+  hasMeasuredImpact,
   parseEffort,
   parseImpactBytes,
   parseImpactMs,
@@ -207,11 +209,26 @@ function evidenceFromRec(rec: Rec, observedAt: string): EvidenceEntry[] {
   // Records written before `source` existed all came from Lighthouse.
   const source = EVIDENCE_SOURCE[rec.source ?? "lighthouse"];
   const signal = Object.values(rec.fieldSignals ?? {}).find(Boolean);
+  // Both units where both were measured. A third-party finding transfers bytes
+  // AND blocks the thread, and the case is about both: "1.2 s, 2.4 MB" is the
+  // reading, and the one number the row shows is not the whole of it.
+  const ms = parseImpactMs(rec.savings);
+  const bytes = rec.savingsBytes ?? parseImpactBytes(rec.savings);
+  const measured = [
+    hasMeasuredImpact(ms) ? formatImpact(ms).text : "",
+    hasMeasuredBytes(bytes) ? formatBytes(bytes).text : "",
+  ].filter(Boolean);
+  // The element the reading is about, when the record knows it: "the image
+  // visitors wait for is this <img>, loading late" belongs beside the number it
+  // is responsible for.
+  const elementNote = rec.lcpElement ? `; ${lcpElementEvidenceLine(rec.lcpElement)}` : "";
   const reading = signal
     ? `${signal.metricLabel} ${signal.fieldFormatted} (${signal.fieldRating})`
-    : rec.savings
-      ? `${rec.title} — ${rec.savings}`
-      : rec.title;
+    : measured.length > 0
+      ? `${rec.title} — ${measured.join(", ")}${elementNote}`
+      : rec.savings
+        ? `${rec.title} — ${rec.savings}${elementNote}`
+        : rec.title;
   return [{
     source,
     reading,
@@ -309,9 +326,18 @@ export function fromRec(rec: Rec, options: FromRecOptions = {}): IssueCase {
     // The audit id stays the cause; the name on screen is a symptom (rule 5's
     // plain language), which is not always what the source called it.
     title: caseTitleFor(rec.id, rec.title),
-    // Never the audit title. Absent when the record carries no plain sentence —
-    // authoring one here would put copy in a logic module.
-    diagnosis: options.diagnosis ?? rec.aiSummary ?? "",
+    // Never the audit title. An LCP record that names its element gets the
+    // element's own sentence — the readable name and the attributes it carries,
+    // which is the half a reader can act on — ahead of any prose written about
+    // the finding. Otherwise the record's own sentence, or nothing: authoring one
+    // here would put copy in a logic module.
+    // A record's own plain sentence comes first because it is about the page —
+    // "the marquee's first image" — and the element facts are in the evidence
+    // line either way. With no sentence, the element statement stands.
+    diagnosis: options.diagnosis
+      ?? rec.aiSummary
+      ?? (rec.lcpElement ? lcpElementStatement(rec.lcpElement) : undefined)
+      ?? "",
     detectedAt,
     // A run count when the source keeps one, otherwise the adapter's own
     // corroboration count and finally 0, which the detail renders as nothing.

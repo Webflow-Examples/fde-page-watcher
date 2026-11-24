@@ -63,7 +63,15 @@ export type WebflowPerformanceCulprit =
   | "interactive-media"
   | "other";
 export type WebflowRemediationLevel = "blocked" | "partial" | "available" | "unknown";
-export type CustomerActionability = "direct" | "workaround" | "none" | "review";
+/**
+ * What the customer can do about a finding.
+ *
+ * `platform` is Webflow's own work on a Webflow-generated page: there is nothing
+ * for the customer to do, and the finding is shown rather than dropped so the
+ * reading is not hidden (registry `actionability.platform`). `review` is no
+ * documented remediation yet, which the case maps onto the registry's `none`.
+ */
+export type CustomerActionability = "direct" | "workaround" | "none" | "review" | "platform";
 
 /** Deterministic Webflow-specific interpretation of a Lighthouse audit. */
 export interface WebflowPerformanceClassification {
@@ -133,11 +141,29 @@ export interface CulpritEvidenceSource {
   blockingMs?: number;
 }
 
+/**
+ * The element visitors wait for, as the report described it.
+ *
+ * The element plus its loading attributes, because "the main image" is not the
+ * actionable fact — "the main image, set to load late, with no fetchpriority"
+ * is.
+ *
+ * What is deliberately NOT here: the node's markup, its class names, its alt
+ * text and its selector. Structured culprit evidence was built to retain hosts
+ * and numbers rather than page content, and a class name is page content — the
+ * privacy test asserts it never reaches this shape. The element is named by what
+ * it IS (`elementType`), not by what a customer called it, and the readable name
+ * of a page's main image belongs to the page's own copy.
+ */
 export interface LcpElementEvidence {
   elementType: string;
   assetHost?: string;
   width?: number;
   height?: number;
+  /** The `loading` attribute the report stated: "lazy", "eager", or absent. */
+  loading?: string;
+  /** The `fetchpriority` attribute the report stated, when it stated one. */
+  fetchPriority?: string;
 }
 
 /** Compact, privacy-safe explanation of one recurring Lighthouse culprit. */
@@ -859,6 +885,14 @@ export interface Rec {
    * sample. Absent on field and native records, which do not count runs.
    */
   observedRuns?: number;
+  /**
+   * The element visitors wait for, when the finding is about it.
+   *
+   * Carried on the record because the case's diagnosis names it: "the main image,
+   * set to load late" is the actionable half of an LCP finding, and the case is
+   * built from records rather than from reports.
+   */
+  lcpElement?: LcpElementEvidence;
   estTime: string; // coarse effort band, e.g. "2 days" (REQ-055)
   status: RecStatus;
   taskStatus: TaskStatus;
