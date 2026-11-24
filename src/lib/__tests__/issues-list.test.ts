@@ -3,6 +3,7 @@ import {
   DEFAULT_ISSUE_SORT,
   DEFAULT_SORT_DIRECTION,
   ISSUE_SORTS,
+  caseRank,
   parseIssueSort,
   parseSortDirection,
   queueCountsOf,
@@ -12,6 +13,7 @@ import { issueCasesFrom, lastRunAtOf } from "../issue-cases";
 import { partitionByImpact } from "../impact-format";
 import { casesInQueue, groupByRemediation, hasMeasuredImpact, type IssueCase } from "../issue-case";
 import { formatGroupImpact, formatImpact } from "@/components/issue-row";
+import { caseImpactReading, groupImpactReading, impactOriginLabel } from "../impact-format";
 import { COUNTED_QUEUES, QUEUES } from "../vocabulary";
 import type { Rec, ScoreByCategory, WatchPage } from "../types";
 
@@ -390,5 +392,83 @@ describe("what a reading reads as", () => {
 
   it("does not say up to nothing", () => {
     expect(formatGroupImpact(0).text).toBe("Not measured");
+  });
+});
+
+/* ── T1 — the cell says what was measured, and who measured it ─────────── */
+
+describe("impact text on a row", () => {
+  it("shows a byte-only case in bytes, never an empty cell", () => {
+    const reading = caseImpactReading(makeCase({ impactMs: 0, impactBytes: 579 * 1024, impactOrigin: "observed" }));
+    expect(reading.text).toBe("579 KB");
+    expect(reading.measured).toBe(true);
+    expect(reading.unit).toBe("bytes");
+    expect(impactOriginLabel(reading.origin)).toBe("Real users");
+  });
+
+  it("shows milliseconds first when both were measured", () => {
+    const reading = caseImpactReading(makeCase({ impactMs: 10_800, impactBytes: 579 * 1024, impactOrigin: "observed" }));
+    expect(reading.text).toBe("11 s");
+    expect(reading.unit).toBe("time");
+  });
+
+  it("says Not measured only when neither unit was measured", () => {
+    const reading = caseImpactReading(makeCase({ impactMs: 0 }));
+    expect(reading.text).toBe("Not measured");
+    expect(reading.measured).toBe(false);
+    expect(impactOriginLabel(reading.origin)).toBeNull();
+  });
+
+  it("labels a simulated reading, and words a group's bytes as a worst-of", () => {
+    expect(impactOriginLabel("simulated")).toBe("Simulated");
+    const group = groupImpactReading({ impactMs: 0, impactBytes: 1.2 * 1024 ** 2, impactOrigin: "simulated" });
+    expect(group.text).toBe("up to 1.2 MB");
+    expect(group.origin).toBe("simulated");
+  });
+
+  it("keeps the table's Impact sort measured-first in either unit", () => {
+    const groups = groupByRemediation([
+      makeCase({ id: "x:none", cause: "none", impactMs: 0 }),
+      makeCase({ id: "x:bytes", cause: "bytes", impactMs: 0, impactBytes: 579 * 1024 }),
+      makeCase({ id: "x:time", cause: "time", impactMs: 900 }),
+    ], { at: "2026-08-25T06:00:00.000Z" });
+    const order = sortRemediationGroups(groups, "impact").map((group) => group.primary.id);
+    expect(order).toEqual(["x:time", "x:bytes", "x:none"]);
+    // Reversing ranks the smallest MEASURED first; an absent reading stays last.
+    expect(sortRemediationGroups(groups, "impact", "asc").at(-1)?.primary.id).toBe("x:none");
+  });
+});
+
+/* ── T3 will read this order; T1 owns it ───────────────────────────────── */
+
+describe("caseRank — observed, then measured, then oldest", () => {
+  const cases = () => [
+    makeCase({ id: "sim-12s", cause: "sim-12s", impactMs: 12_400, impactOrigin: "simulated", detectedAt: "2026-08-01T00:00:00.000Z" }),
+    makeCase({ id: "obs-bytes", cause: "obs-bytes", impactMs: 0, impactBytes: 579 * 1024, impactOrigin: "observed", detectedAt: "2026-08-10T00:00:00.000Z" }),
+    makeCase({ id: "obs-time", cause: "obs-time", impactMs: 10_800, impactOrigin: "observed", detectedAt: "2026-08-05T00:00:00.000Z" }),
+    makeCase({ id: "unmeasured", cause: "unmeasured", impactMs: 0, detectedAt: "2026-07-20T00:00:00.000Z" }),
+  ];
+
+  it("never lets a simulated aggregate outrank an observed case", () => {
+    const ranked = [...cases()].sort(caseRank).map((item) => item.id);
+    expect(ranked.slice(0, 3)).toEqual(["obs-time", "obs-bytes", "sim-12s"]);
+    // Both are simulated, and the one nobody measured still sorts after the
+    // simulated 12 s rather than standing in for a small reading.
+    expect(ranked.at(-1)).toBe("unmeasured");
+  });
+
+  it("puts an absent measurement last within its band and breaks ties on the oldest", () => {
+    const sim = [
+      makeCase({ id: "sim-b", cause: "b", impactMs: 0, impactOrigin: "simulated", detectedAt: "2026-08-02T00:00:00.000Z" }),
+      makeCase({ id: "sim-a", cause: "a", impactMs: 0, impactOrigin: "simulated", detectedAt: "2026-08-01T00:00:00.000Z" }),
+      makeCase({ id: "sim-c", cause: "c", impactMs: 2_000, impactOrigin: "simulated", detectedAt: "2026-08-20T00:00:00.000Z" }),
+    ];
+    expect([...sim].sort(caseRank).map((item) => item.id)).toEqual(["sim-c", "sim-a", "sim-b"]);
+  });
+
+  it("is a total order: the same input reads the same way twice", () => {
+    const once = [...cases()].sort(caseRank).map((item) => item.id);
+    const twice = [...cases()].sort(caseRank).map((item) => item.id);
+    expect(once).toEqual(twice);
   });
 });

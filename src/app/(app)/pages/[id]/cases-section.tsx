@@ -7,7 +7,7 @@ import { APPLICABILITY_LABEL, CONFIDENCE_LABEL, applicabilityActionLabel, type E
 import { queueOf, type IssueCase } from "@/lib/issue-case";
 import { runOf } from "@/lib/checkpoint-evaluation";
 import { causeLineOf, diagnosisLineOf, excludedNote } from "@/lib/case-copy";
-import { formatImpact } from "@/lib/impact-format";
+import { caseImpactReading } from "@/lib/impact-format";
 import { caseHref } from "@/lib/paths";
 import { StatusChip } from "@/components/status-chip";
 import { CheckpointMarks } from "@/components/checkpoint-marks";
@@ -61,7 +61,7 @@ function CaseRow({
   now?: Date;
   applicability?: React.ReactNode;
 }) {
-  const impact = formatImpact(issue.impactMs);
+  const impact = caseImpactReading(issue);
   const title = causeLineOf(issue);
   const diagnosis = diagnosisLineOf(issue);
   const run = queueOf(issue.state) === "watch" ? runOf(issue) : [];

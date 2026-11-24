@@ -15,7 +15,7 @@ import {
   type IssueCase,
 } from "@/lib/issue-case";
 import { fixedAtOf, runOf } from "@/lib/checkpoint-evaluation";
-import { formatCaseImpact } from "@/lib/impact-format";
+import { caseImpactReading, impactOriginLabel } from "@/lib/impact-format";
 import { ticketMarkdown } from "@/lib/fix-ticket";
 import { FIX_NOTES_PLACEHOLDER } from "@/lib/fix-copy";
 import {
@@ -278,7 +278,7 @@ function CaseNotes({
 }
 
 /** One reference figure: a label above, the reading below. */
-function Figure({ label, value, muted }: { label: string; value: string; muted?: boolean }) {
+function Figure({ label, value, note, muted }: { label: string; value: string; note?: string; muted?: boolean }) {
   return (
     <div>
       <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{label}</div>
@@ -293,6 +293,9 @@ function Figure({ label, value, muted }: { label: string; value: string; muted?:
       >
         {value}
       </div>
+      {note ? (
+        <div style={{ marginTop: 1, fontSize: 12, color: "var(--text-muted)" }}>{note}</div>
+      ) : null}
     </div>
   );
 }
@@ -328,7 +331,8 @@ export function CaseDetail({
   // became a reader of the same figure that renders off screen. The brief asks
   // for the ticket's string to be byte-identical to this one, and the only way
   // to promise that is for there to be one string rather than two that agree.
-  const impact = formatCaseImpact(issue, impactByPage);
+  const impact = caseImpactReading(issue, impactByPage);
+  const impactOrigin = impactOriginLabel(impact.origin);
   // An effort band is an estimate of the documented remediation. With no steps
   // there is nothing to estimate, so the stale source value would contradict
   // the note beside it.
@@ -469,7 +473,12 @@ export function CaseDetail({
         }
         metadata={
           <div style={{ display: "flex", flexWrap: "wrap", gap: 28 }}>
-            <Figure label={IMPACT_LABEL} value={impact.text} muted={!impact.measured} />
+            <Figure
+              label={IMPACT_LABEL}
+              value={impact.text}
+              note={impactOrigin ?? undefined}
+              muted={!impact.measured}
+            />
             <Figure
               label={EFFORT_LABEL_TEXT}
               value={hasEffortBasis ? IMPACT_EFFORT_WORDS[issue.effort] : "Not estimated"}

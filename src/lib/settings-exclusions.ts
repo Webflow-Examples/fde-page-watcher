@@ -1,6 +1,6 @@
 import { AGENT_CHECK_GROUPS, ALL_AGENT_CHECKS, agentCheckLabel, agentGroupLabel } from "./agentChecks";
 import { agentCheckKey, agentExclusionKey, normalizeAgentIgnoreSettings } from "./agentScoring";
-import { formatImpact, NOT_MEASURED } from "./impact-format";
+import { caseImpactReading, NOT_MEASURED } from "./impact-format";
 import { excludedPageIds, exclusionReasonOf, type IssueCase } from "./issue-case";
 import {
   nativeElementExclusionReason,
@@ -236,7 +236,7 @@ function pageRows(cases: readonly IssueCase[], pageTitles: Record<string, string
     excludedPageIds(issue).flatMap((pageId): ExcludedRow[] => {
       const reason = exclusionReasonOf(issue, pageId);
       if (!reason) return [];
-      const impact = formatImpact(issue.impactMs);
+      const impact = caseImpactReading(issue);
       return [{
         id: `case-page:${issue.id}:${pageId}`,
         kind: "page",

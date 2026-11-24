@@ -2,7 +2,7 @@ import type { Caller } from "../caller";
 import type { Confidence, EvidenceSource } from "../vocabulary";
 import type { Effort, EvidenceEntry, IssueCase, IssueState, Remediation, TransitionOptions } from "./core";
 import { IssueCaseError } from "./core";
-import { applyAction, byWorstMeasured, confidenceFrom, widerEffort } from "./core";
+import { applyAction, byWorstMeasured, confidenceFrom, mergeImpact, widerEffort } from "./core";
 
 /* ── Grouping by cause ──────────────────────────────────────────────────── */
 
@@ -66,6 +66,12 @@ function mergeEvidence(left: readonly EvidenceEntry[], right: readonly EvidenceE
  * and the merge keeps the worst observed impact rather than a sum, because
  * adding milliseconds across pages that share an asset would invent a number no
  * run ever measured.
+ *
+ * "Worst observed" is taken in EACH unit that was measured: the largest time and
+ * the largest byte saving, never a sum and never a conversion between them.
+ * `mergeImpact` also decides what the merged origin is — the origin of the
+ * reading the case will display — so a group holding one byte reading from real
+ * visitors and one simulated time does not call the time "Real users".
  */
 export function groupByCause(cases: readonly IssueCase[], options: { at?: string } = {}): IssueCase[] {
   const at = options.at ?? new Date().toISOString();
@@ -98,7 +104,7 @@ export function groupByCause(cases: readonly IssueCase[], options: { at?: string
       strategies: [...new Set([...existing.strategies, ...item.strategies])],
       detectedAt: [existing.detectedAt, item.detectedAt].filter(Boolean).sort()[0] ?? existing.detectedAt,
       confirmedRuns: Math.max(existing.confirmedRuns, item.confirmedRuns),
-      impactMs: Math.max(existing.impactMs, item.impactMs),
+      ...mergeImpact(existing, item),
       effort: widerEffort(existing.effort, item.effort),
       evidence,
       confidence: confidenceFrom(evidence),
@@ -215,6 +221,14 @@ export interface RemediationGroup {
    */
   impactMs: number;
   /**
+   * The worst byte saving any member produced, merged the same way as the time
+   * and never summed with it: bytes and milliseconds measure different things.
+   * Absent when no member measured bytes.
+   */
+  impactBytes?: number;
+  /** The origin of the reading the header displays. See `mergeImpact`. */
+  impactOrigin?: IssueCase["impactOrigin"];
+  /**
    * The one shared effort, never a sum — the remediation is carried out once.
    * Where members disagree on the band, the wider one stands.
    */
@@ -258,9 +272,17 @@ export function groupByRemediation(
     // Worst measured first, so the wording comes from the largest member and an
     // unmeasured one sorts last within the group rather than ranking as a zero
     // (rule 18). The id breaks the tie, so two runs over the same data read
-    // identically.
+    // identically. The comparator reads bytes too, so a byte-only member is not
+    // treated as unmeasured.
     const ordered = [...members].sort((a, b) => byWorstMeasured(a, b) || a.id.localeCompare(b.id));
     const primary = ordered[0];
+    const impact = ordered
+      .map((item) => ({ impactMs: item.impactMs, impactBytes: item.impactBytes, impactOrigin: item.impactOrigin }))
+      .reduce(
+        (merged: { impactMs: number; impactBytes?: number; impactOrigin?: IssueCase["impactOrigin"] }, item) =>
+          mergeImpact(merged, item),
+        { impactMs: 0 } as { impactMs: number; impactBytes?: number; impactOrigin?: IssueCase["impactOrigin"] },
+      );
     return {
       key,
       remediation: primary.remediation,
@@ -268,7 +290,7 @@ export function groupByRemediation(
       primary,
       pageIds: [...new Set(ordered.flatMap((item) => item.pageIds))],
       state: ordered.map((item) => item.state).reduce(mostUrgent),
-      impactMs: Math.max(...ordered.map((item) => item.impactMs)),
+      ...impact,
       effort: ordered.map((item) => item.effort).reduce(widerEffort),
       confidence: ordered.map((item) => item.confidence).reduce(weakerConfidence),
       detectedAt: ordered.map((item) => item.detectedAt).filter(Boolean).sort()[0] ?? primary.detectedAt,

@@ -845,6 +845,15 @@ export interface Rec {
   category: string;
   webflow?: WebflowPerformanceClassification;
   savings: string; // Lighthouse load-time estimate, e.g. "1.8 s"
+  /**
+   * The measured byte saving behind `savings`, when the finding measured one.
+   *
+   * `savings` is a display label and its unit is whichever the finding was
+   * measured in; this keeps the byte figure without making the reader parse it
+   * back out of the label. Absent on records written before it existed and on
+   * findings that measured no bytes.
+   */
+  savingsBytes?: number;
   estTime: string; // coarse effort band, e.g. "2 days" (REQ-055)
   status: RecStatus;
   taskStatus: TaskStatus;

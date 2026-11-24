@@ -31,8 +31,12 @@ import type {
   WatchPage,
 } from "../src/lib/types";
 import { mergeStrategyOpportunities, promotedDiagnostics } from "../src/lib/diagnostics";
-import { formatDiagnosticImpact, webflowClassificationFor } from "../src/lib/webflowPerformance";
-import { mergeNativeElementScans, nativeRecommendationOpportunities } from "../src/lib/nativeElements";
+import { classificationForPage, formatDiagnosticImpact } from "../src/lib/webflowPerformance";
+import {
+  isWebflowGenerated,
+  mergeNativeElementScans,
+  nativeRecommendationOpportunities,
+} from "../src/lib/nativeElements";
 import { summarizeCulpritEvidence } from "../src/lib/culpritEvidence";
 import { CATEGORIES, STRATEGIES } from "../src/lib/types";
 import {
@@ -282,7 +286,10 @@ function insertRecommendations(
       sourceRunId: job.runId,
       title: opportunity.title,
       category: opportunity.category ?? "Performance",
-      savings: `${(opportunity.savingsMs / 1000).toFixed(1)} s`,
+      savings: formatDiagnosticImpact(opportunity),
+      // The byte figure beside the label, so a byte-only finding is not read as
+      // a 0.0 s estimate on the list.
+      ...(opportunity.savingsBytes ? { savingsBytes: opportunity.savingsBytes } : {}),
       estTime: costBand(`${opportunity.id} ${opportunity.title}`),
       status: "inbox",
       taskStatus: "todo",
@@ -438,14 +445,22 @@ async function commitWorkflowResult(
       ),
       ...nativeRecommendationOpportunities(result.nativeElements, page.nativeElementControls),
     ];
+    // A platform-owned audit is kept as a record rather than dropped: the
+    // customer cannot fix it, but hiding the reading is how the Webflow-owned
+    // section came to exist in the first place.
+    const webflowGenerated = isWebflowGenerated(result.nativeElements);
     for (const opportunity of recommendationOpportunities.slice(0, 12)) {
       const title = opportunity.title.trim().toLowerCase();
+      const classification = classificationForPage(opportunity, webflowGenerated);
       const existing = draft.recs.find((item) =>
         item.key === `${page.id}:${opportunity.id}`
         || (item.pageId === page.id && item.title.trim().toLowerCase() === title));
       if (existing) {
         existing.strategies = [...new Set([...(existing.strategies ?? []), ...opportunity.strategies])];
-        existing.webflow = webflowClassificationFor(opportunity);
+        existing.webflow = classification;
+        if (existing.savingsBytes === undefined && opportunity.savingsBytes) {
+          existing.savingsBytes = opportunity.savingsBytes;
+        }
         continue;
       }
       const rec: Rec = {
@@ -458,8 +473,9 @@ async function commitWorkflowResult(
         sourceRunId: currentJob.runId,
         title: opportunity.title,
         category: opportunity.category ?? "Performance",
-        webflow: webflowClassificationFor(opportunity),
+        webflow: classification,
         savings: formatDiagnosticImpact(opportunity),
+        ...(opportunity.savingsBytes ? { savingsBytes: opportunity.savingsBytes } : {}),
         estTime: costBand(`${opportunity.id} ${opportunity.title}`),
         status: "inbox",
         taskStatus: "todo",

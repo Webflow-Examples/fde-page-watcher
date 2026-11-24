@@ -209,6 +209,10 @@ export async function insertRecommendations(
       category: opportunity.category ?? "Performance",
       webflow: classification,
       savings: formatDiagnosticImpact(opportunity),
+      // Kept beside the label rather than parsed back out of it: a byte-only
+      // finding must not read as "Not measured" on the list just because its
+      // estimate was in bytes. `savings` stays the display label.
+      ...(opportunity.savingsBytes ? { savingsBytes: opportunity.savingsBytes } : {}),
       estTime: costBand(`${opportunity.id} ${opportunity.title}`),
       status: "inbox",
       taskStatus: "todo",
@@ -236,6 +240,12 @@ export async function insertRecommendations(
       if (existing) {
         existing.strategies = [...new Set([...(existing.strategies ?? []), ...(rec.strategies ?? [])])];
         existing.webflow = rec.webflow;
+        // A record written before the byte figure was kept can pick it up from
+        // the run that found it again; nothing overwrites a figure it already
+        // carries, because the label beside it is the one the reader saw.
+        if (existing.savingsBytes === undefined && rec.savingsBytes !== undefined) {
+          existing.savingsBytes = rec.savingsBytes;
+        }
         continue;
       }
       state.recs.push(rec);

@@ -1,5 +1,5 @@
 import { causeLineOf } from "./case-copy";
-import { byWorstMeasured, casesInQueue, hasMeasuredImpact, type Effort, type IssueCase, type RemediationGroup } from "./issue-case";
+import { byWorstMeasured, casesInQueue, hasAnyImpact, type Effort, type IssueCase, type RemediationGroup } from "./issue-case";
 import { CONFIDENCES, COUNTED_QUEUES, type Confidence, type Queue } from "./vocabulary";
 
 /* ── Issue-list selectors ───────────────────────────────────────────────── */
@@ -105,9 +105,7 @@ export function reverseDirection(direction: SortDirection): SortDirection {
 }
 
 /** Least work first, so a sort by effort surfaces what can be cleared today. */
-const EFFORT_ORDER: Record<Effort, number> = { minutes: 0, hours: 1, days: 2, unknown: 3 };
-
-/**
+const EFFORT_ORDER: Record<Effort, number> = { minutes: 0, hours: 1, days: 2, unknown: 3 };/**
  * Confidence ranks in the registry's own declared order, derived from its
  * array rather than restated here.
  *
@@ -147,11 +145,15 @@ export function sortRemediationGroups(
    * Reversing "largest saving first" has to give "smallest MEASURED first", not
    * "no reading first". An absent measurement is not a small one, and a
    * direction toggle is not permission to rank it as zero — which is exactly
-   * what negating the combined comparator would have done.
+   * what negating the combined comparator would have done. "Measured" means
+   * measured in either unit: a byte-only finding has a reading.
    */
   const measuredFirst = (a: RemediationGroup, b: RemediationGroup) =>
-    Number(hasMeasuredImpact(b.impactMs)) - Number(hasMeasuredImpact(a.impactMs));
-  const byImpactSize = (a: RemediationGroup, b: RemediationGroup) => b.impactMs - a.impactMs;
+    Number(hasAnyImpact(b)) - Number(hasAnyImpact(a));
+  // Time first, then bytes — the same order `impactReading` displays them in,
+  // so the list is ordered by the number the reader can see on each row.
+  const byImpactSize = (a: RemediationGroup, b: RemediationGroup) =>
+    b.impactMs - a.impactMs || (b.impactBytes ?? 0) - (a.impactBytes ?? 0);
   // The id tie-break keeps the order stable when the sort key matches, so a
   // re-render never reshuffles equal rows.
   const byId = (a: RemediationGroup, b: RemediationGroup) => a.primary.id.localeCompare(b.primary.id);
@@ -180,3 +182,33 @@ export function sortRemediationGroups(
   return [...groups].sort(compare[sort]);
 }
 
+
+/* ── Start Here's ranking ───────────────────────────────────────────────── */
+
+/**
+ * The order Start Here reads cases in, and the reason the table's sort is a
+ * different thing.
+ *
+ * The table is sorted however the reader asks; this is the answer to "what
+ * should I look at first", so it is not a preference. Three keys, in the order
+ * of what they say about a case:
+ *
+ *   1. Evidence origin. A reading real visitors produced outranks a simulated
+ *      estimate whatever the numbers are, because the first is what happened and
+ *      the second is what a test predicted. This is what stops a simulated 12 s
+ *      aggregate from heading the block above a field-confirmed finding.
+ *   2. Measured impact, largest first — within a band, in the unit the case
+ *      displays. Absent measurements sort last (rule 18).
+ *   3. Oldest first seen. A long-standing case that nobody has decided is a gap
+ *      in triage, and the oldest is the one that has been ignored longest.
+ *
+ * A total order: the id breaks exact ties, so two runs over the same data read
+ * identically.
+ */
+export function caseRank(a: IssueCase, b: IssueCase): number {
+  const originRank = (item: IssueCase) => item.impactOrigin === "observed" ? 0 : 1;
+  return originRank(a) - originRank(b)
+    || byWorstMeasured(a, b)
+    || (a.detectedAt || "").localeCompare(b.detectedAt || "")
+    || a.id.localeCompare(b.id);
+}

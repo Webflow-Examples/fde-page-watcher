@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
 import { enteredAt, type IssueCase } from "@/lib/issue-case";
 import type { Strategy } from "@/lib/types";
-import { EFFORT_LABEL, formatGroupImpact, formatImpact } from "@/lib/impact-format";
+import { EFFORT_LABEL, caseImpactReading, formatGroupImpact, formatImpact, impactOriginLabel } from "@/lib/impact-format";
 import { PAGE_SCOPE_NAME_LIMIT, SCOPE_SEPARATOR, deviceScopeOf, pageScopeNames, scopeLineOf } from "@/lib/scope-line";
 import { causeLineOf, diagnosisLineOf } from "@/lib/case-copy";
 import { CONFIDENCE_LABEL } from "@/lib/vocabulary";
@@ -171,7 +171,11 @@ export function PageScope({
 }
 
 export function IssueRow({ issue, basePath, pageTitles, nested = false, dateMode = "detected", lastRunAt, meta, confidenceSlot }: IssueRowProps) {
-  const impact = formatImpact(issue.impactMs);
+  // One reading for the row, the case detail and the ticket — time first, then
+  // bytes, and "Not measured" only when neither exists — with the voice that
+  // measured it beside it.
+  const impact = caseImpactReading(issue);
+  const origin = impactOriginLabel(impact.origin);
   // What KIND of problem this is, in three or four words — the column a list of
   // four dozen rows is actually scanned on.
   const cause = causeLineOf(issue);
@@ -295,12 +299,22 @@ export function IssueRow({ issue, basePath, pageTitles, nested = false, dateMode
         {confidenceSlot ?? CONFIDENCE_LABEL[issue.confidence]}
       </span>
 
-      <span
-        style={{ ...NUMERIC_CELL, fontSize: 12.5, color: impact.measured ? "var(--magnitude-value)" : "var(--text-muted)" }}
-        title={impact.measured ? undefined : "Not measured"}
-        aria-label={impact.measured ? undefined : "Not measured"}
-      >
-        {impact.measured ? impact.text : "—"}
+      <span style={{ ...NUMERIC_CELL, fontSize: 12.5, color: impact.measured ? "var(--magnitude-value)" : "var(--text-muted)" }}>
+        <span
+          style={{ display: "block" }}
+          title={impact.measured ? undefined : "Not measured"}
+          aria-label={impact.measured ? undefined : "Not measured"}
+        >
+          {impact.measured ? impact.text : "—"}
+        </span>
+        {/* Who measured it, quietly, under the number. Only when there is a
+            number to attribute: a label under "Not measured" would be a voice
+            for a reading nobody took. */}
+        {origin ? (
+          <span style={{ display: "block", fontSize: 12, fontWeight: 400, color: "var(--text-muted)" }}>
+            {origin}
+          </span>
+        ) : null}
       </span>
 
       <span style={{ ...NUMERIC_CELL, fontSize: 12.5, color: "var(--text-muted)" }}>

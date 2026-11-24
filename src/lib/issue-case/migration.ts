@@ -9,8 +9,16 @@ import type { Caller } from "../caller";
 import { isFieldRecommendationActionable, fieldRecommendationLifecycleStatus } from "../fieldOnlyRecommendations";
 import { parseMarkerDate } from "../ui";
 import type { AgentEvidenceSystem, AgentIssueCase, AgentIssueStatus } from "../agentIssueCases";
-import type { Effort, EvidenceEntry, EvidenceSource, HistoryEntry, IssueCase, IssueState, ProgressState } from "./core";
-import { PROGRESS_RANK, actionabilityFrom, confidenceFrom, parseEffort, parseImpactMs } from "./core";
+import type { Effort, EvidenceEntry, EvidenceSource, HistoryEntry, ImpactOrigin, IssueCase, IssueState, ProgressState } from "./core";
+import {
+  PROGRESS_RANK,
+  actionabilityFrom,
+  confidenceFrom,
+  hasMeasuredBytes,
+  parseEffort,
+  parseImpactBytes,
+  parseImpactMs,
+} from "./core";
 
 /* ── Migration: derived views of the retired lifecycles ─────────────────── */
 
@@ -122,6 +130,26 @@ export const EVIDENCE_SOURCE: Record<NonNullable<Rec["source"]>, EvidenceSource>
 };
 
 /**
+ * Whether this record's reading came from real visitors or from a test.
+ *
+ * Read off the source that produced it, never off which field happens to hold a
+ * number. CrUX is what real visitors experienced; a native-element scan and Page
+ * Watch's own checks read the published page as it is served. Lighthouse is a
+ * simulated test on a throttled machine, and a record written before `source`
+ * existed (all of which came from Lighthouse) is simulated too.
+ *
+ * Absent when nothing was measured: an origin without a reading would be a claim
+ * about a measurement nobody took.
+ */
+export function impactOriginFromRec(rec: Pick<Rec, "source" | "savings"> & { savingsBytes?: number }): ImpactOrigin | undefined {
+  const measured = parseImpactMs(rec.savings) > 0
+    || hasMeasuredBytes(rec.savingsBytes)
+    || parseImpactBytes(rec.savings) > 0;
+  if (!measured) return undefined;
+  return rec.source === undefined || rec.source === "lighthouse" ? "simulated" : "observed";
+}
+
+/**
  * The record's own source reading.
  *
  * A recommendation exists because a source flagged it, so the reading supports
@@ -207,6 +235,16 @@ export function fromRec(rec: Rec, options: FromRecOptions = {}): IssueCase {
   const evidence = evidenceFromRec(rec, detectedAt);
   const steps = options.remediationSteps ?? rec.agentIssue?.remediation ?? [];
   const pageIds = [rec.pageId];
+  // The stored byte figure first; a record written before it existed carries
+  // the same number inside its `savings` label ("180 KB"), which is parsed
+  // rather than read a second time from a second field.
+  const impactBytes = rec.savingsBytes ?? parseImpactBytes(rec.savings);
+  const impactOrigin = impactOriginFromRec(rec);
+  const impact = {
+    impactMs: parseImpactMs(rec.savings),
+    ...(hasMeasuredBytes(impactBytes) ? { impactBytes } : {}),
+    ...(impactOrigin ? { impactOrigin } : {}),
+  };
 
   return {
     id: rec.key,
@@ -222,7 +260,7 @@ export function fromRec(rec: Rec, options: FromRecOptions = {}): IssueCase {
     scope: rec.agentIssue?.scope === "origin" ? "origin" : "page",
     pageIds,
     strategies: rec.strategies ?? [],
-    impactMs: parseImpactMs(rec.savings),
+    ...impact,
     effort: parseEffort(rec.estTime),
     confidence: confidenceFrom(evidence),
     remediation: { steps, actionability: actionabilityFrom(rec.webflow?.actionability) },

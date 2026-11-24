@@ -12,7 +12,7 @@ import {
   digestSubject,
 } from "./digest-copy";
 import { normalizeDigestCadence, type DigestCadence } from "./digestCadence";
-import { formatImpact, partitionByImpact } from "./impact-format";
+import { caseImpactReading, partitionByImpact } from "./impact-format";
 import { includedPages, queueOf, type IssueCase } from "./issue-case";
 import { absoluteUrl, casePath } from "./paths";
 import { normalizePerformanceThresholds } from "./performanceThresholds";
@@ -253,7 +253,7 @@ function diagnosisOf(issue: IssueCase): string {
  * nothing to attribute to them.
  */
 function thresholdOf(issue: IssueCase, thresholds: PerformanceThresholds) {
-  const reading = formatImpact(issue.impactMs);
+  const reading = caseImpactReading(issue);
   const limit = digestLimit(thresholds);
   if (!reading.measured || limit === null) return null;
   return { reading: reading.text, limit };

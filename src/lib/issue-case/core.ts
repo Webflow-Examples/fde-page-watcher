@@ -75,6 +75,22 @@ export type { EvidenceSource };
 /** How much of a fix this is, as a band rather than an estimate. */
 export type Effort = "minutes" | "hours" | "days" | "unknown";
 
+/**
+ * Whether the impact came from real visitors or from a simulated test.
+ *
+ * A CrUX reading is what real people experienced; a Lighthouse run is a simulated
+ * test on a throttled machine. The two are both real measurements — the
+ * distinction is who took them — and the list has to keep it, because a 579 KiB
+ * image finding and a field-confirmed LCP reading were both being rendered as
+ * "Not measured" beside a simulated 12 s estimate that outranked them.
+ *
+ * `observed` is reserved for readings taken from the published site as visitors
+ * met it: CrUX field data, native-element scans and rendered-page evidence.
+ * Everything Lighthouse-only is `simulated`, including the legacy records that
+ * predate `Rec.source`, which all came from Lighthouse.
+ */
+export type ImpactOrigin = "observed" | "simulated";
+
 /** Whether the person reading this can act on it, and who owns it if not. */
 export type { Actionability };
 
@@ -168,7 +184,31 @@ export interface IssueCase {
   excludedPages?: Record<string, ExclusionReason>;
   strategies: Strategy[];        // mobile and/or desktop
   // 4 impact — ONE unit each. No display strings.
+  /**
+   * The worst measured time on a page this case counts, 0 when no time was
+   * measured. 0 means "no reading", never "a tiny one" (rule 18).
+   */
   impactMs: number;
+  /**
+   * The worst measured byte saving on a page this case counts. Absent when
+   * nothing was measured in bytes.
+   *
+   * A separate field rather than a conversion into `impactMs`, because the two
+   * are different statistics: adding an image's weight to a load-time estimate
+   * would invent a figure no run produced. A byte-only case reads in bytes; a
+   * case measured in both reads in milliseconds and keeps the bytes in evidence.
+   */
+  impactBytes?: number;
+  /**
+   * Who took the reading that a surface will show — see `ImpactOrigin`.
+   *
+   * Absent when nothing was measured, and also on a group whose displayed
+   * reading has no origin recorded. It is read off the highest-precedence
+   * reading in the case (milliseconds first, then bytes), never set for the
+   * case as a whole, so a group cannot inherit "observed" from a byte reading
+   * while it displays a simulated time.
+   */
+  impactOrigin?: ImpactOrigin;
   effort: Effort;
   // 5 confidence — derived from source agreement, never a composite score.
   //   The union is imported, not restated: the registry owns the three values
@@ -292,6 +332,35 @@ export function parseImpactMs(savings: string | null | undefined): number {
 }
 
 /**
+ * Bytes parsed from a stored `savings` label such as `"180 KB"` or `"1.2 MB"`.
+ *
+ * The byte labels are produced by `formatDiagnosticImpact` (`"64 KB"`) and by
+ * hand-written data; both are binary units, matching the way a transfer size is
+ * counted. Anything that is not a byte figure — `"1.8 s"`, `"Observed"`,
+ * `"Field signal"` — returns 0, which means *no reading in bytes* rather than a
+ * small one, exactly as `parseImpactMs` does for time.
+ *
+ * `B` is accepted but only with a digit in front of it, so the `b` in a word is
+ * never read as a unit.
+ */
+export function parseImpactBytes(savings: string | null | undefined): number {
+  const match = /(\d+(?:\.\d+)?)\s*(gib|mib|kib|gb|mb|kb|b)\b/i.exec(savings ?? "");
+  if (!match) return 0;
+  const value = Number.parseFloat(match[1]);
+  if (!Number.isFinite(value)) return 0;
+  const factors: Record<string, number> = {
+    b: 1,
+    kb: 1024,
+    kib: 1024,
+    mb: 1024 ** 2,
+    mib: 1024 ** 2,
+    gb: 1024 ** 3,
+    gib: 1024 ** 3,
+  };
+  return Math.round(value * factors[match[2].toLowerCase()]);
+}
+
+/**
  * Whether a case carries a time measurement at all.
  *
  * Registry rule 18: an absent measurement is not a small measurement. The 0 the
@@ -305,19 +374,84 @@ export function hasMeasuredImpact(impactMs: number): boolean {
   return impactMs > 0;
 }
 
+/** The byte half of the same question. Absent and 0 both mean no reading. */
+export function hasMeasuredBytes(impactBytes: number | undefined): boolean {
+  return (impactBytes ?? 0) > 0;
+}
+
+/**
+ * Whether anything was measured, in either unit.
+ *
+ * The list asks this rather than `hasMeasuredImpact` wherever the answer decides
+ * whether a row says "Not measured": a case measured only in bytes HAS a
+ * reading, and rule 18's "absent is not small" does not mean "time is the only
+ * measurement".
+ */
+export function hasAnyImpact(impact: { impactMs: number; impactBytes?: number }): boolean {
+  return hasMeasuredImpact(impact.impactMs) || hasMeasuredBytes(impact.impactBytes);
+}
+
 /**
  * Worst measured first, unmeasured last — rule 18's ordering, for any list of
- * things carrying an `impactMs`.
+ * things carrying an impact.
  *
- * The unmeasured ones are moved as a block rather than sorted by their zero,
- * which is what stops a finding with no reading outranking a 1,900 ms one on an
- * empty cell.
+ * Milliseconds rank ahead of bytes only when both are present, which is the
+ * display order too: a case that measured both reads its time. Bytes break the
+ * tie among byte-only findings. An unmeasured one sorts below every measured
+ * one, as a block, rather than by the zero it never measured.
  */
-export function byWorstMeasured<T extends { impactMs: number }>(left: T, right: T): number {
-  const leftMeasured = hasMeasuredImpact(left.impactMs);
-  const rightMeasured = hasMeasuredImpact(right.impactMs);
+export function byWorstMeasured<T extends { impactMs: number; impactBytes?: number }>(left: T, right: T): number {
+  const leftMeasured = hasAnyImpact(left);
+  const rightMeasured = hasAnyImpact(right);
   if (leftMeasured !== rightMeasured) return leftMeasured ? -1 : 1;
-  return right.impactMs - left.impactMs;
+  if (left.impactMs !== right.impactMs) return right.impactMs - left.impactMs;
+  return (right.impactBytes ?? 0) - (left.impactBytes ?? 0);
+}
+
+/** The origin of the side holding the worst reading in one unit. */
+function worstOrigin(
+  left: { impactOrigin?: ImpactOrigin },
+  right: { impactOrigin?: ImpactOrigin },
+  leftValue: number,
+  rightValue: number,
+): ImpactOrigin | undefined {
+  if (leftValue > rightValue) return left.impactOrigin;
+  if (rightValue > leftValue) return right.impactOrigin;
+  // A tie between two readings of one value: the observed one stands, because
+  // a group is no less confirmed than its best reading.
+  if (left.impactOrigin === right.impactOrigin) return left.impactOrigin;
+  return left.impactOrigin === "observed" || right.impactOrigin === "observed" ? "observed" : undefined;
+}
+
+/**
+ * How two readings of the same problem combine into one case's impact.
+ *
+ * The worst of each unit, never a sum (rule 19): adding two pages' savings
+ * invents a figure no run produced. Milliseconds and bytes are merged
+ * separately because they measure different things.
+ *
+ * The origin belongs to the reading a surface will actually show, which is the
+ * time when there is one and the bytes otherwise — so a group holding an
+ * observed byte reading and a simulated 12 s estimate reports the 12 s as
+ * simulated rather than borrowing "Real users" from the bytes it is not
+ * displaying.
+ */
+export function mergeImpact(
+  left: { impactMs: number; impactBytes?: number; impactOrigin?: ImpactOrigin },
+  right: { impactMs: number; impactBytes?: number; impactOrigin?: ImpactOrigin },
+): { impactMs: number; impactBytes?: number; impactOrigin?: ImpactOrigin } {
+  const impactMs = Math.max(left.impactMs, right.impactMs);
+  const bytes = Math.max(left.impactBytes ?? 0, right.impactBytes ?? 0);
+  const leading = impactMs > 0
+    ? worstOrigin(left, right, left.impactMs, right.impactMs)
+    : bytes > 0
+      ? worstOrigin(left, right, left.impactBytes ?? 0, right.impactBytes ?? 0)
+      : undefined;
+  return {
+    impactMs,
+    ...(bytes > 0 ? { impactBytes: bytes } : {}),
+    ...(leading ? { impactOrigin: leading } : {}),
+  };
 }
 
 /**
