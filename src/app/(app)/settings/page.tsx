@@ -357,6 +357,7 @@ function ExcludedGroup({ disabled }: { disabled: boolean }) {
     return () => store.recordCaseDecision({
       decision: "include",
       remediationKey: remediationKey(to.issue),
+      cause: to.issue.cause,
       pageId: to.pageId,
     });
   };

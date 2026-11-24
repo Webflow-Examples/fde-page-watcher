@@ -10,8 +10,8 @@ import {
   NUMERIC_CELL,
   PageScope,
   TRUNCATE_CELL,
-  formatGroupImpact,
 } from "@/components/issue-row";
+import { groupImpactReading, impactOriginLabel } from "@/lib/impact-format";
 
 /**
  * One remediation and the pages it covers.
@@ -45,10 +45,19 @@ export interface IssueGroupProps {
 
 export function IssueGroup({ group, basePath, pageTitles, nested = false, lastRunAt }: IssueGroupProps) {
   if (group.cases.length === 1) {
-    return <IssueRow issue={group.cases[0]} basePath={basePath} pageTitles={pageTitles} nested={nested} />;
+    return (
+      <IssueRow
+        issue={group.cases[0]}
+        basePath={basePath}
+        pageTitles={pageTitles}
+        nested={nested}
+        lastRunAt={lastRunAt}
+      />
+    );
   }
 
-  const impact = formatGroupImpact(group.impactMs);
+  const impact = groupImpactReading(group);
+  const origin = impactOriginLabel(impact.origin);
 
   return (
     <section aria-label={`One fix for ${group.cases.length} cases`}>
@@ -111,10 +120,19 @@ export function IssueGroup({ group, basePath, pageTitles, nested = false, lastRu
             out once. */}
         <span
           style={{ ...NUMERIC_CELL, fontSize: 12.5, fontWeight: 600, color: impact.measured ? "var(--magnitude-value)" : "var(--text-muted)" }}
-          title={impact.measured ? undefined : "Not measured"}
-          aria-label={impact.measured ? undefined : "Not measured"}
         >
-          {impact.measured ? impact.text : "—"}
+          <span
+            style={{ display: "block" }}
+            title={impact.measured ? undefined : "Not measured"}
+            aria-label={impact.measured ? undefined : "Not measured"}
+          >
+            {impact.measured ? impact.text : "—"}
+          </span>
+          {origin ? (
+            <span style={{ display: "block", fontSize: 12, fontWeight: 400, color: "var(--text-muted)" }}>
+              {origin}
+            </span>
+          ) : null}
         </span>
 
         <span style={{ ...NUMERIC_CELL, fontSize: 12.5, color: "var(--text-muted)" }}>

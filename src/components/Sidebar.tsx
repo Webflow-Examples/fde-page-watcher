@@ -8,8 +8,8 @@ import { MAGNITUDE_WEIGHT } from "./magnitude";
 import { normalizeCollectionSchedule } from "@/lib/collectionSchedule";
 import { ClockIcon, EyeIcon, PagesIcon } from "./icons";
 import { GearIcon, ShieldCheckIcon, SignOutIcon, WarningDiamondIcon } from "@phosphor-icons/react";
-import { casesInQueue } from "@/lib/issue-case";
 import { issueCasesFrom } from "@/lib/issue-cases";
+import { decideCountOf } from "@/lib/issue-list";
 import { DESTINATION_LABEL, DESTINATION_PATH, QUEUE_LABEL } from "@/lib/vocabulary";
 import type { Destination } from "@/lib/vocabulary";
 import { SelectMenu } from "./select-menu";
@@ -99,8 +99,11 @@ export function Sidebar() {
   } = useStore();
   const [devEmail, setDevEmail] = useState(user.email);
   const [signingOut, setSigningOut] = useState(false);
+  // The same count the Decide tab states — `decideCountOf` is `queueCountsOf`'s
+  // Decide number, platform-owned readings excluded. Counting raw queue
+  // membership here once made the badge say 8 while the page said 7.
   const decisionCount = useMemo(
-    () => casesInQueue(issueCasesFrom({ recs, pages, caseDecisions, caseTransitions, casePlans }), "decide").length,
+    () => decideCountOf(issueCasesFrom({ recs, pages, caseDecisions, caseTransitions, casePlans })),
     [recs, pages, caseDecisions, caseTransitions, casePlans],
   );
   const schedule = normalizeCollectionSchedule(collectionSchedule);

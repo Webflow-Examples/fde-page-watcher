@@ -63,7 +63,15 @@ export type WebflowPerformanceCulprit =
   | "interactive-media"
   | "other";
 export type WebflowRemediationLevel = "blocked" | "partial" | "available" | "unknown";
-export type CustomerActionability = "direct" | "workaround" | "none" | "review";
+/**
+ * What the customer can do about a finding.
+ *
+ * `platform` is Webflow's own work on a Webflow-generated page: there is nothing
+ * for the customer to do, and the finding is shown rather than dropped so the
+ * reading is not hidden (registry `actionability.platform`). `review` is no
+ * documented remediation yet, which the case maps onto the registry's `none`.
+ */
+export type CustomerActionability = "direct" | "workaround" | "none" | "review" | "platform";
 
 /** Deterministic Webflow-specific interpretation of a Lighthouse audit. */
 export interface WebflowPerformanceClassification {
@@ -133,11 +141,29 @@ export interface CulpritEvidenceSource {
   blockingMs?: number;
 }
 
+/**
+ * The element visitors wait for, as the report described it.
+ *
+ * The element plus its loading attributes, because "the main image" is not the
+ * actionable fact — "the main image, set to load late, with no fetchpriority"
+ * is.
+ *
+ * What is deliberately NOT here: the node's markup, its class names, its alt
+ * text and its selector. Structured culprit evidence was built to retain hosts
+ * and numbers rather than page content, and a class name is page content — the
+ * privacy test asserts it never reaches this shape. The element is named by what
+ * it IS (`elementType`), not by what a customer called it, and the readable name
+ * of a page's main image belongs to the page's own copy.
+ */
 export interface LcpElementEvidence {
   elementType: string;
   assetHost?: string;
   width?: number;
   height?: number;
+  /** The `loading` attribute the report stated: "lazy", "eager", or absent. */
+  loading?: string;
+  /** The `fetchpriority` attribute the report stated, when it stated one. */
+  fetchPriority?: string;
 }
 
 /** Compact, privacy-safe explanation of one recurring Lighthouse culprit. */
@@ -300,6 +326,18 @@ export interface CaseDecisionRecord {
   remediationKey: string;
   pageId?: string;
   reason?: string;
+  /**
+   * The cause of the case this was decided on, when the writer knew it.
+   *
+   * The key says which remediation the decision was about; this says which
+   * problem. They are the same thing until the remediation's key moves — a plan
+   * edited, or the library documenting an audit that arrived without steps — and
+   * then the cause is the only way to tell that an entry which no longer matches
+   * a key still belongs to this case. Without it such an entry cannot be
+   * attributed, so it is left alone rather than guessed at (rule 18: withhold
+   * rather than assert). Absent on entries written before it existed.
+   */
+  cause?: string;
   /** ISO. Also the entry's place in the log, which is kept in append order. */
   at: string;
   by: CaseDecisionCaller;
@@ -845,6 +883,28 @@ export interface Rec {
   category: string;
   webflow?: WebflowPerformanceClassification;
   savings: string; // Lighthouse load-time estimate, e.g. "1.8 s"
+  /**
+   * The measured byte saving behind `savings`, when the finding measured one.
+   *
+   * `savings` is a display label and its unit is whichever the finding was
+   * measured in; this keeps the byte figure without making the reader parse it
+   * back out of the label. Absent on records written before it existed and on
+   * findings that measured no bytes.
+   */
+  savingsBytes?: number;
+  /**
+   * How many Lighthouse runs saw this finding, when it came from a repeated
+   * sample. Absent on field and native records, which do not count runs.
+   */
+  observedRuns?: number;
+  /**
+   * The element visitors wait for, when the finding is about it.
+   *
+   * Carried on the record because the case's diagnosis names it: "the main image,
+   * set to load late" is the actionable half of an LCP finding, and the case is
+   * built from records rather than from reports.
+   */
+  lcpElement?: LcpElementEvidence;
   estTime: string; // coarse effort band, e.g. "2 days" (REQ-055)
   status: RecStatus;
   taskStatus: TaskStatus;

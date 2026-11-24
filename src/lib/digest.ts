@@ -12,8 +12,8 @@ import {
   digestSubject,
 } from "./digest-copy";
 import { normalizeDigestCadence, type DigestCadence } from "./digestCadence";
-import { formatImpact, partitionByImpact } from "./impact-format";
-import { includedPages, queueOf, type IssueCase } from "./issue-case";
+import { caseImpactReading, partitionByImpact } from "./impact-format";
+import { includedPages, isPlatformOwned, queueOf, type IssueCase } from "./issue-case";
 import { absoluteUrl, casePath } from "./paths";
 import { normalizePerformanceThresholds } from "./performanceThresholds";
 import { pageScopeOf } from "./scope-line";
@@ -180,6 +180,10 @@ export function digestSiteOf(state: Pick<AppState, "pages">): string {
  * waiting.
  */
 export function digestSectionOf(issue: IssueCase): DigestSectionKind | null {
+  // A platform-owned reading is not the reader's to decide, so it is not
+  // announced as something waiting on them. It is still on the Issues page, in
+  // its own section, which is where a reading nobody is asked about belongs.
+  if (isPlatformOwned(issue)) return null;
   const queue = queueOf(issue.state);
   if (queue === "decide") return disagreedCheckpointOf(issue) ? "came_back" : "to_decide";
   if (queue === "watch") return noReadingTaken(issue) ? "could_not_measure" : "held";
@@ -253,7 +257,7 @@ function diagnosisOf(issue: IssueCase): string {
  * nothing to attribute to them.
  */
 function thresholdOf(issue: IssueCase, thresholds: PerformanceThresholds) {
-  const reading = formatImpact(issue.impactMs);
+  const reading = caseImpactReading(issue);
   const limit = digestLimit(thresholds);
   if (!reading.measured || limit === null) return null;
   return { reading: reading.text, limit };

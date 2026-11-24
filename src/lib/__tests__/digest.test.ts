@@ -502,3 +502,12 @@ describe("the site", () => {
     expect(digestSiteOf({ pages: [pageOf("home", "Home", "not a url")] })).toBe("not a url");
   });
 });
+
+describe("a platform-owned case in the digest", () => {
+  it("is not announced as waiting on the reader", () => {
+    // Webflow owns it; the message asks the reader for nothing about it, and the
+    // Issues page still shows it in its own section.
+    expect(digestSectionOf(caseOf({ remediation: { steps: [], actionability: "platform" } }))).toBeNull();
+    expect(digestSectionOf(caseOf())).toBe("to_decide");
+  });
+});

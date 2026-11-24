@@ -36,6 +36,7 @@ const TITLES: Record<string, string> = {
   "uses-responsive-images": "Images bigger than they are shown",
   "uses-optimized-images": "Images heavier than they need to be",
   "largest-contentful-paint-element": "The main thing a visitor waits for (largest contentful paint element)",
+  "lcp-lazy-loaded": "The main image set to load late",
 };
 
 /**
@@ -154,6 +155,21 @@ function elementType(item: UnknownRecord): string {
   return match?.[1]?.toLowerCase() ?? "element";
 }
 
+/**
+ * The loading state a report stated, as a word.
+ *
+ * Read off the node's own fields, never parsed out of its snippet: the snippet
+ * is page text, and this evidence exists precisely to keep page text out of the
+ * stored record. For the lazy-loaded audit the report's whole verdict IS that
+ * the element loads late, so its presence states `lazy` without reading markup.
+ */
+function elementLoading(item: UnknownRecord, auditId: string): string | undefined {
+  const node = record(item.node);
+  const stated = typeof node?.loading === "string" ? node.loading.trim().toLowerCase() : "";
+  if (stated) return stated;
+  return auditId === "lcp-lazy-loaded" ? "lazy" : undefined;
+}
+
 function extractOne(raw: unknown): CulpritEvidence[] {
   const lighthouse = record(record(raw)?.lighthouseResult);
   if (!lighthouse) return [];
@@ -181,16 +197,22 @@ function extractOne(raw: unknown): CulpritEvidence[] {
     } else if (auditId === "render-blocking-resources" || auditId === "render-blocking-insight") {
       facts = renderBlockingEvidence(details, items);
       sources = sourcesFor(items);
-    } else if (auditId === "largest-contentful-paint-element") {
+    } else if (auditId === "largest-contentful-paint-element" || auditId === "lcp-lazy-loaded") {
       const item = items.find((candidate) => candidate.node) ?? items[0];
       if (item) {
         const node = record(item.node);
         const rect = record(node?.boundingRect);
+        const loading = elementLoading(item, auditId);
+        const fetchPriority = typeof node?.fetchpriority === "string"
+          ? node.fetchpriority.trim().toLowerCase()
+          : undefined;
         lcpElement = {
           elementType: elementType(item),
           assetHost: safeHost(item.url ?? node?.url),
           width: number(rect?.width),
           height: number(rect?.height),
+          ...(loading ? { loading } : {}),
+          ...(fetchPriority ? { fetchPriority } : {}),
         };
         facts = compactFacts([
           fact("width", "Width on screen", lcpElement.width, "pixels"),
@@ -238,6 +260,14 @@ export function summarizeCulpritEvidence(raws: unknown[] = []): CulpritEvidence[
       assetHost: lcpSamples.find((item) => item.assetHost)?.assetHost,
       width: medianOptional(lcpSamples.map((item) => item.width)),
       height: medianOptional(lcpSamples.map((item) => item.height)),
+      // Taken from the first sample that has each: the attributes describe the
+      // element, and a run that omitted one did not contradict the rest.
+      ...(lcpSamples.find((item) => item.loading)?.loading
+        ? { loading: lcpSamples.find((item) => item.loading)!.loading }
+        : {}),
+      ...(lcpSamples.find((item) => item.fetchPriority)?.fetchPriority
+        ? { fetchPriority: lcpSamples.find((item) => item.fetchPriority)!.fetchPriority }
+        : {}),
     } : undefined;
     return { auditId, title: source.title, facts, sources: sources.length ? sources : undefined, lcpElement, sampleRuns: observations.length };
   });
@@ -262,6 +292,7 @@ const PRIMARY_FACTS: Record<string, string> = {
   "uses-responsive-images": "wastedBytes",
   "uses-optimized-images": "wastedBytes",
   "largest-contentful-paint-element": "width",
+  "lcp-lazy-loaded": "width",
 };
 
 /** See `CULPRIT_EVIDENCE_AUDIT_IDS`; kept in sync with `TITLES` by the same drift-guard test. */
@@ -294,4 +325,44 @@ export function formatEvidenceValue(value: number, unit: CulpritEvidenceUnit): s
   if (unit === "percent") return `${value.toFixed(1)}%`;
   if (unit === "pixels") return `${Math.round(value)} px`;
   return Math.round(value).toLocaleString("en-US");
+}
+
+/* ── The element visitors wait for, carried to the case ─────────────────── */
+
+/**
+ * The audits that describe the LCP element rather than count a problem.
+ *
+ * Two, because two reports describe it from different sides: the element audit
+ * says which element it is and how big, and the lazy-loaded audit says whether it
+ * is fetched late. A case for either one should name the element, so both ids
+ * take the same evidence.
+ */
+export const LCP_ELEMENT_AUDIT_IDS = Object.freeze([
+  "largest-contentful-paint-element",
+  "lcp-lazy-loaded",
+] as const);
+
+export function isLcpElementAudit(auditId: string): boolean {
+  return (LCP_ELEMENT_AUDIT_IDS as readonly string[]).includes(auditId.trim().toLowerCase());
+}
+
+/**
+ * The LCP element from a run's culprit evidence, mobile first.
+ *
+ * Mobile is preferred because that is the form factor the impact is measured on
+ * in the app's default view, and because the two strategies describing different
+ * element sizes would otherwise be merged into one that no run saw. When mobile
+ * has no element the desktop one stands — an element from the other device is
+ * still the element, and withholding it would hide the only evidence there is.
+ */
+export function lcpElementFromEvidence(
+  byStrategy: Partial<Record<Strategy, CulpritEvidence[]>> | undefined,
+): CulpritEvidence["lcpElement"] {
+  if (!byStrategy) return undefined;
+  for (const strategy of ["mobile", "desktop"] as const) {
+    const found = (byStrategy[strategy] ?? [])
+      .find((item) => isLcpElementAudit(item.auditId) && item.lcpElement)?.lcpElement;
+    if (found) return found;
+  }
+  return undefined;
 }

@@ -19,10 +19,13 @@ import {
   fromAgentIssue,
   fromRec,
   groupByCause,
+  isPlatformOwned,
   groupByRemediation,
   markFixed,
   parseEffort,
+  parseImpactBytes,
   parseImpactMs,
+  mergeImpact,
   queueOf,
   recStatusOf,
   scheduleCheckpoints,
@@ -37,6 +40,7 @@ import { attributionOf, type Caller } from "../caller";
 import { taskStatusWorkState } from "../workState";
 import type { AgentIssueCase } from "../agentIssueCases";
 import type { Rec } from "../types";
+import { classifyWebflowPerformance } from "../webflowPerformance";
 
 /**
  * `vocabulary.json` is the source of truth for the lifecycle, so the transition
@@ -1252,5 +1256,116 @@ describe("vocabulary discipline", () => {
       .replace(/\/\*[\s\S]*?\*\//g, "")
       .replace(/\/\/.*$/gm, "");
     expect(code).not.toMatch(/taskStatus/);
+  });
+});
+
+/* ── T1 — bytes, and who measured ───────────────────────────────────────── */
+
+describe("byte impact and evidence origin", () => {
+  it("reads a byte label into bytes, and reads nothing out of a time", () => {
+    expect(parseImpactBytes("180 KB")).toBe(180 * 1024);
+    expect(parseImpactBytes("1.2 MB")).toBe(Math.round(1.2 * 1024 ** 2));
+    expect(parseImpactBytes("64 KB")).toBe(65_536);
+    expect(parseImpactBytes("512 B")).toBe(512);
+    expect(parseImpactBytes("1.8 s")).toBe(0);
+    expect(parseImpactBytes("Observed")).toBe(0);
+    expect(parseImpactBytes(undefined)).toBe(0);
+  });
+
+  it("keeps the stored byte figure, and parses it out of the label when it is absent", () => {
+    const stored = fromRec(makeRec({ savings: "1.8 s", savingsBytes: 579 * 1024 }));
+    expect(stored.impactMs).toBe(1800);
+    expect(stored.impactBytes).toBe(579 * 1024);
+
+    const labelOnly = fromRec(makeRec({ savings: "579 KB" }));
+    expect(labelOnly.impactMs).toBe(0);
+    expect(labelOnly.impactBytes).toBe(579 * 1024);
+  });
+
+  it("calls a field or native reading observed and a Lighthouse one simulated", () => {
+    const crux = fromRec(makeRec({ source: "crux-field-only", savings: "Field p75 4.8 s" }));
+    expect(crux.impactOrigin).toBe("observed");
+    const native = fromRec(makeRec({ source: "native-elements", savings: "Observed" }));
+    expect(native.impactOrigin).toBeUndefined();
+    const field = fromRec(makeRec({ source: "native-elements", savings: "620 ms" }));
+    expect(field.impactOrigin).toBe("observed");
+    const lighthouse = fromRec(makeRec({ savings: "1.8 s" }));
+    expect(lighthouse.impactOrigin).toBe("simulated");
+    // A record written before `source` existed came from Lighthouse.
+    const legacy = fromRec(makeRec({ source: undefined, savings: "1.8 s" }));
+    expect(legacy.impactOrigin).toBe("simulated");
+  });
+
+  it("states no origin for a record that measured nothing", () => {
+    const observedNothing = fromRec(makeRec({ source: "crux-field-only", savings: "Field signal" }));
+    expect(observedNothing.impactMs).toBe(0);
+    expect(observedNothing.impactBytes).toBeUndefined();
+    expect(observedNothing.impactOrigin).toBeUndefined();
+    expect(observedNothing).not.toHaveProperty("impactOrigin");
+  });
+
+  it("keeps the worst time and the worst bytes across pages, never a sum", () => {
+    const onPage = (pageId: string, overrides: Partial<Rec>) =>
+      fromRec(makeRec({ key: `${pageId}:unused-javascript`, pageId, ...overrides }), { at: AT });
+    const grouped = groupByCause([
+      onPage("p1", { savings: "1.8 s", savingsBytes: 180 * 1024 }),
+      onPage("p2", { savings: "0.6 s", savingsBytes: 579 * 1024 }),
+    ], { at: AT });
+    expect(grouped[0].impactMs).toBe(1800);
+    expect(grouped[0].impactBytes).toBe(579 * 1024);
+  });
+
+  it("reports a mixed group's origin for the reading it displays", () => {
+    const observedBytes = { impactMs: 0, impactBytes: 579 * 1024, impactOrigin: "observed" as const };
+    const simulatedTime = { impactMs: 12_000, impactOrigin: "simulated" as const };
+    // The time is what a surface shows, so the time's voice is what it states —
+    // the group does not borrow "Real users" from the bytes it is not showing.
+    expect(mergeImpact(observedBytes, simulatedTime)).toEqual({
+      impactMs: 12_000,
+      impactBytes: 579 * 1024,
+      impactOrigin: "simulated",
+    });
+    // With no time measured, the bytes are what it shows, and their voice stands.
+    expect(mergeImpact(observedBytes, { impactMs: 0, impactBytes: 90 * 1024, impactOrigin: "simulated" }))
+      .toEqual({ impactMs: 0, impactBytes: 579 * 1024, impactOrigin: "observed" });
+  });
+
+  it("groups a byte-only page with a timed one into a case that shows the time", () => {
+    const onPage = (pageId: string, overrides: Partial<Rec>) =>
+      fromRec(makeRec({ key: `${pageId}:uses-optimized-images`, pageId, id: "uses-optimized-images", ...overrides }), { at: AT });
+    const grouped = groupByCause([
+      onPage("p1", { savings: "180 KB", source: "native-elements" }),
+      onPage("p2", { savings: "12.4 s" }),
+    ], { at: AT });
+    expect(grouped).toHaveLength(1);
+    expect(grouped[0].impactMs).toBe(12_400);
+    expect(grouped[0].impactBytes).toBe(180 * 1024);
+    expect(grouped[0].impactOrigin).toBe("simulated");
+  });
+});
+
+/* ── T6 — the platform lane is a lane, not a hidden reading ─────────────── */
+
+describe("a Webflow-owned case", () => {
+  it("maps the platform classification onto the registry's platform disposition", () => {
+    expect(actionabilityFrom("platform")).toBe("platform");
+    const issue = fromRec(makeRec({
+      id: "render-blocking-resources",
+      webflow: { ...classifyWebflowPerformance("render-blocking-resources"), actionability: "platform" },
+    }));
+    expect(issue.remediation.actionability).toBe("platform");
+    expect(isPlatformOwned(issue)).toBe(true);
+  });
+
+  it("is not the reader's decision, so it is never counted as one", () => {
+    const own = {
+      ...fromRec(makeRec({ key: "home:render-blocking-resources", id: "render-blocking-resources" }), { at: AT }),
+      remediation: { steps: [], actionability: "platform" as const },
+    };
+    const work = { ...fromRec(makeRec({ key: "home:unused-javascript" }), { at: AT }), state: "new" as const };
+    expect(isPlatformOwned(own)).toBe(true);
+    expect(isPlatformOwned(work)).toBe(false);
+    // The case still exists and still has a state — it is only not offered.
+    expect(own.state).toBe("new");
   });
 });

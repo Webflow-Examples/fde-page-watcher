@@ -13,6 +13,16 @@ type CatalogEntry = Pick<
   "metric" | "culprit" | "culpritLabel" | "remediation" | "guidance"
 >;
 
+/**
+ * The label a platform-owned finding carries.
+ *
+ * One string, used by the classification the record stores and the section the
+ * list renders, so the chip and the heading cannot spell the ownership
+ * differently. It is the registry's `actionability.platform` meaning in two
+ * words: Webflow owns this one.
+ */
+export const PLATFORM_OWNED_LABEL = "Webflow-owned";
+
 const REMEDIATION_LABELS: Record<WebflowRemediationLevel, string> = {
   blocked: "No direct action",
   partial: "Workaround available",
@@ -388,7 +398,17 @@ export function actionabilityTone(actionability: CustomerActionability): Remedia
   if (actionability === "none") return remediationTone("blocked");
   if (actionability === "workaround") return remediationTone("partial");
   if (actionability === "direct") return remediationTone("available");
+  if (actionability === "platform") return "neutral";
   return remediationTone("unknown");
+}
+
+/** True when Webflow owns the finding on this page, so there is nothing for a customer to do. */
+export function isPlatformOwnedClassification(item: {
+  id: string;
+  title?: string;
+  webflow?: WebflowPerformanceClassification;
+}): boolean {
+  return customerActionabilityFor(item) === "platform";
 }
 
 export function customerActionabilityFor(item: {
@@ -436,35 +456,57 @@ export function formatDiagnosticImpact(item: { savingsMs: number; savingsBytes?:
 
 export function effortLabel(item: { estTime: string; id: string; title?: string; webflow?: WebflowPerformanceClassification }): string {
   const actionability = customerActionabilityFor(item);
+  if (actionability === "platform") return PLATFORM_OWNED_LABEL;
   if (actionability === "none") return "No direct action";
   if (actionability === "review") return "Needs review";
   return item.estTime;
 }
 
+/**
+ * The classification for a finding on one page, including who owns it.
+ *
+ * On a Webflow-generated page a handful of audits are Webflow's own work: the
+ * render-blocking files, boot-time and main-thread work that Webflow ships. Those
+ * used to be classified `"none"` and then dropped by the insertion filter, so the
+ * audit's 981 ms render-blocking finding was invisible in the app — the reading
+ * was hidden, which is the one thing the platform disposition promises not to do.
+ *
+ * They are now `platform`: still not the customer's work, still not offered as an
+ * Accept, and shown in their own section so a reader can see what Webflow owns
+ * and what they do. `PLATFORM_OWNED_LABEL` is the label they carry.
+ */
 export function classificationForPage(
   item: { id: string; title?: string },
   webflowGenerated: boolean,
 ): WebflowPerformanceClassification {
   const classification = classifyWebflowPerformance(item.id, item.title);
   if (webflowGenerated && WEBFLOW_NO_DIRECT_ACTION.has(item.id)) {
-    return { ...classification, actionability: "none", remediationLabel: "No direct action" };
+    return { ...classification, actionability: "platform", remediationLabel: PLATFORM_OWNED_LABEL };
   }
   return classification;
 }
 
 /**
- * True unless the finding is a confirmed platform-owned gap with no
- * customer-side action at all (`"none"`). Findings still awaiting
- * classification (`"review"` — including any audit ID this catalog
- * doesn't recognize yet) stay visible so they don't silently disappear;
- * they surface with a "Needs review" effort label instead of an estimate.
+ * Whether there is something for the CUSTOMER to do about this finding.
+ *
+ * False for a platform-owned finding — Webflow's work, not theirs — and false
+ * for one with no documented remediation at all (`"none"`). Findings still
+ * awaiting classification (`"review"` — including any audit ID this catalog
+ * doesn't recognize yet) stay true so they don't silently disappear; they
+ * surface with a "Needs review" effort label instead of an estimate.
+ *
+ * This is not the insertion filter. A reading Webflow owns is still stored (see
+ * `isPlatformOwnedClassification` and the collector), because dropping it hides
+ * evidence; this function answers the narrower question a surface asks when it
+ * offers work.
  */
 export function recommendationIsCustomerActionable(item: {
   id: string;
   title?: string;
   webflow?: WebflowPerformanceClassification;
 }): boolean {
-  return customerActionabilityFor(item) !== "none";
+  const actionability = customerActionabilityFor(item);
+  return actionability !== "none" && actionability !== "platform";
 }
 
 export function isKnownWebflowIssue(item: {

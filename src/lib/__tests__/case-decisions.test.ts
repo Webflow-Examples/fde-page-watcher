@@ -25,6 +25,7 @@ import { pendingPage } from "../mutations";
 import type {
   AppState,
   CaseDecisionRecord,
+  CasePlanRecord,
   Rec,
   ScoreByCategory,
   WatchPage,
@@ -209,6 +210,102 @@ describe("a decision and a reload", () => {
   });
 });
 
+/* ── A decision taken before the remediation was documented ─────────────── */
+
+describe("a decision keyed on the cause, after the remediation gained steps", () => {
+  /**
+   * The remediation library documents audits that arrived with no steps, which
+   * moves a case's key from `cause:<cause>` to `steps:<actionability>:<steps>`.
+   * The cause — the problem the person set aside, excluded or put back — has not
+   * changed, so the decision has to keep applying. Before this, it was matched on
+   * the exact key, silently stopped applying, and set no `strandedDecision`: a
+   * dismissed case came back as New with no explanation.
+   */
+  const causeKey = "cause:unused-javascript";
+  const dismiss: CaseDecisionRecord = {
+    decision: "dismiss",
+    remediationKey: causeKey,
+    reason: "Intentional",
+    at: AT,
+    by: PERSON,
+  };
+
+  it("still dismisses the case, and does not claim the fix changed", () => {
+    const issue = only(issueCasesFrom(threePageState([dismiss])));
+    expect(issue.remediation.steps.length).toBeGreaterThan(0);
+    expect(remediationKey(issue)).toContain("steps:");
+    expect(issue.state).toBe("dismissed");
+    expect(issue.strandedDecision).toBeUndefined();
+  });
+
+  it("still excludes a page, and still includes it again", () => {
+    const excluded = only(issueCasesFrom(threePageState([exclusion(causeKey, "docs")])));
+    expect(excludedPageIds(excluded)).toEqual(["docs"]);
+    expect(includedPages(excluded)).toEqual(["home", "pricing"]);
+
+    const included = only(issueCasesFrom(threePageState([
+      exclusion(causeKey, "docs"),
+      { decision: "include", remediationKey: causeKey, pageId: "docs", at: "2026-08-26T09:00:00.000Z", by: PERSON },
+    ])));
+    expect(excludedPageIds(included)).toEqual([]);
+  });
+});
+
+/* ── A plan that changes the key under a decision ───────────────────────── */
+
+describe("a remediation whose steps changed after a decision", () => {
+  /**
+   * The other way a key moves: a person writes a plan, accepts it, and the plan
+   * is replaced. The fix really did change, so the decision does not apply — but
+   * dropping it silently returns the case to New with no explanation, which is
+   * the same failure as the cause-keyed one. The case says the fix changed.
+   */
+  const LATER = "2026-08-21T09:00:00.000Z";
+  const plan = (steps: string[], at: string): CasePlanRecord => ({
+    caseKey: "unused-javascript",
+    steps,
+    at,
+    by: PERSON,
+  });
+
+  const stateWith = (plans: CasePlanRecord[], decisions: CaseDecisionRecord[] = []) => ({
+    pages: threePageState().pages,
+    recs: threePageState().recs,
+    casePlans: plans,
+    caseDecisions: decisions,
+  });
+
+  it("marks an accepted decision stranded when the plan replaces its steps", () => {
+    const first = plan(["Open the page matrix.", "Delete the row."], AT);
+    const before = stateWith([first]);
+    const accepted: CaseDecisionRecord = {
+      decision: "accept",
+      remediationKey: remediationKey(only(issueCasesFrom(before))),
+      cause: "unused-javascript",
+      at: AT,
+      by: PERSON,
+    };
+    const issue = only(issueCasesFrom(stateWith([first, plan(["A different step."], LATER)], [accepted])));
+    expect(issue.state).toBe("new");
+    expect(issue.strandedDecision).toBe(true);
+  });
+
+  it("leaves an entry it cannot attribute alone rather than guessing", () => {
+    // Written before `cause` existed: no way to tell it is about this case, so
+    // it neither applies nor invents a stranding.
+    const first = plan(["Open the page matrix.", "Delete the row."], AT);
+    const accepted: CaseDecisionRecord = {
+      decision: "accept",
+      remediationKey: remediationKey(only(issueCasesFrom(stateWith([first])))),
+      at: AT,
+      by: PERSON,
+    };
+    const issue = only(issueCasesFrom(stateWith([first, plan(["A different step."], LATER)], [accepted])));
+    expect(issue.state).toBe("new");
+    expect(issue.strandedDecision).toBeUndefined();
+  });
+});
+
 /* ── The key is a remediation, never a case ─────────────────────────────── */
 
 describe("what a decision is keyed on", () => {
@@ -223,9 +320,20 @@ describe("what a decision is keyed on", () => {
     expect(backwards.id).not.toBe(forwards.id);
     expect(remediationKey(backwards)).toBe(remediationKey(forwards));
     expect(remediationKey(forwards)).not.toContain(forwards.id);
-    // A record with no documented remediation is the ordinary case, so this is
-    // the common path rather than an edge worth tolerating.
-    expect(remediationKey(forwards)).toBe("cause:unused-javascript");
+    // This audit has documented steps since the remediation library landed, so
+    // the key is the steps — and still the same key whichever member supplied
+    // the case's id.
+    expect(remediationKey(forwards)).toContain("steps:");
+  });
+
+  it("falls back to the cause for a record with no documented remediation", () => {
+    // The fallback is still the ordinary case for an audit nobody has written
+    // steps for; it names the CAUSE, never the case id.
+    const undocumented = issueCasesFrom({
+      pages: [makePage()],
+      recs: [makeRec({ id: "some-new-audit", title: "Some new audit" })],
+    });
+    expect(remediationKey(only(undocumented))).toBe("cause:some-new-audit");
   });
 
   it("applies the same exclusion whichever member the case took its id from", () => {
@@ -250,6 +358,27 @@ describe("what a decision is keyed on", () => {
     expect(Object.keys(entry).sort()).toEqual(
       ["at", "by", "decision", "pageId", "reason", "remediationKey"],
     );
+  });
+
+  it("records the cause the writer knew, and nothing when it did not", () => {
+    // The cause is what lets an entry whose key moved still be attributed to
+    // this case. It is the finding's identity, not the case's, so a case id
+    // still never reaches an entry.
+    const identified = caseDecisionFrom(
+      { decision: "dismiss", remediationKey: "steps:direct:[\"a\"]", cause: "unused-javascript", reason: "Not now" },
+      { at: AT, by: PERSON },
+    );
+    expect(identified.cause).toBe("unused-javascript");
+    expect(Object.keys(identified).sort()).toEqual(
+      ["at", "by", "cause", "decision", "reason", "remediationKey"],
+    );
+    for (const cause of [undefined, "", "   "]) {
+      const bare = caseDecisionFrom(
+        { decision: "accept", remediationKey: "cause:x", ...(cause === undefined ? {} : { cause }) },
+        { at: AT, by: PERSON },
+      );
+      expect(bare).not.toHaveProperty("cause");
+    }
   });
 });
 
@@ -311,7 +440,7 @@ describe("a remediation that was already accepted", () => {
 
 describe("a page that leaves the case", () => {
   it("stops matching without its entry being touched, and applies again on return", () => {
-    const key = "cause:unused-javascript";
+    const key = remediationKey(only(issueCasesFrom(threePageState())));
     const log = [exclusion(key, "docs")];
     const before = threePageState(log);
     expect(excludedPageIds(only(issueCasesFrom(before)))).toEqual(["docs"]);
@@ -333,7 +462,7 @@ describe("a page that leaves the case", () => {
   it("declines an exclusion that would leave the case counting nothing", () => {
     // The model refuses it, so the replay asks first rather than throwing. The
     // entry survives to apply again once the case has more than one page.
-    const key = "cause:unused-javascript";
+    const key = remediationKey(only(issueCasesFrom(threePageState())));
     const log = [exclusion(key, "home"), exclusion(key, "pricing"), exclusion(key, "docs")];
     const issue = only(issueCasesFrom(threePageState(log)));
     expect(excludedPageIds(issue)).toEqual(["home", "pricing"]);

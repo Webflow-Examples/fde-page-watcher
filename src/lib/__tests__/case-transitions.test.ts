@@ -10,7 +10,10 @@ import type { CaseDecisionRecord, CaseTransitionRecord } from "../types";
 const PERSON: Caller = { kind: "person", userId: "rae@webflow.com" };
 const AT = "2026-08-20T12:00:00.000Z";
 const LATER = "2026-08-21T12:00:00.000Z";
-const CAUSE = "render-blocking-resources";
+// The customer-fixable render-blocking audit. `render-blocking-resources` on the
+// demo homepage is Webflow-owned and cannot be accepted, so it is not a case
+// this log has anything to say about.
+const CAUSE = "render-blocking-insight";
 
 function seed() {
   const state = buildSeedState();

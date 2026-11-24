@@ -9,8 +9,20 @@ import type { Caller } from "../caller";
 import { isFieldRecommendationActionable, fieldRecommendationLifecycleStatus } from "../fieldOnlyRecommendations";
 import { parseMarkerDate } from "../ui";
 import type { AgentEvidenceSystem, AgentIssueCase, AgentIssueStatus } from "../agentIssueCases";
-import type { Effort, EvidenceEntry, EvidenceSource, HistoryEntry, IssueCase, IssueState, ProgressState } from "./core";
-import { PROGRESS_RANK, actionabilityFrom, confidenceFrom, parseEffort, parseImpactMs } from "./core";
+import { remediationFor } from "../remediation";
+import { caseTitleFor, lcpElementEvidenceLine, lcpElementStatement } from "../case-titles";
+import { formatBytes, formatImpact } from "../impact-units";
+import type { Effort, EvidenceEntry, EvidenceSource, HistoryEntry, ImpactOrigin, IssueCase, IssueState, ProgressState } from "./core";
+import {
+  PROGRESS_RANK,
+  actionabilityFrom,
+  confidenceFrom,
+  hasMeasuredBytes,
+  hasMeasuredImpact,
+  parseEffort,
+  parseImpactBytes,
+  parseImpactMs,
+} from "./core";
 
 /* ── Migration: derived views of the retired lifecycles ─────────────────── */
 
@@ -61,6 +73,50 @@ function stateFromTaskStatus(taskStatus: TaskStatus): ProgressState {
   if (taskStatus === "in-progress") return "in_progress";
   if (taskStatus === "done") return "resolved";
   return "new";
+}
+
+/**
+ * The plan this case arrives with, and where it came from.
+ *
+ * Three sources, in the order the brief fixes: steps the caller passed
+ * explicitly, then the steps the record itself carries, then the remediation
+ * library for the audit. Empty steps count as absent at every step of the way —
+ * an agent issue with `remediation: []` documented nothing, so the library's
+ * steps are the next real answer rather than a reason to stop.
+ *
+ * A plan a person writes for one case does not come through here at all:
+ * `applyCasePlans` runs after grouping and overrides whatever this produced, so
+ * a user-authored plan still wins over the library.
+ */
+function planFor(
+  rec: Rec,
+  options: FromRecOptions,
+): { steps: string[]; successCriteria: string; fromLibrary: boolean } {
+  const explicit = options.remediationSteps?.filter((step) => step.trim() !== "");
+  if (explicit && explicit.length > 0) {
+    return { steps: explicit, successCriteria: options.successCriteria ?? "", fromLibrary: false };
+  }
+  const recorded = rec.agentIssue?.remediation?.filter((step) => step.trim() !== "");
+  if (recorded && recorded.length > 0) {
+    return {
+      steps: recorded,
+      successCriteria: options.successCriteria ?? rec.agentIssue?.successCriteria ?? "",
+      fromLibrary: false,
+    };
+  }
+  const library = remediationFor(rec.id, rec.title);
+  if (library) {
+    return {
+      steps: [...library.steps],
+      successCriteria: options.successCriteria ?? library.successCriteria,
+      fromLibrary: true,
+    };
+  }
+  return {
+    steps: [],
+    successCriteria: options.successCriteria ?? rec.agentIssue?.successCriteria ?? "",
+    fromLibrary: false,
+  };
 }
 
 /**
@@ -122,6 +178,26 @@ export const EVIDENCE_SOURCE: Record<NonNullable<Rec["source"]>, EvidenceSource>
 };
 
 /**
+ * Whether this record's reading came from real visitors or from a test.
+ *
+ * Read off the source that produced it, never off which field happens to hold a
+ * number. CrUX is what real visitors experienced; a native-element scan and Page
+ * Watch's own checks read the published page as it is served. Lighthouse is a
+ * simulated test on a throttled machine, and a record written before `source`
+ * existed (all of which came from Lighthouse) is simulated too.
+ *
+ * Absent when nothing was measured: an origin without a reading would be a claim
+ * about a measurement nobody took.
+ */
+export function impactOriginFromRec(rec: Pick<Rec, "source" | "savings"> & { savingsBytes?: number }): ImpactOrigin | undefined {
+  const measured = parseImpactMs(rec.savings) > 0
+    || hasMeasuredBytes(rec.savingsBytes)
+    || parseImpactBytes(rec.savings) > 0;
+  if (!measured) return undefined;
+  return rec.source === undefined || rec.source === "lighthouse" ? "simulated" : "observed";
+}
+
+/**
  * The record's own source reading.
  *
  * A recommendation exists because a source flagged it, so the reading supports
@@ -133,11 +209,26 @@ function evidenceFromRec(rec: Rec, observedAt: string): EvidenceEntry[] {
   // Records written before `source` existed all came from Lighthouse.
   const source = EVIDENCE_SOURCE[rec.source ?? "lighthouse"];
   const signal = Object.values(rec.fieldSignals ?? {}).find(Boolean);
+  // Both units where both were measured. A third-party finding transfers bytes
+  // AND blocks the thread, and the case is about both: "1.2 s, 2.4 MB" is the
+  // reading, and the one number the row shows is not the whole of it.
+  const ms = parseImpactMs(rec.savings);
+  const bytes = rec.savingsBytes ?? parseImpactBytes(rec.savings);
+  const measured = [
+    hasMeasuredImpact(ms) ? formatImpact(ms).text : "",
+    hasMeasuredBytes(bytes) ? formatBytes(bytes).text : "",
+  ].filter(Boolean);
+  // The element the reading is about, when the record knows it: "the image
+  // visitors wait for is this <img>, loading late" belongs beside the number it
+  // is responsible for.
+  const elementNote = rec.lcpElement ? `; ${lcpElementEvidenceLine(rec.lcpElement)}` : "";
   const reading = signal
     ? `${signal.metricLabel} ${signal.fieldFormatted} (${signal.fieldRating})`
-    : rec.savings
-      ? `${rec.title} — ${rec.savings}`
-      : rec.title;
+    : measured.length > 0
+      ? `${rec.title} — ${measured.join(", ")}${elementNote}`
+      : rec.savings
+        ? `${rec.title} — ${rec.savings}${elementNote}`
+        : rec.title;
   return [{
     source,
     reading,
@@ -205,28 +296,61 @@ export function fromRec(rec: Rec, options: FromRecOptions = {}): IssueCase {
 
   const detectedAt = detectedAtFor(rec, options);
   const evidence = evidenceFromRec(rec, detectedAt);
-  const steps = options.remediationSteps ?? rec.agentIssue?.remediation ?? [];
+  const plan = planFor(rec, options);
   const pageIds = [rec.pageId];
+  const classification = actionabilityFrom(rec.webflow?.actionability);
+  /**
+   * A library plan is documented remediation, so the audit is no longer a case
+   * with nothing to accept. Without this an accessibility audit, whose
+   * classifier answer is "no documented remediation", would carry five concrete
+   * steps under a header saying there is no action — the one screen contradicting
+   * itself. A plan a person wrote does not change actionability here, because
+   * that is their own note rather than documentation.
+   */
+  const actionability = plan.fromLibrary && classification === "none" ? "direct" : classification;
+  // The stored byte figure first; a record written before it existed carries
+  // the same number inside its `savings` label ("180 KB"), which is parsed
+  // rather than read a second time from a second field.
+  const impactBytes = rec.savingsBytes ?? parseImpactBytes(rec.savings);
+  const impactOrigin = impactOriginFromRec(rec);
+  const impact = {
+    impactMs: parseImpactMs(rec.savings),
+    ...(hasMeasuredBytes(impactBytes) ? { impactBytes } : {}),
+    ...(impactOrigin ? { impactOrigin } : {}),
+  };
 
   return {
     id: rec.key,
     cause: options.cause ?? rec.id,
     state,
-    title: rec.title,
-    // Never the audit title. Absent when the record carries no plain sentence —
-    // authoring one here would put copy in a logic module.
-    diagnosis: options.diagnosis ?? rec.aiSummary ?? "",
+    // The audit id stays the cause; the name on screen is a symptom (rule 5's
+    // plain language), which is not always what the source called it.
+    title: caseTitleFor(rec.id, rec.title),
+    // Never the audit title. An LCP record that names its element gets the
+    // element's own sentence — the readable name and the attributes it carries,
+    // which is the half a reader can act on — ahead of any prose written about
+    // the finding. Otherwise the record's own sentence, or nothing: authoring one
+    // here would put copy in a logic module.
+    // A record's own plain sentence comes first because it is about the page —
+    // "the marquee's first image" — and the element facts are in the evidence
+    // line either way. With no sentence, the element statement stands.
+    diagnosis: options.diagnosis
+      ?? rec.aiSummary
+      ?? (rec.lcpElement ? lcpElementStatement(rec.lcpElement) : undefined)
+      ?? "",
     detectedAt,
-    confirmedRuns: options.confirmedRuns ?? 0,
+    // A run count when the source keeps one, otherwise the adapter's own
+    // corroboration count and finally 0, which the detail renders as nothing.
+    confirmedRuns: options.confirmedRuns ?? rec.observedRuns ?? 0,
     ...(options.trigger ? { trigger: options.trigger } : {}),
     scope: rec.agentIssue?.scope === "origin" ? "origin" : "page",
     pageIds,
     strategies: rec.strategies ?? [],
-    impactMs: parseImpactMs(rec.savings),
+    ...impact,
     effort: parseEffort(rec.estTime),
     confidence: confidenceFrom(evidence),
-    remediation: { steps, actionability: actionabilityFrom(rec.webflow?.actionability) },
-    successCriteria: options.successCriteria ?? rec.agentIssue?.successCriteria ?? "",
+    remediation: { steps: plan.steps, actionability },
+    successCriteria: plan.successCriteria,
     checkpoints: [],
     evidence,
     history,

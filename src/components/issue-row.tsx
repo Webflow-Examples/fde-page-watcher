@@ -4,12 +4,13 @@ import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
 import { enteredAt, type IssueCase } from "@/lib/issue-case";
 import type { Strategy } from "@/lib/types";
-import { EFFORT_LABEL, formatGroupImpact, formatImpact } from "@/lib/impact-format";
+import { EFFORT_LABEL, caseImpactReading, formatGroupImpact, formatImpact, impactOriginLabel } from "@/lib/impact-format";
 import { PAGE_SCOPE_NAME_LIMIT, SCOPE_SEPARATOR, deviceScopeOf, pageScopeNames, scopeLineOf } from "@/lib/scope-line";
 import { causeLineOf, diagnosisLineOf } from "@/lib/case-copy";
 import { CONFIDENCE_LABEL } from "@/lib/vocabulary";
 import { caseHref, pageHref } from "@/lib/paths";
 import { formatDate } from "@/lib/watch-copy";
+import { caseStaleness } from "@/lib/case-recency";
 import { StatusChip } from "@/components/status-chip";
 import { InfoTip } from "@/components/info-tip";
 
@@ -171,7 +172,11 @@ export function PageScope({
 }
 
 export function IssueRow({ issue, basePath, pageTitles, nested = false, dateMode = "detected", lastRunAt, meta, confidenceSlot }: IssueRowProps) {
-  const impact = formatImpact(issue.impactMs);
+  // One reading for the row, the case detail and the ticket — time first, then
+  // bytes, and "Not measured" only when neither exists — with the voice that
+  // measured it beside it.
+  const impact = caseImpactReading(issue);
+  const origin = impactOriginLabel(impact.origin);
   // What KIND of problem this is, in three or four words — the column a list of
   // four dozen rows is actually scanned on.
   const cause = causeLineOf(issue);
@@ -179,6 +184,10 @@ export function IssueRow({ issue, basePath, pageTitles, nested = false, dateMode
   // edge. `case-copy` owns the title fallback, because the cause sort and this
   // both read it.
   const diagnosis = diagnosisLineOf(issue);
+  // Whether the latest run that read this case is more than a week before the
+  // project's newest one. A marker, never a decision: it says how old the
+  // reading is, not that anything was auto-settled.
+  const staleness = caseStaleness(issue.lastCheckedAt, lastRunAt);
   // Where the classifier did not recognise the audit, `causeLineOf` already
   // fell back to this same sentence — so there is nothing further to say, and a
   // control that shows you the text you are looking at is worse than no
@@ -280,6 +289,16 @@ export function IssueRow({ issue, basePath, pageTitles, nested = false, dateMode
             </span>
           ) : null}
         </span>
+        {staleness.stale ? (
+          <span
+            role="img"
+            aria-label={`Last checked ${staleness.daysSince} days ago`}
+            title={`Last checked ${staleness.daysSince} days ago`}
+            style={{ display: "block", fontSize: 12, color: "var(--text-muted)" }}
+          >
+            Stale
+          </span>
+        ) : null}
       </span>
 
       {/* The word, in the row's secondary text token — never a strength hue.
@@ -295,12 +314,22 @@ export function IssueRow({ issue, basePath, pageTitles, nested = false, dateMode
         {confidenceSlot ?? CONFIDENCE_LABEL[issue.confidence]}
       </span>
 
-      <span
-        style={{ ...NUMERIC_CELL, fontSize: 12.5, color: impact.measured ? "var(--magnitude-value)" : "var(--text-muted)" }}
-        title={impact.measured ? undefined : "Not measured"}
-        aria-label={impact.measured ? undefined : "Not measured"}
-      >
-        {impact.measured ? impact.text : "—"}
+      <span style={{ ...NUMERIC_CELL, fontSize: 12.5, color: impact.measured ? "var(--magnitude-value)" : "var(--text-muted)" }}>
+        <span
+          style={{ display: "block" }}
+          title={impact.measured ? undefined : "Not measured"}
+          aria-label={impact.measured ? undefined : "Not measured"}
+        >
+          {impact.measured ? impact.text : "—"}
+        </span>
+        {/* Who measured it, quietly, under the number. Only when there is a
+            number to attribute: a label under "Not measured" would be a voice
+            for a reading nobody took. */}
+        {origin ? (
+          <span style={{ display: "block", fontSize: 12, fontWeight: 400, color: "var(--text-muted)" }}>
+            {origin}
+          </span>
+        ) : null}
       </span>
 
       <span style={{ ...NUMERIC_CELL, fontSize: 12.5, color: "var(--text-muted)" }}>

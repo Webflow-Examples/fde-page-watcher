@@ -1,5 +1,14 @@
 import { causeLineOf } from "./case-copy";
-import { byWorstMeasured, casesInQueue, hasMeasuredImpact, type Effort, type IssueCase, type RemediationGroup } from "./issue-case";
+import {
+  byWorstMeasured,
+  casesInQueue,
+  hasAnyImpact,
+  isPlatformOwned,
+  remediationKey,
+  type Effort,
+  type IssueCase,
+  type RemediationGroup,
+} from "./issue-case";
 import { CONFIDENCES, COUNTED_QUEUES, type Confidence, type Queue } from "./vocabulary";
 
 /* ── Issue-list selectors ───────────────────────────────────────────────── */
@@ -24,13 +33,33 @@ import { CONFIDENCES, COUNTED_QUEUES, type Confidence, type Queue } from "./voca
  * and `show_all` remains the internal unfiltered view; neither is counted,
  * so the registry marks it uncounted and this never produces a number for it —
  * a badge cannot appear on it by accident, because there is nothing to read.
+ *
+ * A platform-owned case is not counted. It is a reading Webflow owns, not work
+ * the reader can do, and a Decide badge that included it would ask for a
+ * decision nobody can take. It is still shown, in its own section, and the case
+ * still exists — this is a count of the reader's work, not of the evidence.
  */
 export type QueueCounts = Partial<Record<Queue, number>>;
 
 export function queueCountsOf(cases: readonly IssueCase[]): QueueCounts {
   const counts: QueueCounts = {};
-  for (const queue of COUNTED_QUEUES) counts[queue] = casesInQueue(cases, queue).length;
+  const own = cases.filter((issue) => !isPlatformOwned(issue));
+  for (const queue of COUNTED_QUEUES) counts[queue] = casesInQueue(own, queue).length;
   return counts;
+}
+
+/**
+ * How many decisions are waiting: the one number the sidebar badge and the
+ * Decide tab both state.
+ *
+ * A named function rather than two calls to `queueCountsOf`, because the badge
+ * and the tab drifted exactly once — the sidebar counted raw queue membership,
+ * which includes a Webflow-owned reading, so it said 8 while the page said 7.
+ * The page reads `queueCountsOf(...).decide`; this is the same function, so a
+ * surface that asks this question cannot answer it differently.
+ */
+export function decideCountOf(cases: readonly IssueCase[]): number {
+  return queueCountsOf(cases).decide ?? 0;
 }
 
 /* ── The low-impact tail ────────────────────────────────────────────────── */
@@ -105,9 +134,7 @@ export function reverseDirection(direction: SortDirection): SortDirection {
 }
 
 /** Least work first, so a sort by effort surfaces what can be cleared today. */
-const EFFORT_ORDER: Record<Effort, number> = { minutes: 0, hours: 1, days: 2, unknown: 3 };
-
-/**
+const EFFORT_ORDER: Record<Effort, number> = { minutes: 0, hours: 1, days: 2, unknown: 3 };/**
  * Confidence ranks in the registry's own declared order, derived from its
  * array rather than restated here.
  *
@@ -147,11 +174,15 @@ export function sortRemediationGroups(
    * Reversing "largest saving first" has to give "smallest MEASURED first", not
    * "no reading first". An absent measurement is not a small one, and a
    * direction toggle is not permission to rank it as zero — which is exactly
-   * what negating the combined comparator would have done.
+   * what negating the combined comparator would have done. "Measured" means
+   * measured in either unit: a byte-only finding has a reading.
    */
   const measuredFirst = (a: RemediationGroup, b: RemediationGroup) =>
-    Number(hasMeasuredImpact(b.impactMs)) - Number(hasMeasuredImpact(a.impactMs));
-  const byImpactSize = (a: RemediationGroup, b: RemediationGroup) => b.impactMs - a.impactMs;
+    Number(hasAnyImpact(b)) - Number(hasAnyImpact(a));
+  // Time first, then bytes — the same order `impactReading` displays them in,
+  // so the list is ordered by the number the reader can see on each row.
+  const byImpactSize = (a: RemediationGroup, b: RemediationGroup) =>
+    b.impactMs - a.impactMs || (b.impactBytes ?? 0) - (a.impactBytes ?? 0);
   // The id tie-break keeps the order stable when the sort key matches, so a
   // re-render never reshuffles equal rows.
   const byId = (a: RemediationGroup, b: RemediationGroup) => a.primary.id.localeCompare(b.primary.id);
@@ -180,3 +211,71 @@ export function sortRemediationGroups(
   return [...groups].sort(compare[sort]);
 }
 
+
+/* ── Start Here's ranking ───────────────────────────────────────────────── */
+
+/**
+ * The order Start Here reads cases in, and the reason the table's sort is a
+ * different thing.
+ *
+ * The table is sorted however the reader asks; this is the answer to "what
+ * should I look at first", so it is not a preference. Three keys, in the order
+ * of what they say about a case:
+ *
+ *   1. Evidence origin. A reading real visitors produced outranks a simulated
+ *      estimate whatever the numbers are, because the first is what happened and
+ *      the second is what a test predicted. This is what stops a simulated 12 s
+ *      aggregate from heading the block above a field-confirmed finding.
+ *   2. Measured impact, largest first — within a band, in the unit the case
+ *      displays. Absent measurements sort last (rule 18).
+ *   3. Oldest first seen. A long-standing case that nobody has decided is a gap
+ *      in triage, and the oldest is the one that has been ignored longest.
+ *
+ * A total order: the id breaks exact ties, so two runs over the same data read
+ * identically.
+ */
+export function caseRank(a: IssueCase, b: IssueCase): number {
+  const originRank = (item: IssueCase) => item.impactOrigin === "observed" ? 0 : 1;
+  return originRank(a) - originRank(b)
+    || byWorstMeasured(a, b)
+    || (a.detectedAt || "").localeCompare(b.detectedAt || "")
+    || a.id.localeCompare(b.id);
+}
+
+/** How many decisions the block asks for. Three is a first session, not a list. */
+export const START_HERE_LIMIT = 3;
+
+/**
+ * The three cases Decide leads with.
+ *
+ * A fresh project's Decide queue is a wall of sixteen equal rows, and a
+ * first-time reader needs a place to start rather than a sort to choose. These
+ * are chosen, not filtered: the table below still holds every case, and a case
+ * that is not in the block is one row in it either the same as before.
+ *
+ * Two rules the block keeps:
+ *
+ *   - A case the customer cannot act on is not a place to start. A
+ *     platform-owned case is Webflow's work, not the reader's, and Start Here is
+ *     a list of decisions.
+ *   - One case per remediation. Two cases a single fix covers would ask for the
+ *     same decision twice; the table still shows both.
+ *
+ * Fewer than three cases in Decide yields fewer than three items — the block is
+ * a view of what is there, never a promise of three.
+ */
+export function startHereCases(cases: readonly IssueCase[], limit = START_HERE_LIMIT): IssueCase[] {
+  const seen = new Set<string>();
+  const chosen: IssueCase[] = [];
+  const candidates = casesInQueue(cases, "decide")
+    .filter((issue) => !isPlatformOwned(issue))
+    .sort(caseRank);
+  for (const issue of candidates) {
+    const key = remediationKey(issue);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    chosen.push(issue);
+    if (chosen.length >= limit) break;
+  }
+  return chosen;
+}

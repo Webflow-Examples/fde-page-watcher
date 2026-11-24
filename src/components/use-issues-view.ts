@@ -9,7 +9,7 @@ import {
   type QueueCounts,
   type SortDirection,
 } from "@/lib/issue-list";
-import { casesInQueue, groupByRemediation, type IssueCase, type RemediationGroup } from "@/lib/issue-case";
+import { casesInQueue, groupByRemediation, isPlatformOwned, type IssueCase, type RemediationGroup } from "@/lib/issue-case";
 import { issueCasesFrom, lastRunAtOf } from "@/lib/issue-cases";
 import { partitionByImpact } from "@/lib/impact-format";
 import { normalizePerformanceThresholds } from "@/lib/performanceThresholds";
@@ -23,8 +23,10 @@ export interface IssuesView {
   cases: IssueCase[];
   /** Counted queues only. `settled` is absent by design. */
   counts: QueueCounts;
-  /** The cases in the requested queue. */
+  /** The cases in the requested queue that are the reader's work. */
   inQueue: IssueCase[];
+  /** Platform-owned cases in the requested queue: shown, never counted. */
+  platformOwned: IssueCase[];
   /** Those of them the list shows as rows, grouped by remediation and sorted. */
   groups: RemediationGroup[];
   /** Those of them the fold holds, grouped the same way and sorted the same way. */
@@ -60,12 +62,17 @@ export function useIssuesView(
     const lastRunAt = lastRunAtOf(pages);
     const at = lastRunAt ? { at: lastRunAt } : {};
     const { minimumSavingsMs } = normalizePerformanceThresholds(performanceThresholds);
-    const inQueue = casesInQueue(cases, queue);
+    // The reader's work and Webflow's own readings are separated once here, so
+    // the counts, the table and Start Here cannot disagree about which is which.
+    const work = cases.filter((issue) => !isPlatformOwned(issue));
+    const platformOwned = casesInQueue(cases, queue).filter(isPlatformOwned);
+    const inQueue = casesInQueue(work, queue);
     const { inline, tail } = partitionByImpact(inQueue, minimumSavingsMs);
     return {
       cases,
       counts: queueCountsOf(cases),
       inQueue,
+      platformOwned,
       groups: sortRemediationGroups(groupByRemediation(inline, at), sort, direction),
       tail: sortRemediationGroups(groupByRemediation(tail, at), sort, direction),
       tailCases: tail,

@@ -1,4 +1,5 @@
 import { hasMeasuredImpact, includedPages, type Effort, type IssueCase } from "./issue-case";
+import { impactReading, type ImpactReading } from "./impact-units";
 
 /**
  * What an impact reading means, for every surface that writes or reads one.
@@ -23,34 +24,6 @@ import { hasMeasuredImpact, includedPages, type Effort, type IssueCase } from ".
  * find out that `hours` is spelled "Hours" would drag React into the one place
  * that has no use for it. `issue-row` re-exports it, so the list keeps one name.
  */
-
-/**
- * The one way the app says a reading is absent.
- *
- * Rule 18 applies to every reading, not only to a saving in milliseconds, so
- * the string is exported rather than inlined: the pages inventory says it about
- * a score delta, and health has the same gap — a page with no baseline has no
- * health verdict, and the chip that would carry one says this instead. Same
- * sentence, one statement of it (rule 20).
- */
-export const NOT_MEASURED = "Not measured";
-
-/**
- * A measured saving, in the unit it was measured in.
- *
- * An unmeasured case says so in words. Registry rule 18: a finding with no
- * reading is never shown as 0 and never as a blank cell — either would let it
- * read as a very small saving, and an empty cell would let it outrank a
- * 1,900 ms finding on nothing at all. "Not measured" is the reading.
- */
-
-export function formatImpact(impactMs: number): { text: string; measured: boolean } {
-  if (!hasMeasuredImpact(impactMs)) return { text: NOT_MEASURED, measured: false };
-  if (impactMs < 1000) return { text: `${impactMs} ms`, measured: true };
-  const seconds = impactMs / 1000;
-  const rounded = seconds >= 10 ? Math.round(seconds).toString() : seconds.toFixed(1).replace(/\.0$/, "");
-  return { text: `${rounded} s`, measured: true };
-}
 
 /**
  * The reading one case is worth, before it is worded.
@@ -80,20 +53,42 @@ export function formatCaseImpact(
   issue: IssueCase,
   impactByPage?: Record<string, number>,
 ): { text: string; measured: boolean } {
-  return formatImpact(caseImpactMs(issue, impactByPage));
+  const reading = caseImpactReading(issue, impactByPage);
+  return { text: reading.text, measured: reading.measured };
 }
 
 /**
- * The same reading, on a group of cases rather than one.
+ * A case's reading, with its unit and origin.
  *
- * "up to", because a group carries the worst reading any member produced and
- * never a total (rule 19) — the number under this label is the one on one of
- * the rows beneath it, which is what makes the two reconcilable.
+ * The per-page map still decides the TIME reading, because a surface that has
+ * per-page figures knows the worst measured one on a page this case counts. The
+ * byte reading has no per-page counterpart, so it comes from the case itself.
+ * When the per-page readings were all absent the case's own time stands
+ * (`|| issue.impactMs`), and when even that is absent the bytes do — which is
+ * the ordering `impactReading` states once.
  */
-export function formatGroupImpact(impactMs: number): { text: string; measured: boolean } {
-  const impact = formatImpact(impactMs);
-  return impact.measured ? { text: `up to ${impact.text}`, measured: true } : impact;
+export function caseImpactReading(
+  issue: IssueCase,
+  impactByPage?: Record<string, number>,
+): ImpactReading {
+  const ms = caseImpactMs(issue, impactByPage);
+  return impactReading({
+    impactMs: hasMeasuredImpact(ms) ? ms : 0,
+    ...(issue.impactBytes !== undefined ? { impactBytes: issue.impactBytes } : {}),
+    ...(issue.impactOrigin ? { impactOrigin: issue.impactOrigin } : {}),
+  });
 }
+
+export {
+  NOT_MEASURED,
+  formatBytes,
+  formatGroupImpact,
+  formatImpact,
+  groupImpactReading,
+  impactOriginLabel,
+  impactReading,
+  type ImpactReading,
+} from "./impact-units";
 
 /* ── Effort ────────────────────────────────────────────────────── */
 

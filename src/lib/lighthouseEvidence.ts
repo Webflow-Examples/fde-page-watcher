@@ -24,6 +24,8 @@ interface PsiAudit {
     type?: string;
     overallSavingsMs?: number;
     overallSavingsBytes?: number;
+    /** Present on table and list audits; the informative whitelist reads it. */
+    items?: unknown;
   };
 }
 
@@ -46,6 +48,98 @@ export interface PsiLighthouseResponse {
 }
 
 const NON_ACTIONABLE_DISPLAY_MODES = new Set(["notApplicable", "informative", "manual", "error"]);
+
+/**
+ * Informative audits that carry a finding worth showing even though they have no
+ * numeric score.
+ *
+ * `extractLighthouseRunEvidence` used to keep only audits with a score below 1,
+ * so everything Lighthouse marks `informative` was dropped — including the three
+ * measurements behind the audit's largest causes: third-party transfer and
+ * blocking time, the resource mix, and the main image being set to load late.
+ * They were invisible for a reason no reader could see, which is the worst kind
+ * of invisible.
+ *
+ * A whitelist rather than "every informative audit", because most of them are
+ * diagnostics with nothing to act on. A whitelisted audit is kept only when its
+ * details yield a figure or a detection; `deriveInformativeAudit` returns null
+ * otherwise, so an audit that found nothing adds no finding — an empty slot
+ * would read as a reading that found nothing (registry rule 15).
+ */
+export const INFORMATIVE_AUDIT_IDS = Object.freeze([
+  "third-party-summary",
+  "resource-summary",
+  "lcp-lazy-loaded",
+]);
+
+function itemBytes(item: Record<string, unknown>): number {
+  return finiteNonNegative(item.transferSize) || finiteNonNegative(item.totalBytes);
+}
+
+function items(value: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) =>
+    entry && typeof entry === "object" && !Array.isArray(entry) ? [entry as Record<string, unknown>] : []);
+}
+
+function nestedLoading(value: unknown): string | undefined {
+  const node = value && typeof value === "object" ? (value as Record<string, unknown>) : null;
+  const loading = node?.loading;
+  return typeof loading === "string" ? loading.toLowerCase() : undefined;
+}
+
+function snippetOf(item: Record<string, unknown>): string {
+  const node = item.node as Record<string, unknown> | undefined;
+  const snippet = node?.snippet;
+  return typeof snippet === "string" ? snippet : "";
+}
+
+/**
+ * What an informative audit measured, in the same two units every other finding
+ * uses — or null when it measured nothing.
+ *
+ *   - third-party-summary: the bytes every third party transferred, and the time
+ *     they kept the main thread blocked. Both are sums within ONE run of one
+ *     page, which is what the audit itself reports; the cross-run aggregation
+ *     below still takes a median rather than adding runs together.
+ *   - resource-summary: the third-party share of the page's transfer. A summary
+ *     has no fix of its own, so it is never actionable — it is evidence for the
+ *     third-party case, not a case.
+ *   - lcp-lazy-loaded: the image visitors wait for, when it is set to load late.
+ *     Actionable exactly when that is what the audit found.
+ */
+function deriveInformativeAudit(
+  id: string,
+  details: Record<string, unknown> | undefined,
+): { savingsMs: number; savingsBytes: number; actionable: boolean } | null {
+  if (!details) return null;
+  const rows = items(details.items);
+  if (id === "third-party-summary") {
+    if (rows.length === 0) return null;
+    const savingsBytes = Math.round(rows.reduce((sum, row) => sum + itemBytes(row), 0));
+    const savingsMs = Math.round(rows.reduce((sum, row) => sum + finiteNonNegative(row.blockingTime), 0));
+    return { savingsMs, savingsBytes, actionable: savingsBytes > 0 || savingsMs > 0 };
+  }
+  if (id === "resource-summary") {
+    const thirdParty = rows.find((row) =>
+      String(row.resourceType ?? row.label ?? "").toLowerCase().includes("third party")
+      || String(row.resourceType ?? "").toLowerCase() === "third-party");
+    const savingsBytes = thirdParty ? itemBytes(thirdParty) : 0;
+    return savingsBytes > 0 ? { savingsMs: 0, savingsBytes, actionable: false } : null;
+  }
+  if (id === "lcp-lazy-loaded") {
+    const lazy = rows.some((row) => nestedLoading(row.node) === "lazy" || /loading\s*=\s*["']lazy["']/i.test(snippetOf(row)));
+    if (!lazy) return null;
+    return {
+      savingsMs: Math.round(finiteNonNegative(details.overallSavingsMs)),
+      savingsBytes: Math.round(
+        finiteNonNegative(details.overallSavingsBytes) || rows.reduce((sum, row) => sum + itemBytes(row), 0),
+      ),
+      actionable: true,
+    };
+  }
+  return null;
+}
 
 function finiteNonNegative(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
@@ -120,6 +214,27 @@ export function extractLighthouseRunEvidence(value: unknown, run: number): Light
     .filter((warning): warning is string => !!warning);
 
   const findings = Object.entries(result?.audits ?? {}).flatMap(([id, audit]): LighthouseRunFinding[] => {
+    const informative = (INFORMATIVE_AUDIT_IDS as readonly string[]).includes(id);
+    if (informative) {
+      // Kept on what its details say, never on its score — an informative audit
+      // has none. The category falls back to Performance because a whitelisted
+      // audit can sit outside every category's `auditRefs` and would otherwise
+      // be dropped for having no home.
+      const derived = deriveInformativeAudit(id, audit.details);
+      if (!derived) return [];
+      return [{
+        id,
+        title: audit.title?.trim() || id,
+        description: audit.description,
+        category: auditCategories.get(id) ?? "Performance",
+        ...(typeof audit.score === "number" ? { score: audit.score } : {}),
+        scoreDisplayMode: audit.scoreDisplayMode,
+        savingsMs: derived.savingsMs,
+        savingsBytes: derived.savingsBytes,
+        actionable: derived.actionable,
+        webflow: classifyWebflowPerformance(id, audit.title),
+      }];
+    }
     if (typeof audit.score !== "number" || !Number.isFinite(audit.score) || audit.score >= 1) return [];
     if (audit.scoreDisplayMode && NON_ACTIONABLE_DISPLAY_MODES.has(audit.scoreDisplayMode)) return [];
     const category = auditCategories.get(id);
