@@ -14,6 +14,7 @@ import * as impactFormat from "../impact-format";
 import * as labFieldComparison from "../labFieldComparison";
 import * as labMetrics from "../labMetrics";
 import * as pagesCopy from "../pages-copy";
+import * as remediation from "../remediation";
 import * as scoreCardTooltip from "../scoreCardTooltip";
 import * as settingsCopy from "../settings-copy";
 import * as visitorExperience from "../visitorExperience";
@@ -50,6 +51,7 @@ const MODULES: Record<string, unknown> = {
   labFieldComparison,
   labMetrics,
   pagesCopy,
+  remediation,
   scoreCardTooltip,
   settingsCopy,
   visitorExperience,
@@ -100,6 +102,10 @@ const IDENTIFIER_KEYS = [
   // The catalogue of upstream audit ids, and the two catalogues kept in step
   // with it. They ARE identifiers; that is the whole point of the lists.
   "webflowPerformance.DOCUMENTED_WEBFLOW_AUDIT_IDS",
+  // The same kind of catalogue: audit ids, which the steps are keyed by and
+  // never rendered.
+  "remediation.PRODUCTION_AUDIT_IDS",
+  "remediation.REMEDIATION_AUDIT_IDS",
   "culpritEvidence.CULPRIT_EVIDENCE",
   "plainLanguage.",
 ];

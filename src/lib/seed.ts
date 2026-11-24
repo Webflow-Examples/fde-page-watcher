@@ -487,26 +487,29 @@ export function buildSeedState(now = new Date()): AppState {
       title: "The same video player loads twice", category: "Native elements", webflow: classifyWebflowPerformance("webflow-video-embed-duplicate"),
       savings: "Observed", estTime: "1 day", status: "ignored", taskStatus: "todo", added: dateKey(isoAt(anchor, -7)), doneDate: null,
     },
-    // The no-remediation case, on two pages. `actionability` is deliberately
-    // absent: `fromRec` reads that as "no documented steps", so the detail page
-    // has nothing to accept and must still offer Dismiss. The long diagnosis is
-    // here on purpose, to exercise the header's short-cause plus full-sentence
-    // layout against realistic copy.
+    // The no-remediation case, on two pages. The audit is a real accessibility
+    // one with no entry in the remediation library, and `actionability` is
+    // deliberately absent: `fromRec` reads both as "no documented steps", so the
+    // detail page has nothing to accept and must still offer Dismiss and Take
+    // on. (It used to be the eager-video audit; that now has library steps, and
+    // a plan with steps is the case this one exists to contrast with.) The long
+    // diagnosis is here on purpose, to exercise the header's short-cause plus
+    // full-sentence layout against realistic copy.
     {
-      key: "home:webflow-video-embed-eager", pageId: "home", pageTitle: "Homepage", url: page("home").url,
-      id: "webflow-video-embed-eager", source: "native-elements", strategies: ["mobile", "desktop"], sourceRunId: page("home").history.at(-1)!.runId,
-      title: "Video players load before anyone plays them", category: "Native elements",
-      webflow: { ...classifyWebflowPerformance("webflow-video-embed-eager"), actionability: undefined },
+      key: "home:aria-allowed-attr", pageId: "home", pageTitle: "Homepage", url: page("home").url,
+      id: "aria-allowed-attr", source: "lighthouse", strategies: ["mobile", "desktop"], sourceRunId: page("home").history.at(-1)!.runId,
+      title: "ARIA attributes are not allowed on an element", category: "Accessibility",
+      webflow: { ...classifyWebflowPerformance("aria-allowed-attr"), actionability: undefined },
       savings: "Observed", estTime: "2 days", status: "inbox", taskStatus: "todo", added: dateKey(isoAt(anchor, -3)), doneDate: null,
-      aiSummary: "Right now, embedded YouTube or Vimeo videos on the homepage start loading all their background code the moment the page opens, even if a visitor never plays them, which slows things down unnecessarily and delays the main thread for every visitor.",
+      aiSummary: "Right now, an element on the homepage carries an ARIA attribute its role does not allow, so assistive technology can announce a different control from the one on screen, and the description a screen-reader user hears does not match what everyone else sees.",
     },
     {
-      key: "ai:webflow-video-embed-eager", pageId: "ai", pageTitle: "AI", url: page("ai").url,
-      id: "webflow-video-embed-eager", source: "native-elements", strategies: ["mobile"], sourceRunId: page("ai").history.at(-1)!.runId,
-      title: "Video players load before anyone plays them", category: "Native elements",
-      webflow: { ...classifyWebflowPerformance("webflow-video-embed-eager"), actionability: undefined },
+      key: "ai:aria-allowed-attr", pageId: "ai", pageTitle: "AI", url: page("ai").url,
+      id: "aria-allowed-attr", source: "lighthouse", strategies: ["mobile"], sourceRunId: page("ai").history.at(-1)!.runId,
+      title: "ARIA attributes are not allowed on an element", category: "Accessibility",
+      webflow: { ...classifyWebflowPerformance("aria-allowed-attr"), actionability: undefined },
       savings: "Observed", estTime: "2 days", status: "inbox", taskStatus: "todo", added: dateKey(isoAt(anchor, -3)), doneDate: null,
-      aiSummary: "Embedded video players on the AI page load their background code before anyone plays them.",
+      aiSummary: "The AI page carries the same ARIA attribute its role does not allow.",
     },
     {
       key: "hosting:crux-field-only-inp", pageId: "hosting", pageTitle: "Hosting", url: page("hosting").url,

@@ -9,6 +9,7 @@ import type { Caller } from "../caller";
 import { isFieldRecommendationActionable, fieldRecommendationLifecycleStatus } from "../fieldOnlyRecommendations";
 import { parseMarkerDate } from "../ui";
 import type { AgentEvidenceSystem, AgentIssueCase, AgentIssueStatus } from "../agentIssueCases";
+import { remediationFor } from "../remediation";
 import type { Effort, EvidenceEntry, EvidenceSource, HistoryEntry, ImpactOrigin, IssueCase, IssueState, ProgressState } from "./core";
 import {
   PROGRESS_RANK,
@@ -69,6 +70,50 @@ function stateFromTaskStatus(taskStatus: TaskStatus): ProgressState {
   if (taskStatus === "in-progress") return "in_progress";
   if (taskStatus === "done") return "resolved";
   return "new";
+}
+
+/**
+ * The plan this case arrives with, and where it came from.
+ *
+ * Three sources, in the order the brief fixes: steps the caller passed
+ * explicitly, then the steps the record itself carries, then the remediation
+ * library for the audit. Empty steps count as absent at every step of the way —
+ * an agent issue with `remediation: []` documented nothing, so the library's
+ * steps are the next real answer rather than a reason to stop.
+ *
+ * A plan a person writes for one case does not come through here at all:
+ * `applyCasePlans` runs after grouping and overrides whatever this produced, so
+ * a user-authored plan still wins over the library.
+ */
+function planFor(
+  rec: Rec,
+  options: FromRecOptions,
+): { steps: string[]; successCriteria: string; fromLibrary: boolean } {
+  const explicit = options.remediationSteps?.filter((step) => step.trim() !== "");
+  if (explicit && explicit.length > 0) {
+    return { steps: explicit, successCriteria: options.successCriteria ?? "", fromLibrary: false };
+  }
+  const recorded = rec.agentIssue?.remediation?.filter((step) => step.trim() !== "");
+  if (recorded && recorded.length > 0) {
+    return {
+      steps: recorded,
+      successCriteria: options.successCriteria ?? rec.agentIssue?.successCriteria ?? "",
+      fromLibrary: false,
+    };
+  }
+  const library = remediationFor(rec.id, rec.title);
+  if (library) {
+    return {
+      steps: [...library.steps],
+      successCriteria: options.successCriteria ?? library.successCriteria,
+      fromLibrary: true,
+    };
+  }
+  return {
+    steps: [],
+    successCriteria: options.successCriteria ?? rec.agentIssue?.successCriteria ?? "",
+    fromLibrary: false,
+  };
 }
 
 /**
@@ -233,8 +278,18 @@ export function fromRec(rec: Rec, options: FromRecOptions = {}): IssueCase {
 
   const detectedAt = detectedAtFor(rec, options);
   const evidence = evidenceFromRec(rec, detectedAt);
-  const steps = options.remediationSteps ?? rec.agentIssue?.remediation ?? [];
+  const plan = planFor(rec, options);
   const pageIds = [rec.pageId];
+  const classification = actionabilityFrom(rec.webflow?.actionability);
+  /**
+   * A library plan is documented remediation, so the audit is no longer a case
+   * with nothing to accept. Without this an accessibility audit, whose
+   * classifier answer is "no documented remediation", would carry five concrete
+   * steps under a header saying there is no action — the one screen contradicting
+   * itself. A plan a person wrote does not change actionability here, because
+   * that is their own note rather than documentation.
+   */
+  const actionability = plan.fromLibrary && classification === "none" ? "direct" : classification;
   // The stored byte figure first; a record written before it existed carries
   // the same number inside its `savings` label ("180 KB"), which is parsed
   // rather than read a second time from a second field.
@@ -263,8 +318,8 @@ export function fromRec(rec: Rec, options: FromRecOptions = {}): IssueCase {
     ...impact,
     effort: parseEffort(rec.estTime),
     confidence: confidenceFrom(evidence),
-    remediation: { steps, actionability: actionabilityFrom(rec.webflow?.actionability) },
-    successCriteria: options.successCriteria ?? rec.agentIssue?.successCriteria ?? "",
+    remediation: { steps: plan.steps, actionability },
+    successCriteria: plan.successCriteria,
     checkpoints: [],
     evidence,
     history,

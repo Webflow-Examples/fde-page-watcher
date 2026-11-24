@@ -223,9 +223,20 @@ describe("what a decision is keyed on", () => {
     expect(backwards.id).not.toBe(forwards.id);
     expect(remediationKey(backwards)).toBe(remediationKey(forwards));
     expect(remediationKey(forwards)).not.toContain(forwards.id);
-    // A record with no documented remediation is the ordinary case, so this is
-    // the common path rather than an edge worth tolerating.
-    expect(remediationKey(forwards)).toBe("cause:unused-javascript");
+    // This audit has documented steps since the remediation library landed, so
+    // the key is the steps — and still the same key whichever member supplied
+    // the case's id.
+    expect(remediationKey(forwards)).toContain("steps:");
+  });
+
+  it("falls back to the cause for a record with no documented remediation", () => {
+    // The fallback is still the ordinary case for an audit nobody has written
+    // steps for; it names the CAUSE, never the case id.
+    const undocumented = issueCasesFrom({
+      pages: [makePage()],
+      recs: [makeRec({ id: "some-new-audit", title: "Some new audit" })],
+    });
+    expect(remediationKey(only(undocumented))).toBe("cause:some-new-audit");
   });
 
   it("applies the same exclusion whichever member the case took its id from", () => {
@@ -311,7 +322,7 @@ describe("a remediation that was already accepted", () => {
 
 describe("a page that leaves the case", () => {
   it("stops matching without its entry being touched, and applies again on return", () => {
-    const key = "cause:unused-javascript";
+    const key = remediationKey(only(issueCasesFrom(threePageState())));
     const log = [exclusion(key, "docs")];
     const before = threePageState(log);
     expect(excludedPageIds(only(issueCasesFrom(before)))).toEqual(["docs"]);
@@ -333,7 +344,7 @@ describe("a page that leaves the case", () => {
   it("declines an exclusion that would leave the case counting nothing", () => {
     // The model refuses it, so the replay asks first rather than throwing. The
     // entry survives to apply again once the case has more than one page.
-    const key = "cause:unused-javascript";
+    const key = remediationKey(only(issueCasesFrom(threePageState())));
     const log = [exclusion(key, "home"), exclusion(key, "pricing"), exclusion(key, "docs")];
     const issue = only(issueCasesFrom(threePageState(log)));
     expect(excludedPageIds(issue)).toEqual(["home", "pricing"]);
