@@ -319,6 +319,9 @@ describe("POST /api/integrations/tasks", () => {
     expect((hoisted.state as AppState).caseDecisions).toHaveLength(1);
     expect((hoisted.state as AppState).caseDecisions![0].decision).toBe("accept");
     expect((hoisted.state as AppState).caseDecisions![0].by).toEqual({ kind: "person", userId: "rae@webflow.com" });
+    // The fix on the app branch carries the case's cause on every new decision,
+    // so an entry survives the remediation key moving.
+    expect((hoisted.state as AppState).caseDecisions![0].cause).toBe(issue.cause);
     expect(fake.tasks).toHaveLength(1);
   });
 

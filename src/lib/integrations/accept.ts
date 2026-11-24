@@ -29,7 +29,7 @@ export async function acceptRemediation(input: {
   if (!issue || issue.remediation.steps.length === 0) return null;
   if (issue.state !== "new" && issue.state !== "reopened") return input.state;
   return recordCaseDecision(
-    { decision: "accept", remediationKey: remediationKey(issue) },
+    { decision: "accept", remediationKey: remediationKey(issue), cause: issue.cause },
     input.by,
     input.dataStore,
   );

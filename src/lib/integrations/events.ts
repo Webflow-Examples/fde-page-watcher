@@ -57,6 +57,7 @@ export function decisionEvent(projectId: string, decision: CaseDecisionRecord): 
     data: {
       decision: decision.decision,
       remediationKey: decision.remediationKey,
+      ...(decision.cause ? { cause: decision.cause } : {}),
       ...(decision.decision === "dismiss" ? { reason: decision.reason } : {}),
       ...(decision.decision === "exclude" || decision.decision === "include" ? { pageId: decision.pageId } : {}),
       by: decision.by,
