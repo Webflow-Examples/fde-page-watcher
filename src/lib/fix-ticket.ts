@@ -11,13 +11,20 @@ import { absoluteUrl, casePath } from "./paths";
  * evidence lives. Nothing else. This is not a summary of the case — it is the
  * part of the case that survives being pasted somewhere Page Watch cannot see.
  *
- * There are no tracker integrations here and there is not going to be one. An
- * integration is a second place the work's state lives, and a second place the
- * work's state lives is a place it disagrees with the first — which is the
- * defect the whole case object was built to remove, re-created across a network
- * boundary where nobody can reconcile it. Markdown on the clipboard has no
- * state, so it cannot drift; it is a copy of a fact, taken at a moment, by a
- * person who knows they took it.
+ * This markdown is also the body of a task created through a task-tool
+ * connection (see `src/lib/integrations/`), and it is still the only thing that
+ * crosses the boundary. The rule is one writer per fact: Page Watch owns the
+ * problem, its evidence, its lifecycle and this plan; the task tool owns
+ * execution — who is doing it, comments, subtasks and delivery state. A task
+ * completion is a signal, not a resolution, and nothing here mirrors status
+ * back. The boundary is stated in DECISIONS.md 7.
+ *
+ * So this module keeps no state and holds no second lifecycle. The connected
+ * path sends exactly this text plus a hidden marker, and never the evidence
+ * ledger, raw reports or visitor data. Copy as ticket stays for teams with no
+ * connection and as the escape hatch: markdown on the clipboard cannot drift,
+ * because it is a copy of a fact taken at a moment by someone who knows they
+ * took it.
  *
  * Three things this module is careful about:
  *

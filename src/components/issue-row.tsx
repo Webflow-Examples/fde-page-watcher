@@ -121,6 +121,11 @@ export interface IssueRowProps {
   meta?: ReactNode;
   /** Replace the Confidence cell, as Watch does with checkpoint marks. */
   confidenceSlot?: ReactNode;
+  /**
+   * Multi-select, offered only where a task can be created. A checkbox is not a
+   * transition and does not move the case: it is a selection for the bulk bar.
+   */
+  selection?: { selected: boolean; onToggle: () => void; label: string };
 }
 
 /**
@@ -171,7 +176,7 @@ export function PageScope({
   );
 }
 
-export function IssueRow({ issue, basePath, pageTitles, nested = false, dateMode = "detected", lastRunAt, meta, confidenceSlot }: IssueRowProps) {
+export function IssueRow({ issue, basePath, pageTitles, nested = false, dateMode = "detected", lastRunAt, meta, confidenceSlot, selection }: IssueRowProps) {
   // One reading for the row, the case detail and the ticket — time first, then
   // bytes, and "Not measured" only when neither exists — with the voice that
   // measured it beside it.
@@ -235,6 +240,16 @@ export function IssueRow({ issue, basePath, pageTitles, nested = false, dateMode
           gap: 7,
         }}
       >
+        {selection ? (
+          <input
+            type="checkbox"
+            checked={selection.selected}
+            onChange={selection.onToggle}
+            aria-label={selection.label}
+            onClick={(event) => event.stopPropagation()}
+            style={{ margin: 0, position: "relative", zIndex: 1, cursor: "pointer" }}
+          />
+        ) : null}
         <StatusChip state={issue.state} />
         {hasSecondLayer ? (
           <InfoTip label={cause} text={diagnosis} />

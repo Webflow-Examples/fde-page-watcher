@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useStore } from "@/components/store";
+import { useWorkIntegrations } from "@/components/work-integrations";
+import { WorkBulkBar } from "@/components/work-bulk-bar";
 import { useIssuesView } from "@/components/use-issues-view";
 import {
   DEFAULT_ISSUE_SORT,
@@ -66,12 +68,16 @@ import { WATCH_EMPTY } from "@/lib/watch-copy";
 
 export default function IssuesPage() {
   const searchParams = useSearchParams();
-  const { basePath, pathFor, pages, recordCaseDecision, recordCaseTransition } = useStore();
+  const store = useStore();
+  const { basePath, pathFor, pages, canManageProject, recordCaseDecision, recordCaseTransition } = store;
 
   const queue = parseQueue(searchParams.get("queue"));
   const sort = parseIssueSort(searchParams.get("sort"));
   const direction = parseSortDirection(searchParams.get("dir"), sort);
   const view = useIssuesView(queue, sort, direction);
+  const integrations = useWorkIntegrations(queue === "decide" || queue === "fix");
+  const integrationConnection = integrations.data?.connections.find((candidate) => candidate.status !== "disconnected") ?? null;
+  const [selected, setSelected] = useState<string[]>([]);
 
   // The tail starts folded. Opening it is the one action this list offers, and
   // it is not a commitment to anything — see the note on the fold below.
@@ -177,6 +183,28 @@ export default function IssuesPage() {
   const ownQueue = isFix || isWatch || isSettled;
   const hasRows = ownQueue ? view.inQueue.length > 0 : view.groups.length > 0 || view.tail.length > 0;
 
+  /**
+   * Multi-select, offered only where a task can be created: Decide and Fix, for
+   * a project admin with a task tool connected. The selection is a set of case
+   * ids; the bar turns them into one task per remediation, so selecting both
+   * cases of one fix is one create, not two.
+   */
+  const selectable = canManageProject && !!integrationConnection && (queue === "decide" || queue === "fix");
+  const selectableCases = isFix ? view.inQueue : [...view.groups.flatMap((group) => group.cases), ...view.tail.flatMap((group) => group.cases)];
+  const selectableIds = new Set(selectableCases.map((issue) => issue.id));
+  const selectedInView = selected.filter((id) => selectableIds.has(id));
+  const toggleCase = (id: string) => {
+    setSelected((previous) => previous.includes(id) ? previous.filter((candidate) => candidate !== id) : [...previous, id]);
+  };
+  const toggleGroup = (ids: readonly string[]) => {
+    setSelected((previous) => ids.every((id) => previous.includes(id))
+      ? previous.filter((id) => !ids.includes(id))
+      : [...new Set([...previous, ...ids])]);
+  };
+  const selection = selectable
+    ? { selectedIds: new Set(selectedInView), onToggleCase: toggleCase, onToggleGroup: toggleGroup }
+    : undefined;
+
   return (
     <div style={{ minWidth: 0 }}>
       <PageHeader title={DESTINATION_LABEL.issues} purpose={purpose} flush />
@@ -187,7 +215,19 @@ export default function IssuesPage() {
         hrefFor={(next) => linkTo({ queue: next })}
       />
 
-      {hasRows && isFix ? <FixQueue cases={view.inQueue} basePath={basePath} pageTitles={view.pageTitles} /> : null}
+      {selection && selectedInView.length > 0 && integrationConnection ? (
+        <WorkBulkBar
+          selectionIds={selectedInView}
+          state={store}
+          links={integrations.data?.links ?? []}
+          provider={integrationConnection.provider}
+          mode={isFix ? "fix" : "decide"}
+          onClear={() => setSelected([])}
+          onFinished={() => { void integrations.refresh(); }}
+        />
+      ) : null}
+
+      {hasRows && isFix ? <FixQueue cases={view.inQueue} basePath={basePath} pageTitles={view.pageTitles} selection={selection} /> : null}
 
       {hasRows && isWatch ? <WatchQueue cases={view.inQueue} basePath={basePath} pageTitles={view.pageTitles} /> : null}
 
@@ -235,6 +275,7 @@ export default function IssuesPage() {
                 basePath={basePath}
                 pageTitles={view.pageTitles}
                 lastRunAt={view.lastRunAt}
+                selection={selection}
               />
             ))}
 
@@ -253,6 +294,7 @@ export default function IssuesPage() {
                     basePath={basePath}
                     pageTitles={view.pageTitles}
                     nested
+                    selection={selection}
                   />
                 ))}
               </LowImpactTail>

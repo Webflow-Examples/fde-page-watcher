@@ -41,17 +41,31 @@ export interface IssueGroupProps {
   nested?: boolean;
   /** Marks a detection on the last run in the Date column. */
   lastRunAt?: string;
+  /** Multi-select at row and group level; only where a task can be created. */
+  selection?: {
+    selectedIds: ReadonlySet<string>;
+    onToggleCase: (id: string) => void;
+    onToggleGroup: (ids: readonly string[]) => void;
+  };
 }
 
-export function IssueGroup({ group, basePath, pageTitles, nested = false, lastRunAt }: IssueGroupProps) {
+export function IssueGroup({ group, basePath, pageTitles, nested = false, lastRunAt, selection }: IssueGroupProps) {
   if (group.cases.length === 1) {
+    const issue = group.cases[0];
     return (
       <IssueRow
-        issue={group.cases[0]}
+        issue={issue}
         basePath={basePath}
         pageTitles={pageTitles}
         nested={nested}
         lastRunAt={lastRunAt}
+        {...(selection ? {
+          selection: {
+            selected: selection.selectedIds.has(issue.id),
+            onToggle: () => selection.onToggleCase(issue.id),
+            label: `Select ${issue.id}`,
+          },
+        } : {})}
       />
     );
   }
@@ -77,6 +91,15 @@ export function IssueGroup({ group, basePath, pageTitles, nested = false, lastRu
             most urgent member state; the text names the relationship and leaves
             the steps to the case detail. */}
         <span style={{ minWidth: 0, display: "flex", alignItems: "center", gap: 7 }}>
+          {selection ? (
+            <input
+              type="checkbox"
+              checked={group.cases.every((issue) => selection.selectedIds.has(issue.id))}
+              onChange={() => selection.onToggleGroup(group.cases.map((issue) => issue.id))}
+              aria-label={`Select all ${group.cases.length} cases of this fix`}
+              style={{ margin: 0, position: "relative", zIndex: 1, cursor: "pointer" }}
+            />
+          ) : null}
           <StatusChip state={group.state} />
           <span style={{ minWidth: 0, ...TRUNCATE_CELL, fontSize: 13, fontWeight: 600 }}>
             One fix for {group.cases.length} cases
@@ -148,6 +171,13 @@ export function IssueGroup({ group, basePath, pageTitles, nested = false, lastRu
           pageTitles={pageTitles}
           nested
           lastRunAt={lastRunAt}
+          {...(selection ? {
+            selection: {
+              selected: selection.selectedIds.has(issue.id),
+              onToggle: () => selection.onToggleCase(issue.id),
+              label: `Select ${issue.id}`,
+            },
+          } : {})}
         />
       ))}
     </section>

@@ -2,15 +2,30 @@ import { NextResponse, after } from "next/server";
 import { evaluateCronAccess } from "@/lib/access";
 import { getEnv } from "@/lib/env";
 import type { DataStore } from "@/lib/store";
+import type { AppState } from "@/lib/types";
 import { dispatchCollectionJobs, enqueueCollectionJob, finalizeCollectionJob, reconcileCollectionJobs } from "@/lib/collectionJobs";
 import { runNightly } from "@/lib/collector";
 import { isPageActivelyMonitored } from "@/lib/watchCapacity";
 import { dailyDigestCohortId, ensureDailyDigest } from "@/lib/dailyDigest";
 import { activeProjectStores } from "@/lib/projects";
+import { getIntegrationStore } from "@/lib/integrations/server";
+import { pollProjectTasks } from "@/lib/integrations/poll";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 20;
+
+/**
+ * Read linked tasks for this project, if any automation asked for it. Best
+ * effort: a task tool outage is reported, never turned into a failed night.
+ */
+async function pollTasks(projectId: string, state: AppState) {
+  try {
+    return await pollProjectTasks({ projectId, store: getIntegrationStore(projectId), state });
+  } catch (error) {
+    return { errors: [String(error).slice(0, 200)] };
+  }
+}
 
 async function dispatchProjectNightly(projectId: string, dataStore: DataStore) {
   const projectState = await dataStore.getState();
@@ -18,7 +33,8 @@ async function dispatchProjectNightly(projectId: string, dataStore: DataStore) {
     return { projectId, ok: true, skipped: "project-archived", queued: 0, coalesced: 0, failed: [] };
   }
   if (!getEnv("COLLECTOR_URL") && process.env.NODE_ENV !== "production") {
-    return { projectId, ok: true, local: true, ...await runNightly({ dataStore }) };
+    const nightly = await runNightly({ dataStore });
+    return { projectId, ok: true, local: true, ...nightly, tasks: await pollTasks(projectId, projectState) };
   }
   const snapshot = await reconcileCollectionJobs({
     dataStore,
@@ -42,7 +58,7 @@ async function dispatchProjectNightly(projectId: string, dataStore: DataStore) {
     else coalesced += 1;
   }
   await dispatchCollectionJobs(jobIds, dataStore);
-  return { projectId, ok: true, queued: jobIds.length, coalesced, failed: [] };
+  return { projectId, ok: true, queued: jobIds.length, coalesced, failed: [], tasks: await pollTasks(projectId, projectState) };
 }
 
 /**

@@ -30,9 +30,13 @@ export interface FixQueueProps {
   basePath: string;
   pageTitles: Record<string, string>;
   now?: Date;
+  selection?: {
+    selectedIds: ReadonlySet<string>;
+    onToggleCase: (id: string) => void;
+  };
 }
 
-export function FixQueue({ cases, basePath, pageTitles, now }: FixQueueProps) {
+export function FixQueue({ cases, basePath, pageTitles, now, selection }: FixQueueProps) {
   const groups = FIX_GROUPS.map((state) => ({
     state,
     // A group is impact-ordered within itself and never against the other one.
@@ -90,7 +94,20 @@ export function FixQueue({ cases, basePath, pageTitles, now }: FixQueueProps) {
             </h2>
 
             {group.cases.map((issue) => (
-              <FixRow key={issue.id} issue={issue} basePath={basePath} pageTitles={pageTitles} now={now} />
+              <FixRow
+                key={issue.id}
+                issue={issue}
+                basePath={basePath}
+                pageTitles={pageTitles}
+                now={now}
+                {...(selection ? {
+                  selection: {
+                    selected: selection.selectedIds.has(issue.id),
+                    onToggle: () => selection.onToggleCase(issue.id),
+                    label: `Select ${issue.id}`,
+                  },
+                } : {})}
+              />
             ))}
           </section>
         ))}

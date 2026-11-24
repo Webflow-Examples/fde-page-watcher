@@ -47,9 +47,10 @@ export interface FixRowProps {
   basePath: string;
   pageTitles: Record<string, string>;
   now?: Date;
+  selection?: { selected: boolean; onToggle: () => void; label: string };
 }
 
-export function FixRow({ issue, basePath, pageTitles, now }: FixRowProps) {
+export function FixRow({ issue, basePath, pageTitles, now, selection }: FixRowProps) {
   const inProgress = issue.state === "in_progress";
   const noPlan = issue.remediation.steps.length === 0;
   const stale = inProgress && startedLongAgo(issue.startedAt, now ?? new Date());
@@ -83,6 +84,7 @@ export function FixRow({ issue, basePath, pageTitles, now }: FixRowProps) {
       pageTitles={pageTitles}
       dateMode="fix"
       meta={meta}
+      {...(selection ? { selection } : {})}
     />
   );
 }

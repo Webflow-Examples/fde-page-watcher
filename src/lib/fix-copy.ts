@@ -149,9 +149,10 @@ export const FIX_ACTION_COPY_TICKET = "Copy as ticket";
 /**
  * What the button says once it has done it.
  *
- * "wherever your work lives" is the point of the whole affordance: there is no
- * tracker integration here and there is not going to be one. Page Watch does not
- * know or care whether the paste lands in Jira, Linear, a pull request or a
- * message, and a ticket that is plain markdown works in all four.
+ * "wherever your work lives" is the point of the affordance: a copy is not
+ * tied to a connected task tool, and it is the escape hatch for a team with no
+ * connection. Page Watch does not know or care whether the paste lands in Jira,
+ * a Linear issue opened by hand, a pull request or a message, and a ticket that
+ * is plain markdown works in all four.
  */
 export const FIX_TICKET_COPIED = "Copied. Paste it wherever your work lives.";

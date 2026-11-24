@@ -10,6 +10,7 @@ import { ProjectMembers } from "@/components/ProjectMembers";
 import { SegmentedControl } from "@/components/segmented-control";
 import { useStore } from "@/components/store";
 import { WebflowConnection } from "@/components/webflow-connection";
+import { WorkToolsCard } from "@/components/work-tools-card";
 import { AGENT_CHECK_GROUPS, ALL_AGENT_CHECKS, agentCheckLabel, agentGroupLabel } from "@/lib/agentChecks";
 import { consentCallerName, consentWasEverGranted } from "@/lib/agentConsent";
 import { agentCheckKey, normalizeAgentIgnoreSettings } from "@/lib/agentScoring";
@@ -523,6 +524,9 @@ function ConnectedSystemsGroup({ disabled }: { disabled: boolean }) {
         connectionUrl={pathFor("/api/settings/webflow")}
         syncUrl={pathFor("/api/settings/webflow/sync")}
       />
+
+      {/* Execution, not a second lifecycle: see DECISIONS.md 7. */}
+      <WorkToolsCard disabled={disabled} />
 
       {/*
         The systems with nothing to configure, and what each one contributes.

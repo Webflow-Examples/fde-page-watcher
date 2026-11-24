@@ -6,12 +6,17 @@ import { FIX_ACTION_COPY_TICKET, FIX_TICKET_COPIED } from "@/lib/fix-copy";
 /**
  * "Copy as ticket" — the case, as plain markdown, on the clipboard.
  *
- * The whole integration surface. There is no tracker connection behind this and
- * there is not going to be one: a connection is a second place the work's state
- * lives, and a second place the work's state lives is a place it disagrees with
- * the first. That is the defect the case object exists to remove, and adding it
- * back across a network boundary would put it somewhere nobody can reconcile it.
- * A person pressing this knows they took a copy and knows when.
+ * A connected task tool is a second surface for the same ticket, not a second
+ * lifecycle: Page Watch owns the problem, the evidence, the lifecycle and the
+ * plan, and the task tool owns execution (who, comments, subtasks, delivery).
+ * A task completion adds a note and offers Mark fixed; it cannot resolve a case.
+ * The rule is stated in DECISIONS.md 7 and implemented in
+ * `src/lib/integrations/`.
+ *
+ * This button remains for two reasons, and both survive the integration. It is
+ * the escape hatch for a team with no connection, and it is how a person sends
+ * a case somewhere Page Watch does not track at all. A copy holds no state, so
+ * it cannot drift; the reader knows they took it and when.
  *
  * The confirmation is inline and it expires. A toast would appear somewhere else
  * on the screen, which for an action this local means the reader has to look
