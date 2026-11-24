@@ -138,8 +138,18 @@ const countIn = (pages: WatchPage[], key: PageChangeGroup) =>
  * exclusions — so the fixture carries exactly those. Building a whole case
  * through `fromRec` would add fifty fields none of this depends on.
  */
-const openCase = (state: WorkState, pageIds: string[], excludedPages?: Record<string, "Intentional">): IssueCase =>
-  ({ state, pageIds, ...(excludedPages ? { excludedPages } : {}) } as unknown as IssueCase);
+const openCase = (
+  state: WorkState,
+  pageIds: string[],
+  excludedPages?: Record<string, "Intentional">,
+  actionability: "direct" | "platform" = "direct",
+): IssueCase =>
+  ({
+    state,
+    pageIds,
+    remediation: { steps: [], actionability },
+    ...(excludedPages ? { excludedPages } : {}),
+  } as unknown as IssueCase);
 
 /** Every source file in `src/`, for the guards below. */
 function sourceFiles(): string[] {
@@ -567,6 +577,16 @@ describe("the open case count", () => {
     const cases = WORK_STATES.map((state) => openCase(state, ["home"]));
     // Resolved and dismissed are the two the counted queues do not hold.
     expect(openCaseCountsByPage(cases).home).toBe(WORK_STATES.length - 2);
+  });
+
+  it("does not count a Webflow-owned reading as the reader's open work", () => {
+    // The same rule as the Decide badge and the Decide tab: the case exists and
+    // is listed with the page's cases, and it is not work the reader can do.
+    const counts = openCaseCountsByPage([
+      openCase("new", ["home"]),
+      openCase("new", ["home"], undefined, "platform"),
+    ]);
+    expect(counts.home).toBe(1);
   });
 
   it("does not count a page the case excludes", () => {

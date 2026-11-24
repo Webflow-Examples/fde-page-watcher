@@ -1,5 +1,5 @@
 import type { IssueCase } from "./issue-case";
-import { queueOf } from "./issue-case";
+import { isPlatformOwned, queueOf } from "./issue-case";
 import { normalizePerformanceThresholds } from "./performanceThresholds";
 import type { ScoreBand } from "./scoring";
 import {
@@ -243,10 +243,17 @@ export function pathOf(url: string): string {
  * queues moves in this count with it. Pages a case excludes are not counted,
  * because an excluded page is one the case does not apply to (applicability),
  * and the case still shows its reading on the page itself.
+ *
+ * A platform-owned case is not counted, for the same reason the Decide badge and
+ * the Decide tab do not count it: this number is the reader's open work, and the
+ * column that shows it names Decide. The reading is not hidden — it is listed
+ * with the page's other open cases on the page's own screen, and in the
+ * Webflow-owned section of the issues list.
  */
 export function openCaseCountsByPage(cases: readonly IssueCase[]): Record<string, number> {
   const counts: Record<string, number> = {};
   for (const item of cases) {
+    if (isPlatformOwned(item)) continue;
     if (!COUNTED_QUEUES.includes(queueOf(item.state))) continue;
     for (const pageId of item.pageIds) {
       if (item.excludedPages?.[pageId]) continue;

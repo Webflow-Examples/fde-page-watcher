@@ -48,6 +48,20 @@ export function queueCountsOf(cases: readonly IssueCase[]): QueueCounts {
   return counts;
 }
 
+/**
+ * How many decisions are waiting: the one number the sidebar badge and the
+ * Decide tab both state.
+ *
+ * A named function rather than two calls to `queueCountsOf`, because the badge
+ * and the tab drifted exactly once — the sidebar counted raw queue membership,
+ * which includes a Webflow-owned reading, so it said 8 while the page said 7.
+ * The page reads `queueCountsOf(...).decide`; this is the same function, so a
+ * surface that asks this question cannot answer it differently.
+ */
+export function decideCountOf(cases: readonly IssueCase[]): number {
+  return queueCountsOf(cases).decide ?? 0;
+}
+
 /* ── The low-impact tail ────────────────────────────────────────────────── */
 
 /* ── Sorting ────────────────────────────────────────────────────────────── */

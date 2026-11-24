@@ -1,9 +1,13 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_ISSUE_SORT,
   DEFAULT_SORT_DIRECTION,
   ISSUE_SORTS,
   caseRank,
+  decideCountOf,
   parseIssueSort,
   parseSortDirection,
   queueCountsOf,
@@ -552,5 +556,44 @@ describe("a platform-owned case in the list", () => {
     expect(queueCountsOf([...work, platform]).decide).toBe(work.length);
     // And Start Here does not offer it as a decision.
     expect(startHereCases([...work, platform]).map((item) => item.id)).toEqual(["a", "b"]);
+  });
+
+  it("gives the sidebar badge the same number as the Decide tab and the table", () => {
+    const work = [
+      makeCase({ id: "a", cause: "a", impactMs: 900 }),
+      makeCase({ id: "b", cause: "b", impactMs: 400 }),
+    ];
+    const platform = makeCase({
+      id: "rb",
+      cause: "render-blocking-resources",
+      impactMs: 981,
+      impactOrigin: "simulated",
+      remediation: { steps: [], actionability: "platform" },
+    });
+    const cases = [...work, platform];
+    // The badge is the counted queue, not raw membership: the platform case is
+    // present and changes nothing.
+    expect(decideCountOf(cases)).toBe(decideCountOf(work));
+    expect(decideCountOf(cases)).toBe(queueCountsOf(cases).decide);
+    // The table's Decide rows are exactly that many, so badge, tab and rows agree.
+    expect(decideCountOf(cases)).toBe(casesInQueue(cases.filter((item) => item.remediation.actionability !== "platform"), "decide").length);
+  });
+});
+
+/* ── One Decide count, across src ───────────────────────────────────────── */
+
+describe("one Decide count, across src", () => {
+  const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+
+  it("reads the sidebar badge from the shared count, not raw queue membership", () => {
+    /**
+     * The badge and the Decide tab drifted once: the sidebar counted
+     * `casesInQueue(..., "decide").length`, which includes a Webflow-owned
+     * reading, and said 8 while the page said 7. `decideCountOf` is the shared
+     * answer; a surface that counts Decide by hand is the defect.
+     */
+    const sidebar = readFileSync(path.resolve(moduleDir, "../../components/Sidebar.tsx"), "utf8");
+    expect(sidebar).not.toMatch(/casesInQueue/);
+    expect(sidebar).toMatch(/decideCountOf\(/);
   });
 });
