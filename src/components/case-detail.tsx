@@ -486,6 +486,19 @@ export function CaseDetail({
             />
             {issue.owner ? <Figure label="Owner" value={issue.owner} /> : null}
             <Figure label="Confidence" value={CONFIDENCE_LABEL[issue.confidence]} />
+            {/* When it was first seen, and when it was last looked at. The pair
+                is what keeps a four-month-old New row honest: the case is
+                derived from current records, so it is still present, and this
+                says how current the reading behind it is. Last checked is
+                withheld when no page has run — "date unknown" would read as a
+                reading, and there is none (rule 18). */}
+            <Figure label="First seen" value={formatDate(issue.detectedAt, locale)} />
+            {issue.lastCheckedAt ? (
+              <Figure label="Last checked" value={formatDate(issue.lastCheckedAt, locale)} />
+            ) : null}
+            {issue.confirmedRuns > 0 ? (
+              <Figure label="Runs" value={`Seen in ${issue.confirmedRuns} ${issue.confirmedRuns === 1 ? "run" : "runs"}`} />
+            ) : null}
           </div>
         }
       />

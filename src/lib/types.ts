@@ -854,6 +854,11 @@ export interface Rec {
    * findings that measured no bytes.
    */
   savingsBytes?: number;
+  /**
+   * How many Lighthouse runs saw this finding, when it came from a repeated
+   * sample. Absent on field and native records, which do not count runs.
+   */
+  observedRuns?: number;
   estTime: string; // coarse effort band, e.g. "2 days" (REQ-055)
   status: RecStatus;
   taskStatus: TaskStatus;

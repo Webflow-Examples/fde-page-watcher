@@ -45,7 +45,15 @@ export interface IssueGroupProps {
 
 export function IssueGroup({ group, basePath, pageTitles, nested = false, lastRunAt }: IssueGroupProps) {
   if (group.cases.length === 1) {
-    return <IssueRow issue={group.cases[0]} basePath={basePath} pageTitles={pageTitles} nested={nested} />;
+    return (
+      <IssueRow
+        issue={group.cases[0]}
+        basePath={basePath}
+        pageTitles={pageTitles}
+        nested={nested}
+        lastRunAt={lastRunAt}
+      />
+    );
   }
 
   const impact = groupImpactReading(group);

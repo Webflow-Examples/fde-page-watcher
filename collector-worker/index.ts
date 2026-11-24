@@ -476,6 +476,11 @@ async function commitWorkflowResult(
         webflow: classification,
         savings: formatDiagnosticImpact(opportunity),
         ...(opportunity.savingsBytes ? { savingsBytes: opportunity.savingsBytes } : {}),
+        // Native-element opportunities carry no run count; only a repeated
+        // Lighthouse sample has one.
+        ...("observedRuns" in opportunity && opportunity.observedRuns
+          ? { observedRuns: opportunity.observedRuns }
+          : {}),
         estTime: costBand(`${opportunity.id} ${opportunity.title}`),
         status: "inbox",
         taskStatus: "todo",

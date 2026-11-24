@@ -162,8 +162,25 @@ export interface IssueCase {
   diagnosis: string;
   // 2 why now — what changed and when it was corroborated
   detectedAt: string;            // ISO
+  /**
+   * How many runs have seen this finding, where the source counts them.
+   *
+   * 0 means the source does not count runs, not "never seen": a CrUX record and
+   * a native-element scan have no run count. The detail reads "Seen in N runs"
+   * only when there is one (rule 18).
+   */
   confirmedRuns: number;
   trigger?: { kind: "publish" | "provider" | "threshold"; at: string };
+  /**
+   * When the pages this case covers were last read by a successful run.
+   *
+   * Part of the case projection rather than of `AppState`: it is derived on read
+   * from the pages' `lastRunAt`, exactly like `pageIds`, and storing it would be
+   * a second copy of a date the page already holds. Absent when no page the case
+   * covers has ever completed a run — which is not the same as "a long time ago"
+   * (rule 18). See `case-recency.ts` for the rule that marks one stale.
+   */
+  lastCheckedAt?: string;
   // 3 scope
   scope: "page" | "pages" | "origin";
   pageIds: string[];

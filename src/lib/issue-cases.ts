@@ -14,6 +14,7 @@ import {
 import { decisionOf, type CaseDecision, type CaseDecisionRecord } from "./case-decisions";
 import { applyCaseTransition, transitionOf } from "./case-transitions";
 import { planOf } from "./case-plans";
+import { lastCheckedAtFor } from "./case-recency";
 import type { AppState, CasePlanRecord, CaseTransitionRecord, WatchPage } from "./types";
 
 /**
@@ -272,6 +273,18 @@ export function issueCasesFrom(
   // nothing from the other grain to interleave it with. Once both logs exist,
   // timestamp order is the only common ordering, and it is what makes a second
   // accept after a reopen apply.
-  if (transitions.length === 0) return applyCaseDecisions(planned, decisions, pageLabels);
-  return applyCaseEvents(planned, decisions, transitions, pageLabels);
+  const applied = transitions.length === 0
+    ? applyCaseDecisions(planned, decisions, pageLabels)
+    : applyCaseEvents(planned, decisions, transitions, pageLabels);
+  /**
+   * When each case was last checked, read off the pages it covers.
+   *
+   * Last, because a decision can shrink a case's pages and the reading should
+   * follow what the case counts now. Nothing is stored: it is a date the pages
+   * already hold, and a second copy of it could disagree with them.
+   */
+  return applied.map((issue) => {
+    const lastCheckedAt = lastCheckedAtFor(issue.pageIds, state.pages);
+    return lastCheckedAt ? { ...issue, lastCheckedAt } : issue;
+  });
 }

@@ -310,7 +310,9 @@ export function fromRec(rec: Rec, options: FromRecOptions = {}): IssueCase {
     // authoring one here would put copy in a logic module.
     diagnosis: options.diagnosis ?? rec.aiSummary ?? "",
     detectedAt,
-    confirmedRuns: options.confirmedRuns ?? 0,
+    // A run count when the source keeps one, otherwise the adapter's own
+    // corroboration count and finally 0, which the detail renders as nothing.
+    confirmedRuns: options.confirmedRuns ?? rec.observedRuns ?? 0,
     ...(options.trigger ? { trigger: options.trigger } : {}),
     scope: rec.agentIssue?.scope === "origin" ? "origin" : "page",
     pageIds,

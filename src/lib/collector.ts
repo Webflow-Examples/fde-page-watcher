@@ -213,6 +213,7 @@ export async function insertRecommendations(
       // finding must not read as "Not measured" on the list just because its
       // estimate was in bytes. `savings` stays the display label.
       ...(opportunity.savingsBytes ? { savingsBytes: opportunity.savingsBytes } : {}),
+      ...(opportunity.observedRuns ? { observedRuns: opportunity.observedRuns } : {}),
       estTime: costBand(`${opportunity.id} ${opportunity.title}`),
       status: "inbox",
       taskStatus: "todo",

@@ -10,6 +10,7 @@ import { causeLineOf, diagnosisLineOf } from "@/lib/case-copy";
 import { CONFIDENCE_LABEL } from "@/lib/vocabulary";
 import { caseHref, pageHref } from "@/lib/paths";
 import { formatDate } from "@/lib/watch-copy";
+import { caseStaleness } from "@/lib/case-recency";
 import { StatusChip } from "@/components/status-chip";
 import { InfoTip } from "@/components/info-tip";
 
@@ -183,6 +184,10 @@ export function IssueRow({ issue, basePath, pageTitles, nested = false, dateMode
   // edge. `case-copy` owns the title fallback, because the cause sort and this
   // both read it.
   const diagnosis = diagnosisLineOf(issue);
+  // Whether the latest run that read this case is more than a week before the
+  // project's newest one. A marker, never a decision: it says how old the
+  // reading is, not that anything was auto-settled.
+  const staleness = caseStaleness(issue.lastCheckedAt, lastRunAt);
   // Where the classifier did not recognise the audit, `causeLineOf` already
   // fell back to this same sentence — so there is nothing further to say, and a
   // control that shows you the text you are looking at is worse than no
@@ -284,6 +289,16 @@ export function IssueRow({ issue, basePath, pageTitles, nested = false, dateMode
             </span>
           ) : null}
         </span>
+        {staleness.stale ? (
+          <span
+            role="img"
+            aria-label={`Last checked ${staleness.daysSince} days ago`}
+            title={`Last checked ${staleness.daysSince} days ago`}
+            style={{ display: "block", fontSize: 12, color: "var(--text-muted)" }}
+          >
+            Stale
+          </span>
+        ) : null}
       </span>
 
       {/* The word, in the row's secondary text token — never a strength hue.
