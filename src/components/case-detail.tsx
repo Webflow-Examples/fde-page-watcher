@@ -497,7 +497,7 @@ export function CaseDetail({
               <Figure label="Last checked" value={formatDate(issue.lastCheckedAt, locale)} />
             ) : null}
             {issue.confirmedRuns > 0 ? (
-              <Figure label="Runs" value={`Seen in ${issue.confirmedRuns} ${issue.confirmedRuns === 1 ? "run" : "runs"}`} />
+              <Figure label="Seen in" value={`${issue.confirmedRuns} ${issue.confirmedRuns === 1 ? "run" : "runs"}`} />
             ) : null}
           </div>
         }
