@@ -131,6 +131,7 @@ export default function CasePage() {
       recordCaseDecision({
         decision: "exclude",
         remediationKey: remediationKey(issue),
+        cause: issue.cause,
         pageId,
         reason,
       });
@@ -141,7 +142,7 @@ export default function CasePage() {
   const includePageInCase = useCallback(
     (pageId: string) => {
       if (!issue) return;
-      recordCaseDecision({ decision: "include", remediationKey: remediationKey(issue), pageId });
+      recordCaseDecision({ decision: "include", remediationKey: remediationKey(issue), cause: issue.cause, pageId });
     },
     [issue, recordCaseDecision],
   );
@@ -150,7 +151,7 @@ export default function CasePage() {
     (action: IssueAction, issue: IssueCase) => {
       switch (action) {
         case "accept":
-          recordCaseDecision({ decision: "accept", remediationKey: remediationKey(issue) });
+          recordCaseDecision({ decision: "accept", remediationKey: remediationKey(issue), cause: issue.cause });
           return;
         case "take_on":
         case "start":
@@ -168,7 +169,7 @@ export default function CasePage() {
   const dismissCase = useCallback(
     (reason: DismissReason) => {
       if (!issue) return;
-      recordCaseDecision({ decision: "dismiss", remediationKey: remediationKey(issue), reason });
+      recordCaseDecision({ decision: "dismiss", remediationKey: remediationKey(issue), cause: issue.cause, reason });
     },
     [issue, recordCaseDecision],
   );

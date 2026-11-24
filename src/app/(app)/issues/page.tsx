@@ -114,11 +114,11 @@ export default function IssuesPage() {
   const startHere = queue === "decide" ? startHereCases(view.cases) : [];
 
   const acceptCase = (issue: IssueCase) =>
-    recordCaseDecision({ decision: "accept", remediationKey: remediationKey(issue) });
+    recordCaseDecision({ decision: "accept", remediationKey: remediationKey(issue), cause: issue.cause });
   const takeOnCase = (issue: IssueCase) =>
     recordCaseTransition({ caseKey: issue.cause, action: "take_on" });
   const dismissCase = (issue: IssueCase, reason: DismissReason) =>
-    recordCaseDecision({ decision: "dismiss", remediationKey: remediationKey(issue), reason });
+    recordCaseDecision({ decision: "dismiss", remediationKey: remediationKey(issue), cause: issue.cause, reason });
 
   const watched = pages.filter((page) => page.flag !== "paused");
   const failed = watched

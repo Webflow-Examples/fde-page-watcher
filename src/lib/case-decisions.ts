@@ -79,11 +79,19 @@ export const CASE_DECISIONS = Object.keys(DECLARED) as readonly CaseDecisionKind
  * page, and no way to accept one page of a remediation — which is not a thing
  * anybody can do, and would quietly mean something else if it were storable.
  */
-export type CaseDecisionRequest =
+export type CaseDecisionRequest = (
   | { decision: "exclude"; remediationKey: string; pageId: string; reason: ExclusionReason }
   | { decision: "include"; remediationKey: string; pageId: string }
   | { decision: "accept"; remediationKey: string }
-  | { decision: "dismiss"; remediationKey: string; reason: DismissReason };
+  | { decision: "dismiss"; remediationKey: string; reason: DismissReason }
+) & {
+  /**
+   * The cause of the case this was decided on. See `CaseDecisionRecord.cause`:
+   * it is what lets an entry whose remediation key moved still be attributed to
+   * the same problem instead of being dropped or guessed at.
+   */
+  cause?: string;
+};
 
 /** What every entry carries, whatever it decided. */
 export interface DecisionStamp {
@@ -117,6 +125,7 @@ export interface CaseDecisionInput {
   remediationKey?: unknown;
   pageId?: unknown;
   reason?: unknown;
+  cause?: unknown;
 }
 
 function isDecisionKind(value: unknown): value is CaseDecisionKind {
@@ -173,7 +182,7 @@ export function narrowCasePageExclusionReason(value: unknown): ExclusionReason |
  * remembering to widen a check.
  */
 export function caseDecisionFrom(input: CaseDecisionInput, stamp: DecisionStamp): CaseDecision {
-  const { decision, remediationKey, pageId, reason } = input;
+  const { decision, remediationKey, pageId, reason, cause } = input;
   if (!isDecisionKind(decision)) {
     throw new CaseDecisionError(`decision must be one of: ${CASE_DECISIONS.join(", ")}`);
   }
@@ -181,23 +190,26 @@ export function caseDecisionFrom(input: CaseDecisionInput, stamp: DecisionStamp)
     throw new CaseDecisionError("remediationKey is required");
   }
   const key = remediationKey.trim();
+  // Absent is a real answer: a caller that does not know the cause records only
+  // the key, exactly as every entry written before this field did.
+  const identified = typeof cause === "string" && cause.trim() ? { cause: cause.trim() } : {};
 
   if (decision === "exclude" || decision === "include") {
     if (typeof pageId !== "string" || !pageId.trim()) {
       throw new CaseDecisionError(`${decision} is about one page, so pageId is required`);
     }
     const page = pageId.trim();
-    if (decision === "include") return { decision, remediationKey: key, pageId: page, ...stamp };
+    if (decision === "include") return { decision, remediationKey: key, pageId: page, ...identified, ...stamp };
     const excluded = narrowCasePageExclusionReason(reason);
     if (!excluded) {
       throw new CaseDecisionError(`reason must be one of: ${EXCLUSION_REASONS.join(", ")}`);
     }
-    return { decision, remediationKey: key, pageId: page, reason: excluded, ...stamp };
+    return { decision, remediationKey: key, pageId: page, reason: excluded, ...identified, ...stamp };
   }
 
-  if (decision === "accept") return { decision, remediationKey: key, ...stamp };
+  if (decision === "accept") return { decision, remediationKey: key, ...identified, ...stamp };
   if (!(DISMISS_REASONS as readonly string[]).includes(reason as string)) {
     throw new CaseDecisionError(`reason must be one of: ${DISMISS_REASONS.join(", ")}`);
   }
-  return { decision, remediationKey: key, reason: reason as DismissReason, ...stamp };
+  return { decision, remediationKey: key, reason: reason as DismissReason, ...identified, ...stamp };
 }

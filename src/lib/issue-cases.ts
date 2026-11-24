@@ -51,7 +51,12 @@ export function lastRunAtOf(pages: readonly WatchPage[]): string | undefined {
 
 /** What the log has to say about one remediation. */
 export interface DecisionMatch {
-  /** Entries whose key is this remediation's, oldest first. */
+  /**
+   * Entries that apply to this case, oldest first.
+   *
+   * Mostly entries keyed on its remediation. Also the `cause:<cause>` entries
+   * taken before that remediation was documented — see `matchDecisions`.
+   */
   matched: CaseDecisionRecord[];
   /**
    * Whether a decision was taken about this remediation under a key it no
@@ -73,23 +78,59 @@ export interface DecisionMatch {
 }
 
 /**
- * Read the log for one remediation key.
+ * Read the log for one case.
  *
  * Nothing is removed, compacted or rewritten — this only reads. An entry that
  * matches nothing today matches again the day its remediation comes back, which
  * is what makes a page leaving a case and rejoining it work without the log
  * having to be told.
+ *
+ * Three ways an entry relates to the case, and the difference between them is
+ * the whole of this function:
+ *
+ *   1. **Its key is this remediation's.** It applies. This is the ordinary case,
+ *      including a fix shared by several causes: the key is the fix, so accepting
+ *      it once covers them all.
+ *   2. **Its key is `cause:<this cause>` and the case now has steps.** The
+ *      remediation library documents audits that arrived without steps, which
+ *      moves the key from the cause to the steps. The problem the person decided
+ *      about has not changed — same cause, same pages, same finding — and the
+ *      only thing that is new is that the fix is now written down. So the
+ *      decision CARRIES: a case dismissed as Intentional stays dismissed, and a
+ *      page excluded stays excluded. Calling it stranded would say the fix
+ *      changed, which is not what happened, and would ask the reader a question
+ *      they already answered.
+ *   3. **It names this cause but not this remediation** — a plan that was edited
+ *      after somebody accepted it, or any other move of the key with the problem
+ *      unchanged. The steps really did change, so the decision was about a
+ *      different piece of work: `stranded` is set and the case says so rather
+ *      than silently returning to New. Entries written before `cause` existed
+ *      cannot be attributed to a case this way, so they stay unmatched — the
+ *      claim is withheld rather than guessed (rule 18).
+ *
+ * Same-identity entries (the steps match, the actionability does not) are
+ * stranded too, and predate this: a reclassification changed who owns the work
+ * that was agreed to, which is `DECISION_STRANDED`'s sentence exactly.
  */
 export function matchDecisions(
   key: string,
   decisions: readonly CaseDecisionRecord[],
+  cause?: string,
 ): DecisionMatch {
   const identity = remediationIdentity(key);
+  const causeKey = cause ? `cause:${cause}` : undefined;
   const matched: CaseDecisionRecord[] = [];
   let stranded = false;
   for (const entry of decisions) {
-    if (entry.remediationKey === key) matched.push(entry);
-    else if (remediationIdentity(entry.remediationKey) === identity) stranded = true;
+    if (entry.remediationKey === key) {
+      matched.push(entry);
+    } else if (causeKey && entry.remediationKey === causeKey && key.startsWith("steps:")) {
+      matched.push(entry);
+    } else if (cause && entry.cause === cause) {
+      stranded = true;
+    } else if (remediationIdentity(entry.remediationKey) === identity) {
+      stranded = true;
+    }
   }
   return { matched, stranded };
 }
@@ -183,7 +224,7 @@ export function applyCaseDecisions(
 ): IssueCase[] {
   if (decisions.length === 0) return [...cases];
   return cases.map((issue) => {
-    const { matched, stranded } = matchDecisions(remediationKey(issue), decisions);
+    const { matched, stranded } = matchDecisions(remediationKey(issue), decisions, issue.cause);
     let next = issue;
     for (const entry of matched) next = replay(next, entry, pageLabels);
     return stranded ? { ...next, strandedDecision: true } : next;
@@ -223,7 +264,7 @@ function applyCaseEvents(
 ): IssueCase[] {
   if (decisions.length === 0 && transitions.length === 0) return [...cases];
   return cases.map((issue) => {
-    const { matched, stranded } = matchDecisions(remediationKey(issue), decisions);
+    const { matched, stranded } = matchDecisions(remediationKey(issue), decisions, issue.cause);
     const caseTransitions = transitions
       .filter((record) => record.caseKey === issue.cause)
       .map(transitionOf)

@@ -326,6 +326,18 @@ export interface CaseDecisionRecord {
   remediationKey: string;
   pageId?: string;
   reason?: string;
+  /**
+   * The cause of the case this was decided on, when the writer knew it.
+   *
+   * The key says which remediation the decision was about; this says which
+   * problem. They are the same thing until the remediation's key moves — a plan
+   * edited, or the library documenting an audit that arrived without steps — and
+   * then the cause is the only way to tell that an entry which no longer matches
+   * a key still belongs to this case. Without it such an entry cannot be
+   * attributed, so it is left alone rather than guessed at (rule 18: withhold
+   * rather than assert). Absent on entries written before it existed.
+   */
+  cause?: string;
   /** ISO. Also the entry's place in the log, which is kept in append order. */
   at: string;
   by: CaseDecisionCaller;
